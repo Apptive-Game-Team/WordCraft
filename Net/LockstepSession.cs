@@ -29,6 +29,27 @@ namespace WordCraft.Net
 
         public int ResendIntervalMs = 50;
         public int HelloIntervalMs = 100;
+
+        /// <summary>How long to keep pumping after a desync so the peer's dump can land.</summary>
+        public int DumpGraceMs = 2000;
+    }
+
+    /// <summary>One entity as it crosses the wire. Fix values travel as raw longs.</summary>
+    internal struct StateRow
+    {
+        public int Id;
+        public int Owner;
+        public byte Alive;
+        public long PosX, PosY, TgtX, TgtY, Speed;
+        public int Hp;
+    }
+
+    internal sealed class Snapshot
+    {
+        public ulong Hash;
+        public ulong RngState;
+        public ulong DrawCount;
+        public StateRow[] Rows;
     }
 
     /// <summary>
@@ -47,6 +68,7 @@ namespace WordCraft.Net
         private const int MaxBlocksPerDatagram = 24;
         private const int MaxCommandsPerTick = 256;
         private const int MaxTickLookahead = 1024;
+        private const int RowsPerDumpChunk = 20;
 
         // Encoded sizes, kept next to the encoder so the datagram budget below
         // stays honest if a field is ever added to the input message.
@@ -75,11 +97,21 @@ namespace WordCraft.Net
         private int receivedThrough = -1; // highest remote tick we hold contiguously
 
         private bool remoteActive;
+        private long dumpDeadlineMs;
         private long lastSendMs = long.MinValue / 2;
         private long lastHelloMs = long.MinValue / 2;
 
+        private readonly Dictionary<int, Snapshot> checkpoints = new Dictionary<int, Snapshot>();
+        private readonly Dictionary<int, ulong> remoteHashes = new Dictionary<int, ulong>();
+        private readonly Dictionary<int, StateRow> remoteRows = new Dictionary<int, StateRow>();
+        private int dumpTick = -1, dumpTotal = -1;
+        private ulong dumpRngState, dumpDrawCount;
+
         public SessionState State { get; private set; } = SessionState.Handshaking;
         public string StopReason { get; private set; }
+
+        /// <summary>False while a desync report is still waiting on the peer's state dump.</summary>
+        public bool ReportComplete { get; private set; } = true;
 
         public int PeerId => localPeer;
         public int Tick => world.Tick;
@@ -104,10 +136,10 @@ namespace WordCraft.Net
             pending.Add(new Command(world.Tick + cfg.InputDelay, localPeer, localSeq++, type, entityId, target));
         }
 
-        /// <summary>Pumps the socket and resends unacked input.</summary>
+        /// <summary>Pumps the socket, resends unacked input, and finishes a desync report.</summary>
         public void Update(long nowMs)
         {
-            Receive();
+            Receive(nowMs);
 
             if (State == SessionState.Handshaking)
             {
@@ -119,7 +151,11 @@ namespace WordCraft.Net
                 return;
             }
 
-            if (State != SessionState.Running) return;
+            if (State == SessionState.Stopped)
+            {
+                if (!ReportComplete && nowMs >= dumpDeadlineMs) FinishReport("peer state dump never arrived");
+                return;
+            }
 
             // Our Hello may have been the one that was lost; keep repeating it
             // until the peer proves it started by sending input.
@@ -166,6 +202,8 @@ namespace WordCraft.Net
             // backstop for loss, not the primary delivery path.
             SendInputs();
             lastSendMs = nowMs;
+
+            if (cfg.HashInterval > 0 && world.Tick % cfg.HashInterval == 0) Checkpoint(nowMs);
             return true;
         }
 
@@ -339,9 +377,220 @@ namespace WordCraft.Net
             }
         }
 
+        // ---- hash exchange and desync report ----
+
+        private void Checkpoint(long nowMs)
+        {
+            int t = world.Tick;
+            var snap = new Snapshot
+            {
+                Hash = world.Hash(),
+                RngState = world.Random.State,
+                DrawCount = world.Random.DrawCount,
+                Rows = ReadRows(),
+            };
+            checkpoints[t] = snap;
+
+            w.Reset(MsgType.Hash);
+            w.I32(t);
+            w.U64(snap.Hash);
+            transport.Send(w.Buf, w.Length);
+
+            Compare(t, nowMs);
+        }
+
+        private StateRow[] ReadRows()
+        {
+            var rows = new StateRow[world.EntityCount];
+            for (int i = 0; i < rows.Length; i++)
+            {
+                Entity e = world.GetEntity(i);
+                rows[i] = new StateRow
+                {
+                    Id = e.Id,
+                    Owner = e.Owner,
+                    Alive = e.Alive ? (byte)1 : (byte)0,
+                    PosX = e.Position.X.Raw,
+                    PosY = e.Position.Y.Raw,
+                    TgtX = e.Target.X.Raw,
+                    TgtY = e.Target.Y.Raw,
+                    Speed = e.Speed.Raw,
+                    Hp = e.Hp,
+                };
+            }
+            return rows;
+        }
+
+        private void OnHash(Reader r, long nowMs)
+        {
+            int tick = r.I32();
+            ulong hash = r.U64();
+            if (!r.Ok) return;
+            remoteHashes[tick] = hash;
+            Compare(tick, nowMs);
+        }
+
+        private void Compare(int tick, long nowMs)
+        {
+            if (State == SessionState.Stopped) return;
+            if (!checkpoints.TryGetValue(tick, out Snapshot mine)) return;
+            if (!remoteHashes.TryGetValue(tick, out ulong theirs)) return;
+
+            checkpoints.Remove(tick);
+            remoteHashes.Remove(tick);
+
+            if (mine.Hash == theirs) return;
+
+            // Halt on the spot. Every further tick built on diverged state makes
+            // the report less useful and the recorded match worthless anyway.
+            Stop("desync at tick " + tick +
+                 ": local hash 0x" + mine.Hash.ToString("X16") +
+                 ", remote hash 0x" + theirs.ToString("X16"));
+            checkpoints[tick] = mine;
+            ReportComplete = false;
+            dumpDeadlineMs = nowMs + cfg.DumpGraceMs;
+            SendDump(tick, mine);
+            TryDiff();
+        }
+
+        private void SendDump(int tick, Snapshot snap)
+        {
+            for (int start = 0; start < snap.Rows.Length || start == 0; start += RowsPerDumpChunk)
+            {
+                int n = Math.Min(RowsPerDumpChunk, snap.Rows.Length - start);
+                if (n < 0) n = 0;
+                w.Reset(MsgType.Dump);
+                w.I32(tick);
+                w.U64(snap.RngState);
+                w.U64(snap.DrawCount);
+                w.I32(snap.Rows.Length);
+                w.I32(start);
+                w.U16((ushort)n);
+                for (int i = 0; i < n; i++)
+                {
+                    StateRow row = snap.Rows[start + i];
+                    w.I32(row.Id);
+                    w.I32(row.Owner);
+                    w.U8(row.Alive);
+                    w.I64(row.PosX);
+                    w.I64(row.PosY);
+                    w.I64(row.TgtX);
+                    w.I64(row.TgtY);
+                    w.I64(row.Speed);
+                    w.I32(row.Hp);
+                }
+                transport.Send(w.Buf, w.Length);
+                if (snap.Rows.Length == 0) break;
+            }
+        }
+
+        private void OnDump(Reader r, long nowMs)
+        {
+            int tick = r.I32();
+            ulong rngState = r.U64();
+            ulong drawCount = r.U64();
+            int total = r.I32();
+            int start = r.I32();
+            int n = r.U16();
+            if (!r.Ok || total < 0 || start < 0 || n > RowsPerDumpChunk) return;
+
+            if (tick != dumpTick)
+            {
+                dumpTick = tick;
+                dumpTotal = total;
+                remoteRows.Clear();
+            }
+            dumpRngState = rngState;
+            dumpDrawCount = drawCount;
+
+            for (int i = 0; i < n; i++)
+            {
+                var row = new StateRow
+                {
+                    Id = r.I32(),
+                    Owner = r.I32(),
+                    Alive = r.U8(),
+                    PosX = r.I64(),
+                    PosY = r.I64(),
+                    TgtX = r.I64(),
+                    TgtY = r.I64(),
+                    Speed = r.I64(),
+                    Hp = r.I32(),
+                };
+                if (!r.Ok) return;
+                remoteRows[start + i] = row;
+            }
+
+            // The peer only dumps when it has already halted, so we halt too even
+            // if our own hash comparison has not fired yet.
+            if (State != SessionState.Stopped)
+            {
+                Stop("desync reported by peer at tick " + tick);
+                ReportComplete = false;
+                dumpDeadlineMs = nowMs + cfg.DumpGraceMs;
+                if (checkpoints.TryGetValue(tick, out Snapshot mine)) SendDump(tick, mine);
+            }
+            TryDiff();
+        }
+
+        private void TryDiff()
+        {
+            if (ReportComplete || dumpTick < 0 || remoteRows.Count != dumpTotal) return;
+            if (!checkpoints.TryGetValue(dumpTick, out Snapshot mine)) return;
+
+            // Fields are compared in the same order World.Hash mixes them, so
+            // "first divergence" means the same thing as "what broke the hash".
+            if (mine.RngState != dumpRngState)
+            {
+                FinishReport("first divergence: rng State local=0x" + mine.RngState.ToString("X16") +
+                             " remote=0x" + dumpRngState.ToString("X16"));
+                return;
+            }
+            if (mine.DrawCount != dumpDrawCount)
+            {
+                FinishReport("first divergence: rng DrawCount local=" + mine.DrawCount +
+                             " remote=" + dumpDrawCount);
+                return;
+            }
+            if (mine.Rows.Length != dumpTotal)
+            {
+                FinishReport("first divergence: entity count local=" + mine.Rows.Length + " remote=" + dumpTotal);
+                return;
+            }
+
+            for (int i = 0; i < mine.Rows.Length; i++)
+            {
+                StateRow a = mine.Rows[i], b = remoteRows[i];
+                string field = null;
+                string va = null, vb = null;
+                if (a.Id != b.Id) { field = "Id"; va = a.Id.ToString(); vb = b.Id.ToString(); }
+                else if (a.Owner != b.Owner) { field = "Owner"; va = a.Owner.ToString(); vb = b.Owner.ToString(); }
+                else if (a.Alive != b.Alive) { field = "Alive"; va = a.Alive.ToString(); vb = b.Alive.ToString(); }
+                else if (a.PosX != b.PosX) { field = "Position.X.Raw"; va = a.PosX.ToString(); vb = b.PosX.ToString(); }
+                else if (a.PosY != b.PosY) { field = "Position.Y.Raw"; va = a.PosY.ToString(); vb = b.PosY.ToString(); }
+                else if (a.TgtX != b.TgtX) { field = "Target.X.Raw"; va = a.TgtX.ToString(); vb = b.TgtX.ToString(); }
+                else if (a.TgtY != b.TgtY) { field = "Target.Y.Raw"; va = a.TgtY.ToString(); vb = b.TgtY.ToString(); }
+                else if (a.Speed != b.Speed) { field = "Speed.Raw"; va = a.Speed.ToString(); vb = b.Speed.ToString(); }
+                else if (a.Hp != b.Hp) { field = "Hp"; va = a.Hp.ToString(); vb = b.Hp.ToString(); }
+                if (field == null) continue;
+
+                FinishReport("first divergence: entity " + a.Id + " field " + field +
+                             " local=" + va + " remote=" + vb);
+                return;
+            }
+
+            FinishReport("dumps agree, divergence is in state that is hashed but not dumped");
+        }
+
+        private void FinishReport(string detail)
+        {
+            StopReason = StopReason + "; " + detail;
+            ReportComplete = true;
+        }
+
         // ---- plumbing ----
 
-        private void Receive()
+        private void Receive(long nowMs)
         {
             while (transport.TryReceive(out byte[] packet))
             {
@@ -354,6 +603,8 @@ namespace WordCraft.Net
                     case MsgType.Hello: OnHello(r); break;
                     case MsgType.Reject: Stop("rejected by peer: " + r.Text()); break;
                     case MsgType.Input: OnInput(r); break;
+                    case MsgType.Hash: OnHash(r, nowMs); break;
+                    case MsgType.Dump: OnDump(r, nowMs); break;
                     default: break; // unknown type, drop it
                 }
             }
