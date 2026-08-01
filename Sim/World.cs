@@ -42,6 +42,10 @@ namespace WordCraft.Sim
         // Combat. All timing in whole ticks.
         public int AttackCooldown;
         public int TargetId;
+
+        // Cursor into this entity's path. At or past the path length means the
+        // entity walks straight at Target instead.
+        public int PathIndex;
     }
 
     /// <summary>
@@ -52,6 +56,11 @@ namespace WordCraft.Sim
     public sealed partial class World
     {
         public const int TicksPerSecond = 20;
+
+        // The map is a fixed grid so pathfinding scratch is sized once and cell
+        // indices hash as plain integers.
+        public const int GridSize = 64;
+        public const int GridCells = GridSize * GridSize;
         public const int MaxPeers = 8;
 
         // Balance constants. Required to be stable, not good.
@@ -67,8 +76,10 @@ namespace WordCraft.Sim
         public readonly DetRandom Random;
 
         // Append-only, indexed by id. Dead entities keep their slot so ids never
-        // get reused and iteration order stays stable on every peer.
+        // get reused and iteration order stays stable on every peer. paths is
+        // parallel to entities and grows with it.
         private readonly List<Entity> entities = new List<Entity>();
+        private readonly List<List<int>> paths = new List<List<int>>();
         private readonly int[] resources = new int[MaxPeers];
         private readonly List<Command> tickCommands = new List<Command>();
 
@@ -132,6 +143,7 @@ namespace WordCraft.Sim
                 TargetId = -1,
             };
             entities.Add(e);
+            paths.Add(new List<int>());
             return e.Id;
         }
 
@@ -158,9 +170,7 @@ namespace WordCraft.Sim
                 case CommandType.Move:
                 {
                     if (!OwnedAndAlive(c.EntityId, c.PeerId)) return;
-                    Entity e = entities[c.EntityId];
-                    e.Target = c.Target;
-                    entities[c.EntityId] = e;
+                    SetDestination(c.EntityId, c.Target);
                     break;
                 }
 
@@ -177,6 +187,16 @@ namespace WordCraft.Sim
             return e.Alive && e.Owner == peer;
         }
 
+        /// <summary>Sets a walk goal and paths to it. A failed path falls back to the straight line.</summary>
+        private void SetDestination(int id, FixVec2 destination)
+        {
+            Entity e = entities[id];
+            e.Target = destination;
+            e.PathIndex = 0;
+            entities[id] = e;
+            Pathfinder.FindPath(this, CellOf(e.Position), CellOf(destination), paths[id]);
+        }
+
         private void MoveSystem()
         {
             for (int i = 0; i < entities.Count; i++)
@@ -184,10 +204,14 @@ namespace WordCraft.Sim
                 Entity e = entities[i];
                 if (!e.Alive || e.Speed.Raw == 0) continue;
 
-                FixVec2 delta = e.Target - e.Position;
+                List<int> path = paths[i];
+                FixVec2 goal = e.PathIndex < path.Count ? CellCenter(path[e.PathIndex]) : e.Target;
+
+                FixVec2 delta = goal - e.Position;
                 if (delta.Magnitude <= e.Speed)
                 {
-                    e.Position = e.Target;
+                    e.Position = goal;
+                    if (e.PathIndex < path.Count) e.PathIndex++;
                 }
                 else
                 {
@@ -197,10 +221,25 @@ namespace WordCraft.Sim
             }
         }
 
+        public static int CellOf(FixVec2 p)
+        {
+            int x = Clamp(p.X.ToInt(), 0, GridSize - 1);
+            int y = Clamp(p.Y.ToInt(), 0, GridSize - 1);
+            return y * GridSize + x;
+        }
+
+        public static FixVec2 CellCenter(int cell)
+        {
+            Fix half = Fix.Ratio(1, 2);
+            return new FixVec2(Fix.FromInt(cell % GridSize) + half, Fix.FromInt(cell / GridSize) + half);
+        }
+
+        private static int Clamp(int v, int lo, int hi) => v < lo ? lo : (v > hi ? hi : v);
+
         /// <summary>
         /// FNV-1a over every state field in id order. Peers compare this instead
         /// of trusting each other; a mismatch means the simulations diverged.
-        /// Anything a system reads back on a later tick belongs here.
+        /// Anything a system reads back on a later tick belongs here, paths included.
         /// </summary>
         public ulong Hash()
         {
@@ -233,6 +272,11 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.QueueCount);
                 Mix(ref h, (ulong)e.AttackCooldown);
                 Mix(ref h, (ulong)e.TargetId);
+                Mix(ref h, (ulong)e.PathIndex);
+
+                List<int> path = paths[i];
+                Mix(ref h, (ulong)path.Count);
+                for (int c = 0; c < path.Count; c++) Mix(ref h, (ulong)path[c]);
             }
             return h;
         }
