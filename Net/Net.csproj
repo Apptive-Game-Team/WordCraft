@@ -13,4 +13,12 @@
     <ProjectReference Include="../Sim/Sim.csproj" />
   </ItemGroup>
 
+  <!-- Same one-way vendoring as Sim. See Sim.csproj for why it runs every build. -->
+  <Target Name="VendorToClient" AfterTargets="Build"
+          Condition="Exists('$(MSBuildThisFileDirectory)../Client/Assets/Plugins')">
+    <Copy SourceFiles="$(TargetPath)"
+          DestinationFolder="$(MSBuildThisFileDirectory)../Client/Assets/Plugins"
+          SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

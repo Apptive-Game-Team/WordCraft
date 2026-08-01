@@ -1,0 +1,17 @@
+{
+    "name": "WordCraft.View",
+    "rootNamespace": "WordCraft.View",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "WordCraft.Sim.dll",
+        "WordCraft.Net.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

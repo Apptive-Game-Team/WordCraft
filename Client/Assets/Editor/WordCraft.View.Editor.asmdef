@@ -1,0 +1,21 @@
+{
+    "name": "WordCraft.View.Editor",
+    "rootNamespace": "WordCraft.View",
+    "references": [
+        "WordCraft.View"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "WordCraft.Sim.dll",
+        "WordCraft.Net.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

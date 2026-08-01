@@ -9,4 +9,17 @@
     <Nullable>disable</Nullable>
   </PropertyGroup>
 
+  <!--
+    The Unity client consumes this as a compiled assembly, copied one way, which
+    is what keeps UnityEngine off this project's compile path. Copying on every
+    build is what stops the committed copy from drifting behind the source the
+    headless checks actually run against.
+  -->
+  <Target Name="VendorToClient" AfterTargets="Build"
+          Condition="Exists('$(MSBuildThisFileDirectory)../Client/Assets/Plugins')">
+    <Copy SourceFiles="$(TargetPath)"
+          DestinationFolder="$(MSBuildThisFileDirectory)../Client/Assets/Plugins"
+          SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>
