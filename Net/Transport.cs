@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
+using WordCraft.Sim;
 
 namespace WordCraft.Net
 {
@@ -67,5 +69,92 @@ namespace WordCraft.Net
         }
 
         public void Dispose() => socket.Dispose();
+    }
+
+    /// <summary>
+    /// Two in-process endpoints joined by a lossy link. Faults are drawn from a
+    /// seeded DetRandom and delivery is gated on a virtual clock the driver sets,
+    /// so a failing run reproduces exactly instead of depending on wall time.
+    /// </summary>
+    public sealed class FaultyLink
+    {
+        private struct Pending
+        {
+            public long DueMs;
+            public byte[] Data;
+        }
+
+        private readonly DetRandom rng;
+        private readonly int dropPercent;
+        private readonly int duplicatePercent;
+        private readonly int baseDelayMs;
+        private readonly int jitterMs;
+        private readonly List<Pending> toA = new List<Pending>();
+        private readonly List<Pending> toB = new List<Pending>();
+
+        /// <summary>Virtual milliseconds. The driver advances this, not a clock.</summary>
+        public long Now;
+
+        /// <summary>Set true to simulate a peer vanishing without a goodbye.</summary>
+        public bool Partitioned;
+
+        public ITransport A { get; }
+        public ITransport B { get; }
+
+        public FaultyLink(ulong seed, int dropPercent, int duplicatePercent, int baseDelayMs, int jitterMs)
+        {
+            rng = new DetRandom(seed);
+            this.dropPercent = dropPercent;
+            this.duplicatePercent = duplicatePercent;
+            this.baseDelayMs = baseDelayMs;
+            this.jitterMs = jitterMs;
+            A = new Endpoint(this, toB, toA);
+            B = new Endpoint(this, toA, toB);
+        }
+
+        private void Enqueue(List<Pending> queue, byte[] data, int length)
+        {
+            if (Partitioned) return;
+            if (rng.NextInt(100) < dropPercent) return;
+
+            int copies = rng.NextInt(100) < duplicatePercent ? 2 : 1;
+            for (int i = 0; i < copies; i++)
+            {
+                var copy = new byte[length];
+                Buffer.BlockCopy(data, 0, copy, 0, length);
+                // Independent per-copy delay: this is what produces reordering.
+                queue.Add(new Pending { DueMs = Now + baseDelayMs + rng.NextInt(jitterMs + 1), Data = copy });
+            }
+        }
+
+        private bool Dequeue(List<Pending> queue, out byte[] packet)
+        {
+            for (int i = 0; i < queue.Count; i++)
+            {
+                if (queue[i].DueMs > Now) continue;
+                packet = queue[i].Data;
+                queue.RemoveAt(i);
+                return true;
+            }
+            packet = null;
+            return false;
+        }
+
+        private sealed class Endpoint : ITransport
+        {
+            private readonly FaultyLink link;
+            private readonly List<Pending> outbox;
+            private readonly List<Pending> inbox;
+
+            public Endpoint(FaultyLink link, List<Pending> outbox, List<Pending> inbox)
+            {
+                this.link = link;
+                this.outbox = outbox;
+                this.inbox = inbox;
+            }
+
+            public void Send(byte[] data, int length) => link.Enqueue(outbox, data, length);
+            public bool TryReceive(out byte[] packet) => link.Dequeue(inbox, out packet);
+        }
     }
 }
