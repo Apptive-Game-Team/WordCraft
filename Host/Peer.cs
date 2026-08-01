@@ -17,6 +17,10 @@ namespace WordCraft.Host
         /// <summary>Tick to hash. Add() throws on a repeat, which is the "no tick runs twice" check.</summary>
         public readonly Dictionary<int, ulong> Hashes = new Dictionary<int, ulong>();
 
+        /// <summary>Worker and node ids per owner, assigned in a fixed spawn order.</summary>
+        private static int WorkerOf(int owner) => 6 + owner * 3;
+        private static int NodeOf(int owner) => 8 + owner * 3;
+
         private readonly DetRandom script;
         private int lastScripted = -1;
 
@@ -36,6 +40,16 @@ namespace WordCraft.Host
                 }
             }
 
+            // An economy the netcode has to carry. A Move command would not notice
+            // if Command.Arg were dropped on the wire; Gather names its node there.
+            for (int owner = 0; owner < 2; owner++)
+            {
+                Fix x = Fix.FromInt(owner * 40);
+                World.SpawnWorker(owner, new FixVec2(x, Fix.FromInt(20)));
+                World.SpawnBuilding(owner, new FixVec2(x + Fix.FromInt(2), Fix.FromInt(20)), complete: true);
+                World.SpawnResourceNode(new FixVec2(x + Fix.FromInt(6), Fix.FromInt(20)), 500);
+            }
+
             Session = new LockstepSession(World, transport, cfg, peerId);
             script = new DetRandom(0xBADC0DE ^ (ulong)peerId);
         }
@@ -50,6 +64,11 @@ namespace WordCraft.Host
             if (lastScripted != Session.Tick)
             {
                 lastScripted = Session.Tick;
+                if (Session.Tick == 5)
+                {
+                    Session.Issue(CommandType.Gather, WorkerOf(Session.PeerId), FixVec2.Zero,
+                        NodeOf(Session.PeerId));
+                }
                 if (Session.Tick % 17 == 0)
                 {
                     // Each peer only ever commands its own units, so the script

@@ -53,6 +53,16 @@ namespace WordCraft.Host
                 Check(a.Hashes.ContainsKey(t) && b.Hashes.ContainsKey(t), "missing hash for tick " + t);
                 Check(a.Hashes[t] == b.Hashes[t], "hash mismatch at tick " + t);
             }
+
+            // Both peers banked resources, so the Gather command's node id survived
+            // the wire. Dropping Command.Arg would leave this at zero while the
+            // hashes still matched, because both peers would be equally wrong.
+            for (int peer = 0; peer < 2; peer++)
+            {
+                Check(a.World.GetResources(peer) > 0, "peer " + peer + " never gathered anything");
+                Check(a.World.GetResources(peer) == b.World.GetResources(peer),
+                    "peers disagree on peer " + peer + " resources");
+            }
         }
 
         /// <summary>One peer starts with a tampered unit; the desync must be located, not just noticed.</summary>
