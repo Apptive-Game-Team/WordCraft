@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using WordCraft.Sim;
 
 namespace WordCraft.Replay
@@ -24,6 +25,7 @@ namespace WordCraft.Replay
                 DivergenceIsDetected();
                 ScriptedMatchSameHashes();
                 ScriptedMatchDivergenceIsDetected();
+                SimAssemblyIsClean();
             }
             catch (Exception ex)
             {
@@ -147,6 +149,49 @@ namespace WordCraft.Replay
             int firstMismatch = FirstMismatch(clean, tampered);
             Check(firstMismatch >= 0, "a tampered match produced identical hashes");
             Check(firstMismatch <= 201, "match divergence took too long to surface: tick " + firstMismatch);
+        }
+
+        /// <summary>
+        /// Reflection stand-in for a lint rule: the simulation assembly must not
+        /// carry floating point or a Unity reference. Signatures only, which is
+        /// enough to catch the mistake anyone actually makes.
+        /// </summary>
+        private static void SimAssemblyIsClean()
+        {
+            Assembly sim = typeof(World).Assembly;
+
+            foreach (AssemblyName reference in sim.GetReferencedAssemblies())
+            {
+                Check(!reference.Name.StartsWith("UnityEngine", StringComparison.Ordinal),
+                    "Sim references " + reference.Name);
+            }
+
+            const BindingFlags all = BindingFlags.Public | BindingFlags.NonPublic |
+                                     BindingFlags.Instance | BindingFlags.Static |
+                                     BindingFlags.DeclaredOnly;
+
+            foreach (Type type in sim.GetTypes())
+            {
+                foreach (FieldInfo f in type.GetFields(all))
+                {
+                    CheckNotFloating(f.FieldType, type.FullName + "." + f.Name);
+                }
+                foreach (MethodInfo m in type.GetMethods(all))
+                {
+                    CheckNotFloating(m.ReturnType, type.FullName + "." + m.Name + " return");
+                    foreach (ParameterInfo p in m.GetParameters())
+                    {
+                        CheckNotFloating(p.ParameterType, type.FullName + "." + m.Name + " parameter " + p.Name);
+                    }
+                }
+            }
+        }
+
+        private static void CheckNotFloating(Type t, string where)
+        {
+            Type bare = t.IsByRef || t.IsArray ? t.GetElementType() : t;
+            Check(bare != typeof(float) && bare != typeof(double) && bare != typeof(decimal),
+                "forbidden floating point type in Sim: " + where);
         }
 
         /// <summary>Two players, deterministic pseudo-random move orders.</summary>
