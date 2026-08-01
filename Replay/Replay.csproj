@@ -13,4 +13,15 @@
     <ProjectReference Include="../Sim/Sim.csproj" />
   </ItemGroup>
 
+  <!--
+    The client's scenario and input log, compiled here as well as by Unity. Both
+    files are free of UnityEngine on purpose: running the identical log under
+    CoreCLR and under Unity's Mono and comparing the hash is what catches a
+    runtime difference before it becomes a desync between two players' machines.
+  -->
+  <ItemGroup>
+    <Compile Include="../Client/Assets/Scripts/MatchScenario.cs" />
+    <Compile Include="../Client/Assets/Editor/ScriptedLog.cs" />
+  </ItemGroup>
+
 </Project>

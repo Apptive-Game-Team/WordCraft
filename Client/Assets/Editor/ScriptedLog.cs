@@ -13,6 +13,15 @@ namespace WordCraft.View
     {
         public const int Ticks = 600;
 
+        /// <summary>
+        /// What this log hashes to after Ticks steps. Unity's Mono runtime and
+        /// plain CoreCLR both assert it, which is the only thing that catches a
+        /// fixed-point or JIT difference between the two runtimes the game ships
+        /// on. Update it only when the simulation intentionally changes, and only
+        /// after both runtimes agree on the new value.
+        /// </summary>
+        public const ulong GoldenHash = 0x11FEEDE6C9322530UL;
+
         // Ids are handed out in MatchScenario.Build order and never reused.
         private const int Base0 = 0, Worker0A = 1, Worker0B = 2, Fighter0 = 3, Node0 = 4;
         private const int Base1 = 5, Worker1A = 6, Worker1B = 7, Fighter1 = 8, Node1 = 9;

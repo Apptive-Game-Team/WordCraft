@@ -29,6 +29,9 @@ namespace WordCraft.View
 
             ulong final = FinalHash();
             Debug.Log("final hash after " + ScriptedLog.Ticks + " ticks: 0x" + final.ToString("X16"));
+            Check(final == ScriptedLog.GoldenHash,
+                "Mono disagrees with the golden hash: got 0x" + final.ToString("X16") +
+                ", expected 0x" + ScriptedLog.GoldenHash.ToString("X16"));
 
             if (failures > 0)
             {

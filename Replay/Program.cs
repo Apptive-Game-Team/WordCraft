@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using WordCraft.Sim;
+using WordCraft.View;
 
 namespace WordCraft.Replay
 {
@@ -25,6 +26,7 @@ namespace WordCraft.Replay
                 DivergenceIsDetected();
                 ScriptedMatchSameHashes();
                 ScriptedMatchDivergenceIsDetected();
+                ClientLogMatchesGoldenHash();
                 SimAssemblyIsClean();
             }
             catch (Exception ex)
@@ -149,6 +151,24 @@ namespace WordCraft.Replay
             int firstMismatch = FirstMismatch(clean, tampered);
             Check(firstMismatch >= 0, "a tampered match produced identical hashes");
             Check(firstMismatch <= 201, "match divergence took too long to surface: tick " + firstMismatch);
+        }
+
+        /// <summary>
+        /// The client's own input log, run under CoreCLR. Unity's Mono runtime
+        /// asserts the same constant, so the two runtimes the game ships on are
+        /// pinned to one another. A fixed-point or JIT difference between them
+        /// would otherwise only appear as a desync between two players.
+        /// </summary>
+        private static void ClientLogMatchesGoldenHash()
+        {
+            List<Command>[] log = ScriptedLog.Build();
+            World world = MatchScenario.Build(Seed);
+            for (int t = 0; t < log.Length; t++) world.Step(log[t]);
+
+            ulong final = world.Hash();
+            Check(final == ScriptedLog.GoldenHash,
+                "CoreCLR disagrees with the golden hash: got 0x" + final.ToString("X16") +
+                ", expected 0x" + ScriptedLog.GoldenHash.ToString("X16"));
         }
 
         /// <summary>
