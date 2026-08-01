@@ -27,6 +27,7 @@ namespace WordCraft.Net
         /// <summary>Ticks between state hash exchanges.</summary>
         public int HashInterval = 20;
 
+        public int ResendIntervalMs = 50;
         public int HelloIntervalMs = 100;
     }
 
@@ -43,6 +44,15 @@ namespace WordCraft.Net
         public const uint ProtocolVersion = 1;
 
         private const int PeerCount = 2;
+        private const int MaxBlocksPerDatagram = 24;
+        private const int MaxCommandsPerTick = 256;
+        private const int MaxTickLookahead = 1024;
+
+        // Encoded sizes, kept next to the encoder so the datagram budget below
+        // stays honest if a field is ever added to the input message.
+        private const int HeaderBytes = 8;       // msgType, peerId, ack, blockCount
+        private const int BlockHeaderBytes = 6;  // tick, commandCount
+        private const int CommandBytes = 25;     // type, entityId, seq, targetX, targetY
 
         private readonly World world;
         private readonly ITransport transport;
@@ -59,6 +69,13 @@ namespace WordCraft.Net
         private readonly List<Command> batch = new List<Command>();
         private int localSeq;
 
+        private int sealedThrough = -1;   // highest local tick whose input is final
+        private int ackedThrough = -1;    // highest local tick the remote confirmed
+        private int prunedThrough = -1;
+        private int receivedThrough = -1; // highest remote tick we hold contiguously
+
+        private bool remoteActive;
+        private long lastSendMs = long.MinValue / 2;
         private long lastHelloMs = long.MinValue / 2;
 
         public SessionState State { get; private set; } = SessionState.Handshaking;
@@ -87,7 +104,7 @@ namespace WordCraft.Net
             pending.Add(new Command(world.Tick + cfg.InputDelay, localPeer, localSeq++, type, entityId, target));
         }
 
-        /// <summary>Pumps the socket and repeats the handshake until the peer answers.</summary>
+        /// <summary>Pumps the socket and resends unacked input.</summary>
         public void Update(long nowMs)
         {
             Receive();
@@ -102,12 +119,20 @@ namespace WordCraft.Net
                 return;
             }
 
+            if (State != SessionState.Running) return;
+
             // Our Hello may have been the one that was lost; keep repeating it
-            // until the peer answers.
-            if (State == SessionState.Running && nowMs - lastHelloMs >= cfg.HelloIntervalMs)
+            // until the peer proves it started by sending input.
+            if (!remoteActive && nowMs - lastHelloMs >= cfg.HelloIntervalMs)
             {
                 SendHello();
                 lastHelloMs = nowMs;
+            }
+
+            if (nowMs - lastSendMs >= cfg.ResendIntervalMs)
+            {
+                SendInputs();
+                lastSendMs = nowMs;
             }
         }
 
@@ -135,6 +160,12 @@ namespace WordCraft.Net
             world.Step(batch); // the only line in this assembly that mutates the simulation
 
             inputs[remotePeer].Remove(t);
+            PruneLocal();
+
+            // Push the freshly sealed tick out now; the resend timer is the
+            // backstop for loss, not the primary delivery path.
+            SendInputs();
+            lastSendMs = nowMs;
             return true;
         }
 
@@ -193,6 +224,7 @@ namespace WordCraft.Net
             // Nothing could have been issued before the match existed, so the
             // first InputDelay ticks are empty on every peer by definition.
             for (int t = 0; t < cfg.InputDelay; t++) SealLocal(t, null);
+            SendInputs();
         }
 
         // ---- input exchange ----
@@ -205,6 +237,106 @@ namespace WordCraft.Net
             inputs[localPeer][tick] = cmds == null || cmds.Count == 0
                 ? Array.Empty<Command>()
                 : cmds.ToArray();
+            if (tick > sealedThrough) sealedThrough = tick;
+        }
+
+        /// <summary>
+        /// Drops local input that is both acknowledged and already executed here.
+        /// The peer can be ahead of us, so acknowledgement alone is not enough:
+        /// discarding a tick we have not run yet closes the barrier forever.
+        /// </summary>
+        private void PruneLocal()
+        {
+            int limit = Math.Min(ackedThrough, world.Tick - 1);
+            while (prunedThrough < limit) inputs[localPeer].Remove(++prunedThrough);
+        }
+
+        private void SendInputs()
+        {
+            // ponytail: resends every unacked tick wholesale instead of keeping a
+            // sliding window. Commands are ~21 bytes and the ack lag is a few
+            // ticks, so this fits one datagram; add a window only if it stops fitting.
+            w.Reset(MsgType.Input);
+            w.U8((byte)localPeer);
+            w.I32(receivedThrough); // piggybacked ack
+
+            // ponytail: a single tick carrying more than ~55 commands would never
+            // fit one datagram and would stall the barrier until the peer timeout.
+            // Split a tick across datagrams if the game ever issues batches that big.
+            int first = ackedThrough + 1;
+            int count = 0;
+            int bytes = HeaderBytes;
+            for (int t = first; t <= sealedThrough && count < MaxBlocksPerDatagram; t++)
+            {
+                if (!inputs[localPeer].TryGetValue(t, out Command[] block)) continue;
+                int need = BlockHeaderBytes + block.Length * CommandBytes;
+                if (bytes + need > Wire.MaxDatagram) break;
+                bytes += need;
+                count++;
+            }
+
+            w.U16((ushort)count);
+            int written = 0;
+            for (int t = first; t <= sealedThrough && written < count; t++)
+            {
+                if (!inputs[localPeer].TryGetValue(t, out Command[] cmds)) continue;
+                w.I32(t);
+                w.U16((ushort)cmds.Length);
+                for (int i = 0; i < cmds.Length; i++)
+                {
+                    Command c = cmds[i];
+                    w.U8((byte)c.Type);
+                    w.I32(c.EntityId);
+                    w.I32(c.Seq);
+                    w.I64(c.Target.X.Raw); // Fix crosses the wire as its raw long, never as text
+                    w.I64(c.Target.Y.Raw);
+                }
+                written++;
+            }
+            transport.Send(w.Buf, w.Length);
+        }
+
+        private void OnInput(Reader r)
+        {
+            int peer = r.U8();
+            int ack = r.I32();
+            int blocks = r.U16();
+            if (!r.Ok || peer != remotePeer) return;
+
+            remoteActive = true;
+            if (ack > ackedThrough)
+            {
+                ackedThrough = ack;
+                PruneLocal();
+            }
+
+            for (int b = 0; b < blocks; b++)
+            {
+                int tick = r.I32();
+                int n = r.U16();
+                if (!r.Ok || n > MaxCommandsPerTick) return;
+
+                var cmds = new Command[n];
+                for (int i = 0; i < n; i++)
+                {
+                    var type = (CommandType)r.U8();
+                    int entityId = r.I32();
+                    int seq = r.I32();
+                    long x = r.I64();
+                    long y = r.I64();
+                    // Tick and PeerId come from the envelope, not the body, so a
+                    // command can never claim a tick its own block disagrees with.
+                    cmds[i] = new Command(tick, peer, seq, type, entityId, new FixVec2(new Fix(x), new Fix(y)));
+                }
+                if (!r.Ok) return;
+
+                if (tick < world.Tick) continue;                    // already executed, this is a resend
+                if (tick > world.Tick + MaxTickLookahead) continue;  // nonsense tick, do not buffer it
+                if (inputs[peer].ContainsKey(tick)) continue;        // duplicate
+
+                inputs[peer][tick] = cmds;
+                while (inputs[peer].ContainsKey(receivedThrough + 1)) receivedThrough++;
+            }
         }
 
         // ---- plumbing ----
@@ -221,6 +353,7 @@ namespace WordCraft.Net
                 {
                     case MsgType.Hello: OnHello(r); break;
                     case MsgType.Reject: Stop("rejected by peer: " + r.Text()); break;
+                    case MsgType.Input: OnInput(r); break;
                     default: break; // unknown type, drop it
                 }
             }
