@@ -84,6 +84,13 @@ namespace WordCraft.Sim
         public static readonly FixVec2 RallyOffset = new FixVec2(Fix.FromInt(2), Fix.Zero);
 
         public int Tick { get; private set; }
+
+        /// <summary>True once a peer has lost its last base. Both peers see it on the same tick.</summary>
+        public bool MatchOver { get; private set; }
+
+        /// <summary>Winning peer, or -1 while the match runs and on a mutual kill.</summary>
+        public int Winner { get; private set; } = -1;
+
         public readonly DetRandom Random;
 
         // Append-only, indexed by id. Dead entities keep their slot so ids never
@@ -179,18 +186,63 @@ namespace WordCraft.Sim
         /// </summary>
         public void Step(IReadOnlyList<Command> commands)
         {
-            tickCommands.Clear();
-            for (int i = 0; i < commands.Count; i++) tickCommands.Add(commands[i]);
-            tickCommands.Sort(Command.CanonicalCompare);
+            // A decided match still advances its tick, so the lockstep barrier and
+            // the hash exchange keep running instead of stalling on a dead world.
+            if (!MatchOver)
+            {
+                tickCommands.Clear();
+                for (int i = 0; i < commands.Count; i++) tickCommands.Add(commands[i]);
+                tickCommands.Sort(Command.CanonicalCompare);
 
-            for (int i = 0; i < tickCommands.Count; i++) Apply(tickCommands[i]);
+                for (int i = 0; i < tickCommands.Count; i++) Apply(tickCommands[i]);
 
-            GatherSystem();
-            ConstructionSystem();
-            ProductionSystem();
-            CombatSystem();
-            MoveSystem();
+                GatherSystem();
+                ConstructionSystem();
+                ProductionSystem();
+                CombatSystem();
+                MoveSystem();
+                VictorySystem();
+            }
             Tick++;
+        }
+
+        /// <summary>
+        /// Losing your last base loses the match. Decided here rather than by a
+        /// client, so both peers name the same winner on the same tick. Runs after
+        /// combat, so a base destroyed this tick counts this tick.
+        /// </summary>
+        private void VictorySystem()
+        {
+            // Dead entities keep their slot, so a peer that ever owned a base is
+            // still visible in this scan; that is what tells a real match apart
+            // from a harness world that never had one.
+            var hadBase = new bool[MaxPeers];
+            var holdsBase = new bool[MaxPeers];
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (e.Kind != EntityKind.Building || e.Role != Role.Base) continue;
+                if (e.Owner < 0 || e.Owner >= MaxPeers) continue;
+                hadBase[e.Owner] = true;
+                if (e.Alive) holdsBase[e.Owner] = true;
+            }
+
+            // Scanned by peer id, never by a keyed collection, so "the surviving
+            // peer" cannot depend on enumeration order.
+            int contenders = 0, standing = 0, survivor = -1;
+            for (int p = 0; p < MaxPeers; p++)
+            {
+                if (!hadBase[p]) continue;
+                contenders++;
+                if (!holdsBase[p]) continue;
+                standing++;
+                if (survivor < 0) survivor = p;
+            }
+
+            if (contenders < 2 || standing > 1) return;
+
+            MatchOver = true;
+            Winner = standing == 1 ? survivor : -1; // two bases falling on one tick is a draw
         }
 
         private void Apply(Command c)
@@ -312,6 +364,8 @@ namespace WordCraft.Sim
         {
             ulong h = 14695981039346656037UL;
             Mix(ref h, (ulong)Tick);
+            Mix(ref h, MatchOver ? 1UL : 0UL);
+            Mix(ref h, (ulong)Winner);
             Mix(ref h, Random.State);
             Mix(ref h, Random.DrawCount);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)resources[p]);
