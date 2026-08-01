@@ -75,9 +75,13 @@ namespace WordCraft.Sim
         public const int ProduceCost = 20;
         public const int ProduceTicks = 40;
         public const int MaxQueue = 5;
+        public const int AttackPeriod = 15;
+        public const int AttackDamage = 7;
 
         public static readonly Fix UnitSpeed = Fix.Ratio(1, 4);
         public static readonly Fix InteractRange = Fix.FromInt(2);
+        public static readonly Fix AttackRange = Fix.FromInt(2);
+        public static readonly Fix AcquireRange = Fix.FromInt(10);
 
         /// <summary>Where a finished unit appears, relative to its building. Fixed, so peers agree.</summary>
         public static readonly FixVec2 RallyOffset = new FixVec2(Fix.FromInt(2), Fix.Zero);
@@ -174,6 +178,7 @@ namespace WordCraft.Sim
             GatherSystem();
             ConstructionSystem();
             ProductionSystem();
+            CombatSystem();
             MoveSystem();
             Tick++;
         }
@@ -242,6 +247,9 @@ namespace WordCraft.Sim
             entities[id] = e;
             Pathfinder.FindPath(this, CellOf(e.Position), CellOf(destination), paths[id]);
         }
+
+        /// <summary>True when the entity has walked its whole path and holds no new order.</summary>
+        private bool PathDone(int id) => entities[id].PathIndex >= paths[id].Count;
 
         private void MoveSystem()
         {
