@@ -70,6 +70,7 @@ namespace WordCraft.Sim
         public const int NodeHp = 1;
         public const int GatherTicks = 20;
         public const int CarryCapacity = 10;
+        public const int BuildCost = 50;
         public const int BuildTicks = 60;
 
         public static readonly Fix UnitSpeed = Fix.Ratio(1, 4);
@@ -165,6 +166,7 @@ namespace WordCraft.Sim
             for (int i = 0; i < tickCommands.Count; i++) Apply(tickCommands[i]);
 
             GatherSystem();
+            ConstructionSystem();
             MoveSystem();
             Tick++;
         }
@@ -206,6 +208,10 @@ namespace WordCraft.Sim
                     if (w.CarryAmount == 0) SetDestination(c.EntityId, node.Position);
                     break;
                 }
+
+                case CommandType.Build:
+                    TryPlaceBuilding(c.PeerId, c.Target);
+                    break;
             }
         }
 

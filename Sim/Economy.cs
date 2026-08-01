@@ -128,5 +128,49 @@ namespace WordCraft.Sim
             }
             return best;
         }
+
+        /// <summary>Placement is validated inside the simulation, never by a client.</summary>
+        private void TryPlaceBuilding(int peer, FixVec2 position)
+        {
+            if (peer < 0 || peer >= MaxPeers) return;
+            if (resources[peer] < BuildCost) return;
+
+            int cell = CellOf(position);
+            // Reject an out-of-bounds request outright instead of silently clamping
+            // it into the map, which would place a building the player never asked for.
+            if (position.X < Fix.Zero || position.Y < Fix.Zero) return;
+            if (position.X >= Fix.FromInt(GridSize) || position.Y >= Fix.FromInt(GridSize)) return;
+
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (!e.Alive) continue;
+                if (e.Kind != EntityKind.Building && e.Kind != EntityKind.ResourceNode) continue;
+                if (CellOf(e.Position) == cell) return;
+            }
+
+            resources[peer] -= BuildCost;
+            SpawnBuilding(peer, CellCenter(cell), complete: false);
+        }
+
+        /// <summary>
+        /// ponytail: construction ticks down on its own, no worker has to stand on
+        /// the site. Add a worker-presence check if build-order play ever matters.
+        /// </summary>
+        private void ConstructionSystem()
+        {
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (!e.Alive || e.Kind != EntityKind.Building || e.BuildTicksLeft <= 0) continue;
+
+                e.BuildTicksLeft--;
+                // Integer ramp so hp never depends on a division that rounds
+                // differently anywhere.
+                e.Hp = e.MaxHp - (e.MaxHp * e.BuildTicksLeft) / BuildTicks;
+                if (e.Hp < 1) e.Hp = 1;
+                entities[i] = e;
+            }
+        }
     }
 }

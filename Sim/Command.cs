@@ -6,6 +6,7 @@ namespace WordCraft.Sim
         Move = 1,
         Spawn = 2,
         Gather = 3,
+        Build = 4,
     }
 
     /// <summary>
