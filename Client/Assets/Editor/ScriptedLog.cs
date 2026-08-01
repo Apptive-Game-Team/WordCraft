@@ -20,7 +20,7 @@ namespace WordCraft.View
         /// on. Update it only when the simulation intentionally changes, and only
         /// after both runtimes agree on the new value.
         /// </summary>
-        public const ulong GoldenHash = 0x11FEEDE6C9322530UL;
+        public const ulong GoldenHash = 0xD33D069A2F31E00CUL;
 
         // Ids are handed out in MatchScenario.Build order and never reused.
         private const int Base0 = 0, Worker0A = 1, Worker0B = 2, Fighter0 = 3, Node0 = 4;

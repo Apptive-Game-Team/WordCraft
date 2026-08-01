@@ -34,9 +34,9 @@ namespace WordCraft.Host
                     int id = owner * 3 + i;
                     World.SpawnUnit(
                         owner,
+                        Role.Melee,
                         new FixVec2(Fix.FromInt(owner * 40), Fix.FromInt(i * 5)),
-                        Fix.Ratio(1, 4),
-                        id == corruptEntity ? corruptHp : 100);
+                        id == corruptEntity ? corruptHp : -1);
                 }
             }
 
@@ -46,7 +46,7 @@ namespace WordCraft.Host
             {
                 Fix x = Fix.FromInt(owner * 40);
                 World.SpawnWorker(owner, new FixVec2(x, Fix.FromInt(20)));
-                World.SpawnBuilding(owner, new FixVec2(x + Fix.FromInt(2), Fix.FromInt(20)), complete: true);
+                World.SpawnBuilding(owner, Role.Production, new FixVec2(x + Fix.FromInt(2), Fix.FromInt(20)), complete: true);
                 World.SpawnResourceNode(new FixVec2(x + Fix.FromInt(6), Fix.FromInt(20)), 500);
             }
 

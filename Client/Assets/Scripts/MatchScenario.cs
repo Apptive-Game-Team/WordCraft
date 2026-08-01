@@ -26,10 +26,10 @@ namespace WordCraft.View
                 int by = peer == 0 ? 8 : 52;
                 int away = peer == 0 ? 1 : -1;
 
-                world.SpawnBuilding(peer, At(bx, by), complete: true);
+                world.SpawnBuilding(peer, Role.Base, At(bx, by), complete: true);
                 world.SpawnWorker(peer, At(bx + 2 * away, by));
                 world.SpawnWorker(peer, At(bx, by + 2 * away));
-                world.SpawnUnit(peer, At(bx + 2 * away, by + 2 * away), World.UnitSpeed, World.UnitHp);
+                world.SpawnUnit(peer, Role.Melee, At(bx + 2 * away, by + 2 * away));
                 world.SpawnResourceNode(At(bx + 6 * away, by + 6 * away), NodeAmount);
                 world.GrantResources(peer, StartingResources);
             }

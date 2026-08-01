@@ -150,7 +150,7 @@ namespace WordCraft.Sim
             }
 
             resources[peer] -= BuildCost;
-            SpawnBuilding(peer, CellCenter(cell), complete: false);
+            SpawnBuilding(peer, Role.Production, CellCenter(cell), complete: false);
         }
 
         /// <summary>
@@ -203,7 +203,7 @@ namespace WordCraft.Sim
                     entities[i] = b;
                     // Fixed rally offset: the spawn point must not depend on how many
                     // units already stand there.
-                    SpawnUnit(b.Owner, b.Position + RallyOffset, UnitSpeed, UnitHp);
+                    SpawnUnit(b.Owner, Role.Melee, b.Position + RallyOffset);
                     continue;
                 }
                 entities[i] = b;

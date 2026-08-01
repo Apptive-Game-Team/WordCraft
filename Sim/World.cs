@@ -21,6 +21,10 @@ namespace WordCraft.Sim
         public int Owner;
         public bool Alive;
         public EntityKind Kind;
+
+        /// <summary>Roster slot. Every stat this entity fights with is looked up from it.</summary>
+        public Role Role;
+
         public FixVec2 Position;
         public FixVec2 Target;
         public Fix Speed;
@@ -63,10 +67,7 @@ namespace WordCraft.Sim
         public const int GridCells = GridSize * GridSize;
         public const int MaxPeers = 8;
 
-        // Balance constants. Required to be stable, not good.
-        public const int WorkerHp = 60;
-        public const int UnitHp = 100;
-        public const int BuildingHp = 400;
+        // Economy constants. Per-entity numbers live in FactionData instead.
         public const int NodeHp = 1;
         public const int GatherTicks = 20;
         public const int CarryCapacity = 10;
@@ -75,12 +76,8 @@ namespace WordCraft.Sim
         public const int ProduceCost = 20;
         public const int ProduceTicks = 40;
         public const int MaxQueue = 5;
-        public const int AttackPeriod = 15;
-        public const int AttackDamage = 7;
 
-        public static readonly Fix UnitSpeed = Fix.Ratio(1, 4);
         public static readonly Fix InteractRange = Fix.FromInt(2);
-        public static readonly Fix AttackRange = Fix.FromInt(2);
         public static readonly Fix AcquireRange = Fix.FromInt(10);
 
         /// <summary>Where a finished unit appears, relative to its building. Fixed, so peers agree.</summary>
@@ -95,50 +92,62 @@ namespace WordCraft.Sim
         private readonly List<Entity> entities = new List<Entity>();
         private readonly List<List<int>> paths = new List<List<int>>();
         private readonly int[] resources = new int[MaxPeers];
+        private readonly Faction[] factions = new Faction[MaxPeers];
         private readonly List<Command> tickCommands = new List<Command>();
 
         public int EntityCount => entities.Count;
         public Entity GetEntity(int id) => entities[id];
         public int GetResources(int peer) => resources[peer];
+        public Faction FactionOf(int peer) => factions[peer];
 
         /// <summary>Scenario setup only. Never call this from a system.</summary>
         public void GrantResources(int peer, int amount) => resources[peer] += amount;
+
+        /// <summary>Scenario setup only. Never call this from a system.</summary>
+        public void SetPeerFaction(int peer, Faction faction) => factions[peer] = faction;
 
         public World(ulong seed)
         {
             Random = new DetRandom(seed);
         }
 
-        public int SpawnUnit(int owner, FixVec2 position, Fix speed, int hp)
+        /// <summary>
+        /// hpOverride exists for harnesses that need to seed a specific divergence;
+        /// -1 means "take the roster value", which is what gameplay always passes.
+        /// </summary>
+        public int SpawnUnit(int owner, Role role, FixVec2 position, int hpOverride = -1)
         {
-            return Add(EntityKind.Unit, owner, position, speed, hp);
+            UnitStats s = FactionData.Stats(role);
+            return Add(EntityKind.Unit, owner, role, position, s.Speed, hpOverride < 0 ? s.Hp : hpOverride);
         }
 
         public int SpawnWorker(int owner, FixVec2 position)
         {
-            return Add(EntityKind.Worker, owner, position, UnitSpeed, WorkerHp);
+            UnitStats s = FactionData.Stats(Role.Worker);
+            return Add(EntityKind.Worker, owner, Role.Worker, position, s.Speed, s.Hp);
         }
 
         public int SpawnResourceNode(FixVec2 position, int amount)
         {
-            int id = Add(EntityKind.ResourceNode, -1, position, Fix.Zero, NodeHp);
+            int id = Add(EntityKind.ResourceNode, -1, Role.None, position, Fix.Zero, NodeHp);
             Entity e = entities[id];
             e.Resource = amount;
             entities[id] = e;
             return id;
         }
 
-        public int SpawnBuilding(int owner, FixVec2 position, bool complete)
+        public int SpawnBuilding(int owner, Role role, FixVec2 position, bool complete)
         {
-            int id = Add(EntityKind.Building, owner, position, Fix.Zero, complete ? BuildingHp : 1);
+            int hp = FactionData.Stats(role).Hp;
+            int id = Add(EntityKind.Building, owner, role, position, Fix.Zero, complete ? hp : 1);
             Entity e = entities[id];
-            e.MaxHp = BuildingHp;
+            e.MaxHp = hp;
             e.BuildTicksLeft = complete ? 0 : BuildTicks;
             entities[id] = e;
             return id;
         }
 
-        private int Add(EntityKind kind, int owner, FixVec2 position, Fix speed, int hp)
+        private int Add(EntityKind kind, int owner, Role role, FixVec2 position, Fix speed, int hp)
         {
             var e = new Entity
             {
@@ -146,6 +155,7 @@ namespace WordCraft.Sim
                 Owner = owner,
                 Alive = true,
                 Kind = kind,
+                Role = role,
                 Position = position,
                 Target = position,
                 Speed = speed,
@@ -200,7 +210,7 @@ namespace WordCraft.Sim
                 }
 
                 case CommandType.Spawn:
-                    SpawnUnit(c.PeerId, c.Target, UnitSpeed, UnitHp);
+                    SpawnUnit(c.PeerId, Role.Melee, c.Target);
                     break;
 
                 case CommandType.Gather:
@@ -305,6 +315,7 @@ namespace WordCraft.Sim
             Mix(ref h, Random.State);
             Mix(ref h, Random.DrawCount);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)resources[p]);
+            for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)factions[p]);
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
@@ -312,6 +323,7 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.Owner);
                 Mix(ref h, e.Alive ? 1UL : 0UL);
                 Mix(ref h, (ulong)e.Kind);
+                Mix(ref h, (ulong)e.Role);
                 Mix(ref h, (ulong)e.Position.X.Raw);
                 Mix(ref h, (ulong)e.Position.Y.Raw);
                 Mix(ref h, (ulong)e.Target.X.Raw);

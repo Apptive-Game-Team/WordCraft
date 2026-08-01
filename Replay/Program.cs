@@ -249,11 +249,7 @@ namespace WordCraft.Replay
             {
                 for (int i = 0; i < 3; i++)
                 {
-                    world.SpawnUnit(
-                        peer,
-                        new FixVec2(Fix.FromInt(peer * 40), Fix.FromInt(i * 5)),
-                        Fix.Ratio(1, 4),
-                        100);
+                    world.SpawnUnit(peer, Role.Melee, new FixVec2(Fix.FromInt(peer * 40), Fix.FromInt(i * 5)));
                 }
             }
 
@@ -295,21 +291,21 @@ namespace WordCraft.Replay
             var world = new World(Seed);
             Fix half = Fix.Ratio(1, 2);
 
-            world.SpawnBuilding(0, At(5, 5), complete: true);       // 0
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);   // 0
             world.SpawnWorker(0, At(7, 5));                          // 1
             world.SpawnWorker(0, At(7, 7));                          // 2
             world.SpawnResourceNode(At(14, 14), NodeAmount);         // 3
 
-            world.SpawnBuilding(1, At(50, 50), complete: true);      // 4
+            world.SpawnBuilding(1, Role.Base, At(50, 50), complete: true); // 4
             world.SpawnWorker(1, At(48, 50));                        // 5
             world.SpawnWorker(1, At(48, 48));                        // 6
             world.SpawnResourceNode(At(42, 42), NodeAmount);         // 7
 
             // Two units placed in each other's face so combat resolves inside the
             // replay window instead of after it.
-            world.SpawnUnit(0, At(30, 30), World.UnitSpeed, World.UnitHp);   // 8
-            world.SpawnUnit(1, new FixVec2(Fix.FromInt(31) + half, Fix.FromInt(30) + half),
-                World.UnitSpeed, World.UnitHp);                              // 9
+            world.SpawnUnit(0, Role.Melee, At(30, 30));              // 8
+            world.SpawnUnit(1, Role.Melee,
+                new FixVec2(Fix.FromInt(31) + half, Fix.FromInt(30) + half)); // 9
 
             world.GrantResources(0, 100);
             world.GrantResources(1, 100);
