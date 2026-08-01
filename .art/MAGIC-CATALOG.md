@@ -1,5 +1,6 @@
-> Imported verbatim from WordOnline `client/.art/MAGIC-CATALOG.md`. Reference copy;
-> the WordOnline repository stays the source of truth. Do not edit here.
+> WordOnline에서 2026-08-01에 복제한 사본이다. 이후로는 WordCraft가 자체적으로
+> 관리하며, 원본 저장소가 없어도 이 문서만으로 작업이 성립해야 한다.
+> WordCraft 고유 설정은 `docs/FACTIONS.md`와 `docs/FACTION-MECHANICS.md`에 쓴다.
 
 # 마법·소환수 아트 카탈로그
 
@@ -13,7 +14,7 @@ game 서버 동작까지 결합한 개별 페이지는
 
 - 실제 사용 가능한 마법과 조합식은 서버가 정본이다.
 - 클라이언트는 서버 이름을 `PascalCase`로 바꿔
-  `Assets/Resources/Game/sprites/<Name>.png`를 불러온다.
+  `Client/Assets/Resources/Art/Sprites/<Name>.png`를 불러온다.
 - 아래 목록은 클라이언트 한국어 테이블 89행과 현재 스프라이트를 합친 아트
   인벤토리다. 서버 운영 목록과 완전히 같다는 뜻은 아니다.
 - `소환수`는 살아 움직이는 개체, `소환물`은 둥지·탑·토템·룬 같은 설치물,

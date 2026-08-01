@@ -1,0 +1,4 @@
+interface:
+  display_name: "Magick"
+  short_description: "ImageMagick CLI image conversion and processing."
+  default_prompt: "Use magick to convert, resize, inspect, or batch-process images."
