@@ -3,3 +3,7 @@ obj/
 *.user
 .DS_Store
 .worktrees/
+
+# Vendored by Sim.csproj / Net.csproj on every build. The .meta files stay
+# tracked so Unity keeps stable GUIDs; the assemblies themselves are output.
+Client/Assets/Plugins/*.dll
