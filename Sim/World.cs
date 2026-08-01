@@ -72,9 +72,15 @@ namespace WordCraft.Sim
         public const int CarryCapacity = 10;
         public const int BuildCost = 50;
         public const int BuildTicks = 60;
+        public const int ProduceCost = 20;
+        public const int ProduceTicks = 40;
+        public const int MaxQueue = 5;
 
         public static readonly Fix UnitSpeed = Fix.Ratio(1, 4);
         public static readonly Fix InteractRange = Fix.FromInt(2);
+
+        /// <summary>Where a finished unit appears, relative to its building. Fixed, so peers agree.</summary>
+        public static readonly FixVec2 RallyOffset = new FixVec2(Fix.FromInt(2), Fix.Zero);
 
         public int Tick { get; private set; }
         public readonly DetRandom Random;
@@ -167,6 +173,7 @@ namespace WordCraft.Sim
 
             GatherSystem();
             ConstructionSystem();
+            ProductionSystem();
             MoveSystem();
             Tick++;
         }
@@ -211,6 +218,10 @@ namespace WordCraft.Sim
 
                 case CommandType.Build:
                     TryPlaceBuilding(c.PeerId, c.Target);
+                    break;
+
+                case CommandType.Produce:
+                    TryQueueUnit(c.PeerId, c.EntityId);
                     break;
             }
         }

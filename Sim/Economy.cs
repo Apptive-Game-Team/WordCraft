@@ -172,5 +172,42 @@ namespace WordCraft.Sim
                 entities[i] = e;
             }
         }
+
+        private void TryQueueUnit(int peer, int buildingId)
+        {
+            if (!OwnedAndAlive(buildingId, peer)) return;
+            Entity b = entities[buildingId];
+            if (b.Kind != EntityKind.Building || b.BuildTicksLeft > 0) return;
+            if (b.QueueCount >= MaxQueue) return;
+            if (resources[peer] < ProduceCost) return;
+
+            // Cost is taken at queue time, so a peer cannot queue more than it can pay for.
+            resources[peer] -= ProduceCost;
+            b.QueueCount++;
+            entities[buildingId] = b;
+        }
+
+        private void ProductionSystem()
+        {
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity b = entities[i];
+                if (!b.Alive || b.Kind != EntityKind.Building) continue;
+                if (b.BuildTicksLeft > 0 || b.QueueCount <= 0) continue;
+
+                if (b.ProduceTicksLeft == 0) b.ProduceTicksLeft = ProduceTicks;
+                b.ProduceTicksLeft--;
+                if (b.ProduceTicksLeft == 0)
+                {
+                    b.QueueCount--;
+                    entities[i] = b;
+                    // Fixed rally offset: the spawn point must not depend on how many
+                    // units already stand there.
+                    SpawnUnit(b.Owner, b.Position + RallyOffset, UnitSpeed, UnitHp);
+                    continue;
+                }
+                entities[i] = b;
+            }
+        }
     }
 }
