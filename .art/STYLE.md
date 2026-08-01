@@ -1,5 +1,6 @@
-> Imported verbatim from WordOnline `client/.art/STYLE.md`. Reference copy;
-> the WordOnline repository stays the source of truth. Do not edit here.
+> WordOnline에서 2026-08-01에 복제한 사본이다. 이후로는 WordCraft가 자체적으로
+> 관리하며, 원본 저장소가 없어도 이 문서만으로 작업이 성립해야 한다.
+> WordCraft 고유 설정은 `docs/FACTIONS.md`와 `docs/FACTION-MECHANICS.md`에 쓴다.
 
 # Art Style
 
@@ -170,6 +171,6 @@ They describe what the art currently is. Treat them as a starting point and
 replace any that were pulled from a sprite on the redesign list.
 
 ```bash
-magick Assets/Resources/Game/sprites/VineSpirit.png -background none -flatten \
+magick Client/Assets/Resources/Art/Sprites/VineSpirit.png -background none -flatten \
   -trim +repage -alpha off -colors 12 -format %c histogram:info:- | sort -rn | head
 ```
