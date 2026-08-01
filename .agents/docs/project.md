@@ -14,13 +14,17 @@ Fill this document during project initialization. Agents must verify commands ag
 
 ## Architecture
 
-- Entry points: `Replay/Program.cs` (headless determinism self-check). The Unity
-  player entry point does not exist yet.
+- Entry points: `Replay/Program.cs` (headless determinism self-check) and
+  `Host/Program.cs` (`host`, `join`, `selfcheck`). The Unity player entry point
+  does not exist yet.
 - Main modules:
   - `Sim/` — pure C# simulation, `netstandard2.1`, `WordCraft.Sim` namespace.
+  - `Net/` — P2P lockstep session and UDP transport, `netstandard2.1`.
   - `Replay/` — headless harness that runs input logs and compares state hashes.
-- Dependency direction: `Replay` depends on `Sim`. `Sim` depends on nothing.
-  The future Unity view layer will depend on `Sim`; `Sim` must never depend on it.
+  - `Host/` — console runner for a match between two peers.
+- Dependency direction: `Net` and `Replay` depend on `Sim`; `Host` depends on both.
+  `Sim` depends on nothing. The future Unity view layer will depend on `Sim` and
+  `Net`; neither may ever depend on it.
 - External systems: none. No server, no database, no network service.
 - Persistent data: none yet. Input logs and replays are files, not a store.
 
@@ -29,13 +33,13 @@ Fill this document during project initialization. Agents must verify commands ag
 | Purpose | Command |
 |---|---|
 | Install dependencies | none; the .NET SDK is the only requirement |
-| Run locally | `dotnet run --project Replay` |
+| Run locally | `dotnet run --project Host -- selfcheck` |
 | Format | TODO |
-| Lint | TODO |
+| Lint | `dotnet run --project Replay` includes the forbidden-construct scan over `Sim` |
 | Type-check | `dotnet build` |
 | Unit tests | `dotnet run --project Replay` (assert-based self-check, no test framework) |
-| Integration tests | TODO |
-| Build | `dotnet build` |
+| Integration tests | `dotnet run --project Host -- selfcheck` (two peers over a lossy in-memory link) |
+| Build | `dotnet build` (root `WordCraft.sln`) |
 
 ## Constraints
 
