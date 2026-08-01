@@ -29,6 +29,7 @@ namespace WordCraft.View
         private Sprite disc;
         private Sprite square;
         private readonly List<SpriteRenderer> views = new List<SpriteRenderer>();
+        private readonly List<SpriteRenderer> rings = new List<SpriteRenderer>();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot() => new GameObject("WordCraft View").AddComponent<MatchView>();
@@ -73,10 +74,12 @@ namespace WordCraft.View
                 if (!e.Alive)
                 {
                     sr.enabled = false;
+                    rings[i].enabled = false;
                     continue;
                 }
 
                 sr.enabled = true;
+                rings[i].enabled = Selection.Instance != null && Selection.Instance.Contains(i);
                 Vector2 p = runner.DrawPosition(i);
                 sr.transform.position = new Vector3(p.x, p.y, 0f);
 
@@ -93,36 +96,44 @@ namespace WordCraft.View
         private SpriteRenderer Create(Entity e)
         {
             Color owner = e.Owner >= 0 && e.Owner < PeerColor.Length ? PeerColor[e.Owner] : Color.gray;
+            Sprite sprite = e.Kind == EntityKind.Unit || e.Kind == EntityKind.Worker ? disc : square;
+            Color color;
+            float scale;
+            float spin = 0f;
 
             switch (e.Kind)
             {
                 case EntityKind.Worker:
-                {
-                    var sr = NewRenderer("Worker", disc, Color.Lerp(owner, Color.white, 0.45f), 10);
-                    sr.transform.localScale = new Vector3(0.6f, 0.6f, 1f);
-                    return sr;
-                }
+                    color = Color.Lerp(owner, Color.white, 0.45f);
+                    scale = 0.6f;
+                    break;
                 case EntityKind.Unit:
-                {
-                    var sr = NewRenderer("Unit", disc, owner, 10);
-                    sr.transform.localScale = new Vector3(0.9f, 0.9f, 1f);
-                    return sr;
-                }
+                    color = owner;
+                    scale = 0.9f;
+                    break;
                 case EntityKind.Building:
-                {
-                    var sr = NewRenderer("Building", square, owner, 5);
-                    sr.transform.localScale = new Vector3(1.6f, 1.6f, 1f);
-                    return sr;
-                }
+                    color = owner;
+                    scale = 1.6f;
+                    break;
                 default:
-                {
+                    color = NodeColor;
+                    scale = 0.9f;
                     // Rotated square: a diamond reads as "not a building" at a glance.
-                    var sr = NewRenderer("Node", square, NodeColor, 5);
-                    sr.transform.localScale = new Vector3(0.9f, 0.9f, 1f);
-                    sr.transform.rotation = Quaternion.Euler(0f, 0f, 45f);
-                    return sr;
-                }
+                    spin = 45f;
+                    break;
             }
+
+            var sr = NewRenderer(e.Kind.ToString(), sprite, color, e.Kind == EntityKind.Building ? 5 : 10);
+            sr.transform.localScale = new Vector3(scale, scale, 1f);
+            sr.transform.rotation = Quaternion.Euler(0f, 0f, spin);
+
+            var ring = NewRenderer("Ring", sprite, new Color(1f, 1f, 1f, 0.75f), sr.sortingOrder - 1);
+            ring.transform.SetParent(sr.transform, worldPositionStays: false);
+            ring.transform.localScale = Vector3.one * 1.35f;
+            ring.enabled = false;
+            rings.Add(ring);
+
+            return sr;
         }
 
         private SpriteRenderer NewRenderer(string name, Sprite sprite, Color color, int order)
