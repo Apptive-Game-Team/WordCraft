@@ -27,6 +27,7 @@ namespace WordCraft.Net
         /// <summary>Ticks between state hash exchanges.</summary>
         public int HashInterval = 20;
 
+        public int TimeoutMs = 5000;
         public int ResendIntervalMs = 50;
         public int HelloIntervalMs = 100;
 
@@ -96,8 +97,9 @@ namespace WordCraft.Net
         private int prunedThrough = -1;
         private int receivedThrough = -1; // highest remote tick we hold contiguously
 
+        private bool started;
         private bool remoteActive;
-        private long dumpDeadlineMs;
+        private long lastRecvMs, dumpDeadlineMs;
         private long lastSendMs = long.MinValue / 2;
         private long lastHelloMs = long.MinValue / 2;
 
@@ -136,9 +138,11 @@ namespace WordCraft.Net
             pending.Add(new Command(world.Tick + cfg.InputDelay, localPeer, localSeq++, type, entityId, target));
         }
 
-        /// <summary>Pumps the socket, resends unacked input, and finishes a desync report.</summary>
+        /// <summary>Pumps the socket, resends unacked input, and enforces the peer timeout.</summary>
         public void Update(long nowMs)
         {
+            if (!started) { started = true; lastRecvMs = nowMs; }
+
             Receive(nowMs);
 
             if (State == SessionState.Handshaking)
@@ -148,6 +152,7 @@ namespace WordCraft.Net
                     SendHello();
                     lastHelloMs = nowMs;
                 }
+                if (nowMs - lastRecvMs > cfg.TimeoutMs) Stop("handshake timeout after " + cfg.TimeoutMs + " ms");
                 return;
             }
 
@@ -169,6 +174,13 @@ namespace WordCraft.Net
             {
                 SendInputs();
                 lastSendMs = nowMs;
+            }
+
+            if (nowMs - lastRecvMs > cfg.TimeoutMs)
+            {
+                // Ending here is the whole point: inventing input for the missing
+                // peer would make the two simulations disagree about what happened.
+                Stop("peer timeout at tick " + world.Tick + " after " + cfg.TimeoutMs + " ms of silence");
             }
         }
 
@@ -605,8 +617,10 @@ namespace WordCraft.Net
                     case MsgType.Input: OnInput(r); break;
                     case MsgType.Hash: OnHash(r, nowMs); break;
                     case MsgType.Dump: OnDump(r, nowMs); break;
-                    default: break; // unknown type, drop it
+                    default: continue; // unknown type, drop it
                 }
+
+                if (r.Ok) lastRecvMs = nowMs;
             }
         }
 
