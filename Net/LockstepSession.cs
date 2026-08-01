@@ -75,7 +75,7 @@ namespace WordCraft.Net
         // stays honest if a field is ever added to the input message.
         private const int HeaderBytes = 8;       // msgType, peerId, ack, blockCount
         private const int BlockHeaderBytes = 6;  // tick, commandCount
-        private const int CommandBytes = 25;     // type, entityId, seq, targetX, targetY
+        private const int CommandBytes = 29;     // type, entityId, seq, targetX, targetY, arg
 
         private readonly World world;
         private readonly ITransport transport;
@@ -132,10 +132,10 @@ namespace WordCraft.Net
         /// Queues a command for tick Tick + InputDelay. The delay is what lets a
         /// peer run tick T while the network is still carrying input for T+delay.
         /// </summary>
-        public void Issue(CommandType type, int entityId, FixVec2 target)
+        public void Issue(CommandType type, int entityId, FixVec2 target, int arg = 0)
         {
             if (State != SessionState.Running) return;
-            pending.Add(new Command(world.Tick + cfg.InputDelay, localPeer, localSeq++, type, entityId, target));
+            pending.Add(new Command(world.Tick + cfg.InputDelay, localPeer, localSeq++, type, entityId, target, arg));
         }
 
         /// <summary>Pumps the socket, resends unacked input, and enforces the peer timeout.</summary>
@@ -304,13 +304,13 @@ namespace WordCraft.Net
         private void SendInputs()
         {
             // ponytail: resends every unacked tick wholesale instead of keeping a
-            // sliding window. Commands are ~21 bytes and the ack lag is a few
+            // sliding window. Commands are 29 bytes and the ack lag is a few
             // ticks, so this fits one datagram; add a window only if it stops fitting.
             w.Reset(MsgType.Input);
             w.U8((byte)localPeer);
             w.I32(receivedThrough); // piggybacked ack
 
-            // ponytail: a single tick carrying more than ~55 commands would never
+            // ponytail: a single tick carrying more than ~47 commands would never
             // fit one datagram and would stall the barrier until the peer timeout.
             // Split a tick across datagrams if the game ever issues batches that big.
             int first = ackedThrough + 1;
@@ -340,6 +340,7 @@ namespace WordCraft.Net
                     w.I32(c.Seq);
                     w.I64(c.Target.X.Raw); // Fix crosses the wire as its raw long, never as text
                     w.I64(c.Target.Y.Raw);
+                    w.I32(c.Arg);
                 }
                 written++;
             }
@@ -374,9 +375,10 @@ namespace WordCraft.Net
                     int seq = r.I32();
                     long x = r.I64();
                     long y = r.I64();
+                    int arg = r.I32();
                     // Tick and PeerId come from the envelope, not the body, so a
                     // command can never claim a tick its own block disagrees with.
-                    cmds[i] = new Command(tick, peer, seq, type, entityId, new FixVec2(new Fix(x), new Fix(y)));
+                    cmds[i] = new Command(tick, peer, seq, type, entityId, new FixVec2(new Fix(x), new Fix(y)), arg);
                 }
                 if (!r.Ok) return;
 
