@@ -53,6 +53,29 @@ namespace WordCraft.View
         /// <summary>Interpolated draw position. View only; not a simulation value.</summary>
         public Vector2 DrawPosition(int id) => Vector2.Lerp(previous[id], current[id], Alpha);
 
+        /// <summary>
+        /// Nearest alive entity to a world point within radius, or -1. Picks
+        /// against the drawn position, because that is what the player aimed at.
+        /// </summary>
+        public int EntityAt(Vector2 point, float radius, bool mineOnly)
+        {
+            int best = -1;
+            float bestDistance = radius;
+
+            for (int i = 0; i < World.EntityCount; i++)
+            {
+                Entity e = World.GetEntity(i);
+                if (!e.Alive) continue;
+                if (mineOnly && e.Owner != LocalPeer) continue;
+
+                float d = Vector2.Distance(point, DrawPosition(i));
+                if (d > bestDistance) continue;
+                best = i;
+                bestDistance = d;
+            }
+            return best;
+        }
+
         public static Vector2 ToView(FixVec2 p) =>
             new Vector2(p.X.Raw / (float)Fix.One, p.Y.Raw / (float)Fix.One);
 

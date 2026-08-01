@@ -95,23 +95,8 @@ namespace WordCraft.View
 
         private void Pick(Vector2 screen)
         {
-            Vector2 point = cam.ScreenToWorldPoint(screen);
-            World world = runner.World;
-            int best = -1;
-            float bestDistance = PickRadius;
-
-            for (int i = 0; i < world.EntityCount; i++)
-            {
-                Entity e = world.GetEntity(i);
-                if (!e.Alive || e.Owner != runner.LocalPeer) continue;
-
-                float d = Vector2.Distance(point, runner.DrawPosition(i));
-                if (d > bestDistance) continue;
-                best = i;
-                bestDistance = d;
-            }
-
-            if (best >= 0 && !selected.Contains(best)) selected.Add(best);
+            int hit = runner.EntityAt(cam.ScreenToWorldPoint(screen), PickRadius, mineOnly: true);
+            if (hit >= 0 && !selected.Contains(hit)) selected.Add(hit);
         }
 
         private void Box(Vector2 a, Vector2 b)
