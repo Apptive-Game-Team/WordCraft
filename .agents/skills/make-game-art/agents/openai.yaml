@@ -1,0 +1,4 @@
+interface:
+  display_name: "게임 아트 제작"
+  short_description: "게임 전체 스타일을 유지하며 아트를 생성·개정합니다"
+  default_prompt: "Use $make-game-art to create game art that follows and updates the project master style."
