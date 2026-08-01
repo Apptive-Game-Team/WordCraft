@@ -1,0 +1,150 @@
+using System;
+using System.Collections.Generic;
+using System.Net;
+using UnityEngine;
+using WordCraft.Net;
+using WordCraft.Sim;
+
+namespace WordCraft.View
+{
+    /// <summary>
+    /// Owns the world and the lockstep session, and is the only thing in this
+    /// assembly allowed to advance either. Everything else reads World and calls
+    /// Session.Issue. The simulation is never written to from the view.
+    ///
+    ///   WordCraft.app                 host, listens on the default port
+    ///   WordCraft.app -join 10.0.0.4  join that address
+    /// </summary>
+    public sealed class MatchRunner : MonoBehaviour
+    {
+        private const int DefaultPort = 45677;
+        private const int TickMs = 1000 / World.TicksPerSecond;
+
+        public static MatchRunner Instance { get; private set; }
+
+        public World World { get; private set; }
+        public LockstepSession Session { get; private set; }
+        public int LocalPeer { get; private set; }
+
+        /// <summary>Human readable description of the link, for the HUD.</summary>
+        public string Link { get; private set; }
+
+        // Entity positions at the previous and the current tick boundary, in view
+        // space. Rendering interpolates between these two; neither is ever read
+        // back into the simulation, which only ever holds the tick-boundary value.
+        private readonly List<Vector2> previous = new List<Vector2>();
+        private readonly List<Vector2> current = new List<Vector2>();
+
+        private UdpTransport transport;
+        private long startMs = -1;
+        private long lastStepMs;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void Boot()
+        {
+            // The scene is empty on purpose. Building the match here means no
+            // gameplay change ever has to touch a scene or prefab asset.
+            new GameObject("WordCraft").AddComponent<MatchRunner>();
+        }
+
+        /// <summary>Fraction of a tick elapsed since the last one executed, 0 to 1.</summary>
+        public float Alpha => Mathf.Clamp01((NowMs() - lastStepMs) / (float)TickMs);
+
+        /// <summary>Interpolated draw position. View only; not a simulation value.</summary>
+        public Vector2 DrawPosition(int id) => Vector2.Lerp(previous[id], current[id], Alpha);
+
+        public static Vector2 ToView(FixVec2 p) =>
+            new Vector2(p.X.Raw / (float)Fix.One, p.Y.Raw / (float)Fix.One);
+
+        /// <summary>
+        /// Rounds a pointer position into fixed point. Safe despite the float:
+        /// the raw long produced here is what travels on the wire and what both
+        /// peers execute, so the simulation never repeats this conversion.
+        /// </summary>
+        public static FixVec2 ToSim(Vector2 p) =>
+            new FixVec2(new Fix((long)Math.Round(p.x * Fix.One)), new Fix((long)Math.Round(p.y * Fix.One)));
+
+        private void Awake()
+        {
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+
+            var cfg = new MatchConfig();
+            string remote = Arg("-join");
+            int port = Arg("-port", DefaultPort);
+            LocalPeer = remote == null ? 0 : 1;
+
+            World = MatchScenario.Build(cfg.Seed);
+            transport = remote == null
+                ? new UdpTransport(port, null) // listener; learns the peer from its first datagram
+                : new UdpTransport(0, new IPEndPoint(IPAddress.Parse(remote), port));
+            Session = new LockstepSession(World, transport, cfg, LocalPeer);
+            Link = remote == null ? "listening on udp " + port : "joining " + remote + ":" + port;
+
+            Snapshot(current);
+            previous.AddRange(current);
+        }
+
+        private void OnDestroy()
+        {
+            transport?.Dispose();
+            if (Instance == this) Instance = null;
+        }
+
+        private void Update()
+        {
+            long now = NowMs();
+            Session.Update(now);
+            if (Session.State != SessionState.Running) return;
+
+            if (startMs < 0)
+            {
+                startMs = now;
+                lastStepMs = now;
+            }
+
+            // The wall clock decides how many ticks are due; the barrier decides
+            // how many actually run. A frame rate spike must never let this peer
+            // execute a tick the other one has not sent input for.
+            long due = (now - startMs) / TickMs;
+            while (World.Tick <= due && StepOnce(now)) { }
+        }
+
+        private bool StepOnce(long now)
+        {
+            previous.Clear();
+            previous.AddRange(current);
+
+            if (!Session.TryStep(now)) return false;
+
+            Snapshot(current);
+            // Entities spawned during this tick have no previous position, so they
+            // appear at rest rather than sliding in from wherever slot n used to be.
+            while (previous.Count < current.Count) previous.Add(current[previous.Count]);
+
+            lastStepMs = now;
+            return true;
+        }
+
+        private void Snapshot(List<Vector2> into)
+        {
+            into.Clear();
+            for (int i = 0; i < World.EntityCount; i++) into.Add(ToView(World.GetEntity(i).Position));
+        }
+
+        private static long NowMs() => (long)(Time.realtimeSinceStartupAsDouble * 1000.0);
+
+        private static string Arg(string name)
+        {
+            string[] args = Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] == name) return args[i + 1];
+            }
+            return null;
+        }
+
+        private static int Arg(string name, int fallback) =>
+            int.TryParse(Arg(name), out int v) ? v : fallback;
+    }
+}
