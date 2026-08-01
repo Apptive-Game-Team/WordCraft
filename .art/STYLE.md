@@ -152,9 +152,16 @@ bronze restraints of the mounted tower.
 
 Palette: `#E65E08` `#9B3014` `#5A291E` `#2A1512`, ash `#6D4A39`
 
-**No anchor exists.** `FrenzyTotem` is the only sprite whose shape language is
-on-concept (dark crimson, angular, tribal) and whose technique is clean — use it
-as the provisional shape/palette reference until a real creature anchor is made.
+Anchor: `master-v2/HellfireDemon.png`. It was added when the master set was
+frozen on 2026-07-28 and is listed as canonical in `ANCHORS.md`; this section
+previously said no anchor existed, which was left over from before the freeze.
+Do not fall back to `FrenzyTotem` as a reference — it is a sprite, not an anchor.
+
+Read the anchor's value distribution before writing a prompt: the shell is dark
+desaturated brown-black across nearly the whole body, `#9B3014` appears only on
+upper-left facets, and real glow is confined to two eye slits and one chest
+core. Generation drifts toward saturated orange with lava veins everywhere
+unless the prompt states that distribution as a proportion.
 
 Redesign list: `FireSpirit`, `EmberSpiritSwarm`, `FireLordSpirit`, `FireTadpole`,
 `FireChildSpirit`, `MagmaSpirit`, `MagmaSpiritAttacking`, `MagmaExplosion`, `Crater`,
@@ -163,6 +170,26 @@ Redesign list: `FireSpirit`, `EmberSpiritSwarm`, `FireLordSpirit`, `FireTadpole`
 `MagmaSpirit` and `Crater` already have the right concept; only their technique
 is wrong. `FireSpirit` and friends have the right technique and the wrong
 concept. Different fixes.
+
+### Dimension wanderers — the world fragments
+
+Added by WordCraft. They carry another world inside a hard shell, so the whole
+faction is one contrast: a dull exterior and a vivid interior seen through gaps.
+
+- Broad matte plates, blunt and smooth. No shine, no facets that catch light.
+- Gaps between plates open onto a miniature landscape with real receding depth.
+  That interior is the only saturated colour on the asset.
+- The interior is a window, not a lamp: no glow spilling onto the shell, no bloom.
+- Anchor: none yet. Use `master-v2/MasterStyleKey.png` with
+  `master-v2/ArcaneImpact.png` for the interior's shard silhouette language.
+
+Palette: shell `#6E5F4C` `#4C4136` `#2B2520`, interior `#2F7C86` `#63BAC4`,
+interior sky `#5F5A78` `#A29CC4`.
+
+**The shell must read warm brown, not grey.** A first attempt sampled as cool
+neutral grey, which collides with the human faction. Three factions now sit in
+the warm range — golem tan, wanderer brown, hellfire red-black — so they separate
+by value and by silhouette, and the wanderer additionally by its bright windows.
 
 ## Palette provenance
 
