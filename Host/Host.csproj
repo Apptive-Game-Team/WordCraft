@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net7.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <RootNamespace>WordCraft.Host</RootNamespace>
+    <AssemblyName>WordCraft.Host</AssemblyName>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Net/Net.csproj" />
+    <ProjectReference Include="../Sim/Sim.csproj" />
+  </ItemGroup>
+
+</Project>
