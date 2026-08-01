@@ -13,36 +13,48 @@ namespace WordCraft.View
         public const int Peers = 2;
         public const int MapSize = World.GridSize;
 
+        /// <summary>Which faction each peer plays. Identical on both peers, from the seed alone.</summary>
+        public static readonly Faction[] PeerFaction = { Faction.TreeSpirits, Faction.Hellfire };
+
         private const int NodeAmount = 500;
         private const int StartingResources = 200;
 
         public static World Build(ulong seed)
         {
             var world = new World(seed);
+            for (int peer = 0; peer < Peers; peer++) world.SetPeerFaction(peer, PeerFaction[peer]);
 
             for (int peer = 0; peer < Peers; peer++)
             {
-                int bx = peer == 0 ? 8 : 52;
-                int by = peer == 0 ? 8 : 52;
-                int away = peer == 0 ? 1 : -1;
-
-                world.SpawnBuilding(peer, At(bx, by), complete: true);
-                world.SpawnWorker(peer, At(bx + 2 * away, by));
-                world.SpawnWorker(peer, At(bx, by + 2 * away));
-                world.SpawnUnit(peer, At(bx + 2 * away, by + 2 * away), World.UnitSpeed, World.UnitHp);
-                world.SpawnResourceNode(At(bx + 6 * away, by + 6 * away), NodeAmount);
+                world.SpawnBuilding(peer, Role.Base, At(peer, 8, 8), complete: true);
+                world.SpawnWorker(peer, At(peer, 10, 8));
+                world.SpawnWorker(peer, At(peer, 8, 10));
+                world.SpawnUnit(peer, Role.Melee, At(peer, 11, 11));
+                world.SpawnUnit(peer, Role.Ranged, At(peer, 9, 12));
+                world.SpawnResourceNode(At(peer, 14, 14), NodeAmount);
                 world.GrantResources(peer, StartingResources);
             }
 
-            // Contested nodes in the middle, so the map has a reason to fight over.
-            world.SpawnResourceNode(At(28, 34), NodeAmount);
-            world.SpawnResourceNode(At(34, 28), NodeAmount);
+            // This pair maps onto itself under the same rotation, so both nodes sit
+            // the same distance from both starts. That is the reason to fight over them.
+            world.SpawnResourceNode(At(0, 24, 39), NodeAmount);
+            world.SpawnResourceNode(At(0, 39, 24), NodeAmount);
             return world;
         }
 
-        /// <summary>Cell centre, so a spawned entity never straddles two cells.</summary>
-        private static FixVec2 At(int x, int y)
+        /// <summary>
+        /// Cell centre for peer 0, rotated 180 degrees about the grid centre for
+        /// peer 1. A rotation maps the grid onto itself exactly, so the two halves
+        /// are congruent and no start is nearer to anything than the other one.
+        /// Cell centre, so a spawned entity never straddles two cells.
+        /// </summary>
+        private static FixVec2 At(int peer, int x, int y)
         {
+            if (peer != 0)
+            {
+                x = MapSize - 1 - x;
+                y = MapSize - 1 - y;
+            }
             Fix half = Fix.Ratio(1, 2);
             return new FixVec2(Fix.FromInt(x) + half, Fix.FromInt(y) + half);
         }

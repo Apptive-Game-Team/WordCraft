@@ -21,6 +21,10 @@ namespace WordCraft.Sim
         public int Owner;
         public bool Alive;
         public EntityKind Kind;
+
+        /// <summary>Roster slot. Every stat this entity fights with is looked up from it.</summary>
+        public Role Role;
+
         public FixVec2 Position;
         public FixVec2 Target;
         public Fix Speed;
@@ -63,10 +67,7 @@ namespace WordCraft.Sim
         public const int GridCells = GridSize * GridSize;
         public const int MaxPeers = 8;
 
-        // Balance constants. Required to be stable, not good.
-        public const int WorkerHp = 60;
-        public const int UnitHp = 100;
-        public const int BuildingHp = 400;
+        // Economy constants. Per-entity numbers live in FactionData instead.
         public const int NodeHp = 1;
         public const int GatherTicks = 20;
         public const int CarryCapacity = 10;
@@ -75,18 +76,21 @@ namespace WordCraft.Sim
         public const int ProduceCost = 20;
         public const int ProduceTicks = 40;
         public const int MaxQueue = 5;
-        public const int AttackPeriod = 15;
-        public const int AttackDamage = 7;
 
-        public static readonly Fix UnitSpeed = Fix.Ratio(1, 4);
         public static readonly Fix InteractRange = Fix.FromInt(2);
-        public static readonly Fix AttackRange = Fix.FromInt(2);
         public static readonly Fix AcquireRange = Fix.FromInt(10);
 
         /// <summary>Where a finished unit appears, relative to its building. Fixed, so peers agree.</summary>
         public static readonly FixVec2 RallyOffset = new FixVec2(Fix.FromInt(2), Fix.Zero);
 
         public int Tick { get; private set; }
+
+        /// <summary>True once a peer has lost its last base. Both peers see it on the same tick.</summary>
+        public bool MatchOver { get; private set; }
+
+        /// <summary>Winning peer, or -1 while the match runs and on a mutual kill.</summary>
+        public int Winner { get; private set; } = -1;
+
         public readonly DetRandom Random;
 
         // Append-only, indexed by id. Dead entities keep their slot so ids never
@@ -95,50 +99,62 @@ namespace WordCraft.Sim
         private readonly List<Entity> entities = new List<Entity>();
         private readonly List<List<int>> paths = new List<List<int>>();
         private readonly int[] resources = new int[MaxPeers];
+        private readonly Faction[] factions = new Faction[MaxPeers];
         private readonly List<Command> tickCommands = new List<Command>();
 
         public int EntityCount => entities.Count;
         public Entity GetEntity(int id) => entities[id];
         public int GetResources(int peer) => resources[peer];
+        public Faction FactionOf(int peer) => factions[peer];
 
         /// <summary>Scenario setup only. Never call this from a system.</summary>
         public void GrantResources(int peer, int amount) => resources[peer] += amount;
+
+        /// <summary>Scenario setup only. Never call this from a system.</summary>
+        public void SetPeerFaction(int peer, Faction faction) => factions[peer] = faction;
 
         public World(ulong seed)
         {
             Random = new DetRandom(seed);
         }
 
-        public int SpawnUnit(int owner, FixVec2 position, Fix speed, int hp)
+        /// <summary>
+        /// hpOverride exists for harnesses that need to seed a specific divergence;
+        /// -1 means "take the roster value", which is what gameplay always passes.
+        /// </summary>
+        public int SpawnUnit(int owner, Role role, FixVec2 position, int hpOverride = -1)
         {
-            return Add(EntityKind.Unit, owner, position, speed, hp);
+            UnitStats s = FactionData.Stats(role);
+            return Add(EntityKind.Unit, owner, role, position, s.Speed, hpOverride < 0 ? s.Hp : hpOverride);
         }
 
         public int SpawnWorker(int owner, FixVec2 position)
         {
-            return Add(EntityKind.Worker, owner, position, UnitSpeed, WorkerHp);
+            UnitStats s = FactionData.Stats(Role.Worker);
+            return Add(EntityKind.Worker, owner, Role.Worker, position, s.Speed, s.Hp);
         }
 
         public int SpawnResourceNode(FixVec2 position, int amount)
         {
-            int id = Add(EntityKind.ResourceNode, -1, position, Fix.Zero, NodeHp);
+            int id = Add(EntityKind.ResourceNode, -1, Role.None, position, Fix.Zero, NodeHp);
             Entity e = entities[id];
             e.Resource = amount;
             entities[id] = e;
             return id;
         }
 
-        public int SpawnBuilding(int owner, FixVec2 position, bool complete)
+        public int SpawnBuilding(int owner, Role role, FixVec2 position, bool complete)
         {
-            int id = Add(EntityKind.Building, owner, position, Fix.Zero, complete ? BuildingHp : 1);
+            int hp = FactionData.Stats(role).Hp;
+            int id = Add(EntityKind.Building, owner, role, position, Fix.Zero, complete ? hp : 1);
             Entity e = entities[id];
-            e.MaxHp = BuildingHp;
+            e.MaxHp = hp;
             e.BuildTicksLeft = complete ? 0 : BuildTicks;
             entities[id] = e;
             return id;
         }
 
-        private int Add(EntityKind kind, int owner, FixVec2 position, Fix speed, int hp)
+        private int Add(EntityKind kind, int owner, Role role, FixVec2 position, Fix speed, int hp)
         {
             var e = new Entity
             {
@@ -146,6 +162,7 @@ namespace WordCraft.Sim
                 Owner = owner,
                 Alive = true,
                 Kind = kind,
+                Role = role,
                 Position = position,
                 Target = position,
                 Speed = speed,
@@ -169,18 +186,63 @@ namespace WordCraft.Sim
         /// </summary>
         public void Step(IReadOnlyList<Command> commands)
         {
-            tickCommands.Clear();
-            for (int i = 0; i < commands.Count; i++) tickCommands.Add(commands[i]);
-            tickCommands.Sort(Command.CanonicalCompare);
+            // A decided match still advances its tick, so the lockstep barrier and
+            // the hash exchange keep running instead of stalling on a dead world.
+            if (!MatchOver)
+            {
+                tickCommands.Clear();
+                for (int i = 0; i < commands.Count; i++) tickCommands.Add(commands[i]);
+                tickCommands.Sort(Command.CanonicalCompare);
 
-            for (int i = 0; i < tickCommands.Count; i++) Apply(tickCommands[i]);
+                for (int i = 0; i < tickCommands.Count; i++) Apply(tickCommands[i]);
 
-            GatherSystem();
-            ConstructionSystem();
-            ProductionSystem();
-            CombatSystem();
-            MoveSystem();
+                GatherSystem();
+                ConstructionSystem();
+                ProductionSystem();
+                CombatSystem();
+                MoveSystem();
+                VictorySystem();
+            }
             Tick++;
+        }
+
+        /// <summary>
+        /// Losing your last base loses the match. Decided here rather than by a
+        /// client, so both peers name the same winner on the same tick. Runs after
+        /// combat, so a base destroyed this tick counts this tick.
+        /// </summary>
+        private void VictorySystem()
+        {
+            // Dead entities keep their slot, so a peer that ever owned a base is
+            // still visible in this scan; that is what tells a real match apart
+            // from a harness world that never had one.
+            var hadBase = new bool[MaxPeers];
+            var holdsBase = new bool[MaxPeers];
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (e.Kind != EntityKind.Building || e.Role != Role.Base) continue;
+                if (e.Owner < 0 || e.Owner >= MaxPeers) continue;
+                hadBase[e.Owner] = true;
+                if (e.Alive) holdsBase[e.Owner] = true;
+            }
+
+            // Scanned by peer id, never by a keyed collection, so "the surviving
+            // peer" cannot depend on enumeration order.
+            int contenders = 0, standing = 0, survivor = -1;
+            for (int p = 0; p < MaxPeers; p++)
+            {
+                if (!hadBase[p]) continue;
+                contenders++;
+                if (!holdsBase[p]) continue;
+                standing++;
+                if (survivor < 0) survivor = p;
+            }
+
+            if (contenders < 2 || standing > 1) return;
+
+            MatchOver = true;
+            Winner = standing == 1 ? survivor : -1; // two bases falling on one tick is a draw
         }
 
         private void Apply(Command c)
@@ -200,7 +262,7 @@ namespace WordCraft.Sim
                 }
 
                 case CommandType.Spawn:
-                    SpawnUnit(c.PeerId, c.Target, UnitSpeed, UnitHp);
+                    SpawnUnit(c.PeerId, Role.Melee, c.Target);
                     break;
 
                 case CommandType.Gather:
@@ -302,9 +364,12 @@ namespace WordCraft.Sim
         {
             ulong h = 14695981039346656037UL;
             Mix(ref h, (ulong)Tick);
+            Mix(ref h, MatchOver ? 1UL : 0UL);
+            Mix(ref h, (ulong)Winner);
             Mix(ref h, Random.State);
             Mix(ref h, Random.DrawCount);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)resources[p]);
+            for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)factions[p]);
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
@@ -312,6 +377,7 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.Owner);
                 Mix(ref h, e.Alive ? 1UL : 0UL);
                 Mix(ref h, (ulong)e.Kind);
+                Mix(ref h, (ulong)e.Role);
                 Mix(ref h, (ulong)e.Position.X.Raw);
                 Mix(ref h, (ulong)e.Position.Y.Raw);
                 Mix(ref h, (ulong)e.Target.X.Raw);

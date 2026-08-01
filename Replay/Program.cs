@@ -26,6 +26,8 @@ namespace WordCraft.Replay
                 DivergenceIsDetected();
                 ScriptedMatchSameHashes();
                 ScriptedMatchDivergenceIsDetected();
+                MapIsExactlySymmetric();
+                MatchReachesTheWinCondition();
                 ClientLogMatchesGoldenHash();
                 SimAssemblyIsClean();
             }
@@ -154,6 +156,80 @@ namespace WordCraft.Replay
         }
 
         /// <summary>
+        /// Every start position has a counterpart under a 180 degree rotation of
+        /// the grid, with the same role and the same numbers. Eyeballing a layout
+        /// is how a map ends up a cell out of true and one side ends up closer.
+        /// </summary>
+        private static void MapIsExactlySymmetric()
+        {
+            World world = MatchScenario.Build(Seed);
+            // Cell x sits at x + 1/2, its mirror at (GridSize - 1 - x) + 1/2, so a
+            // mirrored pair's coordinates always sum to exactly GridSize.
+            Fix span = Fix.FromInt(World.GridSize);
+
+            for (int i = 0; i < world.EntityCount; i++)
+            {
+                Entity a = world.GetEntity(i);
+                var mirrored = new FixVec2(span - a.Position.X, span - a.Position.Y);
+                int wantOwner = a.Owner < 0 ? -1 : 1 - a.Owner;
+
+                bool found = false;
+                for (int j = 0; j < world.EntityCount && !found; j++)
+                {
+                    Entity b = world.GetEntity(j);
+                    found = b.Owner == wantOwner && b.Kind == a.Kind && b.Role == a.Role &&
+                            b.Hp == a.Hp && b.Resource == a.Resource && b.Position.Equals(mirrored);
+                }
+                Check(found, "entity " + i + " (" + a.Kind + " " + a.Role + ") has no mirror");
+            }
+
+            Check(world.GetResources(0) == world.GetResources(1), "peers start with different resources");
+        }
+
+        /// <summary>
+        /// A match that actually ends. Run twice: a win condition that resolved on
+        /// a different tick on the two peers would be a desync, not a victory.
+        /// </summary>
+        private static void MatchReachesTheWinCondition()
+        {
+            ulong[] first = RunSiege(out World world);
+            ulong[] second = RunSiege(out _);
+
+            Check(world.MatchOver, "the siege never reached a win condition");
+            Check(world.Winner == 0, "wrong winner: " + world.Winner);
+            Check(!world.GetEntity(1).Alive, "the match ended with the base still standing");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "siege hash drift at tick " + t);
+            }
+        }
+
+        private const int SiegeTicks = 400;
+
+        private static ulong[] RunSiege(out World world)
+        {
+            world = new World(Seed);
+            world.SetPeerFaction(0, Faction.TreeSpirits);
+            world.SetPeerFaction(1, Faction.Hellfire);
+
+            world.SpawnBuilding(0, Role.Base, At(8, 8), complete: true);    // 0
+            world.SpawnBuilding(1, Role.Base, At(50, 50), complete: true);  // 1
+            // Already at the wall: what is under test is the rule that ends the
+            // match, not how long an army takes to walk across the map.
+            for (int i = 0; i < 8; i++) world.SpawnUnit(0, Role.Melee, At(49, 49 + i % 2));
+
+            var idle = new List<Command>();
+            var hashes = new ulong[SiegeTicks];
+            for (int t = 0; t < SiegeTicks; t++)
+            {
+                world.Step(idle);
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        /// <summary>
         /// The client's own input log, run under CoreCLR. Unity's Mono runtime
         /// asserts the same constant, so the two runtimes the game ships on are
         /// pinned to one another. A fixed-point or JIT difference between them
@@ -249,11 +325,7 @@ namespace WordCraft.Replay
             {
                 for (int i = 0; i < 3; i++)
                 {
-                    world.SpawnUnit(
-                        peer,
-                        new FixVec2(Fix.FromInt(peer * 40), Fix.FromInt(i * 5)),
-                        Fix.Ratio(1, 4),
-                        100);
+                    world.SpawnUnit(peer, Role.Melee, new FixVec2(Fix.FromInt(peer * 40), Fix.FromInt(i * 5)));
                 }
             }
 
@@ -295,21 +367,21 @@ namespace WordCraft.Replay
             var world = new World(Seed);
             Fix half = Fix.Ratio(1, 2);
 
-            world.SpawnBuilding(0, At(5, 5), complete: true);       // 0
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);   // 0
             world.SpawnWorker(0, At(7, 5));                          // 1
             world.SpawnWorker(0, At(7, 7));                          // 2
             world.SpawnResourceNode(At(14, 14), NodeAmount);         // 3
 
-            world.SpawnBuilding(1, At(50, 50), complete: true);      // 4
+            world.SpawnBuilding(1, Role.Base, At(50, 50), complete: true); // 4
             world.SpawnWorker(1, At(48, 50));                        // 5
             world.SpawnWorker(1, At(48, 48));                        // 6
             world.SpawnResourceNode(At(42, 42), NodeAmount);         // 7
 
             // Two units placed in each other's face so combat resolves inside the
             // replay window instead of after it.
-            world.SpawnUnit(0, At(30, 30), World.UnitSpeed, World.UnitHp);   // 8
-            world.SpawnUnit(1, new FixVec2(Fix.FromInt(31) + half, Fix.FromInt(30) + half),
-                World.UnitSpeed, World.UnitHp);                              // 9
+            world.SpawnUnit(0, Role.Melee, At(30, 30));              // 8
+            world.SpawnUnit(1, Role.Melee,
+                new FixVec2(Fix.FromInt(31) + half, Fix.FromInt(30) + half)); // 9
 
             world.GrantResources(0, 100);
             world.GrantResources(1, 100);

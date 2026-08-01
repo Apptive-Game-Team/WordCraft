@@ -89,7 +89,26 @@ namespace WordCraft.View
 
             GUILayout.EndArea();
 
+            if (world.MatchOver) ResultBanner(world, runner.LocalPeer);
             if (session.State == SessionState.Stopped) StopBanner(session);
+        }
+
+        /// <summary>
+        /// The simulation decided this, not the client, so both players read the
+        /// same result on the same tick without anyone announcing it over the wire.
+        /// </summary>
+        private static void ResultBanner(World world, int localPeer)
+        {
+            var rect = new Rect(Screen.width * 0.5f - 160f, 32f, 320f, 56f);
+            GUI.color = new Color(0.06f, 0.06f, 0.08f, 0.92f);
+            GUI.DrawTexture(rect, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            GUILayout.BeginArea(new Rect(rect.x + 14f, rect.y + 12f, rect.width - 28f, rect.height - 24f));
+            GUILayout.Label(world.Winner < 0
+                ? "DRAW: both bases fell on the same tick"
+                : world.Winner == localPeer ? "VICTORY: enemy base destroyed" : "DEFEAT: base destroyed");
+            GUILayout.EndArea();
         }
 
         private string Describe(World world, int id)

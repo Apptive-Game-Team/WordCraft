@@ -26,6 +26,7 @@ namespace WordCraft.View
             ConversionRoundTripsExactly();
             SameLogSameHashes();
             ViewReadsDoNotMutate();
+            RosterArtResolves();
 
             ulong final = FinalHash();
             Debug.Log("final hash after " + ScriptedLog.Ticks + " ticks: 0x" + final.ToString("X16"));
@@ -89,6 +90,25 @@ namespace WordCraft.View
             for (int t = 0; t < clean.Length; t++)
             {
                 if (Check(clean[t] == watched[t], "a view pass changed the simulation at tick " + t)) return;
+            }
+        }
+
+        /// <summary>
+        /// Every sprite the roster names has to load, or the faction silently
+        /// renders as a primitive and looks exactly like a slot that has no art.
+        /// An empty name is a slot docs/FACTIONS.md marks as still a concept.
+        /// </summary>
+        private static void RosterArtResolves()
+        {
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                for (int r = 0; r < FactionData.RoleCount; r++)
+                {
+                    string file = FactionData.Sprite((Faction)f, (Role)r);
+                    if (file.Length == 0) continue;
+                    Check(Resources.Load<Sprite>(MatchView.SpriteFolder + file) != null,
+                        "roster sprite missing: " + (Faction)f + "." + (Role)r + " -> " + file);
+                }
             }
         }
 

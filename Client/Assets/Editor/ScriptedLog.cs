@@ -20,11 +20,11 @@ namespace WordCraft.View
         /// on. Update it only when the simulation intentionally changes, and only
         /// after both runtimes agree on the new value.
         /// </summary>
-        public const ulong GoldenHash = 0x11FEEDE6C9322530UL;
+        public const ulong GoldenHash = 0x2D271732101F3254UL;
 
         // Ids are handed out in MatchScenario.Build order and never reused.
-        private const int Base0 = 0, Worker0A = 1, Worker0B = 2, Fighter0 = 3, Node0 = 4;
-        private const int Base1 = 5, Worker1A = 6, Worker1B = 7, Fighter1 = 8, Node1 = 9;
+        private const int Base0 = 0, Worker0A = 1, Worker0B = 2, Melee0 = 3, Ranged0 = 4, Node0 = 5;
+        private const int Base1 = 6, Worker1A = 7, Worker1B = 8, Melee1 = 9, Ranged1 = 10, Node1 = 11;
 
         public static List<Command>[] Build()
         {
@@ -42,8 +42,10 @@ namespace WordCraft.View
             Add(log, 2, 1, seq, CommandType.Gather, Worker1B, FixVec2.Zero, Node1);
 
             // Walk both fighters at the same cell so combat resolves inside the log.
-            Add(log, 40, 0, seq, CommandType.Move, Fighter0, At(31, 31), 0);
-            Add(log, 40, 1, seq, CommandType.Move, Fighter1, At(31, 31), 0);
+            Add(log, 40, 0, seq, CommandType.Move, Melee0, At(31, 31), 0);
+            Add(log, 40, 1, seq, CommandType.Move, Melee1, At(31, 31), 0);
+            Add(log, 40, 0, seq, CommandType.Move, Ranged0, At(33, 31), 0);
+            Add(log, 40, 1, seq, CommandType.Move, Ranged1, At(29, 31), 0);
 
             Add(log, 150, 0, seq, CommandType.Build, -1, At(20, 20), 0);
             Add(log, 150, 1, seq, CommandType.Build, -1, At(44, 44), 0);
@@ -57,7 +59,7 @@ namespace WordCraft.View
             {
                 for (int peer = 0; peer < MatchScenario.Peers; peer++)
                 {
-                    int entity = peer == 0 ? Fighter0 : Fighter1;
+                    int entity = peer == 0 ? Melee0 : Melee1;
                     Add(log, t, peer, seq, CommandType.Move, entity,
                         At(script.NextInt(MatchScenario.MapSize), script.NextInt(MatchScenario.MapSize)), 0);
                 }

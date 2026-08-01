@@ -20,13 +20,17 @@ namespace WordCraft.Sim
                 if (!ValidTarget(a, a.TargetId)) a.TargetId = AcquireTarget(a);
                 if (a.TargetId < 0) { entities[i] = a; continue; }
 
+                // Read straight from the table rather than caching on the entity:
+                // one copy of a number cannot disagree with itself across peers.
+                UnitStats s = FactionData.Stats(a.Role);
+
                 Entity t = entities[a.TargetId];
-                if (WithinRange(a.Position, t.Position, AttackRange))
+                if (WithinRange(a.Position, t.Position, s.Range))
                 {
                     if (a.AttackCooldown == 0)
                     {
-                        a.AttackCooldown = AttackPeriod;
-                        t.Hp -= AttackDamage;
+                        a.AttackCooldown = s.AttackTicks;
+                        t.Hp -= s.Damage;
                         if (t.Hp <= 0)
                         {
                             t.Hp = 0;

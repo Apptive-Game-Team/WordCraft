@@ -1,5 +1,6 @@
 using System;
 using WordCraft.Net;
+using WordCraft.Sim;
 
 namespace WordCraft.Host
 {
@@ -19,6 +20,7 @@ namespace WordCraft.Host
                 LossyMatchStaysInSync();
                 DesyncHaltsAndNamesTheField();
                 SeedMismatchIsRejectedBeforeTick0();
+                ContentMismatchIsRejectedBeforeTick0();
                 PeerTimeoutEndsTheMatch();
             }
             catch (Exception ex)
@@ -93,6 +95,21 @@ namespace WordCraft.Host
             Check(a.World.Tick == 0 && b.World.Tick == 0, "a tick executed despite a rejected handshake");
             Check((a.Session.StopReason ?? "").Contains("seed"), "peer 0 reason: " + a.Session.StopReason);
             Check((b.Session.StopReason ?? "").Contains("seed"), "peer 1 reason: " + b.Session.StopReason);
+        }
+
+        /// <summary>A peer on a different roster must never reach World.Step either.</summary>
+        private static void ContentMismatchIsRejectedBeforeTick0()
+        {
+            var link = new FaultyLink(0xC0117E, dropPercent: 0, duplicatePercent: 0, baseDelayMs: 10, jitterMs: 0);
+            var a = new Peer(0, link.A, new MatchConfig(), -1, 0);
+            var b = new Peer(1, link.B,
+                new MatchConfig { ContentVersion = FactionData.ContentVersion + 1 }, -1, 0);
+
+            Drive(link, a, b, 0, () => Stopped(a) && Stopped(b), 60000);
+
+            Check(a.World.Tick == 0 && b.World.Tick == 0, "a tick executed despite a rejected handshake");
+            Check((a.Session.StopReason ?? "").Contains("content version"), "peer 0 reason: " + a.Session.StopReason);
+            Check((b.Session.StopReason ?? "").Contains("content version"), "peer 1 reason: " + b.Session.StopReason);
         }
 
         /// <summary>A vanished peer ends the match instead of being simulated with invented input.</summary>

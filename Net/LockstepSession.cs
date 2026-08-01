@@ -18,7 +18,13 @@ namespace WordCraft.Net
     public sealed class MatchConfig
     {
         public uint SimVersion = 1;
-        public uint ContentVersion = 1;
+
+        /// <summary>
+        /// The roster the simulation reads its stats from. Different content is
+        /// different results from identical input, so it is a handshake rejection
+        /// rather than a desync once the fighting starts.
+        /// </summary>
+        public uint ContentVersion = FactionData.ContentVersion;
         public ulong Seed = 0xC0FFEE;
 
         /// <summary>Ticks between issuing a command and executing it. 3 at 20 Hz absorbs 150 ms.</summary>
