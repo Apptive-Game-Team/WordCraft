@@ -1,0 +1,132 @@
+namespace WordCraft.Sim
+{
+    /// <summary>
+    /// Gathering, construction, and production. Every duration counts down in
+    /// whole ticks; nothing here converts to or from seconds.
+    /// </summary>
+    public sealed partial class World
+    {
+        /// <summary>
+        /// Workers loop node -> drop-off -> node on their own. Iterating by id
+        /// keeps the loop identical on every peer even when two workers finish a
+        /// load on the same tick.
+        /// </summary>
+        private void GatherSystem()
+        {
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity w = entities[i];
+                if (!w.Alive || w.Kind != EntityKind.Worker || w.GatherNodeId < 0) continue;
+
+                if (w.CarryAmount > 0)
+                {
+                    DeliverStep(i, ref w);
+                }
+                else
+                {
+                    GatherStep(i, ref w);
+                }
+                entities[i] = w;
+            }
+        }
+
+        private void GatherStep(int id, ref Entity w)
+        {
+            Entity node = entities[w.GatherNodeId];
+            if (!node.Alive || node.Resource <= 0)
+            {
+                w.GatherNodeId = FindNearestNode(w.Position);
+                w.GatherTicksLeft = 0;
+                return;
+            }
+
+            if (!WithinRange(w.Position, node.Position, InteractRange))
+            {
+                Retarget(id, ref w, node.Position);
+                return;
+            }
+
+            if (w.GatherTicksLeft == 0) w.GatherTicksLeft = GatherTicks;
+            w.GatherTicksLeft--;
+            if (w.GatherTicksLeft > 0) return;
+
+            int take = node.Resource < CarryCapacity ? node.Resource : CarryCapacity;
+            node.Resource -= take;
+            // A spent node stops blocking the grid, so paths through it reopen.
+            if (node.Resource == 0) node.Alive = false;
+            entities[node.Id] = node;
+
+            w.CarryAmount = take;
+            w.DropOffId = FindNearestDropOff(w.Owner, w.Position);
+        }
+
+        private void DeliverStep(int id, ref Entity w)
+        {
+            if (w.DropOffId < 0 || !entities[w.DropOffId].Alive)
+            {
+                w.DropOffId = FindNearestDropOff(w.Owner, w.Position);
+                if (w.DropOffId < 0) return; // nothing to deliver to; hold the load
+            }
+
+            Entity drop = entities[w.DropOffId];
+            if (!WithinRange(w.Position, drop.Position, InteractRange))
+            {
+                Retarget(id, ref w, drop.Position);
+                return;
+            }
+
+            resources[w.Owner] += w.CarryAmount;
+            w.CarryAmount = 0;
+            if (w.GatherNodeId >= 0 && !entities[w.GatherNodeId].Alive)
+            {
+                w.GatherNodeId = FindNearestNode(w.Position);
+            }
+            if (w.GatherNodeId >= 0) Retarget(id, ref w, entities[w.GatherNodeId].Position);
+        }
+
+        /// <summary>
+        /// Repaths only when the worker is not already headed there. Without the
+        /// Target check a worker that stopped short would recompute a path every tick.
+        /// </summary>
+        private void Retarget(int id, ref Entity w, FixVec2 destination)
+        {
+            if (w.Target.Equals(destination)) return;
+
+            entities[id] = w;
+            SetDestination(id, destination);
+            w = entities[id];
+        }
+
+        // ponytail: linear scan over all entities per query. Fine at a few hundred
+        // entities; bucket by grid cell if worker counts grow.
+        private int FindNearestNode(FixVec2 from)
+        {
+            int best = -1;
+            Fix bestDist = Fix.Zero;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (!e.Alive || e.Kind != EntityKind.ResourceNode || e.Resource <= 0) continue;
+                Fix d = (e.Position - from).SqrMagnitude;
+                // Strictly-less keeps the lowest id on a tie, independent of scan order.
+                if (best < 0 || d < bestDist) { best = i; bestDist = d; }
+            }
+            return best;
+        }
+
+        private int FindNearestDropOff(int owner, FixVec2 from)
+        {
+            int best = -1;
+            Fix bestDist = Fix.Zero;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (!e.Alive || e.Kind != EntityKind.Building || e.Owner != owner) continue;
+                if (e.BuildTicksLeft > 0) continue; // a site under construction takes no deliveries
+                Fix d = (e.Position - from).SqrMagnitude;
+                if (best < 0 || d < bestDist) { best = i; bestDist = d; }
+            }
+            return best;
+        }
+    }
+}

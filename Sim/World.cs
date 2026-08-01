@@ -68,9 +68,12 @@ namespace WordCraft.Sim
         public const int UnitHp = 100;
         public const int BuildingHp = 400;
         public const int NodeHp = 1;
+        public const int GatherTicks = 20;
+        public const int CarryCapacity = 10;
         public const int BuildTicks = 60;
 
         public static readonly Fix UnitSpeed = Fix.Ratio(1, 4);
+        public static readonly Fix InteractRange = Fix.FromInt(2);
 
         public int Tick { get; private set; }
         public readonly DetRandom Random;
@@ -149,7 +152,9 @@ namespace WordCraft.Sim
 
         /// <summary>
         /// Advances exactly one tick. Commands may arrive in any order; they are
-        /// canonicalized here so every peer executes the same sequence.
+        /// canonicalized here so every peer executes the same sequence. The system
+        /// order below is part of the contract too: each system is deterministic
+        /// on its own, but reordering them changes the result.
         /// </summary>
         public void Step(IReadOnlyList<Command> commands)
         {
@@ -159,6 +164,7 @@ namespace WordCraft.Sim
 
             for (int i = 0; i < tickCommands.Count; i++) Apply(tickCommands[i]);
 
+            GatherSystem();
             MoveSystem();
             Tick++;
         }
@@ -170,6 +176,11 @@ namespace WordCraft.Sim
                 case CommandType.Move:
                 {
                     if (!OwnedAndAlive(c.EntityId, c.PeerId)) return;
+                    Entity e = entities[c.EntityId];
+                    // An explicit move order cancels the gather loop, otherwise the
+                    // worker retargets itself back on the next tick.
+                    e.GatherNodeId = -1;
+                    entities[c.EntityId] = e;
                     SetDestination(c.EntityId, c.Target);
                     break;
                 }
@@ -177,6 +188,24 @@ namespace WordCraft.Sim
                 case CommandType.Spawn:
                     SpawnUnit(c.PeerId, c.Target, UnitSpeed, UnitHp);
                     break;
+
+                case CommandType.Gather:
+                {
+                    if (!OwnedAndAlive(c.EntityId, c.PeerId)) return;
+                    if (c.Arg < 0 || c.Arg >= entities.Count) return;
+                    Entity node = entities[c.Arg];
+                    if (!node.Alive || node.Kind != EntityKind.ResourceNode) return;
+
+                    Entity w = entities[c.EntityId];
+                    if (w.Kind != EntityKind.Worker) return;
+                    w.GatherNodeId = c.Arg;
+                    w.GatherTicksLeft = 0;
+                    entities[c.EntityId] = w;
+                    // A loaded worker finishes its delivery first; GatherSystem
+                    // routes it back to the new node afterwards.
+                    if (w.CarryAmount == 0) SetDestination(c.EntityId, node.Position);
+                    break;
+                }
             }
         }
 
@@ -235,6 +264,9 @@ namespace WordCraft.Sim
         }
 
         private static int Clamp(int v, int lo, int hi) => v < lo ? lo : (v > hi ? hi : v);
+
+        private static bool WithinRange(FixVec2 a, FixVec2 b, Fix range) =>
+            (a - b).SqrMagnitude <= range * range;
 
         /// <summary>
         /// FNV-1a over every state field in id order. Peers compare this instead

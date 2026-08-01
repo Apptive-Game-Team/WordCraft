@@ -5,6 +5,7 @@ namespace WordCraft.Sim
         None = 0,
         Move = 1,
         Spawn = 2,
+        Gather = 3,
     }
 
     /// <summary>
@@ -20,7 +21,10 @@ namespace WordCraft.Sim
         public readonly int EntityId;
         public readonly FixVec2 Target;
 
-        public Command(int tick, int peerId, int seq, CommandType type, int entityId, FixVec2 target)
+        /// <summary>Second entity id, for commands that name two. Gather uses it for the node.</summary>
+        public readonly int Arg;
+
+        public Command(int tick, int peerId, int seq, CommandType type, int entityId, FixVec2 target, int arg = 0)
         {
             Tick = tick;
             PeerId = peerId;
@@ -28,6 +32,7 @@ namespace WordCraft.Sim
             Type = type;
             EntityId = entityId;
             Target = target;
+            Arg = arg;
         }
 
         public static int CanonicalCompare(Command a, Command b)
