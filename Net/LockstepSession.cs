@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using WordCraft.Sim;
 
 namespace WordCraft.Net
@@ -32,22 +34,37 @@ namespace WordCraft.Net
     /// Peer to peer lockstep. Holds a World but only ever advances it through
     /// Step, and only when every peer's input for that tick has arrived.
     /// </summary>
+    // ponytail: hardwired to two peers (localPeer and one remote). Going to N
+    // means an array of remotes, a per-remote ack, and an all-peers barrier test;
+    // nothing here assumes more than that, but nothing here is built for it either.
     public sealed class LockstepSession
     {
         /// <summary>Bump on any wire format change. Old peers must be rejected, not tolerated.</summary>
         public const uint ProtocolVersion = 1;
 
+        private const int PeerCount = 2;
+
         private readonly World world;
         private readonly ITransport transport;
         private readonly MatchConfig cfg;
         private readonly int localPeer;
+        private readonly int remotePeer;
         private readonly Writer w = new Writer();
+
+        // Keyed by tick and only ever indexed, never enumerated, so dictionary
+        // ordering can never leak into the order commands reach Step.
+        private readonly Dictionary<int, Command[]>[] inputs = new Dictionary<int, Command[]>[PeerCount];
+
+        private readonly List<Command> pending = new List<Command>();
+        private readonly List<Command> batch = new List<Command>();
+        private int localSeq;
 
         private long lastHelloMs = long.MinValue / 2;
 
         public SessionState State { get; private set; } = SessionState.Handshaking;
         public string StopReason { get; private set; }
 
+        public int PeerId => localPeer;
         public int Tick => world.Tick;
 
         public LockstepSession(World world, ITransport transport, MatchConfig cfg, int localPeerId)
@@ -56,6 +73,18 @@ namespace WordCraft.Net
             this.transport = transport;
             this.cfg = cfg;
             localPeer = localPeerId;
+            remotePeer = 1 - localPeerId;
+            for (int i = 0; i < PeerCount; i++) inputs[i] = new Dictionary<int, Command[]>();
+        }
+
+        /// <summary>
+        /// Queues a command for tick Tick + InputDelay. The delay is what lets a
+        /// peer run tick T while the network is still carrying input for T+delay.
+        /// </summary>
+        public void Issue(CommandType type, int entityId, FixVec2 target)
+        {
+            if (State != SessionState.Running) return;
+            pending.Add(new Command(world.Tick + cfg.InputDelay, localPeer, localSeq++, type, entityId, target));
         }
 
         /// <summary>Pumps the socket and repeats the handshake until the peer answers.</summary>
@@ -80,6 +109,33 @@ namespace WordCraft.Net
                 SendHello();
                 lastHelloMs = nowMs;
             }
+        }
+
+        /// <summary>
+        /// The tick barrier. Runs exactly one tick, and only when every peer's
+        /// input for it is in hand. Returns false when the barrier is closed.
+        /// </summary>
+        public bool TryStep(long nowMs)
+        {
+            if (State != SessionState.Running) return false;
+
+            int t = world.Tick;
+            if (!inputs[remotePeer].TryGetValue(t, out Command[] remoteCmds)) return false;
+
+            // Seal before stepping: once tick t runs, the commands issued during
+            // it belong to t+delay and that bucket must never change afterwards.
+            SealLocal(t + cfg.InputDelay, pending);
+            pending.Clear();
+
+            if (!inputs[localPeer].TryGetValue(t, out Command[] localCmds)) return false;
+
+            batch.Clear();
+            batch.AddRange(localCmds);
+            batch.AddRange(remoteCmds);
+            world.Step(batch); // the only line in this assembly that mutates the simulation
+
+            inputs[remotePeer].Remove(t);
+            return true;
         }
 
         // ---- handshake ----
@@ -134,6 +190,21 @@ namespace WordCraft.Net
         private void BeginMatch()
         {
             State = SessionState.Running;
+            // Nothing could have been issued before the match existed, so the
+            // first InputDelay ticks are empty on every peer by definition.
+            for (int t = 0; t < cfg.InputDelay; t++) SealLocal(t, null);
+        }
+
+        // ---- input exchange ----
+
+        private void SealLocal(int tick, List<Command> cmds)
+        {
+            // Sealing twice would let the same tick execute with two different
+            // inputs on two peers. First seal wins, always.
+            if (inputs[localPeer].ContainsKey(tick)) return;
+            inputs[localPeer][tick] = cmds == null || cmds.Count == 0
+                ? Array.Empty<Command>()
+                : cmds.ToArray();
         }
 
         // ---- plumbing ----
