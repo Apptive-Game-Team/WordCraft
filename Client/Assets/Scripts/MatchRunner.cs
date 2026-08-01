@@ -38,6 +38,7 @@ namespace WordCraft.View
         private UdpTransport transport;
         private long startMs = -1;
         private long lastStepMs;
+        private bool stopReported;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot()
@@ -118,6 +119,15 @@ namespace WordCraft.View
         {
             long now = NowMs();
             Session.Update(now);
+
+            if (Session.State == SessionState.Stopped && !stopReported)
+            {
+                // The HUD banner is useless to a headless peer, and a desync that
+                // leaves no trace in the player log cannot be diagnosed at all.
+                stopReported = true;
+                Debug.LogError("STOPPED at tick " + World.Tick + ": " + Session.StopReason);
+            }
+
             if (Session.State != SessionState.Running) return;
 
             if (startMs < 0)
