@@ -58,6 +58,9 @@ namespace WordCraft.Sim
         /// past "matches finish" is an explicit non-goal, and identical numbers are
         /// what keeps the mirrored map fair rather than merely symmetric.
         /// </summary>
+        // ponytail: faction choice is cosmetic while every faction reads the same
+        // row. Widen this to [faction, role] the day balance stops being a non-goal;
+        // the mirrored map stops being fair on the same day.
         private static readonly UnitStats[] stats =
         {
             /* None       */ new UnitStats { Hp = 1 },
