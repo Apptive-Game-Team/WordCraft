@@ -14,6 +14,7 @@ namespace WordCraft.View
     ///
     ///   WordCraft.app                 host, listens on the default port
     ///   WordCraft.app -join 10.0.0.4  join that address
+    ///   WordCraft.app -ticks 400      stop there and print the state hash
     /// </summary>
     public sealed class MatchRunner : MonoBehaviour
     {
@@ -39,6 +40,7 @@ namespace WordCraft.View
         private long startMs = -1;
         private long lastStepMs;
         private bool stopReported;
+        private int stopAtTick;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot()
@@ -96,6 +98,7 @@ namespace WordCraft.View
             var cfg = new MatchConfig();
             string remote = Arg("-join");
             int port = Arg("-port", DefaultPort);
+            stopAtTick = Arg("-ticks", 0);
             LocalPeer = remote == null ? 0 : 1;
 
             World = MatchScenario.Build(cfg.Seed);
@@ -141,6 +144,13 @@ namespace WordCraft.View
             // execute a tick the other one has not sent input for.
             long due = (now - startMs) / TickMs;
             while (World.Tick <= due && StepOnce(now)) { }
+
+            if (stopAtTick <= 0 || World.Tick < stopAtTick) return;
+
+            // Two clients that ran the same match must end on the same hash. This
+            // is the line a LAN check reads out of each player log.
+            Debug.Log("OK: " + World.Tick + " ticks, final hash 0x" + World.Hash().ToString("X16"));
+            Application.Quit();
         }
 
         private bool StepOnce(long now)
