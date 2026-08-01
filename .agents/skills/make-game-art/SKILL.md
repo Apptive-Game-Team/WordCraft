@@ -141,6 +141,24 @@ magick input.png -resize 256x256 -trim +repage output.png
 magick identify output.png
 ```
 
+## Unity import: write the .meta, do not let Unity guess
+
+A PNG dropped into `Client/Assets/Resources/Art/Sprites/` with no `.meta` imports
+as `textureType: 0`, and `Resources.Load<Sprite>` then returns null. Nothing
+errors; the slot silently falls back to a primitive, which looks exactly like a
+slot that has no art yet.
+
+Copy an existing sprite's `.meta` as the template, replace only the `guid`, and
+keep `textureType: 8` and `spriteMode: 1`. Derive the guid from the asset name so
+re-running never churns the file:
+
+```bash
+python3 -c "import hashlib,sys;print(hashlib.sha1(('wordcraft/'+sys.argv[1]).encode()).hexdigest()[:32])" RiftAltar
+```
+
+`ViewSelfCheck` fails on an unresolved roster sprite for this reason. Run it
+after promoting any asset.
+
 ## Validation
 
 - Compare the new asset beside the master-style key and at least one asset from
