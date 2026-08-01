@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- netstandard2.1 so this assembly drops into Unity 2022 unchanged. -->
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <RootNamespace>WordCraft.Sim</RootNamespace>
+    <AssemblyName>WordCraft.Sim</AssemblyName>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+</Project>
