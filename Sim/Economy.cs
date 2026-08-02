@@ -226,6 +226,9 @@ namespace WordCraft.Sim
         /// A partial refund would have to be a share of elapsed production time to
         /// be fair, and that is a second number to hash for no gain in play.
         /// </summary>
+        // ponytail: takes the tail because the queue is a count, not a list, so
+        // there is no slot to name. Give cancel an index the day the queue becomes
+        // a list of roles, which is the same day a building can mix unit types.
         private void TryCancelQueuedUnit(int peer, int buildingId)
         {
             if (!OwnedAndAlive(buildingId, peer)) return;
