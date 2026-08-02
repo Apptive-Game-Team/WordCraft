@@ -455,6 +455,10 @@ namespace WordCraft.Sim
                     // default fighter is what the client has always meant by it.
                     TryQueueUnit(c.PeerId, c.EntityId, c.Arg == 0 ? Role.Melee : (Role)c.Arg);
                     break;
+
+                case CommandType.CancelProduction:
+                    TryCancelQueuedUnit(c.PeerId, c.EntityId);
+                    break;
             }
         }
 

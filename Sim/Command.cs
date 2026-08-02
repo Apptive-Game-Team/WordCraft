@@ -13,6 +13,7 @@ namespace WordCraft.Sim
         Stop = 8,
         HoldPosition = 9,
         SetRallyPoint = 10,
+        CancelProduction = 11,
     }
 
     /// <summary>

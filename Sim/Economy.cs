@@ -217,6 +217,30 @@ namespace WordCraft.Sim
             entities[buildingId] = b;
         }
 
+        /// <summary>
+        /// Takes the last unit off the queue and pays it back.
+        ///
+        /// Refund rule: the whole ProduceCost, no penalty. The cost is taken in
+        /// full at queue time, so a full refund is the rule that leaves a peer's
+        /// bank exactly where it would have been had the order never been given.
+        /// A partial refund would have to be a share of elapsed production time to
+        /// be fair, and that is a second number to hash for no gain in play.
+        /// </summary>
+        private void TryCancelQueuedUnit(int peer, int buildingId)
+        {
+            if (!OwnedAndAlive(buildingId, peer)) return;
+            Entity b = entities[buildingId];
+            if (b.Kind != EntityKind.Building || b.QueueCount <= 0) return;
+
+            b.QueueCount--;
+            resources[peer] += ProduceCost;
+            // The unit in progress is the last to go, so emptying the queue also
+            // drops its timer. Left standing it would be hashed state that hands
+            // the next order a head start it never paid for.
+            if (b.QueueCount == 0) b.ProduceTicksLeft = 0;
+            entities[buildingId] = b;
+        }
+
         private void ProductionSystem()
         {
             for (int i = 0; i < entities.Count; i++)

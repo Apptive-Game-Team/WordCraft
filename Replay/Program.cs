@@ -36,6 +36,7 @@ namespace WordCraft.Replay
                 StopCancelsWhatIsRunning();
                 HoldPositionNeverChases();
                 ProducedUnitsWalkToTheRallyPoint();
+                CancellingProductionRefundsInFull();
                 ClientLogMatchesGoldenHash();
                 SimAssemblyIsClean();
             }
@@ -129,8 +130,10 @@ namespace WordCraft.Replay
 
         /// <summary>
         /// The same shape as SameLogSameHashes, but over a world that gathers,
-        /// builds, produces, and fights. A movement-only world would not exercise
-        /// the state that actually desyncs.
+        /// builds, produces, fights, and carries all six order commands. A
+        /// movement-only world would not exercise the state that actually desyncs,
+        /// and an order tested only in its own fixture would never have to agree
+        /// with the rest of the simulation running alongside it.
         /// </summary>
         private static void ScriptedMatchSameHashes()
         {
@@ -150,6 +153,14 @@ namespace WordCraft.Replay
             Check(world.GetEntity(MatchSite0).BuildTicksLeft == 0, "peer 0 building never finished");
             Check(world.EntityCount > MatchSite1 + 1, "no units were produced");
             Check(!world.GetEntity(MatchFighter1).Alive, "combat never killed anything");
+
+            // And that the order commands in the log were not silently refused: a
+            // rejected command leaves state untouched, which is exactly what an
+            // identical pair of hash runs looks like.
+            Check(world.GetEntity(MatchBase0).HasRallyPoint, "the rally order never reached the base");
+            Check(world.GetEntity(MatchWorker0B).GatherNodeId < 0, "the stop order never reached the worker");
+            Check(world.GetEntity(MatchFighter0).Mode == OrderMode.AttackMove,
+                "the attack-move order never reached the fighter");
         }
 
         private static void ScriptedMatchDivergenceIsDetected()
@@ -643,6 +654,49 @@ namespace WordCraft.Replay
             return hashes;
         }
 
+        private const int QueueBase = 0;
+
+        /// <summary>
+        /// One unit off the queue, the whole ProduceCost back. The refund is
+        /// asserted as an exact number rather than "more than before", because a
+        /// refund rule nobody can name is a rule that drifts.
+        /// </summary>
+        private static void CancellingProductionRefundsInFull()
+        {
+            var world = new World(Seed);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.GrantResources(0, 1000);
+
+            var queue = new List<Command>();
+            for (int i = 0; i < 3; i++)
+            {
+                queue.Add(new Command(0, 0, i, CommandType.Produce, QueueBase, FixVec2.Zero, (int)Role.Melee));
+            }
+            int banked = world.GetResources(0);
+            world.Step(queue);
+            Check(world.GetEntity(QueueBase).QueueCount == 3, "three produce orders did not queue three units");
+            Check(world.GetResources(0) == banked - 3 * World.ProduceCost, "queueing did not charge three units");
+
+            banked = world.GetResources(0);
+            world.Step(Cancel(QueueBase, 0, 3));
+            Check(world.GetEntity(QueueBase).QueueCount == 2, "cancelling did not shorten the queue");
+            Check(world.GetResources(0) == banked + World.ProduceCost, "cancelling did not refund in full");
+
+            // Down to nothing, then one more: an empty queue has nothing to refund,
+            // and a refused cancel must leave the bank exactly as it found it.
+            world.Step(Cancel(QueueBase, 0, 4));
+            world.Step(Cancel(QueueBase, 0, 5));
+            Check(world.GetEntity(QueueBase).QueueCount == 0, "the queue did not empty");
+            Check(world.GetEntity(QueueBase).ProduceTicksLeft == 0, "an emptied queue kept its timer running");
+
+            banked = world.GetResources(0);
+            world.Step(Cancel(QueueBase, 0, 6));
+            Check(world.GetResources(0) == banked, "cancelling an empty queue paid out");
+        }
+
+        private static List<Command> Cancel(int building, int peer, int seq) =>
+            new List<Command> { new Command(0, peer, seq, CommandType.CancelProduction, building, FixVec2.Zero) };
+
         private static List<Command> Produce(int building, int peer, int seq, Role role) =>
             new List<Command> { new Command(0, peer, seq, CommandType.Produce, building, FixVec2.Zero, (int)role) };
 
@@ -767,6 +821,7 @@ namespace WordCraft.Replay
 
         // Entity ids of the scripted match. Ids are handed out in spawn order and
         // never reused, so they are stable enough to assert on.
+        private const int MatchBase0 = 0;
         private const int MatchWorker0A = 1;
         private const int MatchWorker0B = 2;
         private const int MatchNode0 = 3;
@@ -774,6 +829,7 @@ namespace WordCraft.Replay
         private const int MatchWorker1A = 5;
         private const int MatchWorker1B = 6;
         private const int MatchNode1 = 7;
+        private const int MatchFighter0 = 8;
         private const int MatchFighter1 = 9;
         private const int MatchSite0 = 10; // placed at tick 150 by peer 0
         private const int MatchSite1 = 11; // placed at tick 150 by peer 1
@@ -811,7 +867,12 @@ namespace WordCraft.Replay
             return new FixVec2(Fix.FromInt(x) + half, Fix.FromInt(y) + half);
         }
 
-        /// <summary>Gather, build, produce, in that order, for both peers.</summary>
+        /// <summary>
+        /// Gather, build, produce, in that order, for both peers, with all six
+        /// order commands threaded through the same run. They share a world with
+        /// the economy on purpose: an order that only ever ran in its own fixture
+        /// has never had to agree with anything else moving.
+        /// </summary>
         private static List<Command>[] BuildMatchLog()
         {
             var log = new List<Command>[Ticks];
@@ -823,14 +884,37 @@ namespace WordCraft.Replay
             log[2].Add(new Command(2, 1, seq[1]++, CommandType.Gather, MatchWorker1A, FixVec2.Zero, MatchNode1));
             log[2].Add(new Command(2, 1, seq[1]++, CommandType.Gather, MatchWorker1B, FixVec2.Zero, MatchNode1));
 
+            // Named target rather than a walk order: the two fighters already stand
+            // in each other's face, so this is the order deciding the kill.
+            log[5].Add(new Command(5, 0, seq[0]++, CommandType.Attack, MatchFighter0, FixVec2.Zero, MatchFighter1));
+
             log[150].Add(new Command(150, 0, seq[0]++, CommandType.Build, -1, At(20, 20)));
             log[150].Add(new Command(150, 1, seq[1]++, CommandType.Build, -1, At(44, 48)));
 
+            // One worker off the loop, the other left on it, so the run still banks
+            // deliveries while a cancelled loop is in the same hash.
+            log[200].Add(new Command(200, 0, seq[0]++, CommandType.Stop, MatchWorker0B, FixVec2.Zero));
+
+            // By 250 the named target is down, so the fighter has an idle mode to
+            // replace rather than an order still running.
+            log[250].Add(new Command(250, 0, seq[0]++, CommandType.HoldPosition, MatchFighter0, FixVec2.Zero));
+
+            log[260].Add(new Command(260, 0, seq[0]++, CommandType.SetRallyPoint, MatchBase0, At(10, 10)));
+            log[260].Add(new Command(260, 1, seq[1]++, CommandType.SetRallyPoint, MatchBase1, At(46, 46)));
+
             foreach (int t in new[] { 300, 400 })
             {
-                log[t].Add(new Command(t, 0, seq[0]++, CommandType.Produce, 0, FixVec2.Zero));
+                log[t].Add(new Command(t, 0, seq[0]++, CommandType.Produce, MatchBase0, FixVec2.Zero));
                 log[t].Add(new Command(t, 1, seq[1]++, CommandType.Produce, MatchBase1, FixVec2.Zero));
             }
+
+            // Queued, then cancelled ten ticks in, so the refund lands while the
+            // unit is genuinely half built rather than on an idle building.
+            log[450].Add(new Command(450, 0, seq[0]++, CommandType.Produce, MatchBase0, FixVec2.Zero));
+            log[460].Add(new Command(460, 0, seq[0]++, CommandType.CancelProduction, MatchBase0, FixVec2.Zero));
+
+            // Last, so the fighter ends the run under an order that is still live.
+            log[500].Add(new Command(500, 0, seq[0]++, CommandType.AttackMove, MatchFighter0, At(40, 40)));
 
             return log;
         }
