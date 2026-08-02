@@ -22,6 +22,9 @@ namespace WordCraft.Sim
 
         /// <summary>Kill TargetId, wherever it goes, until it dies or a new order arrives.</summary>
         Attack = 1,
+
+        /// <summary>Walk to OrderPoint, break off for anything hostile found on the way.</summary>
+        AttackMove = 2,
     }
 
     /// <summary>
@@ -66,6 +69,12 @@ namespace WordCraft.Sim
 
         /// <summary>Which standing order the tick systems read this entity under.</summary>
         public OrderMode Mode;
+
+        /// <summary>
+        /// Where an AttackMove is headed. Kept apart from Target because pursuit
+        /// overwrites Target, and the order has to remember what to resume toward.
+        /// </summary>
+        public FixVec2 OrderPoint;
 
         // Cursor into this entity's path. At or past the path length means the
         // entity walks straight at Target instead.
@@ -347,6 +356,22 @@ namespace WordCraft.Sim
                     break;
                 }
 
+                case CommandType.AttackMove:
+                {
+                    if (!OwnedAndAlive(c.EntityId, c.PeerId)) return;
+                    Entity e = entities[c.EntityId];
+                    // Has to walk and has to shoot. On anything else this order is a
+                    // plain Move wearing another name, and accepting it would leave
+                    // an entity in a mode whose systems never touch it.
+                    if (e.Speed.Raw == 0 || !CanAttack(e)) return;
+                    ClearOrders(ref e);
+                    e.Mode = OrderMode.AttackMove;
+                    e.OrderPoint = c.Target;
+                    entities[c.EntityId] = e;
+                    SetDestination(c.EntityId, c.Target);
+                    break;
+                }
+
                 case CommandType.Spawn:
                     SpawnUnit(c.PeerId, Role.Melee, c.Target);
                     break;
@@ -398,6 +423,7 @@ namespace WordCraft.Sim
             e.Mode = OrderMode.None;
             e.GatherNodeId = -1;
             e.TargetId = -1;
+            e.OrderPoint = FixVec2.Zero;
         }
 
         private bool OwnedAndAlive(int id, int peer)
@@ -505,6 +531,8 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.AttackCooldown);
                 Mix(ref h, (ulong)e.TargetId);
                 Mix(ref h, (ulong)e.Mode);
+                Mix(ref h, (ulong)e.OrderPoint.X.Raw);
+                Mix(ref h, (ulong)e.OrderPoint.Y.Raw);
                 Mix(ref h, (ulong)e.PathIndex);
 
                 List<int> path = paths[i];

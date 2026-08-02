@@ -32,6 +32,7 @@ namespace WordCraft.Replay
                 ProductionStopsAtThePopulationCap();
                 TechTiersGateProduction();
                 AttackOrderKillsWhatItNames();
+                AttackMoveStopsForWhatItMeets();
                 ClientLogMatchesGoldenHash();
                 SimAssemblyIsClean();
             }
@@ -407,6 +408,65 @@ namespace WordCraft.Replay
             for (int t = 0; t < OrderTicks; t++)
             {
                 world.Step(t == 0 ? order : idle);
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        private const int Marcher = 0;
+        private const int Bystander = 1;
+
+        /// <summary>
+        /// An attack-move is both halves or it is nothing. A unit that only walked
+        /// would pass the hostile with a couple of shots and arrive on time; a unit
+        /// that only fought would never arrive. This asserts both: the hostile dies
+        /// with the marcher still well short of the point, and the point is reached
+        /// afterwards.
+        /// </summary>
+        private static void AttackMoveStopsForWhatItMeets()
+        {
+            ulong[] first = RunAttackMove(out World world, out Fix killedAtX);
+            ulong[] second = RunAttackMove(out _, out _);
+
+            Check(!world.GetEntity(Bystander).Alive, "the attack-move walked past the hostile");
+            Check(killedAtX < Fix.FromInt(35), "the marcher was already at the point when it killed: x=" + killedAtX);
+            Check(world.GetEntity(Marcher).Position.Equals(At(40, 10)), "the attack-move never reached its point");
+            // Still under the order after arriving, so the next hostile to wander
+            // in is engaged rather than ignored.
+            Check(world.GetEntity(Marcher).Mode == OrderMode.AttackMove, "the attack-move order evaporated");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "attack-move hash drift at tick " + t);
+            }
+        }
+
+        private static ulong[] RunAttackMove(out World world, out Fix killedAtX)
+        {
+            world = new World(Seed);
+            world.SpawnUnit(0, Role.Melee, At(10, 10)); // 0
+            // 20 out, so it starts beyond AcquireRange and the marcher has to walk
+            // some of the route before it has anything to break off for. A worker,
+            // so it neither shoots back nor moves.
+            world.SpawnWorker(1, At(30, 10)); // 1
+
+            var order = new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.AttackMove, Marcher, At(40, 10))
+            };
+            var idle = new List<Command>();
+
+            killedAtX = Fix.Zero;
+            bool wasAlive = true;
+            var hashes = new ulong[OrderTicks];
+            for (int t = 0; t < OrderTicks; t++)
+            {
+                world.Step(t == 0 ? order : idle);
+                if (wasAlive && !world.GetEntity(Bystander).Alive)
+                {
+                    killedAtX = world.GetEntity(Marcher).Position.X;
+                    wasAlive = false;
+                }
                 hashes[t] = world.Hash();
             }
             return hashes;

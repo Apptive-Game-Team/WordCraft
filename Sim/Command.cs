@@ -9,6 +9,7 @@ namespace WordCraft.Sim
         Build = 4,
         Produce = 5,
         Attack = 6,
+        AttackMove = 7,
     }
 
     /// <summary>

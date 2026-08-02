@@ -30,7 +30,15 @@ namespace WordCraft.Sim
                     a.TargetId = AcquireTarget(a);
                 }
 
-                if (a.TargetId < 0) { entities[i] = a; continue; }
+                if (a.TargetId < 0)
+                {
+                    // Nothing hostile left in range, so an attack-move goes back to
+                    // being a move. Retarget repaths only when the destination is
+                    // not already the standing one, so an arrived unit costs nothing.
+                    if (a.Mode == OrderMode.AttackMove) Retarget(i, ref a, a.OrderPoint);
+                    entities[i] = a;
+                    continue;
+                }
 
                 // Read straight from the table rather than caching on the entity:
                 // one copy of a number cannot disagree with itself across peers.
@@ -52,12 +60,23 @@ namespace WordCraft.Sim
                         entities[t.Id] = t;
                     }
                 }
-                else if (a.Kind != EntityKind.Building && PathDone(i))
+                else if (a.Kind != EntityKind.Building && (a.Mode == OrderMode.AttackMove || PathDone(i)))
                 {
                     // Only chase when no move order is outstanding, so combat never
                     // overrides what the player told the unit to do. A building never
                     // chases at all: its Target is hashed, so letting combat write one
                     // would make a turret's state depend on what walked past it.
+                    //
+                    // An attack-move is the one order that wants to be overridden:
+                    // breaking off the route to close is the whole point. Its route
+                    // is dropped rather than recomputed, so pursuit stays a straight
+                    // line and costs no pathfinding per tick; OrderPoint is what
+                    // rebuilds the route once the fighting is over.
+                    if (a.Mode == OrderMode.AttackMove)
+                    {
+                        paths[i].Clear();
+                        a.PathIndex = 0;
+                    }
                     a.Target = t.Position;
                 }
 
