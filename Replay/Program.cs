@@ -30,6 +30,7 @@ namespace WordCraft.Replay
                 MatchReachesTheWinCondition();
                 DefenseBuildingsShoot();
                 ProductionStopsAtThePopulationCap();
+                TechTiersGateProduction();
                 ClientLogMatchesGoldenHash();
                 SimAssemblyIsClean();
             }
@@ -307,6 +308,51 @@ namespace WordCraft.Replay
             world.Step(Produce(0, 0, 1, Role.Melee));
             Check(world.GetResources(0) == banked - World.ProduceCost, "produce under the cap spent nothing");
             Check(world.GetEntity(0).QueueCount == 1, "produce under the cap queued nothing");
+        }
+
+        private const int TechBase = 0;
+        private const int TechBuilding = 1;
+        private const int TechUnit = 10; // the one T3 unit this world ever finishes
+
+        /// <summary>
+        /// Tier 3 is refused before the tech building, accepted after it, and
+        /// refused again once it falls. What it does not do is unbuild the unit it
+        /// already opened, which is the half of the rule easy to get wrong.
+        /// </summary>
+        private static void TechTiersGateProduction()
+        {
+            var world = new World(Seed);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.GrantResources(0, 1000);
+
+            int banked = world.GetResources(0);
+            world.Step(Produce(TechBase, 0, 0, Role.Signature));
+            Check(world.GetResources(0) == banked, "tier 3 spent resources with no tech building");
+            Check(world.GetEntity(TechBase).QueueCount == 0, "tier 3 queued with no tech building");
+
+            // Far from the base, so the squad that comes for it later reaches
+            // nothing else and the assertions stay about the tier rule.
+            world.SpawnBuilding(0, Role.Tech, At(30, 30), complete: true); // 1
+            world.Step(Produce(TechBase, 0, 1, Role.Signature));
+            Check(world.GetResources(0) == banked - World.ProduceCost, "the tech building did not open tier 3");
+            Check(world.GetEntity(TechBase).QueueCount == 1, "the tech building did not open tier 3");
+
+            // Destroyed by an enemy squad rather than a test hook, so the rule is
+            // exercised through the same path a match takes.
+            for (int i = 0; i < 8; i++) world.SpawnUnit(1, Role.Melee, At(31, 29 + i % 3)); // 2..9
+
+            var idle = new List<Command>();
+            for (int t = 0; t < 400 && world.GetEntity(TechBuilding).Alive; t++) world.Step(idle);
+            Check(!world.GetEntity(TechBuilding).Alive, "the squad never destroyed the tech building");
+
+            Check(world.GetEntity(TechUnit).Role == Role.Signature, "the queued tier 3 unit never appeared");
+            Check(world.GetEntity(TechUnit).Alive, "losing the tech building unbuilt a finished unit");
+
+            banked = world.GetResources(0);
+            int queued = world.GetEntity(TechBase).QueueCount;
+            world.Step(Produce(TechBase, 0, 2, Role.Signature));
+            Check(world.GetResources(0) == banked, "tier 3 spent resources after the tech building fell");
+            Check(world.GetEntity(TechBase).QueueCount == queued, "tier 3 queued after the tech building fell");
         }
 
         private static List<Command> Produce(int building, int peer, int seq, Role role) =>

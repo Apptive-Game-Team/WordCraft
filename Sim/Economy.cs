@@ -173,11 +173,31 @@ namespace WordCraft.Sim
             }
         }
 
-        private void TryQueueUnit(int peer, int buildingId)
+        /// <summary>
+        /// T1 is the base, T2 a production building, T3 a tech building. Derived
+        /// from standing buildings rather than latched, so losing the tech building
+        /// closes tier 3 on the tick it falls while the units it opened stay alive.
+        /// </summary>
+        private int TierOf(int peer)
+        {
+            int tier = 1;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (!e.Alive || e.Kind != EntityKind.Building || e.Owner != peer) continue;
+                if (e.BuildTicksLeft > 0) continue; // an unfinished building opens nothing
+                if (e.Role == Role.Tech) return 3;  // nothing above 3, so stop looking
+                if (e.Role == Role.Production && tier < 2) tier = 2;
+            }
+            return tier;
+        }
+
+        private void TryQueueUnit(int peer, int buildingId, Role role)
         {
             if (!OwnedAndAlive(buildingId, peer)) return;
             Entity b = entities[buildingId];
             if (b.Kind != EntityKind.Building || b.BuildTicksLeft > 0) return;
+            if (FactionData.Tier(role) > TierOf(peer)) return;
             if (b.QueueCount >= MaxQueue) return;
             // Refused before anything is spent: a rejected command must leave the
             // peer's resources and queue exactly as it found them.
@@ -190,6 +210,10 @@ namespace WordCraft.Sim
             // Cost is taken at queue time, so a peer cannot queue more than it can pay for.
             resources[peer] -= ProduceCost;
             b.QueueCount++;
+            // ponytail: one role for the whole queue, so a second order overwrites
+            // what the first one was going to build. Give the queue a list of roles
+            // when players expect to mix unit types in one building.
+            b.ProduceRole = role;
             entities[buildingId] = b;
         }
 
@@ -209,7 +233,7 @@ namespace WordCraft.Sim
                     entities[i] = b;
                     // Fixed rally offset: the spawn point must not depend on how many
                     // units already stand there.
-                    SpawnUnit(b.Owner, Role.Melee, b.Position + RallyOffset);
+                    SpawnUnit(b.Owner, b.ProduceRole, b.Position + RallyOffset);
                     continue;
                 }
                 entities[i] = b;

@@ -118,7 +118,29 @@ namespace WordCraft.Sim
             "", "ManaWell", "ApprenticeMage", "Tower", "Cannon", "", "ChickenCommando", "Towerback", "Tower", "Workshop",
         };
 
+        /// <summary>
+        /// Tech tier per roster entry, indexed by Role. A tier is a roster number
+        /// like hp, not a case in the command handler: the day a faction opens its
+        /// signature unit one tier earlier, this table is the only thing that moves.
+        /// </summary>
+        private static readonly int[] tiers =
+        {
+            /* None       */ 1,
+            /* Base       */ 1,
+            /* Worker     */ 1,
+            /* Production */ 1,
+            /* Defense    */ 1,
+            /* Melee      */ 1,
+            /* Ranged     */ 2,
+            /* Signature  */ 3,
+            /* Supply     */ 1,
+            /* Tech       */ 1,
+        };
+
         public static UnitStats Stats(Role role) => stats[(int)role];
+
+        /// <summary>What the owner's tier must reach before this role can be produced.</summary>
+        public static int Tier(Role role) => tiers[(int)role];
 
         /// <summary>View-only metadata. Nothing in the simulation reads it, so it is not hashed.</summary>
         public static string Name(Faction faction, Role role) => names[Index(faction, role)];

@@ -43,6 +43,9 @@ namespace WordCraft.Sim
         public int ProduceTicksLeft;
         public int QueueCount;
 
+        /// <summary>What the queue is building. Set at queue time, read at spawn time.</summary>
+        public Role ProduceRole;
+
         // Combat. All timing in whole ticks.
         public int AttackCooldown;
         public int TargetId;
@@ -334,7 +337,13 @@ namespace WordCraft.Sim
                     break;
 
                 case CommandType.Produce:
-                    TryQueueUnit(c.PeerId, c.EntityId);
+                    // Arg names the unit to build. Out of range is a malformed
+                    // command, not a clamp: guessing what the player meant would
+                    // have each peer guess for itself.
+                    if (c.Arg < 0 || c.Arg >= FactionData.RoleCount) return;
+                    // Role.None is what a Produce with no Arg carries, and the
+                    // default fighter is what the client has always meant by it.
+                    TryQueueUnit(c.PeerId, c.EntityId, c.Arg == 0 ? Role.Melee : (Role)c.Arg);
                     break;
             }
         }
@@ -440,6 +449,7 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.BuildTicksLeft);
                 Mix(ref h, (ulong)e.ProduceTicksLeft);
                 Mix(ref h, (ulong)e.QueueCount);
+                Mix(ref h, (ulong)e.ProduceRole);
                 Mix(ref h, (ulong)e.AttackCooldown);
                 Mix(ref h, (ulong)e.TargetId);
                 Mix(ref h, (ulong)e.PathIndex);
