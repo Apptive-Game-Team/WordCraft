@@ -17,7 +17,19 @@ namespace WordCraft.Sim
 
                 if (a.AttackCooldown > 0) a.AttackCooldown--;
 
-                if (!ValidTarget(a, a.TargetId)) a.TargetId = AcquireTarget(a);
+                if (a.Mode == OrderMode.Attack)
+                {
+                    // An ordered target is held at any distance and is never traded
+                    // for a nearer body: that commitment is the whole difference
+                    // between an attack order and walking at the enemy. The order
+                    // ends when the named target does, and not before.
+                    if (!OrderedTargetAlive(a)) { a.Mode = OrderMode.None; a.TargetId = -1; }
+                }
+                else if (!ValidTarget(a, a.TargetId))
+                {
+                    a.TargetId = AcquireTarget(a);
+                }
+
                 if (a.TargetId < 0) { entities[i] = a; continue; }
 
                 // Read straight from the table rather than caching on the entity:
@@ -60,6 +72,17 @@ namespace WordCraft.Sim
         private static bool CanAttack(Entity e) =>
             e.Kind == EntityKind.Unit ||
             (e.Kind == EntityKind.Building && e.Role == Role.Defense && e.BuildTicksLeft == 0);
+
+        /// <summary>
+        /// An ordered target only has to exist and be hostile. Deliberately no
+        /// range test: the attacker walks to it, however far that is.
+        /// </summary>
+        private bool OrderedTargetAlive(Entity attacker)
+        {
+            if (attacker.TargetId < 0 || attacker.TargetId >= entities.Count) return false;
+            Entity t = entities[attacker.TargetId];
+            return t.Alive && t.Owner != attacker.Owner;
+        }
 
         private bool ValidTarget(Entity attacker, int targetId)
         {

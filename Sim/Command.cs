@@ -8,6 +8,7 @@ namespace WordCraft.Sim
         Gather = 3,
         Build = 4,
         Produce = 5,
+        Attack = 6,
     }
 
     /// <summary>

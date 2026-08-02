@@ -31,6 +31,7 @@ namespace WordCraft.Replay
                 DefenseBuildingsShoot();
                 ProductionStopsAtThePopulationCap();
                 TechTiersGateProduction();
+                AttackOrderKillsWhatItNames();
                 ClientLogMatchesGoldenHash();
                 SimAssemblyIsClean();
             }
@@ -353,6 +354,62 @@ namespace WordCraft.Replay
             world.Step(Produce(TechBase, 0, 2, Role.Signature));
             Check(world.GetResources(0) == banked, "tier 3 spent resources after the tech building fell");
             Check(world.GetEntity(TechBase).QueueCount == queued, "tier 3 queued after the tech building fell");
+        }
+
+        // Order-command fixtures. Every one of them spawns its own tiny world, so
+        // the entity ids below are the spawn order in the matching Run* method.
+        private const int OrderTicks = 400;
+        private const int Attacker = 0;
+        private const int Decoy = 1;      // nearer than the named target, and harmless
+        private const int Named = 2;
+
+        /// <summary>
+        /// An attack order names its victim. The decoy is what makes that provable:
+        /// it stands nearer, so auto-acquisition would take it, and a run that
+        /// leaves it untouched can only have honoured the order.
+        /// </summary>
+        private static void AttackOrderKillsWhatItNames()
+        {
+            ulong[] first = RunAttackOrder(out World world);
+            ulong[] second = RunAttackOrder(out _);
+
+            Check(!world.GetEntity(Named).Alive, "the attack order never killed what it named");
+            Check(world.GetEntity(Decoy).Alive, "the attack order killed the decoy");
+            Check(world.GetEntity(Decoy).Hp == world.GetEntity(Decoy).MaxHp, "the decoy was shot at");
+            // The order is spent when its target dies rather than latching, or the
+            // next acquisition would be made under an order that no longer exists.
+            Check(world.GetEntity(Attacker).Mode == OrderMode.None, "the attack order outlived its target");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "attack order hash drift at tick " + t);
+            }
+        }
+
+        private static ulong[] RunAttackOrder(out World world)
+        {
+            world = new World(Seed);
+            world.SpawnUnit(0, Role.Melee, At(20, 20)); // 0
+            // Workers, so neither shoots back and the run is about the order only.
+            // The decoy sits behind the attacker: 5 away at the start against the
+            // named target's 6, and 11 away once the attacker has closed, which is
+            // outside AcquireRange so the finished order does not roll onto it.
+            world.SpawnWorker(1, At(15, 20)); // 1
+            world.SpawnWorker(1, At(26, 20)); // 2
+
+            var order = new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.Attack, Attacker, FixVec2.Zero, Named)
+            };
+            var idle = new List<Command>();
+
+            var hashes = new ulong[OrderTicks];
+            for (int t = 0; t < OrderTicks; t++)
+            {
+                world.Step(t == 0 ? order : idle);
+                hashes[t] = world.Hash();
+            }
+            return hashes;
         }
 
         private static List<Command> Produce(int building, int peer, int seq, Role role) =>

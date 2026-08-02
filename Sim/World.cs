@@ -11,6 +11,20 @@ namespace WordCraft.Sim
     }
 
     /// <summary>
+    /// The standing order an entity is under. Exactly one at a time: issuing any
+    /// order clears the rest, so a stale attack target can never outlive the order
+    /// that replaced it. Values are hashed as entity state; never renumber them.
+    /// </summary>
+    public enum OrderMode
+    {
+        /// <summary>No standing order. Combat acquires and chases on its own.</summary>
+        None = 0,
+
+        /// <summary>Kill TargetId, wherever it goes, until it dies or a new order arrives.</summary>
+        Attack = 1,
+    }
+
+    /// <summary>
     /// One flat struct for every kind of entity. A worker leaves the building
     /// fields at zero and vice versa; that costs a few bytes and saves a type
     /// hierarchy whose fields would have to be hashed one by one anyway.
@@ -49,6 +63,9 @@ namespace WordCraft.Sim
         // Combat. All timing in whole ticks.
         public int AttackCooldown;
         public int TargetId;
+
+        /// <summary>Which standing order the tick systems read this entity under.</summary>
+        public OrderMode Mode;
 
         // Cursor into this entity's path. At or past the path length means the
         // entity walks straight at Target instead.
@@ -302,11 +319,31 @@ namespace WordCraft.Sim
                 {
                     if (!OwnedAndAlive(c.EntityId, c.PeerId)) return;
                     Entity e = entities[c.EntityId];
-                    // An explicit move order cancels the gather loop, otherwise the
-                    // worker retargets itself back on the next tick.
-                    e.GatherNodeId = -1;
+                    ClearOrders(ref e);
                     entities[c.EntityId] = e;
                     SetDestination(c.EntityId, c.Target);
+                    break;
+                }
+
+                case CommandType.Attack:
+                {
+                    if (!OwnedAndAlive(c.EntityId, c.PeerId)) return;
+                    // Arg names the victim. Out of range, dead, or friendly is a
+                    // malformed order and is refused whole: picking a substitute
+                    // would have each peer pick one for itself.
+                    if (c.Arg < 0 || c.Arg >= entities.Count) return;
+                    Entity victim = entities[c.Arg];
+                    if (!victim.Alive || victim.Owner == c.PeerId) return;
+
+                    Entity e = entities[c.EntityId];
+                    if (!CanAttack(e)) return;
+                    ClearOrders(ref e);
+                    e.Mode = OrderMode.Attack;
+                    e.TargetId = c.Arg;
+                    entities[c.EntityId] = e;
+                    // Walk into range. A turret has no walk to give, and its Target
+                    // is hashed state, so it takes the order without moving.
+                    if (e.Speed.Raw != 0) SetDestination(c.EntityId, victim.Position);
                     break;
                 }
 
@@ -323,6 +360,7 @@ namespace WordCraft.Sim
 
                     Entity w = entities[c.EntityId];
                     if (w.Kind != EntityKind.Worker) return;
+                    ClearOrders(ref w);
                     w.GatherNodeId = c.Arg;
                     w.GatherTicksLeft = 0;
                     entities[c.EntityId] = w;
@@ -346,6 +384,20 @@ namespace WordCraft.Sim
                     TryQueueUnit(c.PeerId, c.EntityId, c.Arg == 0 ? Role.Melee : (Role)c.Arg);
                     break;
             }
+        }
+
+        /// <summary>
+        /// Puts an entity back in the no-order state. Every order routes through
+        /// here before setting its own, so an entity is in exactly one mode and a
+        /// stale gather loop or attack target cannot survive the order that
+        /// replaced it. Two peers disagreeing about which order is live is a
+        /// desync that surfaces ticks later, far from this line.
+        /// </summary>
+        private static void ClearOrders(ref Entity e)
+        {
+            e.Mode = OrderMode.None;
+            e.GatherNodeId = -1;
+            e.TargetId = -1;
         }
 
         private bool OwnedAndAlive(int id, int peer)
@@ -452,6 +504,7 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.ProduceRole);
                 Mix(ref h, (ulong)e.AttackCooldown);
                 Mix(ref h, (ulong)e.TargetId);
+                Mix(ref h, (ulong)e.Mode);
                 Mix(ref h, (ulong)e.PathIndex);
 
                 List<int> path = paths[i];
