@@ -51,7 +51,7 @@ namespace WordCraft.Sim
         /// content produce different results from the same input, so this travels
         /// in the handshake and a mismatch is a rejection before tick 0.
         /// </summary>
-        public const uint ContentVersion = 9;
+        public const uint ContentVersion = 10;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
