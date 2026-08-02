@@ -165,7 +165,7 @@ namespace WordCraft.Replay
         /// </summary>
         private static void MapIsExactlySymmetric()
         {
-            World world = MatchScenario.Build(Seed);
+            World world = MatchScenario.Build(Seed, ScriptedLog.Peer0Faction, ScriptedLog.Peer1Faction);
             // Cell x sits at x + 1/2, its mirror at (GridSize - 1 - x) + 1/2, so a
             // mirrored pair's coordinates always sum to exactly GridSize.
             Fix span = Fix.FromInt(World.GridSize);
@@ -367,7 +367,7 @@ namespace WordCraft.Replay
         private static void ClientLogMatchesGoldenHash()
         {
             List<Command>[] log = ScriptedLog.Build();
-            World world = MatchScenario.Build(Seed);
+            World world = MatchScenario.Build(Seed, ScriptedLog.Peer0Faction, ScriptedLog.Peer1Faction);
             for (int t = 0; t < log.Length; t++) world.Step(log[t]);
 
             ulong final = world.Hash();

@@ -13,16 +13,21 @@ namespace WordCraft.View
         public const int Peers = 2;
         public const int MapSize = World.GridSize;
 
-        /// <summary>Which faction each peer plays. Identical on both peers, from the seed alone.</summary>
-        public static readonly Faction[] PeerFaction = { Faction.TreeSpirits, Faction.Hellfire };
-
         private const int NodeAmount = 500;
         private const int StartingResources = 200;
 
-        public static World Build(ulong seed)
+        /// <summary>
+        /// Both peers must pass the same two factions or their worlds hash apart
+        /// from tick 0. In a networked match the handshake is what makes that
+        /// true: LockstepSession writes both slots again once each peer's own
+        /// choice has crossed the wire, so what is passed here is what the local
+        /// player sees until then.
+        /// </summary>
+        public static World Build(ulong seed, Faction peer0, Faction peer1)
         {
             var world = new World(seed);
-            for (int peer = 0; peer < Peers; peer++) world.SetPeerFaction(peer, PeerFaction[peer]);
+            world.SetPeerFaction(0, peer0);
+            world.SetPeerFaction(1, peer1);
 
             for (int peer = 0; peer < Peers; peer++)
             {

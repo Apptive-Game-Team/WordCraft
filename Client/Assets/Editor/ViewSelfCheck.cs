@@ -120,7 +120,8 @@ namespace WordCraft.View
 
         private static ulong[] RunLog(List<Command>[] log, bool viewPass)
         {
-            World world = MatchScenario.Build(new MatchConfig().Seed);
+            World world = MatchScenario.Build(new MatchConfig().Seed,
+                ScriptedLog.Peer0Faction, ScriptedLog.Peer1Faction);
             var hashes = new ulong[log.Length];
 
             for (int t = 0; t < log.Length; t++)

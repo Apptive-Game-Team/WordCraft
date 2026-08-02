@@ -27,6 +27,23 @@ namespace WordCraft.Net
         public uint ContentVersion = FactionData.ContentVersion;
         public ulong Seed = 0xC0FFEE;
 
+        /// <summary>
+        /// The faction this peer plays. A peer's own choice is authoritative: it
+        /// travels in the handshake and the other side takes it as given.
+        /// </summary>
+        public Faction LocalFaction = DefaultFaction(0);
+
+        /// <summary>
+        /// What this peer expects the other one to play, or null to accept
+        /// whatever the handshake reports. Set it and a peer that arrives playing
+        /// something else is a rejection instead of a surprise.
+        /// </summary>
+        public Faction? RemoteFaction;
+
+        /// <summary>Faction a peer plays when nothing chose one for it.</summary>
+        public static Faction DefaultFaction(int peer) =>
+            peer == 0 ? Faction.TreeSpirits : Faction.Hellfire;
+
         /// <summary>Ticks between issuing a command and executing it. 3 at 20 Hz absorbs 150 ms.</summary>
         public int InputDelay = 3;
 
@@ -69,7 +86,10 @@ namespace WordCraft.Net
     public sealed class LockstepSession
     {
         /// <summary>Bump on any wire format change. Old peers must be rejected, not tolerated.</summary>
-        public const uint ProtocolVersion = 1;
+        public const uint ProtocolVersion = 2;
+
+        /// <summary>Hello's stand-in for "I have not been told the other faction yet".</summary>
+        private const byte FactionUnknown = 0xFF;
 
         private const int PeerCount = 2;
         private const int MaxBlocksPerDatagram = 24;
@@ -102,6 +122,11 @@ namespace WordCraft.Net
         private int ackedThrough = -1;    // highest local tick the remote confirmed
         private int prunedThrough = -1;
         private int receivedThrough = -1; // highest remote tick we hold contiguously
+
+        // The remote's own choice, as reported by its Hello. Known before tick 0
+        // or the match never starts.
+        private Faction remoteFaction;
+        private bool remoteFactionKnown;
 
         private bool started;
         private bool remoteActive;
@@ -211,7 +236,7 @@ namespace WordCraft.Net
             batch.Clear();
             batch.AddRange(localCmds);
             batch.AddRange(remoteCmds);
-            world.Step(batch); // the only line in this assembly that mutates the simulation
+            world.Step(batch); // the only line in this assembly that advances the simulation
 
             inputs[remotePeer].Remove(t);
             PruneLocal();
@@ -236,47 +261,90 @@ namespace WordCraft.Net
             w.U64(cfg.Seed);
             w.U16((ushort)cfg.InputDelay);
             w.U16((ushort)cfg.HashInterval);
+            w.U8((byte)cfg.LocalFaction);
+            // Echoing back who we think the other peer is turns a one-sided guess
+            // into an agreement: either side spotting the disagreement rejects.
+            w.U8(Expected() is Faction f ? (byte)f : FactionUnknown);
             w.U8((byte)localPeer);
             transport.Send(w.Buf, w.Length);
         }
 
+        /// <summary>What this peer currently holds the remote's faction to be, if anything.</summary>
+        private Faction? Expected() => remoteFactionKnown ? remoteFaction : cfg.RemoteFaction;
+
         private void OnHello(Reader r)
         {
+            // Read the version before anything else: a peer on an older Hello
+            // sends a shorter datagram, and dropping it as truncated would look
+            // like a dead link instead of the version mismatch it is.
             uint proto = r.U32();
+            if (!r.Ok) return;
+            if (proto != ProtocolVersion)
+            {
+                Reject("protocol version " + proto + ", expected " + ProtocolVersion);
+                return;
+            }
+
             uint sim = r.U32();
             uint content = r.U32();
             ulong seed = r.U64();
             int delay = r.U16();
             int hashInterval = r.U16();
+            byte theirFaction = r.U8();
+            byte ourFactionAsTheySeeIt = r.U8();
             int peer = r.U8();
             if (!r.Ok) return;
 
             string bad = null;
-            if (proto != ProtocolVersion) bad = "protocol version " + proto + ", expected " + ProtocolVersion;
-            else if (sim != cfg.SimVersion) bad = "simulation version " + sim + ", expected " + cfg.SimVersion;
+            if (sim != cfg.SimVersion) bad = "simulation version " + sim + ", expected " + cfg.SimVersion;
             else if (content != cfg.ContentVersion) bad = "content version " + content + ", expected " + cfg.ContentVersion;
             else if (seed != cfg.Seed) bad = "seed 0x" + seed.ToString("X") + ", expected 0x" + cfg.Seed.ToString("X");
             else if (delay != cfg.InputDelay) bad = "input delay " + delay + ", expected " + cfg.InputDelay;
             else if (hashInterval != cfg.HashInterval) bad = "hash interval " + hashInterval + ", expected " + cfg.HashInterval;
+            // A faction is hashed entity state, so two peers that disagree about
+            // who plays what desync on the first checkpoint. Settle it here.
+            else if (theirFaction >= FactionData.FactionCount) bad = "unknown faction id " + theirFaction;
+            else if (Expected() is Faction want && (Faction)theirFaction != want)
+                bad = "faction " + (Faction)theirFaction + " for peer " + peer + ", expected " + want;
+            else if (ourFactionAsTheySeeIt != FactionUnknown && (Faction)ourFactionAsTheySeeIt != cfg.LocalFaction)
+                bad = "faction " + (Faction)ourFactionAsTheySeeIt + " for peer " + localPeer +
+                      ", expected " + cfg.LocalFaction;
             else if (peer == localPeer) bad = "peer id collision on " + peer;
 
             if (bad != null)
             {
-                // Rejected before tick 0. A mismatched peer that is allowed to
-                // start looks like a desync later, which is far harder to read.
-                w.Reset(MsgType.Reject);
-                w.Text(bad);
-                transport.Send(w.Buf, w.Length);
-                Stop("handshake rejected: peer reports " + bad);
+                Reject(bad);
                 return;
             }
 
+            remoteFaction = (Faction)theirFaction;
+            remoteFactionKnown = true;
+
             if (State == SessionState.Handshaking) BeginMatch();
+        }
+
+        /// <summary>
+        /// Rejected before tick 0. A mismatched peer that is allowed to start
+        /// looks like a desync later, which is far harder to read.
+        /// </summary>
+        private void Reject(string bad)
+        {
+            w.Reset(MsgType.Reject);
+            w.Text(bad);
+            transport.Send(w.Buf, w.Length);
+            Stop("handshake rejected: peer reports " + bad);
         }
 
         private void BeginMatch()
         {
             State = SessionState.Running;
+
+            // Setup, not simulation: both factions are settled and neither world
+            // has stepped. Writing them here rather than trusting the scenario is
+            // what stops a peer's own config and its world from drifting apart.
+            world.SetPeerFaction(localPeer, cfg.LocalFaction);
+            world.SetPeerFaction(remotePeer, remoteFaction);
+
             // Nothing could have been issued before the match existed, so the
             // first InputDelay ticks are empty on every peer by definition.
             for (int t = 0; t < cfg.InputDelay; t++) SealLocal(t, null);
