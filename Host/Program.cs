@@ -2,6 +2,7 @@ using System;
 using System.Net;
 using System.Threading;
 using WordCraft.Net;
+using WordCraft.Sim;
 
 namespace WordCraft.Host
 {
@@ -9,8 +10,8 @@ namespace WordCraft.Host
     /// Headless runner for a two peer lockstep match.
     ///
     ///   dotnet run --project Host -- selfcheck
-    ///   dotnet run --project Host -- host [port] [ticks]
-    ///   dotnet run --project Host -- join &lt;ip&gt; [port] [ticks]
+    ///   dotnet run --project Host -- host [port] [ticks] [-faction &lt;name&gt;]
+    ///   dotnet run --project Host -- join &lt;ip&gt; [port] [ticks] [-faction &lt;name&gt;]
     /// </summary>
     internal static class Program
     {
@@ -20,25 +21,47 @@ namespace WordCraft.Host
         private static int Main(string[] args)
         {
             string mode = args.Length > 0 ? args[0] : "selfcheck";
-            switch (mode)
+            if (mode == "selfcheck") return SelfCheck.Run();
+
+            int peerId = mode == "host" ? 0 : 1;
+            if (mode != "host" && (mode != "join" || args.Length < 2))
             {
-                case "selfcheck": return SelfCheck.Run();
-                case "host": return RunUdp(0, null, Arg(args, 1, DefaultPort), Arg(args, 2, DefaultTicks));
-                case "join":
-                    if (args.Length < 2) { Console.WriteLine("usage: join <ip> [port] [ticks]"); return 2; }
-                    return RunUdp(1, args[1], Arg(args, 2, DefaultPort), Arg(args, 3, DefaultTicks));
-                default:
-                    Console.WriteLine("usage: selfcheck | host [port] [ticks] | join <ip> [port] [ticks]");
-                    return 2;
+                Console.WriteLine("usage: selfcheck | host [port] [ticks] [-faction <name>]" +
+                                  " | join <ip> [port] [ticks] [-faction <name>]");
+                return 2;
             }
+
+            Faction faction = MatchConfig.DefaultFaction(peerId);
+            string picked = Flag(args, "-faction");
+            if (picked != null && (!Enum.TryParse(picked, true, out faction) ||
+                                   !Enum.IsDefined(typeof(Faction), faction)))
+            {
+                Console.WriteLine("unknown faction '" + picked + "'; one of: " +
+                                  string.Join(", ", Enum.GetNames(typeof(Faction))));
+                return 2;
+            }
+
+            return peerId == 0
+                ? RunUdp(0, null, Arg(args, 1, DefaultPort), Arg(args, 2, DefaultTicks), faction)
+                : RunUdp(1, args[1], Arg(args, 2, DefaultPort), Arg(args, 3, DefaultTicks), faction);
         }
 
         private static int Arg(string[] args, int index, int fallback) =>
             args.Length > index && int.TryParse(args[index], out int v) ? v : fallback;
 
-        private static int RunUdp(int peerId, string remoteIp, int port, int ticks)
+        /// <summary>Value after a named flag, anywhere in the arguments, or null.</summary>
+        private static string Flag(string[] args, string name)
         {
-            var cfg = new MatchConfig();
+            for (int i = 1; i < args.Length - 1; i++)
+            {
+                if (args[i] == name) return args[i + 1];
+            }
+            return null;
+        }
+
+        private static int RunUdp(int peerId, string remoteIp, int port, int ticks, Faction faction)
+        {
+            var cfg = new MatchConfig { LocalFaction = faction };
             using var transport = peerId == 0
                 ? new UdpTransport(port, null) // listener; learns the peer from its first datagram
                 : new UdpTransport(0, new IPEndPoint(IPAddress.Parse(remoteIp), port));
@@ -46,6 +69,7 @@ namespace WordCraft.Host
             var peer = new Peer(peerId, transport, cfg, -1, 0);
             Console.WriteLine("peer " + peerId + " on udp " + transport.LocalPort +
                               ", seed 0x" + cfg.Seed.ToString("X") +
+                              ", faction " + cfg.LocalFaction +
                               ", input delay " + cfg.InputDelay + ", target " + ticks + " ticks");
 
             long start = Environment.TickCount64;
