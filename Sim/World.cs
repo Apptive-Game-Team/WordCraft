@@ -372,6 +372,16 @@ namespace WordCraft.Sim
                     break;
                 }
 
+                case CommandType.Stop:
+                {
+                    if (!OwnedAndAlive(c.EntityId, c.PeerId)) return;
+                    Entity e = entities[c.EntityId];
+                    ClearOrders(ref e);
+                    Halt(c.EntityId, ref e);
+                    entities[c.EntityId] = e;
+                    break;
+                }
+
                 case CommandType.Spawn:
                     SpawnUnit(c.PeerId, Role.Melee, c.Target);
                     break;
@@ -424,6 +434,18 @@ namespace WordCraft.Sim
             e.GatherNodeId = -1;
             e.TargetId = -1;
             e.OrderPoint = FixVec2.Zero;
+        }
+
+        /// <summary>
+        /// Drops the walk itself: destination, route, and cursor. Separate from
+        /// ClearOrders because most orders replace the walk rather than cancel it,
+        /// and a half-cleared path is a unit that resumes an order already gone.
+        /// </summary>
+        private void Halt(int id, ref Entity e)
+        {
+            e.Target = e.Position;
+            e.PathIndex = 0;
+            paths[id].Clear();
         }
 
         private bool OwnedAndAlive(int id, int peer)

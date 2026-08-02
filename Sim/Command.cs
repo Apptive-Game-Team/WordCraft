@@ -10,6 +10,7 @@ namespace WordCraft.Sim
         Produce = 5,
         Attack = 6,
         AttackMove = 7,
+        Stop = 8,
     }
 
     /// <summary>

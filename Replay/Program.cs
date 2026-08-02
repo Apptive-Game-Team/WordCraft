@@ -33,6 +33,7 @@ namespace WordCraft.Replay
                 TechTiersGateProduction();
                 AttackOrderKillsWhatItNames();
                 AttackMoveStopsForWhatItMeets();
+                StopCancelsWhatIsRunning();
                 ClientLogMatchesGoldenHash();
                 SimAssemblyIsClean();
             }
@@ -466,6 +467,68 @@ namespace WordCraft.Replay
                 {
                     killedAtX = world.GetEntity(Marcher).Position.X;
                     wasAlive = false;
+                }
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        private const int Walker = 0;
+        private const int Digger = 1;
+        private const int StopTick = 40;
+
+        /// <summary>
+        /// Stop has to cancel the walk and the gather loop both. A worker is in the
+        /// world because the loop is the order that comes back on its own: it
+        /// retargets itself every tick from GatherNodeId, so clearing the path
+        /// alone would have it walking again on the next one.
+        /// </summary>
+        private static void StopCancelsWhatIsRunning()
+        {
+            ulong[] first = RunStop(out World world, out FixVec2 walkerAtStop, out FixVec2 diggerAtStop);
+            ulong[] second = RunStop(out _, out _, out _);
+
+            Check(!walkerAtStop.Equals(At(40, 10)), "the walker was already at its destination when stopped");
+            Check(world.GetEntity(Walker).Position.Equals(walkerAtStop), "the walker kept going after Stop");
+            Check(world.GetEntity(Digger).Position.Equals(diggerAtStop), "the worker kept going after Stop");
+            Check(world.GetEntity(Digger).GatherNodeId < 0, "Stop left the gather loop running");
+            Check(world.GetEntity(Digger).CarryAmount == 0, "the worker reached the node after Stop");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "stop hash drift at tick " + t);
+            }
+        }
+
+        private static ulong[] RunStop(out World world, out FixVec2 walkerAtStop, out FixVec2 diggerAtStop)
+        {
+            world = new World(Seed);
+            world.SpawnUnit(0, Role.Melee, At(10, 10));  // 0
+            world.SpawnWorker(0, At(10, 12));            // 1
+            world.SpawnResourceNode(At(40, 12), 200);    // 2
+
+            var orders = new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.Move, Walker, At(40, 10)),
+                new Command(0, 0, 1, CommandType.Gather, Digger, FixVec2.Zero, 2)
+            };
+            var stop = new List<Command>
+            {
+                new Command(StopTick, 0, 2, CommandType.Stop, Walker, FixVec2.Zero),
+                new Command(StopTick, 0, 3, CommandType.Stop, Digger, FixVec2.Zero)
+            };
+            var idle = new List<Command>();
+
+            walkerAtStop = FixVec2.Zero;
+            diggerAtStop = FixVec2.Zero;
+            var hashes = new ulong[OrderTicks];
+            for (int t = 0; t < OrderTicks; t++)
+            {
+                world.Step(t == 0 ? orders : t == StopTick ? stop : idle);
+                if (t == StopTick)
+                {
+                    walkerAtStop = world.GetEntity(Walker).Position;
+                    diggerAtStop = world.GetEntity(Digger).Position;
                 }
                 hashes[t] = world.Hash();
             }
