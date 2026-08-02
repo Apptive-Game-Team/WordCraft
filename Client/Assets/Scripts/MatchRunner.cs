@@ -15,6 +15,7 @@ namespace WordCraft.View
     ///   WordCraft.app                 host, listens on the default port
     ///   WordCraft.app -join 10.0.0.4  join that address
     ///   WordCraft.app -ticks 400      stop there and print the state hash
+    ///   WordCraft.app -faction Humans play that faction instead of the default
     /// </summary>
     public sealed class MatchRunner : MonoBehaviour
     {
@@ -100,7 +101,7 @@ namespace WordCraft.View
             int port = Arg("-port", DefaultPort);
             stopAtTick = Arg("-ticks", 0);
             LocalPeer = remote == null ? 0 : 1;
-            cfg.LocalFaction = MatchConfig.DefaultFaction(LocalPeer);
+            cfg.LocalFaction = FactionArg(LocalPeer);
 
             // The other peer's faction is a placeholder until its Hello arrives.
             // The session writes the real one before tick 0, and no tick and no
@@ -197,5 +198,25 @@ namespace WordCraft.View
 
         private static int Arg(string name, int fallback) =>
             int.TryParse(Arg(name), out int v) ? v : fallback;
+
+        /// <summary>
+        /// -faction &lt;name&gt;, case insensitive. A name that means nothing is a
+        /// mistake worth shouting about, not worth quietly playing something else.
+        /// </summary>
+        // ponytail: command line only until the start screen lands (roadmap 3-8).
+        private static Faction FactionArg(int peer)
+        {
+            string picked = Arg("-faction");
+            if (picked == null) return MatchConfig.DefaultFaction(peer);
+            if (Enum.TryParse(picked, true, out Faction faction) &&
+                Enum.IsDefined(typeof(Faction), faction))
+            {
+                return faction;
+            }
+
+            Debug.LogError("unknown faction '" + picked + "'; one of: " +
+                           string.Join(", ", Enum.GetNames(typeof(Faction))));
+            return MatchConfig.DefaultFaction(peer);
+        }
     }
 }
