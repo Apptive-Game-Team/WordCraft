@@ -48,7 +48,7 @@ namespace WordCraft.Sim
         /// content produce different results from the same input, so this travels
         /// in the handshake and a mismatch is a rejection before tick 0.
         /// </summary>
-        public const uint ContentVersion = 3;
+        public const uint ContentVersion = 4;
 
         public const int FactionCount = 5;
         public const int RoleCount = 8;
@@ -96,15 +96,15 @@ namespace WordCraft.Sim
         {
             // 세계수 정령. Defense art cannot be ElectricTower: that is a human artifact.
             "", "LifeTree", "SeedSpiritSwarm", "SeedNest", "SpiritStormtree", "TreeGolem", "ThunderSpirit", "WindSpirit",
-            // 지옥불 군단. The defense building is still a concept.
-            "", "RiftAltar", "EmberSpiritSwarm", "SpawningPit", "", "MagmaSpirit", "FireChildSpirit", "FireLordSpirit",
+            // 지옥불 군단
+            "", "RiftAltar", "EmberSpiritSwarm", "SpawningPit", "LavaMaw", "MagmaSpirit", "FireChildSpirit", "FireLordSpirit",
             // 물 슬라임
-            "", "SpringheadPool", "WaterSlimeSwarm", "BubbleGenerator", "", "BubbleSpirit", "AquaArcher", "CloudDragon",
+            "", "SpringheadPool", "WaterSlimeSwarm", "BubbleGenerator", "GeyserColumn", "BubbleSpirit", "AquaArcher", "CloudDragon",
             // 돌 골렘 부족. RockTurret is human-made stonework and stays out of this faction.
             // The signature slot is deliberately empty: RockRemnant is a death state, not a unit.
-            "", "MossrockSanctum", "MiniRockSwarm", "WakingStone", "", "RockGolem", "RockMage", "",
+            "", "MossrockSanctum", "MiniRockSwarm", "WakingStone", "RollingHill", "RockGolem", "RockMage", "",
             // 차원 유랑종. Thinnest roster; the ranged slot has neither art nor concept.
-            "", "AnchoredWorld", "FireTadpole", "Passage", "", "LightningTadpole", "", "DimensionToad",
+            "", "AnchoredWorld", "FireTadpole", "Passage", "RefractingPillar", "LightningTadpole", "", "DimensionToad",
         };
 
         public static UnitStats Stats(Role role) => stats[(int)role];
