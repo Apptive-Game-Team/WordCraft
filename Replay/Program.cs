@@ -31,6 +31,12 @@ namespace WordCraft.Replay
                 DefenseBuildingsShoot();
                 ProductionStopsAtThePopulationCap();
                 TechTiersGateProduction();
+                AttackOrderKillsWhatItNames();
+                AttackMoveStopsForWhatItMeets();
+                StopCancelsWhatIsRunning();
+                HoldPositionNeverChases();
+                ProducedUnitsWalkToTheRallyPoint();
+                CancellingProductionRefundsInFull();
                 ClientLogMatchesGoldenHash();
                 SimAssemblyIsClean();
             }
@@ -124,8 +130,10 @@ namespace WordCraft.Replay
 
         /// <summary>
         /// The same shape as SameLogSameHashes, but over a world that gathers,
-        /// builds, produces, and fights. A movement-only world would not exercise
-        /// the state that actually desyncs.
+        /// builds, produces, fights, and carries all six order commands. A
+        /// movement-only world would not exercise the state that actually desyncs,
+        /// and an order tested only in its own fixture would never have to agree
+        /// with the rest of the simulation running alongside it.
         /// </summary>
         private static void ScriptedMatchSameHashes()
         {
@@ -145,6 +153,14 @@ namespace WordCraft.Replay
             Check(world.GetEntity(MatchSite0).BuildTicksLeft == 0, "peer 0 building never finished");
             Check(world.EntityCount > MatchSite1 + 1, "no units were produced");
             Check(!world.GetEntity(MatchFighter1).Alive, "combat never killed anything");
+
+            // And that the order commands in the log were not silently refused: a
+            // rejected command leaves state untouched, which is exactly what an
+            // identical pair of hash runs looks like.
+            Check(world.GetEntity(MatchBase0).HasRallyPoint, "the rally order never reached the base");
+            Check(world.GetEntity(MatchWorker0B).GatherNodeId < 0, "the stop order never reached the worker");
+            Check(world.GetEntity(MatchFighter0).Mode == OrderMode.AttackMove,
+                "the attack-move order never reached the fighter");
         }
 
         private static void ScriptedMatchDivergenceIsDetected()
@@ -355,6 +371,332 @@ namespace WordCraft.Replay
             Check(world.GetEntity(TechBase).QueueCount == queued, "tier 3 queued after the tech building fell");
         }
 
+        // Order-command fixtures. Every one of them spawns its own tiny world, so
+        // the entity ids below are the spawn order in the matching Run* method.
+        private const int OrderTicks = 400;
+        private const int Attacker = 0;
+        private const int Decoy = 1;      // nearer than the named target, and harmless
+        private const int Named = 2;
+
+        /// <summary>
+        /// An attack order names its victim. The decoy is what makes that provable:
+        /// it stands nearer, so auto-acquisition would take it, and a run that
+        /// leaves it untouched can only have honoured the order.
+        /// </summary>
+        private static void AttackOrderKillsWhatItNames()
+        {
+            ulong[] first = RunAttackOrder(out World world);
+            ulong[] second = RunAttackOrder(out _);
+
+            Check(!world.GetEntity(Named).Alive, "the attack order never killed what it named");
+            Check(world.GetEntity(Decoy).Alive, "the attack order killed the decoy");
+            Check(world.GetEntity(Decoy).Hp == world.GetEntity(Decoy).MaxHp, "the decoy was shot at");
+            // The order is spent when its target dies rather than latching, or the
+            // next acquisition would be made under an order that no longer exists.
+            Check(world.GetEntity(Attacker).Mode == OrderMode.None, "the attack order outlived its target");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "attack order hash drift at tick " + t);
+            }
+        }
+
+        private static ulong[] RunAttackOrder(out World world)
+        {
+            world = new World(Seed);
+            world.SpawnUnit(0, Role.Melee, At(20, 20)); // 0
+            // Workers, so neither shoots back and the run is about the order only.
+            // The decoy sits behind the attacker: 5 away at the start against the
+            // named target's 6, and 11 away once the attacker has closed, which is
+            // outside AcquireRange so the finished order does not roll onto it.
+            world.SpawnWorker(1, At(15, 20)); // 1
+            world.SpawnWorker(1, At(26, 20)); // 2
+
+            var order = new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.Attack, Attacker, FixVec2.Zero, Named)
+            };
+            var idle = new List<Command>();
+
+            var hashes = new ulong[OrderTicks];
+            for (int t = 0; t < OrderTicks; t++)
+            {
+                world.Step(t == 0 ? order : idle);
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        private const int Marcher = 0;
+        private const int Bystander = 1;
+
+        /// <summary>
+        /// An attack-move is both halves or it is nothing. A unit that only walked
+        /// would pass the hostile with a couple of shots and arrive on time; a unit
+        /// that only fought would never arrive. This asserts both: the hostile dies
+        /// with the marcher still well short of the point, and the point is reached
+        /// afterwards.
+        /// </summary>
+        private static void AttackMoveStopsForWhatItMeets()
+        {
+            ulong[] first = RunAttackMove(out World world, out Fix killedAtX);
+            ulong[] second = RunAttackMove(out _, out _);
+
+            Check(!world.GetEntity(Bystander).Alive, "the attack-move walked past the hostile");
+            Check(killedAtX < Fix.FromInt(35), "the marcher was already at the point when it killed: x=" + killedAtX);
+            Check(world.GetEntity(Marcher).Position.Equals(At(40, 10)), "the attack-move never reached its point");
+            // Still under the order after arriving, so the next hostile to wander
+            // in is engaged rather than ignored.
+            Check(world.GetEntity(Marcher).Mode == OrderMode.AttackMove, "the attack-move order evaporated");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "attack-move hash drift at tick " + t);
+            }
+        }
+
+        private static ulong[] RunAttackMove(out World world, out Fix killedAtX)
+        {
+            world = new World(Seed);
+            world.SpawnUnit(0, Role.Melee, At(10, 10)); // 0
+            // 20 out, so it starts beyond AcquireRange and the marcher has to walk
+            // some of the route before it has anything to break off for. A worker,
+            // so it neither shoots back nor moves.
+            world.SpawnWorker(1, At(30, 10)); // 1
+
+            var order = new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.AttackMove, Marcher, At(40, 10))
+            };
+            var idle = new List<Command>();
+
+            killedAtX = Fix.Zero;
+            bool wasAlive = true;
+            var hashes = new ulong[OrderTicks];
+            for (int t = 0; t < OrderTicks; t++)
+            {
+                world.Step(t == 0 ? order : idle);
+                if (wasAlive && !world.GetEntity(Bystander).Alive)
+                {
+                    killedAtX = world.GetEntity(Marcher).Position.X;
+                    wasAlive = false;
+                }
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        private const int Walker = 0;
+        private const int Digger = 1;
+        private const int StopTick = 40;
+
+        /// <summary>
+        /// Stop has to cancel the walk and the gather loop both. A worker is in the
+        /// world because the loop is the order that comes back on its own: it
+        /// retargets itself every tick from GatherNodeId, so clearing the path
+        /// alone would have it walking again on the next one.
+        /// </summary>
+        private static void StopCancelsWhatIsRunning()
+        {
+            ulong[] first = RunStop(out World world, out FixVec2 walkerAtStop, out FixVec2 diggerAtStop);
+            ulong[] second = RunStop(out _, out _, out _);
+
+            Check(!walkerAtStop.Equals(At(40, 10)), "the walker was already at its destination when stopped");
+            Check(world.GetEntity(Walker).Position.Equals(walkerAtStop), "the walker kept going after Stop");
+            Check(world.GetEntity(Digger).Position.Equals(diggerAtStop), "the worker kept going after Stop");
+            Check(world.GetEntity(Digger).GatherNodeId < 0, "Stop left the gather loop running");
+            Check(world.GetEntity(Digger).CarryAmount == 0, "the worker reached the node after Stop");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "stop hash drift at tick " + t);
+            }
+        }
+
+        private static ulong[] RunStop(out World world, out FixVec2 walkerAtStop, out FixVec2 diggerAtStop)
+        {
+            world = new World(Seed);
+            world.SpawnUnit(0, Role.Melee, At(10, 10));  // 0
+            world.SpawnWorker(0, At(10, 12));            // 1
+            world.SpawnResourceNode(At(40, 12), 200);    // 2
+
+            var orders = new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.Move, Walker, At(40, 10)),
+                new Command(0, 0, 1, CommandType.Gather, Digger, FixVec2.Zero, 2)
+            };
+            var stop = new List<Command>
+            {
+                new Command(StopTick, 0, 2, CommandType.Stop, Walker, FixVec2.Zero),
+                new Command(StopTick, 0, 3, CommandType.Stop, Digger, FixVec2.Zero)
+            };
+            var idle = new List<Command>();
+
+            walkerAtStop = FixVec2.Zero;
+            diggerAtStop = FixVec2.Zero;
+            var hashes = new ulong[OrderTicks];
+            for (int t = 0; t < OrderTicks; t++)
+            {
+                world.Step(t == 0 ? orders : t == StopTick ? stop : idle);
+                if (t == StopTick)
+                {
+                    walkerAtStop = world.GetEntity(Walker).Position;
+                    diggerAtStop = world.GetEntity(Digger).Position;
+                }
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        private const int Holder = 0;
+        private const int HolderPrey = 1;
+        private const int Chaser = 2;
+
+        /// <summary>
+        /// Both preys sit 5 away: inside AcquireRange, outside melee range. The
+        /// unordered chaser closes on its own, which is what makes the holder's
+        /// stillness mean something rather than just proving nothing was in range.
+        /// </summary>
+        private static void HoldPositionNeverChases()
+        {
+            ulong[] first = RunHold(out World world, out bool holderMoved);
+            ulong[] second = RunHold(out _, out _);
+
+            Check(!holderMoved, "the holder moved");
+            Check(!world.GetEntity(Chaser).Position.Equals(At(20, 50)), "the control unit never chased either");
+            Check(world.GetEntity(HolderPrey).Alive, "the holder somehow reached its prey");
+            Check(world.GetEntity(HolderPrey).Hp == world.GetEntity(HolderPrey).MaxHp, "the holder got in range");
+            Check(world.GetEntity(Holder).Mode == OrderMode.Hold, "the hold order lapsed");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "hold hash drift at tick " + t);
+            }
+        }
+
+        private static ulong[] RunHold(out World world, out bool holderMoved)
+        {
+            world = new World(Seed);
+            world.SpawnUnit(0, Role.Melee, At(20, 20)); // 0
+            world.SpawnWorker(1, At(25, 20));           // 1
+            // The control pair, 30 cells away so neither group can acquire into
+            // the other and the two halves of the run stay independent.
+            world.SpawnUnit(0, Role.Melee, At(20, 50)); // 2
+            world.SpawnWorker(1, At(25, 50));           // 3
+
+            var order = new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.HoldPosition, Holder, FixVec2.Zero)
+            };
+            var idle = new List<Command>();
+
+            holderMoved = false;
+            var hashes = new ulong[OrderTicks];
+            for (int t = 0; t < OrderTicks; t++)
+            {
+                world.Step(t == 0 ? order : idle);
+                // Every tick, not just the last one: a unit that walked out and back
+                // would pass an end-state check.
+                if (!world.GetEntity(Holder).Position.Equals(At(20, 20))) holderMoved = true;
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        private const int RallyBase = 0;
+        private const int PlainBase = 1;
+        private const int RalliedUnit = 2;
+        private const int PlainUnit = 3;
+
+        /// <summary>
+        /// Two identical bases, one with a rally point. The plain one is the
+        /// control: without it, a unit standing on its spawn tile and a unit that
+        /// walked nowhere look the same.
+        /// </summary>
+        private static void ProducedUnitsWalkToTheRallyPoint()
+        {
+            ulong[] first = RunRally(out World world);
+            ulong[] second = RunRally(out _);
+
+            Check(world.GetEntity(RallyBase).HasRallyPoint, "the rally point was not stored");
+            Check(world.GetEntity(RalliedUnit).Position.Equals(At(20, 20)),
+                "the produced unit did not reach the rally point");
+            Check(world.GetEntity(PlainUnit).Position.Equals(world.GetEntity(PlainBase).Position + World.RallyOffset),
+                "the unit with no rally point walked off on its own");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "rally hash drift at tick " + t);
+            }
+        }
+
+        private static ulong[] RunRally(out World world)
+        {
+            world = new World(Seed);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);   // 0
+            world.SpawnBuilding(0, Role.Base, At(40, 40), complete: true); // 1
+            world.GrantResources(0, 1000);
+
+            var orders = new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.SetRallyPoint, RallyBase, At(20, 20)),
+                new Command(0, 0, 1, CommandType.Produce, RallyBase, FixVec2.Zero, (int)Role.Melee),
+                new Command(0, 0, 2, CommandType.Produce, PlainBase, FixVec2.Zero, (int)Role.Melee)
+            };
+            var idle = new List<Command>();
+
+            var hashes = new ulong[OrderTicks];
+            for (int t = 0; t < OrderTicks; t++)
+            {
+                world.Step(t == 0 ? orders : idle);
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        private const int QueueBase = 0;
+
+        /// <summary>
+        /// One unit off the queue, the whole ProduceCost back. The refund is
+        /// asserted as an exact number rather than "more than before", because a
+        /// refund rule nobody can name is a rule that drifts.
+        /// </summary>
+        private static void CancellingProductionRefundsInFull()
+        {
+            var world = new World(Seed);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.GrantResources(0, 1000);
+
+            var queue = new List<Command>();
+            for (int i = 0; i < 3; i++)
+            {
+                queue.Add(new Command(0, 0, i, CommandType.Produce, QueueBase, FixVec2.Zero, (int)Role.Melee));
+            }
+            int banked = world.GetResources(0);
+            world.Step(queue);
+            Check(world.GetEntity(QueueBase).QueueCount == 3, "three produce orders did not queue three units");
+            Check(world.GetResources(0) == banked - 3 * World.ProduceCost, "queueing did not charge three units");
+
+            banked = world.GetResources(0);
+            world.Step(Cancel(QueueBase, 0, 3));
+            Check(world.GetEntity(QueueBase).QueueCount == 2, "cancelling did not shorten the queue");
+            Check(world.GetResources(0) == banked + World.ProduceCost, "cancelling did not refund in full");
+
+            // Down to nothing, then one more: an empty queue has nothing to refund,
+            // and a refused cancel must leave the bank exactly as it found it.
+            world.Step(Cancel(QueueBase, 0, 4));
+            world.Step(Cancel(QueueBase, 0, 5));
+            Check(world.GetEntity(QueueBase).QueueCount == 0, "the queue did not empty");
+            Check(world.GetEntity(QueueBase).ProduceTicksLeft == 0, "an emptied queue kept its timer running");
+
+            banked = world.GetResources(0);
+            world.Step(Cancel(QueueBase, 0, 6));
+            Check(world.GetResources(0) == banked, "cancelling an empty queue paid out");
+        }
+
+        private static List<Command> Cancel(int building, int peer, int seq) =>
+            new List<Command> { new Command(0, peer, seq, CommandType.CancelProduction, building, FixVec2.Zero) };
+
         private static List<Command> Produce(int building, int peer, int seq, Role role) =>
             new List<Command> { new Command(0, peer, seq, CommandType.Produce, building, FixVec2.Zero, (int)role) };
 
@@ -479,6 +821,7 @@ namespace WordCraft.Replay
 
         // Entity ids of the scripted match. Ids are handed out in spawn order and
         // never reused, so they are stable enough to assert on.
+        private const int MatchBase0 = 0;
         private const int MatchWorker0A = 1;
         private const int MatchWorker0B = 2;
         private const int MatchNode0 = 3;
@@ -486,6 +829,7 @@ namespace WordCraft.Replay
         private const int MatchWorker1A = 5;
         private const int MatchWorker1B = 6;
         private const int MatchNode1 = 7;
+        private const int MatchFighter0 = 8;
         private const int MatchFighter1 = 9;
         private const int MatchSite0 = 10; // placed at tick 150 by peer 0
         private const int MatchSite1 = 11; // placed at tick 150 by peer 1
@@ -523,7 +867,12 @@ namespace WordCraft.Replay
             return new FixVec2(Fix.FromInt(x) + half, Fix.FromInt(y) + half);
         }
 
-        /// <summary>Gather, build, produce, in that order, for both peers.</summary>
+        /// <summary>
+        /// Gather, build, produce, in that order, for both peers, with all six
+        /// order commands threaded through the same run. They share a world with
+        /// the economy on purpose: an order that only ever ran in its own fixture
+        /// has never had to agree with anything else moving.
+        /// </summary>
         private static List<Command>[] BuildMatchLog()
         {
             var log = new List<Command>[Ticks];
@@ -535,14 +884,37 @@ namespace WordCraft.Replay
             log[2].Add(new Command(2, 1, seq[1]++, CommandType.Gather, MatchWorker1A, FixVec2.Zero, MatchNode1));
             log[2].Add(new Command(2, 1, seq[1]++, CommandType.Gather, MatchWorker1B, FixVec2.Zero, MatchNode1));
 
+            // Named target rather than a walk order: the two fighters already stand
+            // in each other's face, so this is the order deciding the kill.
+            log[5].Add(new Command(5, 0, seq[0]++, CommandType.Attack, MatchFighter0, FixVec2.Zero, MatchFighter1));
+
             log[150].Add(new Command(150, 0, seq[0]++, CommandType.Build, -1, At(20, 20)));
             log[150].Add(new Command(150, 1, seq[1]++, CommandType.Build, -1, At(44, 48)));
 
+            // One worker off the loop, the other left on it, so the run still banks
+            // deliveries while a cancelled loop is in the same hash.
+            log[200].Add(new Command(200, 0, seq[0]++, CommandType.Stop, MatchWorker0B, FixVec2.Zero));
+
+            // By 250 the named target is down, so the fighter has an idle mode to
+            // replace rather than an order still running.
+            log[250].Add(new Command(250, 0, seq[0]++, CommandType.HoldPosition, MatchFighter0, FixVec2.Zero));
+
+            log[260].Add(new Command(260, 0, seq[0]++, CommandType.SetRallyPoint, MatchBase0, At(10, 10)));
+            log[260].Add(new Command(260, 1, seq[1]++, CommandType.SetRallyPoint, MatchBase1, At(46, 46)));
+
             foreach (int t in new[] { 300, 400 })
             {
-                log[t].Add(new Command(t, 0, seq[0]++, CommandType.Produce, 0, FixVec2.Zero));
+                log[t].Add(new Command(t, 0, seq[0]++, CommandType.Produce, MatchBase0, FixVec2.Zero));
                 log[t].Add(new Command(t, 1, seq[1]++, CommandType.Produce, MatchBase1, FixVec2.Zero));
             }
+
+            // Queued, then cancelled ten ticks in, so the refund lands while the
+            // unit is genuinely half built rather than on an idle building.
+            log[450].Add(new Command(450, 0, seq[0]++, CommandType.Produce, MatchBase0, FixVec2.Zero));
+            log[460].Add(new Command(460, 0, seq[0]++, CommandType.CancelProduction, MatchBase0, FixVec2.Zero));
+
+            // Last, so the fighter ends the run under an order that is still live.
+            log[500].Add(new Command(500, 0, seq[0]++, CommandType.AttackMove, MatchFighter0, At(40, 40)));
 
             return log;
         }

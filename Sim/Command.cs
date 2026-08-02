@@ -8,6 +8,12 @@ namespace WordCraft.Sim
         Gather = 3,
         Build = 4,
         Produce = 5,
+        Attack = 6,
+        AttackMove = 7,
+        Stop = 8,
+        HoldPosition = 9,
+        SetRallyPoint = 10,
+        CancelProduction = 11,
     }
 
     /// <summary>
