@@ -100,8 +100,16 @@ namespace WordCraft.View
             int port = Arg("-port", DefaultPort);
             stopAtTick = Arg("-ticks", 0);
             LocalPeer = remote == null ? 0 : 1;
+            cfg.LocalFaction = MatchConfig.DefaultFaction(LocalPeer);
 
-            World = MatchScenario.Build(cfg.Seed);
+            // The other peer's faction is a placeholder until its Hello arrives.
+            // The session writes the real one before tick 0, and no tick and no
+            // hash happen in between, so the guess never reaches the simulation.
+            Faction mine = cfg.LocalFaction;
+            Faction theirs = cfg.RemoteFaction ?? MatchConfig.DefaultFaction(1 - LocalPeer);
+            World = MatchScenario.Build(cfg.Seed,
+                LocalPeer == 0 ? mine : theirs,
+                LocalPeer == 0 ? theirs : mine);
             transport = remote == null
                 ? new UdpTransport(port, null) // listener; learns the peer from its first datagram
                 : new UdpTransport(0, new IPEndPoint(IPAddress.Parse(remote), port));
