@@ -25,6 +25,9 @@ namespace WordCraft.Sim
 
         /// <summary>Walk to OrderPoint, break off for anything hostile found on the way.</summary>
         AttackMove = 2,
+
+        /// <summary>Do not move for any reason. Shoot whatever comes inside weapon range.</summary>
+        Hold = 3,
     }
 
     /// <summary>
@@ -382,6 +385,17 @@ namespace WordCraft.Sim
                     break;
                 }
 
+                case CommandType.HoldPosition:
+                {
+                    if (!OwnedAndAlive(c.EntityId, c.PeerId)) return;
+                    Entity e = entities[c.EntityId];
+                    ClearOrders(ref e);
+                    Halt(c.EntityId, ref e);
+                    e.Mode = OrderMode.Hold;
+                    entities[c.EntityId] = e;
+                    break;
+                }
+
                 case CommandType.Spawn:
                     SpawnUnit(c.PeerId, Role.Melee, c.Target);
                     break;
@@ -474,6 +488,10 @@ namespace WordCraft.Sim
             {
                 Entity e = entities[i];
                 if (!e.Alive || e.Speed.Raw == 0) continue;
+                // "Any reason" includes a chase combat would otherwise have
+                // written. Enforced here as well as in CombatSystem because this
+                // is the only line that decides whether an entity moves at all.
+                if (e.Mode == OrderMode.Hold) continue;
 
                 List<int> path = paths[i];
                 FixVec2 goal = e.PathIndex < path.Count ? CellCenter(path[e.PathIndex]) : e.Target;

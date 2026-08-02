@@ -11,6 +11,7 @@ namespace WordCraft.Sim
         Attack = 6,
         AttackMove = 7,
         Stop = 8,
+        HoldPosition = 9,
     }
 
     /// <summary>

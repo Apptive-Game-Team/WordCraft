@@ -60,8 +60,12 @@ namespace WordCraft.Sim
                         entities[t.Id] = t;
                     }
                 }
-                else if (a.Kind != EntityKind.Building && (a.Mode == OrderMode.AttackMove || PathDone(i)))
+                else if (a.Kind != EntityKind.Building && a.Mode != OrderMode.Hold &&
+                         (a.Mode == OrderMode.AttackMove || PathDone(i)))
                 {
+                    // A holder is left out for the same reason a building is: Target
+                    // is hashed, and a chase written here would move it.
+                    //
                     // Only chase when no move order is outstanding, so combat never
                     // overrides what the player told the unit to do. A building never
                     // chases at all: its Target is hashed, so letting combat write one

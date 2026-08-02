@@ -34,6 +34,7 @@ namespace WordCraft.Replay
                 AttackOrderKillsWhatItNames();
                 AttackMoveStopsForWhatItMeets();
                 StopCancelsWhatIsRunning();
+                HoldPositionNeverChases();
                 ClientLogMatchesGoldenHash();
                 SimAssemblyIsClean();
             }
@@ -530,6 +531,61 @@ namespace WordCraft.Replay
                     walkerAtStop = world.GetEntity(Walker).Position;
                     diggerAtStop = world.GetEntity(Digger).Position;
                 }
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        private const int Holder = 0;
+        private const int HolderPrey = 1;
+        private const int Chaser = 2;
+
+        /// <summary>
+        /// Both preys sit 5 away: inside AcquireRange, outside melee range. The
+        /// unordered chaser closes on its own, which is what makes the holder's
+        /// stillness mean something rather than just proving nothing was in range.
+        /// </summary>
+        private static void HoldPositionNeverChases()
+        {
+            ulong[] first = RunHold(out World world, out bool holderMoved);
+            ulong[] second = RunHold(out _, out _);
+
+            Check(!holderMoved, "the holder moved");
+            Check(!world.GetEntity(Chaser).Position.Equals(At(20, 50)), "the control unit never chased either");
+            Check(world.GetEntity(HolderPrey).Alive, "the holder somehow reached its prey");
+            Check(world.GetEntity(HolderPrey).Hp == world.GetEntity(HolderPrey).MaxHp, "the holder got in range");
+            Check(world.GetEntity(Holder).Mode == OrderMode.Hold, "the hold order lapsed");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "hold hash drift at tick " + t);
+            }
+        }
+
+        private static ulong[] RunHold(out World world, out bool holderMoved)
+        {
+            world = new World(Seed);
+            world.SpawnUnit(0, Role.Melee, At(20, 20)); // 0
+            world.SpawnWorker(1, At(25, 20));           // 1
+            // The control pair, 30 cells away so neither group can acquire into
+            // the other and the two halves of the run stay independent.
+            world.SpawnUnit(0, Role.Melee, At(20, 50)); // 2
+            world.SpawnWorker(1, At(25, 50));           // 3
+
+            var order = new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.HoldPosition, Holder, FixVec2.Zero)
+            };
+            var idle = new List<Command>();
+
+            holderMoved = false;
+            var hashes = new ulong[OrderTicks];
+            for (int t = 0; t < OrderTicks; t++)
+            {
+                world.Step(t == 0 ? order : idle);
+                // Every tick, not just the last one: a unit that walked out and back
+                // would pass an end-state check.
+                if (!world.GetEntity(Holder).Position.Equals(At(20, 20))) holderMoved = true;
                 hashes[t] = world.Hash();
             }
             return hashes;
