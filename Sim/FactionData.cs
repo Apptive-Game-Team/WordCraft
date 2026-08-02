@@ -24,6 +24,7 @@ namespace WordCraft.Sim
         Melee = 5,
         Ranged = 6,
         Signature = 7,
+        Supply = 8,
     }
 
     public struct UnitStats
@@ -48,10 +49,10 @@ namespace WordCraft.Sim
         /// content produce different results from the same input, so this travels
         /// in the handshake and a mismatch is a rejection before tick 0.
         /// </summary>
-        public const uint ContentVersion = 4;
+        public const uint ContentVersion = 5;
 
         public const int FactionCount = 5;
-        public const int RoleCount = 8;
+        public const int RoleCount = 9;
 
         /// <summary>
         /// Indexed by Role. One block per role, shared by every faction: balance
@@ -71,6 +72,7 @@ namespace WordCraft.Sim
             /* Melee      */ new UnitStats { Hp = 100, Speed = Fix.Ratio(1, 4), Damage = 7, Range = Fix.FromInt(2), AttackTicks = 15 },
             /* Ranged     */ new UnitStats { Hp = 70, Speed = Fix.Ratio(1, 4), Damage = 6, Range = Fix.FromInt(6), AttackTicks = 18 },
             /* Signature  */ new UnitStats { Hp = 130, Speed = Fix.Ratio(3, 8), Damage = 10, Range = Fix.FromInt(3), AttackTicks = 22 },
+            /* Supply     */ new UnitStats { Hp = 200 },
         };
 
         /// <summary>
@@ -81,30 +83,30 @@ namespace WordCraft.Sim
         private static readonly string[] names =
         {
             // 세계수 정령
-            "", "생명의 나무", "풀씨 정령", "풀씨 둥지", "정령 뇌우목", "고목 수호자", "번개 정령", "바람 정령",
+            "", "생명의 나무", "풀씨 정령", "풀씨 둥지", "정령 뇌우목", "고목 수호자", "번개 정령", "바람 정령", "묘목",
             // 지옥불 군단
-            "", "균열 제단", "잿불 악마", "악마 산란장", "용암 아가리", "용암 갑각 악마", "지옥불 군단장의 자손", "지옥불 군단장",
+            "", "균열 제단", "잿불 악마", "악마 산란장", "용암 아가리", "용암 갑각 악마", "지옥불 군단장의 자손", "지옥불 군단장", "갈라진 틈",
             // 물 슬라임
-            "", "수맥 웅덩이", "물방울 생존자", "거품 생성기", "물기둥 분수", "거품 정령", "물결 궁수", "구름 용",
+            "", "수맥 웅덩이", "물방울 생존자", "거품 생성기", "물기둥 분수", "거품 정령", "물결 궁수", "구름 용", "물웅덩이",
             // 돌 골렘 부족
-            "", "이끼바위 성소", "꼬마돌", "각성 바위", "굴림바위 언덕", "이끼바위 골렘", "바위 술사", "",
+            "", "이끼바위 성소", "꼬마돌", "각성 바위", "굴림바위 언덕", "이끼바위 골렘", "바위 술사", "", "선돌",
             // 차원 유랑종
-            "", "정박한 세계", "화산편", "통로", "굴절 기둥", "폭풍편", "", "경계 운반자",
+            "", "정박한 세계", "화산편", "통로", "굴절 기둥", "폭풍편", "", "경계 운반자", "계류 닻",
         };
 
         private static readonly string[] sprites =
         {
             // 세계수 정령. Defense art cannot be ElectricTower: that is a human artifact.
-            "", "LifeTree", "SeedSpiritSwarm", "SeedNest", "SpiritStormtree", "TreeGolem", "ThunderSpirit", "WindSpirit",
+            "", "LifeTree", "SeedSpiritSwarm", "SeedNest", "SpiritStormtree", "TreeGolem", "ThunderSpirit", "WindSpirit", "Sapling",
             // 지옥불 군단
-            "", "RiftAltar", "EmberSpiritSwarm", "SpawningPit", "LavaMaw", "MagmaSpirit", "FireChildSpirit", "FireLordSpirit",
+            "", "RiftAltar", "EmberSpiritSwarm", "SpawningPit", "LavaMaw", "MagmaSpirit", "FireChildSpirit", "FireLordSpirit", "WideningFissure",
             // 물 슬라임
-            "", "SpringheadPool", "WaterSlimeSwarm", "BubbleGenerator", "GeyserColumn", "BubbleSpirit", "AquaArcher", "CloudDragon",
+            "", "SpringheadPool", "WaterSlimeSwarm", "BubbleGenerator", "GeyserColumn", "BubbleSpirit", "AquaArcher", "CloudDragon", "StillPool",
             // 돌 골렘 부족. RockTurret is human-made stonework and stays out of this faction.
             // The signature slot is deliberately empty: RockRemnant is a death state, not a unit.
-            "", "MossrockSanctum", "MiniRockSwarm", "WakingStone", "RollingHill", "RockGolem", "RockMage", "",
+            "", "MossrockSanctum", "MiniRockSwarm", "WakingStone", "RollingHill", "RockGolem", "RockMage", "", "StandingStone",
             // 차원 유랑종. Thinnest roster; the ranged slot has neither art nor concept.
-            "", "AnchoredWorld", "FireTadpole", "Passage", "RefractingPillar", "LightningTadpole", "", "DimensionToad",
+            "", "AnchoredWorld", "FireTadpole", "Passage", "RefractingPillar", "LightningTadpole", "", "DimensionToad", "MooringClaw",
         };
 
         public static UnitStats Stats(Role role) => stats[(int)role];
