@@ -35,6 +35,7 @@ namespace WordCraft.Replay
                 AttackMoveStopsForWhatItMeets();
                 StopCancelsWhatIsRunning();
                 HoldPositionNeverChases();
+                ProducedUnitsWalkToTheRallyPoint();
                 ClientLogMatchesGoldenHash();
                 SimAssemblyIsClean();
             }
@@ -586,6 +587,57 @@ namespace WordCraft.Replay
                 // Every tick, not just the last one: a unit that walked out and back
                 // would pass an end-state check.
                 if (!world.GetEntity(Holder).Position.Equals(At(20, 20))) holderMoved = true;
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        private const int RallyBase = 0;
+        private const int PlainBase = 1;
+        private const int RalliedUnit = 2;
+        private const int PlainUnit = 3;
+
+        /// <summary>
+        /// Two identical bases, one with a rally point. The plain one is the
+        /// control: without it, a unit standing on its spawn tile and a unit that
+        /// walked nowhere look the same.
+        /// </summary>
+        private static void ProducedUnitsWalkToTheRallyPoint()
+        {
+            ulong[] first = RunRally(out World world);
+            ulong[] second = RunRally(out _);
+
+            Check(world.GetEntity(RallyBase).HasRallyPoint, "the rally point was not stored");
+            Check(world.GetEntity(RalliedUnit).Position.Equals(At(20, 20)),
+                "the produced unit did not reach the rally point");
+            Check(world.GetEntity(PlainUnit).Position.Equals(world.GetEntity(PlainBase).Position + World.RallyOffset),
+                "the unit with no rally point walked off on its own");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "rally hash drift at tick " + t);
+            }
+        }
+
+        private static ulong[] RunRally(out World world)
+        {
+            world = new World(Seed);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);   // 0
+            world.SpawnBuilding(0, Role.Base, At(40, 40), complete: true); // 1
+            world.GrantResources(0, 1000);
+
+            var orders = new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.SetRallyPoint, RallyBase, At(20, 20)),
+                new Command(0, 0, 1, CommandType.Produce, RallyBase, FixVec2.Zero, (int)Role.Melee),
+                new Command(0, 0, 2, CommandType.Produce, PlainBase, FixVec2.Zero, (int)Role.Melee)
+            };
+            var idle = new List<Command>();
+
+            var hashes = new ulong[OrderTicks];
+            for (int t = 0; t < OrderTicks; t++)
+            {
+                world.Step(t == 0 ? orders : idle);
                 hashes[t] = world.Hash();
             }
             return hashes;

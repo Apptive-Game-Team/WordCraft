@@ -233,7 +233,10 @@ namespace WordCraft.Sim
                     entities[i] = b;
                     // Fixed rally offset: the spawn point must not depend on how many
                     // units already stand there.
-                    SpawnUnit(b.Owner, b.ProduceRole, b.Position + RallyOffset);
+                    int spawned = SpawnUnit(b.Owner, b.ProduceRole, b.Position + RallyOffset);
+                    // Walked, not teleported: a rally point costs what crossing the
+                    // ground costs, and the unit is catchable on the way.
+                    if (b.HasRallyPoint) SetDestination(spawned, b.RallyPoint);
                     continue;
                 }
                 entities[i] = b;

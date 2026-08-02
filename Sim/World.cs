@@ -66,6 +66,15 @@ namespace WordCraft.Sim
         /// <summary>What the queue is building. Set at queue time, read at spawn time.</summary>
         public Role ProduceRole;
 
+        /// <summary>Where a unit this building finishes walks to. Only read when HasRallyPoint.</summary>
+        public FixVec2 RallyPoint;
+
+        /// <summary>
+        /// Explicit rather than a sentinel coordinate, because every point on the
+        /// map is a point a player can legitimately rally to.
+        /// </summary>
+        public bool HasRallyPoint;
+
         // Combat. All timing in whole ticks.
         public int AttackCooldown;
         public int TargetId;
@@ -396,6 +405,20 @@ namespace WordCraft.Sim
                     break;
                 }
 
+                case CommandType.SetRallyPoint:
+                {
+                    if (!OwnedAndAlive(c.EntityId, c.PeerId)) return;
+                    Entity b = entities[c.EntityId];
+                    if (b.Kind != EntityKind.Building) return;
+                    // Not routed through ClearOrders: a rally point is the
+                    // building's, not the unit's, and it survives every order the
+                    // units it makes are later given.
+                    b.RallyPoint = c.Target;
+                    b.HasRallyPoint = true;
+                    entities[c.EntityId] = b;
+                    break;
+                }
+
                 case CommandType.Spawn:
                     SpawnUnit(c.PeerId, Role.Melee, c.Target);
                     break;
@@ -568,6 +591,9 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.ProduceTicksLeft);
                 Mix(ref h, (ulong)e.QueueCount);
                 Mix(ref h, (ulong)e.ProduceRole);
+                Mix(ref h, (ulong)e.RallyPoint.X.Raw);
+                Mix(ref h, (ulong)e.RallyPoint.Y.Raw);
+                Mix(ref h, e.HasRallyPoint ? 1UL : 0UL);
                 Mix(ref h, (ulong)e.AttackCooldown);
                 Mix(ref h, (ulong)e.TargetId);
                 Mix(ref h, (ulong)e.Mode);
