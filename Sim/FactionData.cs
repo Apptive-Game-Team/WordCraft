@@ -51,7 +51,7 @@ namespace WordCraft.Sim
         /// content produce different results from the same input, so this travels
         /// in the handshake and a mismatch is a rejection before tick 0.
         /// </summary>
-        public const uint ContentVersion = 8;
+        public const uint ContentVersion = 9;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -115,7 +115,7 @@ namespace WordCraft.Sim
             "", "AnchoredWorld", "FireTadpole", "Passage", "RefractingPillar", "LightningTadpole", "RiftMarksman", "DimensionToad", "MooringClaw", "StrataObservatory",
             // 인간 마법 문명. The only faction whose buildings all exist already; the
             // worker and the 공방 are the holes. Melee is empty by design.
-            "", "ManaWell", "", "Tower", "Cannon", "", "ChickenCommando", "Towerback", "Tower", "",
+            "", "ManaWell", "ApprenticeMage", "Tower", "Cannon", "", "ChickenCommando", "Towerback", "Tower", "Workshop",
         };
 
         public static UnitStats Stats(Role role) => stats[(int)role];
