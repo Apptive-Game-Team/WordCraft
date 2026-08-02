@@ -35,6 +35,7 @@ namespace WordCraft.Sim
                         {
                             t.Hp = 0;
                             t.Alive = false;
+                            ReleasePopulation(t);
                         }
                         entities[t.Id] = t;
                     }

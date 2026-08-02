@@ -179,6 +179,12 @@ namespace WordCraft.Sim
             Entity b = entities[buildingId];
             if (b.Kind != EntityKind.Building || b.BuildTicksLeft > 0) return;
             if (b.QueueCount >= MaxQueue) return;
+            // Refused before anything is spent: a rejected command must leave the
+            // peer's resources and queue exactly as it found them.
+            // ponytail: the queue does not reserve population, so a queue filled
+            // under the cap can still finish over it. Reserve at queue time if
+            // players start using the queue to bank units past the cap.
+            if (population[peer] >= PopulationCap(peer)) return;
             if (resources[peer] < ProduceCost) return;
 
             // Cost is taken at queue time, so a peer cannot queue more than it can pay for.

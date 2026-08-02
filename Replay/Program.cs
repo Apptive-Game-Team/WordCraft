@@ -29,6 +29,7 @@ namespace WordCraft.Replay
                 MapIsExactlySymmetric();
                 MatchReachesTheWinCondition();
                 DefenseBuildingsShoot();
+                ProductionStopsAtThePopulationCap();
                 ClientLogMatchesGoldenHash();
                 SimAssemblyIsClean();
             }
@@ -276,6 +277,40 @@ namespace WordCraft.Replay
             }
             return hashes;
         }
+
+        /// <summary>
+        /// A produce order at the cap is refused, not deferred: nothing is spent
+        /// and nothing is queued. A silent partial rejection is the version of this
+        /// rule that costs a player a match.
+        /// </summary>
+        private static void ProductionStopsAtThePopulationCap()
+        {
+            var world = new World(Seed);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.GrantResources(0, 1000);
+            for (int i = 0; i < World.PopulationPerBase; i++) world.SpawnUnit(0, Role.Melee, At(20, 20 + i));
+
+            Check(world.PopulationCap(0) == World.PopulationPerBase, "a base did not grant its population");
+            Check(world.GetPopulation(0) == World.PopulationPerBase, "spawned units were not counted");
+
+            int banked = world.GetResources(0);
+            world.Step(Produce(0, 0, 0, Role.Melee));
+            Check(world.GetResources(0) == banked, "a refused produce still spent resources");
+            Check(world.GetEntity(0).QueueCount == 0, "a refused produce still queued a unit");
+
+            // The same order under a supply building's headroom, so the check is
+            // testing the cap and not just a produce that never worked.
+            world.SpawnBuilding(0, Role.Supply, At(5, 8), complete: true); // 11
+            Check(world.PopulationCap(0) == World.PopulationPerBase + World.PopulationPerSupply,
+                "a supply building did not grant its population");
+
+            world.Step(Produce(0, 0, 1, Role.Melee));
+            Check(world.GetResources(0) == banked - World.ProduceCost, "produce under the cap spent nothing");
+            Check(world.GetEntity(0).QueueCount == 1, "produce under the cap queued nothing");
+        }
+
+        private static List<Command> Produce(int building, int peer, int seq, Role role) =>
+            new List<Command> { new Command(0, peer, seq, CommandType.Produce, building, FixVec2.Zero, (int)role) };
 
         /// <summary>
         /// The client's own input log, run under CoreCLR. Unity's Mono runtime
