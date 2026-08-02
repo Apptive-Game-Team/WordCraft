@@ -13,7 +13,7 @@ namespace WordCraft.Sim
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity a = entities[i];
-                if (!a.Alive || a.Kind != EntityKind.Unit) continue;
+                if (!a.Alive || !CanAttack(a)) continue;
 
                 if (a.AttackCooldown > 0) a.AttackCooldown--;
 
@@ -39,16 +39,26 @@ namespace WordCraft.Sim
                         entities[t.Id] = t;
                     }
                 }
-                else if (PathDone(i))
+                else if (a.Kind != EntityKind.Building && PathDone(i))
                 {
                     // Only chase when no move order is outstanding, so combat never
-                    // overrides what the player told the unit to do.
+                    // overrides what the player told the unit to do. A building never
+                    // chases at all: its Target is hashed, so letting combat write one
+                    // would make a turret's state depend on what walked past it.
                     a.Target = t.Position;
                 }
 
                 entities[i] = a;
             }
         }
+
+        /// <summary>
+        /// Units fight, and so do finished defense buildings. A site still under
+        /// construction does not, for the same reason it takes no deliveries.
+        /// </summary>
+        private static bool CanAttack(Entity e) =>
+            e.Kind == EntityKind.Unit ||
+            (e.Kind == EntityKind.Building && e.Role == Role.Defense && e.BuildTicksLeft == 0);
 
         private bool ValidTarget(Entity attacker, int targetId)
         {

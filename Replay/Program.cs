@@ -28,6 +28,7 @@ namespace WordCraft.Replay
                 ScriptedMatchDivergenceIsDetected();
                 MapIsExactlySymmetric();
                 MatchReachesTheWinCondition();
+                DefenseBuildingsShoot();
                 ClientLogMatchesGoldenHash();
                 SimAssemblyIsClean();
             }
@@ -224,6 +225,53 @@ namespace WordCraft.Replay
             for (int t = 0; t < SiegeTicks; t++)
             {
                 world.Step(idle);
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        private const int TurretTicks = 400;
+        private const int TurretId = 0;
+        private const int TurretPrey = 1;
+
+        /// <summary>
+        /// A turret kills what walks into its range, and does it without moving.
+        /// Run twice: a building that fights is a new attacker in the combat loop,
+        /// so its per-tick hashes have to match as exactly as a unit's.
+        /// </summary>
+        private static void DefenseBuildingsShoot()
+        {
+            ulong[] first = RunTurret(out World world);
+            ulong[] second = RunTurret(out _);
+
+            Check(!world.GetEntity(TurretPrey).Alive, "the turret never killed what walked into range");
+            Check(world.GetEntity(TurretId).Position.Equals(At(30, 30)), "the turret moved");
+            Check(world.GetEntity(TurretId).Target.Equals(At(30, 30)), "the turret took a walk order from combat");
+            Check(world.GetEntity(TurretId).Hp < world.GetEntity(TurretId).MaxHp, "the turret was never shot back at");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "turret hash drift at tick " + t);
+            }
+        }
+
+        private static ulong[] RunTurret(out World world)
+        {
+            world = new World(Seed);
+            world.SpawnBuilding(0, Role.Defense, At(30, 30), complete: true); // 0
+            world.SpawnUnit(1, Role.Melee, At(40, 30));                       // 1
+
+            // One move order, then nothing: the turret has to acquire on its own.
+            var walkIn = new List<Command>
+            {
+                new Command(0, 1, 0, CommandType.Move, TurretPrey, At(31, 30))
+            };
+            var idle = new List<Command>();
+
+            var hashes = new ulong[TurretTicks];
+            for (int t = 0; t < TurretTicks; t++)
+            {
+                world.Step(t == 0 ? walkIn : idle);
                 hashes[t] = world.Hash();
             }
             return hashes;
