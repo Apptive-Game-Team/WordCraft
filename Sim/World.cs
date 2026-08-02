@@ -43,6 +43,9 @@ namespace WordCraft.Sim
         public int ProduceTicksLeft;
         public int QueueCount;
 
+        /// <summary>What the queue is building. Set at queue time, read at spawn time.</summary>
+        public Role ProduceRole;
+
         // Combat. All timing in whole ticks.
         public int AttackCooldown;
         public int TargetId;
@@ -77,6 +80,12 @@ namespace WordCraft.Sim
         public const int ProduceTicks = 40;
         public const int MaxQueue = 5;
 
+        // Population, per docs/FACTIONS.md. The hard cap is an absolute ceiling,
+        // not a sum: enough supply buildings must not push a peer past it.
+        public const int PopulationPerBase = 10;
+        public const int PopulationPerSupply = 8;
+        public const int PopulationHardCap = 200;
+
         public static readonly Fix InteractRange = Fix.FromInt(2);
         public static readonly Fix AcquireRange = Fix.FromInt(10);
 
@@ -100,12 +109,49 @@ namespace WordCraft.Sim
         private readonly List<List<int>> paths = new List<List<int>>();
         private readonly int[] resources = new int[MaxPeers];
         private readonly Faction[] factions = new Faction[MaxPeers];
+
+        // Population used. Carried as state rather than recounted each tick, so it
+        // is hashed and has to be released exactly where a body dies.
+        private readonly int[] population = new int[MaxPeers];
+
         private readonly List<Command> tickCommands = new List<Command>();
 
         public int EntityCount => entities.Count;
         public Entity GetEntity(int id) => entities[id];
         public int GetResources(int peer) => resources[peer];
         public Faction FactionOf(int peer) => factions[peer];
+        public int GetPopulation(int peer) => population[peer];
+
+        /// <summary>
+        /// What this peer's standing buildings support right now. Derived from
+        /// entity state on demand, so losing a supply building lowers the cap on
+        /// the tick it falls without a second copy of the number to keep in step.
+        /// </summary>
+        public int PopulationCap(int peer)
+        {
+            int cap = 0;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (!e.Alive || e.Kind != EntityKind.Building || e.Owner != peer) continue;
+                if (e.BuildTicksLeft > 0) continue; // a site under construction supports nobody
+                if (e.Role == Role.Base) cap += PopulationPerBase;
+                else if (e.Role == Role.Supply) cap += PopulationPerSupply;
+            }
+            return cap > PopulationHardCap ? PopulationHardCap : cap;
+        }
+
+        /// <summary>Workers count against the cap; buildings and resource nodes do not.</summary>
+        private static bool CountsAgainstPopulation(EntityKind kind) =>
+            kind == EntityKind.Unit || kind == EntityKind.Worker;
+
+        /// <summary>Called wherever a body stops existing, which is the only place combat kills one.</summary>
+        private void ReleasePopulation(Entity e)
+        {
+            if (!CountsAgainstPopulation(e.Kind)) return;
+            if (e.Owner < 0 || e.Owner >= MaxPeers) return;
+            population[e.Owner]--;
+        }
 
         /// <summary>Scenario setup only. Never call this from a system.</summary>
         public void GrantResources(int peer, int amount) => resources[peer] += amount;
@@ -175,6 +221,9 @@ namespace WordCraft.Sim
             };
             entities.Add(e);
             paths.Add(new List<int>());
+            // Counted here rather than in each Spawn* method, so every body that
+            // ever enters the world is counted exactly once.
+            if (CountsAgainstPopulation(kind) && owner >= 0 && owner < MaxPeers) population[owner]++;
             return e.Id;
         }
 
@@ -288,7 +337,13 @@ namespace WordCraft.Sim
                     break;
 
                 case CommandType.Produce:
-                    TryQueueUnit(c.PeerId, c.EntityId);
+                    // Arg names the unit to build. Out of range is a malformed
+                    // command, not a clamp: guessing what the player meant would
+                    // have each peer guess for itself.
+                    if (c.Arg < 0 || c.Arg >= FactionData.RoleCount) return;
+                    // Role.None is what a Produce with no Arg carries, and the
+                    // default fighter is what the client has always meant by it.
+                    TryQueueUnit(c.PeerId, c.EntityId, c.Arg == 0 ? Role.Melee : (Role)c.Arg);
                     break;
             }
         }
@@ -370,6 +425,7 @@ namespace WordCraft.Sim
             Mix(ref h, Random.DrawCount);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)resources[p]);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)factions[p]);
+            for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)population[p]);
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
@@ -393,6 +449,7 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.BuildTicksLeft);
                 Mix(ref h, (ulong)e.ProduceTicksLeft);
                 Mix(ref h, (ulong)e.QueueCount);
+                Mix(ref h, (ulong)e.ProduceRole);
                 Mix(ref h, (ulong)e.AttackCooldown);
                 Mix(ref h, (ulong)e.TargetId);
                 Mix(ref h, (ulong)e.PathIndex);

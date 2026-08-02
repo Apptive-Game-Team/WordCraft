@@ -28,6 +28,9 @@ namespace WordCraft.Replay
                 ScriptedMatchDivergenceIsDetected();
                 MapIsExactlySymmetric();
                 MatchReachesTheWinCondition();
+                DefenseBuildingsShoot();
+                ProductionStopsAtThePopulationCap();
+                TechTiersGateProduction();
                 ClientLogMatchesGoldenHash();
                 SimAssemblyIsClean();
             }
@@ -228,6 +231,132 @@ namespace WordCraft.Replay
             }
             return hashes;
         }
+
+        private const int TurretTicks = 400;
+        private const int TurretId = 0;
+        private const int TurretPrey = 1;
+
+        /// <summary>
+        /// A turret kills what walks into its range, and does it without moving.
+        /// Run twice: a building that fights is a new attacker in the combat loop,
+        /// so its per-tick hashes have to match as exactly as a unit's.
+        /// </summary>
+        private static void DefenseBuildingsShoot()
+        {
+            ulong[] first = RunTurret(out World world);
+            ulong[] second = RunTurret(out _);
+
+            Check(!world.GetEntity(TurretPrey).Alive, "the turret never killed what walked into range");
+            Check(world.GetEntity(TurretId).Position.Equals(At(30, 30)), "the turret moved");
+            Check(world.GetEntity(TurretId).Target.Equals(At(30, 30)), "the turret took a walk order from combat");
+            Check(world.GetEntity(TurretId).Hp < world.GetEntity(TurretId).MaxHp, "the turret was never shot back at");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "turret hash drift at tick " + t);
+            }
+        }
+
+        private static ulong[] RunTurret(out World world)
+        {
+            world = new World(Seed);
+            world.SpawnBuilding(0, Role.Defense, At(30, 30), complete: true); // 0
+            world.SpawnUnit(1, Role.Melee, At(40, 30));                       // 1
+
+            // One move order, then nothing: the turret has to acquire on its own.
+            var walkIn = new List<Command>
+            {
+                new Command(0, 1, 0, CommandType.Move, TurretPrey, At(31, 30))
+            };
+            var idle = new List<Command>();
+
+            var hashes = new ulong[TurretTicks];
+            for (int t = 0; t < TurretTicks; t++)
+            {
+                world.Step(t == 0 ? walkIn : idle);
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        /// <summary>
+        /// A produce order at the cap is refused, not deferred: nothing is spent
+        /// and nothing is queued. A silent partial rejection is the version of this
+        /// rule that costs a player a match.
+        /// </summary>
+        private static void ProductionStopsAtThePopulationCap()
+        {
+            var world = new World(Seed);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.GrantResources(0, 1000);
+            for (int i = 0; i < World.PopulationPerBase; i++) world.SpawnUnit(0, Role.Melee, At(20, 20 + i));
+
+            Check(world.PopulationCap(0) == World.PopulationPerBase, "a base did not grant its population");
+            Check(world.GetPopulation(0) == World.PopulationPerBase, "spawned units were not counted");
+
+            int banked = world.GetResources(0);
+            world.Step(Produce(0, 0, 0, Role.Melee));
+            Check(world.GetResources(0) == banked, "a refused produce still spent resources");
+            Check(world.GetEntity(0).QueueCount == 0, "a refused produce still queued a unit");
+
+            // The same order under a supply building's headroom, so the check is
+            // testing the cap and not just a produce that never worked.
+            world.SpawnBuilding(0, Role.Supply, At(5, 8), complete: true); // 11
+            Check(world.PopulationCap(0) == World.PopulationPerBase + World.PopulationPerSupply,
+                "a supply building did not grant its population");
+
+            world.Step(Produce(0, 0, 1, Role.Melee));
+            Check(world.GetResources(0) == banked - World.ProduceCost, "produce under the cap spent nothing");
+            Check(world.GetEntity(0).QueueCount == 1, "produce under the cap queued nothing");
+        }
+
+        private const int TechBase = 0;
+        private const int TechBuilding = 1;
+        private const int TechUnit = 10; // the one T3 unit this world ever finishes
+
+        /// <summary>
+        /// Tier 3 is refused before the tech building, accepted after it, and
+        /// refused again once it falls. What it does not do is unbuild the unit it
+        /// already opened, which is the half of the rule easy to get wrong.
+        /// </summary>
+        private static void TechTiersGateProduction()
+        {
+            var world = new World(Seed);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.GrantResources(0, 1000);
+
+            int banked = world.GetResources(0);
+            world.Step(Produce(TechBase, 0, 0, Role.Signature));
+            Check(world.GetResources(0) == banked, "tier 3 spent resources with no tech building");
+            Check(world.GetEntity(TechBase).QueueCount == 0, "tier 3 queued with no tech building");
+
+            // Far from the base, so the squad that comes for it later reaches
+            // nothing else and the assertions stay about the tier rule.
+            world.SpawnBuilding(0, Role.Tech, At(30, 30), complete: true); // 1
+            world.Step(Produce(TechBase, 0, 1, Role.Signature));
+            Check(world.GetResources(0) == banked - World.ProduceCost, "the tech building did not open tier 3");
+            Check(world.GetEntity(TechBase).QueueCount == 1, "the tech building did not open tier 3");
+
+            // Destroyed by an enemy squad rather than a test hook, so the rule is
+            // exercised through the same path a match takes.
+            for (int i = 0; i < 8; i++) world.SpawnUnit(1, Role.Melee, At(31, 29 + i % 3)); // 2..9
+
+            var idle = new List<Command>();
+            for (int t = 0; t < 400 && world.GetEntity(TechBuilding).Alive; t++) world.Step(idle);
+            Check(!world.GetEntity(TechBuilding).Alive, "the squad never destroyed the tech building");
+
+            Check(world.GetEntity(TechUnit).Role == Role.Signature, "the queued tier 3 unit never appeared");
+            Check(world.GetEntity(TechUnit).Alive, "losing the tech building unbuilt a finished unit");
+
+            banked = world.GetResources(0);
+            int queued = world.GetEntity(TechBase).QueueCount;
+            world.Step(Produce(TechBase, 0, 2, Role.Signature));
+            Check(world.GetResources(0) == banked, "tier 3 spent resources after the tech building fell");
+            Check(world.GetEntity(TechBase).QueueCount == queued, "tier 3 queued after the tech building fell");
+        }
+
+        private static List<Command> Produce(int building, int peer, int seq, Role role) =>
+            new List<Command> { new Command(0, peer, seq, CommandType.Produce, building, FixVec2.Zero, (int)role) };
 
         /// <summary>
         /// The client's own input log, run under CoreCLR. Unity's Mono runtime
