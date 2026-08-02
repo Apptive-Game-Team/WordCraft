@@ -1,6 +1,6 @@
 namespace WordCraft.Sim
 {
-    /// <summary>The five factions of docs/FACTIONS.md. Values are hashed as entity state, so never renumber.</summary>
+    /// <summary>The six factions of docs/FACTIONS.md. Values are hashed as entity state, so never renumber.</summary>
     public enum Faction
     {
         TreeSpirits = 0,  // 세계수 정령
@@ -8,6 +8,7 @@ namespace WordCraft.Sim
         WaterSlimes = 2,  // 물 슬라임
         RockGolems = 3,   // 돌 골렘 부족
         Driftworlds = 4,  // 차원 유랑종
+        Humans = 5,       // 인간 마법 문명
     }
 
     /// <summary>
@@ -50,9 +51,9 @@ namespace WordCraft.Sim
         /// content produce different results from the same input, so this travels
         /// in the handshake and a mismatch is a rejection before tick 0.
         /// </summary>
-        public const uint ContentVersion = 6;
+        public const uint ContentVersion = 7;
 
-        public const int FactionCount = 5;
+        public const int FactionCount = 6;
         public const int RoleCount = 10;
 
         /// <summary>
@@ -94,6 +95,9 @@ namespace WordCraft.Sim
             "", "이끼바위 성소", "꼬마돌", "각성 바위", "굴림바위 언덕", "이끼바위 골렘", "바위 술사", "", "선돌", "고대 이끼돌",
             // 차원 유랑종
             "", "정박한 세계", "화산편", "통로", "굴절 기둥", "폭풍편", "", "경계 운반자", "계류 닻", "층위 관측대",
+            // 인간 마법 문명. Melee is empty by design, not by omission: the faction
+            // holds the line with 대포 and 공수 특공대. The 마법 탑 is production and supply both.
+            "", "마나 샘", "수습 마법생", "마법 탑", "대포", "", "공수 특공대", "Towerback", "마법 탑", "공방",
         };
 
         private static readonly string[] sprites =
@@ -109,6 +113,9 @@ namespace WordCraft.Sim
             "", "MossrockSanctum", "MiniRockSwarm", "WakingStone", "RollingHill", "RockGolem", "RockMage", "", "StandingStone", "ElderMossstone",
             // 차원 유랑종. Thinnest roster; the ranged slot has neither art nor concept.
             "", "AnchoredWorld", "FireTadpole", "Passage", "RefractingPillar", "LightningTadpole", "", "DimensionToad", "MooringClaw", "StrataObservatory",
+            // 인간 마법 문명. The only faction whose buildings all exist already; the
+            // worker and the 공방 are the holes. Melee is empty by design.
+            "", "ManaWell", "", "Tower", "Cannon", "", "ChickenCommando", "Towerback", "Tower", "",
         };
 
         public static UnitStats Stats(Role role) => stats[(int)role];
