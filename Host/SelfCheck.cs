@@ -21,6 +21,7 @@ namespace WordCraft.Host
                 DesyncHaltsAndNamesTheField();
                 SeedMismatchIsRejectedBeforeTick0();
                 ContentMismatchIsRejectedBeforeTick0();
+                FactionMismatchIsRejectedBeforeTick0();
                 PeerTimeoutEndsTheMatch();
             }
             catch (Exception ex)
@@ -37,10 +38,12 @@ namespace WordCraft.Host
         /// <summary>Drop, duplicate, reorder, and delay, yet identical hashes every tick.</summary>
         private static void LossyMatchStaysInSync()
         {
-            var cfg = new MatchConfig();
+            // Two different factions, each known only to the peer that picked it.
+            // Factions are hashed, so every tick below also asserts that the
+            // handshake delivered them.
             var link = new FaultyLink(0xFEEDFACE, dropPercent: 20, duplicatePercent: 10, baseDelayMs: 30, jitterMs: 40);
-            var a = new Peer(0, link.A, cfg, -1, 0);
-            var b = new Peer(1, link.B, cfg, -1, 0);
+            var a = new Peer(0, link.A, new MatchConfig { LocalFaction = Faction.WaterSlimes }, -1, 0);
+            var b = new Peer(1, link.B, new MatchConfig { LocalFaction = Faction.RockGolems }, -1, 0);
 
             Drive(link, a, b, 0,
                 () => Stopped(a) || Stopped(b) || (a.Session.Tick >= Ticks && b.Session.Tick >= Ticks),
@@ -64,7 +67,12 @@ namespace WordCraft.Host
                 Check(a.World.GetResources(peer) > 0, "peer " + peer + " never gathered anything");
                 Check(a.World.GetResources(peer) == b.World.GetResources(peer),
                     "peers disagree on peer " + peer + " resources");
+                Check(a.World.FactionOf(peer) == b.World.FactionOf(peer),
+                    "peers disagree on peer " + peer + " faction");
             }
+
+            Check(a.World.FactionOf(0) == Faction.WaterSlimes && a.World.FactionOf(1) == Faction.RockGolems,
+                "the handshake did not carry each peer's own choice");
         }
 
         /// <summary>One peer starts with a tampered unit; the desync must be located, not just noticed.</summary>
@@ -110,6 +118,29 @@ namespace WordCraft.Host
             Check(a.World.Tick == 0 && b.World.Tick == 0, "a tick executed despite a rejected handshake");
             Check((a.Session.StopReason ?? "").Contains("content version"), "peer 0 reason: " + a.Session.StopReason);
             Check((b.Session.StopReason ?? "").Contains("content version"), "peer 1 reason: " + b.Session.StopReason);
+        }
+
+        /// <summary>
+        /// Two peers that disagree about who plays what must never reach
+        /// World.Step: a faction is hashed, so the disagreement would surface as
+        /// a desync on the first checkpoint instead of as a rejection.
+        /// </summary>
+        private static void FactionMismatchIsRejectedBeforeTick0()
+        {
+            var link = new FaultyLink(0xFAC7, dropPercent: 0, duplicatePercent: 0, baseDelayMs: 10, jitterMs: 0);
+            var a = new Peer(0, link.A, new MatchConfig { LocalFaction = Faction.WaterSlimes }, -1, 0);
+            // Peer 1 arrived believing peer 0 plays Hellfire. It does not.
+            var b = new Peer(1, link.B, new MatchConfig
+            {
+                LocalFaction = Faction.RockGolems,
+                RemoteFaction = Faction.Hellfire,
+            }, -1, 0);
+
+            Drive(link, a, b, 0, () => Stopped(a) && Stopped(b), 60000);
+
+            Check(a.World.Tick == 0 && b.World.Tick == 0, "a tick executed despite a rejected handshake");
+            Check((a.Session.StopReason ?? "").Contains("faction"), "peer 0 reason: " + a.Session.StopReason);
+            Check((b.Session.StopReason ?? "").Contains("faction"), "peer 1 reason: " + b.Session.StopReason);
         }
 
         /// <summary>A vanished peer ends the match instead of being simulated with invented input.</summary>
