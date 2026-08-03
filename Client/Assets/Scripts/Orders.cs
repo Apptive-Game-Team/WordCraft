@@ -13,6 +13,7 @@ namespace WordCraft.View
     ///   right click        move, gather a node, or attack an enemy
     ///   card key or button the command in that cell, see CommandCard
     ///   left click         completes an armed command, Esc cancels it
+    ///   build key          opens the submenu; a second key picks the building
     /// </summary>
     public sealed class Orders : MonoBehaviour
     {
@@ -22,6 +23,12 @@ namespace WordCraft.View
 
         /// <summary>Command waiting for a left click to name its target, or None.</summary>
         public CommandType Pending { get; private set; }
+
+        /// <summary>Which building an armed Build will place. None when nothing is armed.</summary>
+        public Role Placing { get; private set; }
+
+        /// <summary>True while the worker's build submenu is showing instead of its card.</summary>
+        public bool BuildMenuOpen { get; private set; }
 
         private MatchRunner runner;
         private Selection selection;
@@ -48,7 +55,9 @@ namespace WordCraft.View
         }
 
         /// <summary>The card the current selection shows. The HUD draws it, the keys fire it.</summary>
-        public CardKind Kind()
+        public CardKind Kind() => BuildMenuOpen ? CardKind.BuildMenu : SelectionKind();
+
+        private CardKind SelectionKind()
         {
             if (runner == null || selection == null) return CardKind.None;
             int id = CommandCard.Representative(runner.World, selection.Selected, runner.LocalPeer);
@@ -66,10 +75,15 @@ namespace WordCraft.View
 
             if (runner.Session.State != SessionState.Running)
             {
-                Pending = CommandType.None;
+                Cancel();
                 selection.Blocked = false;
                 return;
             }
+
+            // The submenu belongs to the worker card, so it closes with it: losing
+            // the selection mid-menu must not leave the player looking at buildings
+            // no selected worker could place.
+            if (BuildMenuOpen && SelectionKind() != CardKind.Worker) BuildMenuOpen = false;
 
             CardSlot[] card = CommandCard.Of(Kind());
             for (int i = 0; i < CommandCard.Cells; i++)
@@ -77,7 +91,7 @@ namespace WordCraft.View
                 if (Input.GetKeyDown(CommandCard.Keys[i])) Run(card[i]);
             }
 
-            if (Input.GetKeyDown(KeyCode.Escape)) Pending = CommandType.None;
+            if (Input.GetKeyDown(KeyCode.Escape)) Cancel();
 
             // The left button belongs to an armed command while it is armed, so the
             // click that completes it does not also redo the selection underneath.
@@ -90,8 +104,16 @@ namespace WordCraft.View
             }
 
             if (!Input.GetMouseButtonDown(1) || Hud.OverUi(Input.mousePosition)) return;
-            if (Pending != CommandType.None) Pending = CommandType.None;
+            if (Pending != CommandType.None || BuildMenuOpen) Cancel();
             else RightClick(MouseWorld());
+        }
+
+        /// <summary>Back to no armed command and no submenu. Esc and right click both mean this.</summary>
+        private void Cancel()
+        {
+            Pending = CommandType.None;
+            Placing = Role.None;
+            BuildMenuOpen = false;
         }
 
         /// <summary>
@@ -102,6 +124,21 @@ namespace WordCraft.View
         {
             if (runner == null || slot.Type == CommandType.None) return;
             if (runner.Session.State != SessionState.Running) return;
+
+            if (slot.Type == CommandType.Build)
+            {
+                // The cell that names no building is the one that opens the menu.
+                if (slot.Produce == Role.None)
+                {
+                    CommandCard.BuildMenu(runner.World.FactionOf(runner.LocalPeer));
+                    BuildMenuOpen = true;
+                    return;
+                }
+                BuildMenuOpen = false;
+                Placing = slot.Produce;
+                Pending = CommandType.Build;
+                return;
+            }
 
             if (CommandCard.NeedsTarget(slot.Type))
             {
@@ -121,10 +158,14 @@ namespace WordCraft.View
 
             if (type == CommandType.Build)
             {
-                // Build names a peer and a cell, not an entity, so it goes out once
-                // however many workers are selected. One per worker would spend the
-                // first one's cost and have the simulation refuse the rest.
-                runner.Session.Issue(CommandType.Build, -1, MatchRunner.ToSim(point));
+                Role role = Placing;
+                Placing = Role.None;
+                // Build names a peer, a building, and a cell, not an entity, so it
+                // goes out once however many workers are selected. One per worker
+                // would spend the first one's cost and have the simulation refuse
+                // the rest. Sent whatever the ghost's tint says: the tint is a
+                // guess made a tick late, and the simulation is what decides.
+                runner.Session.Issue(CommandType.Build, -1, MatchRunner.ToSim(point), (int)role);
                 return;
             }
 

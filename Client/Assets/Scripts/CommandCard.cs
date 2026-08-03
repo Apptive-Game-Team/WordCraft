@@ -4,13 +4,18 @@ using WordCraft.Sim;
 
 namespace WordCraft.View
 {
-    /// <summary>Which card a selection shows. Fighters beat workers beat buildings.</summary>
+    /// <summary>
+    /// Which card a selection shows. Fighters beat workers beat buildings.
+    /// BuildMenu is not a selection at all: it is the worker card's submenu, and it
+    /// ranks nowhere because Representative never returns it.
+    /// </summary>
     public enum CardKind
     {
         None = 0,
         Fighter = 1,
         Worker = 2,
         Building = 3,
+        BuildMenu = 4,
     }
 
     /// <summary>One cell of the card. Type None is an empty cell.</summary>
@@ -19,7 +24,11 @@ namespace WordCraft.View
         public string Label;
         public CommandType Type;
 
-        /// <summary>Command argument. Produce reads it as a Role; everything else ignores it.</summary>
+        /// <summary>
+        /// Command argument. Produce reads it as the unit role, Build as the
+        /// building role; everything else ignores it. Role.None on a Build is the
+        /// cell that opens the submenu rather than placing anything.
+        /// </summary>
         public Role Produce;
     }
 
@@ -69,15 +78,29 @@ namespace WordCraft.View
             Empty, Empty, Empty,
         };
 
-        // ponytail: one build option, because CommandType.Build always places a
-        // Role.Production site and takes no role argument. Widen the bottom row
-        // the day the simulation lets a Build name what it is putting down.
         private static readonly CardSlot[] worker =
         {
             Cmd("Move", CommandType.Move), Cmd("Stop", CommandType.Stop), Empty,
             Empty, Empty, Empty,
             Cmd("Build", CommandType.Build), Empty, Empty,
         };
+
+        /// <summary>
+        /// What a Build may name, in the order the submenu lists them. Ascending
+        /// Role, so a building keeps its cell whatever the faction and the hand
+        /// learns one layout.
+        /// </summary>
+        private static readonly Role[] buildings =
+        {
+            Role.Base, Role.Production, Role.Defense, Role.Supply, Role.Tech
+        };
+
+        /// <summary>
+        /// The build submenu. Filled when the menu opens, because which buildings a
+        /// faction lists is roster data and Of() has only the kind to go on. One
+        /// array, so the card the keys fire is the card the HUD draws.
+        /// </summary>
+        private static readonly CardSlot[] buildMenu = new CardSlot[Cells];
 
         private static readonly CardSlot[] building =
         {
@@ -96,8 +119,35 @@ namespace WordCraft.View
                 case CardKind.Fighter: return fighter;
                 case CardKind.Worker: return worker;
                 case CardKind.Building: return building;
+                case CardKind.BuildMenu: return buildMenu;
                 default: return none;
             }
+        }
+
+        /// <summary>
+        /// Lays the submenu out for this faction and returns it. Bottom two rows,
+        /// keeping the top row where the worker card's own commands live, so the
+        /// submenu reads as an extension of the card rather than a new screen.
+        /// </summary>
+        public static CardSlot[] BuildMenu(Faction faction)
+        {
+            for (int i = 0; i < Cells; i++) buildMenu[i] = Empty;
+
+            int cell = Cols; // row 1, under the worker's Move and Stop
+            for (int i = 0; i < buildings.Length && cell < Cells; i++)
+            {
+                Role role = buildings[i];
+                if (!FactionData.Has(faction, role)) continue;
+                buildMenu[cell++] = new CardSlot
+                {
+                    // The price on the button, because a build menu that hides what
+                    // a thing costs is a menu the player has to learn by failing.
+                    Label = role + "\n" + FactionData.BuildCost(role),
+                    Type = CommandType.Build,
+                    Produce = role,
+                };
+            }
+            return buildMenu;
         }
 
         public static CardKind KindOf(Entity e)
