@@ -202,7 +202,13 @@ namespace WordCraft.View
             }
         }
 
-        private void RightClick(Vector2 point)
+        /// <summary>
+        /// What a right click at a world point means: gather the node under it,
+        /// attack the enemy under it, walk there, or rally there. Public so the
+        /// minimap can hand its own world point in rather than deciding again;
+        /// one copy of the rule is the only way the two cannot drift apart.
+        /// </summary>
+        public void RightClick(Vector2 point)
         {
             World world = runner.World;
             int hit = runner.EntityAt(point, PickRadius, mineOnly: false);

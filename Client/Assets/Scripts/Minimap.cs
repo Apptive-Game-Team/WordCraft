@@ -11,6 +11,7 @@ namespace WordCraft.View
     ///
     ///   left click   put the camera there
     ///   left drag    keep putting it there
+    ///   right click  the order a right click at that world point would give
     ///
     /// A Texture2D repainted from entity state plus a few GUI rectangles. A
     /// second camera onto a RenderTexture would cost a whole extra render pass to
@@ -76,9 +77,13 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// A press puts the camera where it landed and a drag keeps doing it, so
-        /// scrubbing across the map sweeps the view across the map. Nothing here
-        /// is sent to the peer: the camera is not simulation state.
+        /// A left press puts the camera where it landed and a drag keeps doing it,
+        /// so scrubbing across the map sweeps the view across the map. The camera
+        /// is not simulation state and no peer hears about it.
+        ///
+        /// A right press is an order, handed to Orders as a world point so the
+        /// minimap never decides what a right click means. Press only: a right
+        /// drag is one order, not one an event.
         ///
         /// IMGUI events rather than Input, because OnGUI runs several times a
         /// frame and Input.GetMouseButtonDown is true on every one of them. The
@@ -99,11 +104,22 @@ namespace WordCraft.View
                 return;
             }
 
-            if (ev.type != EventType.MouseDown || ev.button != 0) return;
-            if (!area.Contains(ev.mousePosition)) return;
+            if (ev.type != EventType.MouseDown || !area.Contains(ev.mousePosition)) return;
+            Vector2 point = ToWorld(area, ev.mousePosition);
 
-            scrubbing = true;
-            Center(ToWorld(area, ev.mousePosition));
+            if (ev.button == 0)
+            {
+                scrubbing = true;
+                Center(point);
+            }
+            else if (ev.button == 1 && Orders.Instance != null)
+            {
+                Orders.Instance.RightClick(point);
+            }
+            else
+            {
+                return; // the middle button is the camera rig's, and it reads Input
+            }
             ev.Use();
         }
 
