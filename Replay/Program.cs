@@ -38,6 +38,11 @@ namespace WordCraft.Replay
                 ProducedUnitsWalkToTheRallyPoint();
                 CancellingProductionRefundsInFull();
                 RosterSlotsAreAddressable();
+                EveryBuildingRoleCanBePlaced();
+                BuildRefusesWhatTheFactionDoesNotHave();
+                BuildIsGatedByTheTechTier();
+                BuildRefusesOccupiedAndOffMapCells();
+                ScriptedLogPlacesEveryBuilding();
                 ClientLogMatchesGoldenHash();
                 SimAssemblyIsClean();
             }
@@ -736,6 +741,208 @@ namespace WordCraft.Replay
         }
 
         /// <summary>
+        /// The roles a Build may name, in the order the command card shows them.
+        /// Every faction lists all five, so a build menu is never empty.
+        /// </summary>
+        private static readonly Role[] Buildings =
+        {
+            Role.Base, Role.Production, Role.Defense, Role.Supply, Role.Tech
+        };
+
+        /// <summary>
+        /// Each building role placed by the command that names it. Before this,
+        /// Build took no argument and four of the five buildings existed in the
+        /// roster with no way to put one down.
+        /// </summary>
+        private static void EveryBuildingRoleCanBePlaced()
+        {
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                foreach (Role role in Buildings)
+                {
+                    Check(FactionData.Has((Faction)f, role),
+                        "faction " + (Faction)f + " cannot build a " + role);
+                }
+            }
+
+            foreach (Role role in Buildings)
+            {
+                var world = new World(Seed);
+                world.SetPeerFaction(0, Faction.TreeSpirits);
+                world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);        // 0
+                // Standing production, so tier 2 is open and this loop is testing
+                // the role argument rather than the tier gate.
+                world.SpawnBuilding(0, Role.Production, At(5, 9), complete: true);  // 1
+                world.GrantResources(0, 5000);
+
+                int banked = world.GetResources(0);
+                world.Step(Build(0, 0, role, At(20, 20)));
+
+                Check(world.EntityCount == 3, "a Build for " + role + " placed nothing");
+                Entity site = world.GetEntity(2);
+                Check(site.Kind == EntityKind.Building, "a Build for " + role + " placed a " + site.Kind);
+                Check(site.Role == role, "a Build for " + role + " placed a " + site.Role);
+                Check(site.BuildTicksLeft > 0, "a Build for " + role + " finished instantly");
+                Check(world.GetResources(0) == banked - FactionData.BuildCost(role),
+                    "a Build for " + role + " charged the wrong price");
+            }
+        }
+
+        /// <summary>
+        /// A roster slot the faction leaves empty cannot be built, and the refusal
+        /// is whole: no cost taken, no site placed. The control afterwards is what
+        /// proves the world was capable of the build it just refused.
+        /// </summary>
+        private static void BuildRefusesWhatTheFactionDoesNotHave()
+        {
+            // 인간 마법 문명 fields no melee unit; the slot is empty by design.
+            Check(!FactionData.Has(Faction.Humans, Role.Melee),
+                "the empty roster slot this check relies on has been filled");
+
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Humans);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.GrantResources(0, 5000);
+
+            int banked = world.GetResources(0);
+            world.Step(Build(0, 0, Role.Melee, At(20, 20)));
+            Check(world.GetResources(0) == banked, "a Build the roster does not list spent resources");
+            Check(world.EntityCount == 1, "a Build the roster does not list placed something");
+
+            world.Step(Build(0, 1, Role.Supply, At(20, 20)));
+            Check(world.GetResources(0) == banked - FactionData.BuildCost(Role.Supply),
+                "the control build was refused too, so the check proves nothing");
+            Check(world.GetEntity(1).Role == Role.Supply, "the control build placed the wrong thing");
+        }
+
+        /// <summary>
+        /// The tech building needs the production building standing, not merely
+        /// paid for. The half-built middle step is the one worth asserting: a site
+        /// under construction opens nothing.
+        /// </summary>
+        private static void BuildIsGatedByTheTechTier()
+        {
+            Check(FactionData.Tier(Role.Tech) == 2, "the tech building is no longer tier gated");
+
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.TreeSpirits);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.GrantResources(0, 5000);
+
+            int banked = world.GetResources(0);
+            world.Step(Build(0, 0, Role.Tech, At(20, 20)));
+            Check(world.GetResources(0) == banked, "tier 2 spent resources with no production building");
+            Check(world.EntityCount == 1, "tier 2 placed a building with no production building");
+
+            world.Step(Build(0, 1, Role.Production, At(30, 30)));
+            Check(world.GetEntity(1).Role == Role.Production, "the prerequisite was not placed");
+
+            // Still under construction, so it opens nothing yet.
+            world.Step(Build(0, 2, Role.Tech, At(20, 20)));
+            Check(world.EntityCount == 2, "an unfinished production building opened tier 2");
+
+            var idle = new List<Command>();
+            while (world.GetEntity(1).BuildTicksLeft > 0) world.Step(idle);
+
+            banked = world.GetResources(0);
+            world.Step(Build(0, 3, Role.Tech, At(20, 20)));
+            Check(world.EntityCount == 3, "the finished production building did not open tier 2");
+            Check(world.GetEntity(2).Role == Role.Tech, "the prerequisite opened the wrong role");
+            Check(world.GetResources(0) == banked - FactionData.BuildCost(Role.Tech),
+                "the tech building charged the wrong price");
+        }
+
+        /// <summary>
+        /// Off the map and on top of something are both refusals, never a clamp:
+        /// a Build quietly moved to a nearby cell is a building the player did not
+        /// ask for, and two peers would not have to pick the same cell.
+        /// </summary>
+        private static void BuildRefusesOccupiedAndOffMapCells()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.TreeSpirits);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.SpawnResourceNode(At(14, 14), 200);                    // 1
+            world.GrantResources(0, 5000);
+
+            int banked = world.GetResources(0);
+            int seq = 0;
+            FixVec2[] refused =
+            {
+                At(5, 5),   // the base's own cell
+                At(14, 14), // a resource node
+                At(-2, 20), At(20, -2),
+                At(World.GridSize, 20), At(20, World.GridSize + 5),
+            };
+
+            foreach (FixVec2 where in refused)
+            {
+                world.Step(Build(0, seq++, Role.Supply, where));
+                Check(world.EntityCount == 2, "a Build at " + where.X + "," + where.Y + " placed something");
+                Check(world.GetResources(0) == banked, "a refused Build still spent resources");
+            }
+
+            world.Step(Build(0, seq, Role.Supply, At(20, 20)));
+            Check(world.EntityCount == 3, "the control build on a free cell was refused too");
+
+            // And the cell it took is now occupied for the next one.
+            world.Step(Build(0, seq + 1, Role.Supply, At(20, 20)));
+            Check(world.EntityCount == 3, "two buildings were placed on one cell");
+        }
+
+        /// <summary>
+        /// The client's log now places one of every building. Run twice for the
+        /// per-tick hashes, and checked for the sites themselves: a Build the
+        /// simulation refuses changes no state, so a pair of identical runs is
+        /// exactly what a silently rejected log looks like.
+        /// </summary>
+        private static void ScriptedLogPlacesEveryBuilding()
+        {
+            List<Command>[] log = ScriptedLog.Build();
+            ulong[] left = RunScriptedLog(log, out World world);
+            ulong[] right = RunScriptedLog(log, out _);
+
+            for (int t = 0; t < left.Length; t++)
+            {
+                Check(left[t] == right[t], "client log hash drift at tick " + t);
+            }
+
+            foreach (Role role in new[] { Role.Production, Role.Supply, Role.Tech, Role.Defense })
+            {
+                for (int peer = 0; peer < MatchScenario.Peers; peer++)
+                {
+                    Check(Built(world, peer, role), "peer " + peer + " never placed a " + role);
+                }
+            }
+        }
+
+        /// <summary>True when this peer holds a building of that role, finished or not.</summary>
+        private static bool Built(World world, int peer, Role role)
+        {
+            for (int i = 0; i < world.EntityCount; i++)
+            {
+                Entity e = world.GetEntity(i);
+                if (e.Alive && e.Kind == EntityKind.Building && e.Owner == peer && e.Role == role) return true;
+            }
+            return false;
+        }
+
+        private static ulong[] RunScriptedLog(List<Command>[] log, out World world)
+        {
+            world = MatchScenario.Build(Seed, ScriptedLog.Peer0Faction, ScriptedLog.Peer1Faction);
+            var hashes = new ulong[log.Length];
+            for (int t = 0; t < log.Length; t++)
+            {
+                world.Step(log[t]);
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        private static List<Command> Build(int peer, int seq, Role role, FixVec2 where) =>
+            new List<Command> { new Command(0, peer, seq, CommandType.Build, -1, where, (int)role) };
+
+        /// <summary>
         /// The client's own input log, run under CoreCLR. Unity's Mono runtime
         /// asserts the same constant, so the two runtimes the game ships on are
         /// pinned to one another. A fixed-point or JIT difference between them
@@ -743,11 +950,8 @@ namespace WordCraft.Replay
         /// </summary>
         private static void ClientLogMatchesGoldenHash()
         {
-            List<Command>[] log = ScriptedLog.Build();
-            World world = MatchScenario.Build(Seed, ScriptedLog.Peer0Faction, ScriptedLog.Peer1Faction);
-            for (int t = 0; t < log.Length; t++) world.Step(log[t]);
-
-            ulong final = world.Hash();
+            ulong[] hashes = RunScriptedLog(ScriptedLog.Build(), out _);
+            ulong final = hashes[hashes.Length - 1];
             Check(final == ScriptedLog.GoldenHash,
                 "CoreCLR disagrees with the golden hash: got 0x" + final.ToString("X16") +
                 ", expected 0x" + ScriptedLog.GoldenHash.ToString("X16"));
@@ -891,8 +1095,10 @@ namespace WordCraft.Replay
             world.SpawnUnit(1, Role.Melee,
                 new FixVec2(Fix.FromInt(31) + half, Fix.FromInt(30) + half)); // 9
 
-            world.GrantResources(0, 100);
-            world.GrantResources(1, 100);
+            // Enough to place the production building the log puts down at tick 150
+            // without waiting on the gather loop, which is under test separately.
+            world.GrantResources(0, 300);
+            world.GrantResources(1, 300);
             return world;
         }
 
@@ -923,8 +1129,8 @@ namespace WordCraft.Replay
             // in each other's face, so this is the order deciding the kill.
             log[5].Add(new Command(5, 0, seq[0]++, CommandType.Attack, MatchFighter0, FixVec2.Zero, MatchFighter1));
 
-            log[150].Add(new Command(150, 0, seq[0]++, CommandType.Build, -1, At(20, 20)));
-            log[150].Add(new Command(150, 1, seq[1]++, CommandType.Build, -1, At(44, 48)));
+            log[150].Add(new Command(150, 0, seq[0]++, CommandType.Build, -1, At(20, 20), (int)Role.Production));
+            log[150].Add(new Command(150, 1, seq[1]++, CommandType.Build, -1, At(44, 48), (int)Role.Production));
 
             // One worker off the loop, the other left on it, so the run still banks
             // deliveries while a cancelled loop is in the same hash.

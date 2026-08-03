@@ -14,7 +14,11 @@ namespace WordCraft.View
         public const int MapSize = World.GridSize;
 
         private const int NodeAmount = 500;
-        private const int StartingResources = 200;
+
+        // Enough for the opening build order. Two workers bank about 20 mana every
+        // four seconds, so a start that could not pay for a production building
+        // would be several minutes of watching before the first decision.
+        private const int StartingResources = 500;
 
         /// <summary>
         /// Both peers must pass the same two factions or their worlds hash apart

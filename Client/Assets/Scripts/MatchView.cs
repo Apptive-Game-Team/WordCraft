@@ -29,6 +29,8 @@ namespace WordCraft.View
         private static readonly Color RallyColor = new Color(0.55f, 1.00f, 0.60f, 0.85f);
         private static readonly Color RingColor = new Color(1.00f, 1.00f, 1.00f, 0.75f);
         private static readonly Color HoverColor = new Color(1.00f, 1.00f, 1.00f, 0.28f);
+        private static readonly Color GhostOkColor = new Color(0.45f, 1.00f, 0.55f, 0.55f);
+        private static readonly Color GhostBadColor = new Color(1.00f, 0.35f, 0.30f, 0.55f);
 
         /// <summary>How far a ring stands out past the art, as a fraction of the visible height.</summary>
         private const float RingBandRatio = 0.012f;
@@ -72,6 +74,10 @@ namespace WordCraft.View
         // Rally markers are a pool, not one per entity: only the selected buildings
         // that have set one are ever drawn.
         private readonly List<SpriteRenderer> rallyMarkers = new List<SpriteRenderer>();
+
+        /// <summary>The building under the cursor during placement. One, made once.</summary>
+        private SpriteRenderer ghost;
+        private Role ghostRole;
 
         private readonly Dictionary<string, Sprite> art = new Dictionary<string, Sprite>();
 
@@ -152,6 +158,7 @@ namespace WordCraft.View
 
             for (int i = markers; i < rallyMarkers.Count; i++) rallyMarkers[i].enabled = false;
             Hover(world);
+            Ghost(world);
         }
 
         /// <summary>
@@ -187,6 +194,47 @@ namespace WordCraft.View
 
             hover.sprite = Shape(world.GetEntity(id).Kind);
             Ring(hover, footprints[id], runner.DrawPosition(id));
+        }
+
+        /// <summary>
+        /// The placement preview: the building's own art under the cursor, snapped
+        /// to the cell it would take, tinted by whether the simulation would accept
+        /// it. The tint is feedback and nothing else. It is read from a world up to
+        /// a tick behind the one the command will meet, so the answer that counts is
+        /// the one Apply takes; nothing here gates the click.
+        /// </summary>
+        private void Ghost(World world)
+        {
+            Orders orders = Orders.Instance;
+            bool placing = orders != null && orders.Pending == CommandType.Build &&
+                           orders.Placing != Role.None && Cam != null &&
+                           !Hud.OverUi(Input.mousePosition);
+
+            if (!placing)
+            {
+                if (ghost != null) ghost.enabled = false;
+                return;
+            }
+
+            Role role = orders.Placing;
+            FixVec2 aimed = MatchRunner.ToSim(Cam.ScreenToWorldPoint(Input.mousePosition));
+            bool legal = world.CanBuild(runner.LocalPeer, role, aimed);
+
+            if (ghost == null) ghost = NewRenderer("BuildGhost", square, GhostOkColor, OverlayOrder);
+            if (ghostRole != role)
+            {
+                ghostRole = role;
+                Sprite drawn = ArtFor(world.FactionOf(runner.LocalPeer), role);
+                ghost.sprite = drawn != null ? drawn : square;
+                ghost.transform.localScale = drawn != null ? FitScale(drawn, role) : Vector3.one * 2f;
+            }
+
+            // Drawn on the cell the simulation would use, not under the pointer, so
+            // what the player sees is where the building lands.
+            Vector2 cell = MatchRunner.ToView(World.CellCenter(World.CellOf(aimed)));
+            ghost.transform.position = new Vector3(cell.x, cell.y, 0f);
+            ghost.color = legal ? GhostOkColor : GhostBadColor;
+            ghost.enabled = true;
         }
 
         /// <summary>
@@ -279,10 +327,10 @@ namespace WordCraft.View
                     break;
             }
 
-            Sprite drawn = ArtFor(world, e);
+            Sprite drawn = e.Owner < 0 ? null : ArtFor(world.FactionOf(e.Owner), e.Role);
             var sr = NewRenderer(Label(world, e), drawn != null ? drawn : shape,
                 drawn != null ? Color.white : color, e.Kind == EntityKind.Building ? 5 : 10);
-            sr.transform.localScale = drawn != null ? FitScale(drawn, e) : new Vector3(scale, scale, 1f);
+            sr.transform.localScale = drawn != null ? FitScale(drawn, e.Role) : new Vector3(scale, scale, 1f);
             sr.transform.rotation = Quaternion.Euler(0f, 0f, drawn != null ? 0f : spin);
 
             var ring = NewRenderer("Ring", shape, RingColor, sr.sortingOrder - 1);
@@ -297,11 +345,11 @@ namespace WordCraft.View
             return sr;
         }
 
-        /// <summary>Roster art for this entity, or null when the slot has none yet.</summary>
-        private Sprite ArtFor(World world, Entity e)
+        /// <summary>Roster art for this slot, or null when it has none yet.</summary>
+        private Sprite ArtFor(Faction faction, Role role)
         {
-            if (e.Owner < 0 || e.Role == Role.None) return null;
-            string file = FactionData.Sprite(world.FactionOf(e.Owner), e.Role);
+            if (role == Role.None) return null;
+            string file = FactionData.Sprite(faction, role);
             if (file.Length == 0) return null;
 
             if (!art.TryGetValue(file, out Sprite sprite))
@@ -320,11 +368,11 @@ namespace WordCraft.View
         /// were drawn for another game at another pixels-per-unit, so their own
         /// size means nothing here.
         /// </summary>
-        private static Vector3 FitScale(Sprite sprite, Entity e)
+        private static Vector3 FitScale(Sprite sprite, Role role)
         {
             Vector2 size = sprite.bounds.size;
             float longest = Mathf.Max(size.x, size.y);
-            float k = longest > 0f ? Cells(e.Role) / longest : 1f;
+            float k = longest > 0f ? Cells(role) / longest : 1f;
             return new Vector3(k, k, 1f);
         }
 

@@ -129,28 +129,52 @@ namespace WordCraft.Sim
             return best;
         }
 
-        /// <summary>Placement is validated inside the simulation, never by a client.</summary>
-        private void TryPlaceBuilding(int peer, FixVec2 position)
+        /// <summary>
+        /// Every rule a Build has to pass, and the only place they are written.
+        /// Public because the client tints its placement ghost with it, but the
+        /// answer that counts is the one taken here during Apply: a view that
+        /// asked a moment earlier is looking at a world one tick stale.
+        /// </summary>
+        // ponytail: a Build names a peer and a cell, never a worker. A peer can
+        // place anywhere on the map with nothing standing there. Read the builder
+        // out of Command.EntityId and require it within InteractRange the day
+        // placement is supposed to cost a walk.
+        public bool CanBuild(int peer, Role role, FixVec2 position)
         {
-            if (peer < 0 || peer >= MaxPeers) return;
-            if (resources[peer] < BuildCost) return;
+            if (peer < 0 || peer >= MaxPeers) return false;
+            if (!FactionData.IsBuilding(role)) return false;
+            // A faction cannot place what its roster does not list, or one peer
+            // fields a building the other has no name and no art for.
+            if (!FactionData.Has(factions[peer], role)) return false;
+            if (FactionData.Tier(role) > TierOf(peer)) return false;
+            if (resources[peer] < FactionData.BuildCost(role)) return false;
 
-            int cell = CellOf(position);
             // Reject an out-of-bounds request outright instead of silently clamping
             // it into the map, which would place a building the player never asked for.
-            if (position.X < Fix.Zero || position.Y < Fix.Zero) return;
-            if (position.X >= Fix.FromInt(GridSize) || position.Y >= Fix.FromInt(GridSize)) return;
+            if (position.X < Fix.Zero || position.Y < Fix.Zero) return false;
+            if (position.X >= Fix.FromInt(GridSize) || position.Y >= Fix.FromInt(GridSize)) return false;
 
+            int cell = CellOf(position);
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
                 if (!e.Alive) continue;
                 if (e.Kind != EntityKind.Building && e.Kind != EntityKind.ResourceNode) continue;
-                if (CellOf(e.Position) == cell) return;
+                if (CellOf(e.Position) == cell) return false;
             }
+            return true;
+        }
 
-            resources[peer] -= BuildCost;
-            SpawnBuilding(peer, Role.Production, CellCenter(cell), complete: false);
+        /// <summary>
+        /// Placement is validated inside the simulation, never by a client. Refused
+        /// whole: a Build that fails any rule spends nothing and places nothing.
+        /// </summary>
+        private void TryPlaceBuilding(int peer, Role role, FixVec2 position)
+        {
+            if (!CanBuild(peer, role, position)) return;
+
+            resources[peer] -= FactionData.BuildCost(role);
+            SpawnBuilding(peer, role, CellCenter(CellOf(position)), complete: false);
         }
 
         /// <summary>
@@ -166,8 +190,9 @@ namespace WordCraft.Sim
 
                 e.BuildTicksLeft--;
                 // Integer ramp so hp never depends on a division that rounds
-                // differently anywhere.
-                e.Hp = e.MaxHp - (e.MaxHp * e.BuildTicksLeft) / BuildTicks;
+                // differently anywhere. The divisor is this building's own total,
+                // or a cheap building would finish its hp on someone else's clock.
+                e.Hp = e.MaxHp - (e.MaxHp * e.BuildTicksLeft) / FactionData.BuildTicks(e.Role);
                 if (e.Hp < 1) e.Hp = 1;
                 entities[i] = e;
             }

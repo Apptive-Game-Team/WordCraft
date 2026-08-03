@@ -112,8 +112,6 @@ namespace WordCraft.Sim
         public const int NodeHp = 1;
         public const int GatherTicks = 20;
         public const int CarryCapacity = 10;
-        public const int BuildCost = 50;
-        public const int BuildTicks = 60;
         public const int ProduceCost = 20;
         public const int ProduceTicks = 40;
         public const int MaxQueue = 5;
@@ -233,7 +231,7 @@ namespace WordCraft.Sim
             int id = Add(EntityKind.Building, owner, role, position, Fix.Zero, complete ? hp : 1);
             Entity e = entities[id];
             e.MaxHp = hp;
-            e.BuildTicksLeft = complete ? 0 : BuildTicks;
+            e.BuildTicksLeft = complete ? 0 : FactionData.BuildTicks(role);
             entities[id] = e;
             return id;
         }
@@ -443,7 +441,12 @@ namespace WordCraft.Sim
                 }
 
                 case CommandType.Build:
-                    TryPlaceBuilding(c.PeerId, c.Target);
+                    // Arg names the building, the same way Produce names the unit.
+                    // Out of range is malformed and refused rather than clamped.
+                    if (c.Arg < 0 || c.Arg >= FactionData.RoleCount) return;
+                    // Role.None is what a Build with no Arg carries, and the
+                    // production building is what the client has always meant by it.
+                    TryPlaceBuilding(c.PeerId, c.Arg == 0 ? Role.Production : (Role)c.Arg, c.Target);
                     break;
 
                 case CommandType.Produce:
