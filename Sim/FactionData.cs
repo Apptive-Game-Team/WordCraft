@@ -39,10 +39,11 @@ namespace WordCraft.Sim
     }
 
     /// <summary>
-    /// The roster: stats per role, identity per faction and role. Plain constants
-    /// on purpose. A parsed file or a ScriptableObject would put content behind an
-    /// importer that can round or reorder differently on two machines, and the
-    /// simulation reads these numbers on every tick.
+    /// The roster: stats per role, identity per faction and role. A role holds a
+    /// list of entries rather than one, because the six factions do not field the
+    /// same units. Plain constants on purpose. A parsed file or a ScriptableObject
+    /// would put content behind an importer that can round or reorder differently
+    /// on two machines, and the simulation reads these numbers on every tick.
     /// </summary>
     public static class FactionData
     {
@@ -51,7 +52,7 @@ namespace WordCraft.Sim
         /// content produce different results from the same input, so this travels
         /// in the handshake and a mismatch is a rejection before tick 0.
         /// </summary>
-        public const uint ContentVersion = 10;
+        public const uint ContentVersion = 11;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -79,9 +80,10 @@ namespace WordCraft.Sim
         };
 
         /// <summary>
-        /// Faction major, role minor. An empty sprite is a slot docs/FACTIONS.md
-        /// marks as "신규 필요": stats exist, art does not, and the view falls back
-        /// to a primitive until it does.
+        /// Entry 0 of every slot. Faction major, role minor. An empty sprite is a
+        /// slot docs/FACTIONS.md marks as "신규 필요": stats exist, art does not,
+        /// and the view falls back to a primitive until it does. Entries past the
+        /// first live in <see cref="extras"/>.
         /// </summary>
         private static readonly string[] names =
         {
@@ -111,11 +113,35 @@ namespace WordCraft.Sim
             // 돌 골렘 부족. RockTurret is human-made stonework and stays out of this faction.
             // The signature slot is deliberately empty: RockRemnant is a death state, not a unit.
             "", "MossrockSanctum", "MiniRockSwarm", "WakingStone", "RollingHill", "RockGolem", "RockMage", "AncientGolem", "StandingStone", "ElderMossstone",
-            // 차원 유랑종. Thinnest roster; the ranged slot has neither art nor concept.
+            // 차원 유랑종. Thinnest permanent roster; the extinct slimes it summons are extras.
             "", "AnchoredWorld", "FireTadpole", "Passage", "RefractingPillar", "LightningTadpole", "RiftMarksman", "DimensionToad", "MooringClaw", "StrataObservatory",
             // 인간 마법 문명. The only faction whose buildings all exist already; the
             // worker and the 공방 are the holes. Melee is empty by design.
             "", "ManaWell", "ApprenticeMage", "Tower", "Cannon", "", "ChickenCommando", "Towerback", "Tower", "Workshop",
+        };
+
+        /// <summary>
+        /// Roster entries past the first, tagged with the slot they belong to and
+        /// listed in faction then role order. The tables above hold entry 0 of
+        /// every slot; a faction that fields two ranged units puts the second one
+        /// here. Kept as one flat table rather than nesting the tables above,
+        /// because renumbering those would move sixty rows to add eight.
+        /// </summary>
+        private static readonly (Faction Faction, Role Role, string Name, string Sprite)[] extras =
+        {
+            // 지옥불 군단. 균열 파수병 holds the ground; 군단장의 자손 is airborne and free.
+            (Faction.Hellfire, Role.Ranged, "균열 파수병", "RiftWarden"),
+            // 물 슬라임
+            (Faction.WaterSlimes, Role.Ranged, "해일 인도자", "TideHerald"),
+            // 차원 유랑종. Temporary summons the 층위 관측대 unlocks, not standing units.
+            (Faction.Driftworlds, Role.Melee, "멸종한 화염 슬라임", "ExtinctFireSlime"),
+            (Faction.Driftworlds, Role.Melee, "멸종한 바위 슬라임", "ExtinctRockSlime"),
+            (Faction.Driftworlds, Role.Ranged, "멸종한 번개 슬라임", "ExtinctLightningSlime"),
+            // 인간 마법 문명. Three defensive structures, the only faction with more
+            // than one. 마도 정찰기 is the last slot in the roster still short of art.
+            (Faction.Humans, Role.Defense, "전기 타워", "ElectricTower"),
+            (Faction.Humans, Role.Defense, "돌 포탑", "RockTurret"),
+            (Faction.Humans, Role.Signature, "마도 정찰기", ""),
         };
 
         /// <summary>
@@ -142,11 +168,53 @@ namespace WordCraft.Sim
         /// <summary>What the owner's tier must reach before this role can be produced.</summary>
         public static int Tier(Role role) => tiers[(int)role];
 
+        /// <summary>
+        /// How many entries this slot holds. Always at least one, so a caller that
+        /// wants the whole list loops 0 to this and a caller that wants the unit
+        /// the view draws today asks for entry 0 and ignores it.
+        /// </summary>
+        // ponytail: entries past 0 are content nothing can produce. An entity
+        // stores its role, so Produce names a role and always gets entry 0. Give
+        // the command a slot argument the day a faction needs to build its second
+        // ranged unit; that is a hashed field and belongs with that change.
+        public static int SlotCount(Faction faction, Role role)
+        {
+            int count = 1;
+            for (int i = 0; i < extras.Length; i++)
+            {
+                if (extras[i].Faction == faction && extras[i].Role == role) count++;
+            }
+            return count;
+        }
+
         /// <summary>View-only metadata. Nothing in the simulation reads it, so it is not hashed.</summary>
-        public static string Name(Faction faction, Role role) => names[Index(faction, role)];
+        public static string Name(Faction faction, Role role) => Name(faction, role, 0);
 
         /// <summary>Sprite file name under Resources/Art/Sprites, or "" when the slot has no art yet.</summary>
-        public static string Sprite(Faction faction, Role role) => sprites[Index(faction, role)];
+        public static string Sprite(Faction faction, Role role) => Sprite(faction, role, 0);
+
+        /// <summary>The name of one entry of a slot, where slot is 0 to SlotCount - 1.</summary>
+        public static string Name(Faction faction, Role role, int slot) =>
+            slot == 0 ? names[Index(faction, role)] : Extra(faction, role, slot).Name;
+
+        /// <summary>The sprite of one entry of a slot, where slot is 0 to SlotCount - 1.</summary>
+        public static string Sprite(Faction faction, Role role, int slot) =>
+            slot == 0 ? sprites[Index(faction, role)] : Extra(faction, role, slot).Sprite;
+
+        /// <summary>
+        /// The slot-th extra entry, or an empty one past the end. Empty reads as
+        /// "no art", which is what an entry that is not there has. A scan of a
+        /// table this size costs less than the jagged arrays that would make it a
+        /// subscript, and only entry 0 is on the view's per-entity path anyway.
+        /// </summary>
+        private static (Faction Faction, Role Role, string Name, string Sprite) Extra(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < extras.Length; i++)
+            {
+                if (extras[i].Faction == faction && extras[i].Role == role && --slot == 0) return extras[i];
+            }
+            return (faction, role, "", "");
+        }
 
         private static int Index(Faction faction, Role role) => (int)faction * RoleCount + (int)role;
     }

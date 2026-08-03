@@ -97,6 +97,8 @@ namespace WordCraft.View
         /// Every sprite the roster names has to load, or the faction silently
         /// renders as a primitive and looks exactly like a slot that has no art.
         /// An empty name is a slot docs/FACTIONS.md marks as still a concept.
+        /// Every entry of a slot is checked, not only the one the view draws, or
+        /// a typo in the second unit of a role waits until that unit ships.
         /// </summary>
         private static void RosterArtResolves()
         {
@@ -104,10 +106,14 @@ namespace WordCraft.View
             {
                 for (int r = 0; r < FactionData.RoleCount; r++)
                 {
-                    string file = FactionData.Sprite((Faction)f, (Role)r);
-                    if (file.Length == 0) continue;
-                    Check(Resources.Load<Sprite>(MatchView.SpriteFolder + file) != null,
-                        "roster sprite missing: " + (Faction)f + "." + (Role)r + " -> " + file);
+                    int slots = FactionData.SlotCount((Faction)f, (Role)r);
+                    for (int s = 0; s < slots; s++)
+                    {
+                        string file = FactionData.Sprite((Faction)f, (Role)r, s);
+                        if (file.Length == 0) continue;
+                        Check(Resources.Load<Sprite>(MatchView.SpriteFolder + file) != null,
+                            "roster sprite missing: " + (Faction)f + "." + (Role)r + "[" + s + "] -> " + file);
+                    }
                 }
             }
         }

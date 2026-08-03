@@ -37,6 +37,7 @@ namespace WordCraft.Replay
                 HoldPositionNeverChases();
                 ProducedUnitsWalkToTheRallyPoint();
                 CancellingProductionRefundsInFull();
+                RosterSlotsAreAddressable();
                 ClientLogMatchesGoldenHash();
                 SimAssemblyIsClean();
             }
@@ -699,6 +700,40 @@ namespace WordCraft.Replay
 
         private static List<Command> Produce(int building, int peer, int seq, Role role) =>
             new List<Command> { new Command(0, peer, seq, CommandType.Produce, building, FixVec2.Zero, (int)role) };
+
+        /// <summary>
+        /// Every entry of every slot has to be reachable by its index, or an asset
+        /// added to the roster is present in the table and invisible everywhere
+        /// else. Entry 0 has to keep matching the two-argument accessors, which is
+        /// what the view calls and what decides which unit is drawn.
+        /// </summary>
+        private static void RosterSlotsAreAddressable()
+        {
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                for (int r = 0; r < FactionData.RoleCount; r++)
+                {
+                    var faction = (Faction)f;
+                    var role = (Role)r;
+                    string where = faction + "." + role;
+
+                    Check(FactionData.SlotCount(faction, role) >= 1, "empty roster slot at " + where);
+                    Check(FactionData.Name(faction, role, 0) == FactionData.Name(faction, role),
+                        "entry 0 is not the drawn name at " + where);
+                    Check(FactionData.Sprite(faction, role, 0) == FactionData.Sprite(faction, role),
+                        "entry 0 is not the drawn sprite at " + where);
+
+                    var seen = new List<string>();
+                    for (int s = 0; s < FactionData.SlotCount(faction, role); s++)
+                    {
+                        string name = FactionData.Name(faction, role, s);
+                        Check(s == 0 || name.Length > 0, "unreachable roster entry " + where + "[" + s + "]");
+                        Check(!seen.Contains(name), "duplicate roster entry " + where + " -> " + name);
+                        seen.Add(name);
+                    }
+                }
+            }
+        }
 
         /// <summary>
         /// The client's own input log, run under CoreCLR. Unity's Mono runtime
