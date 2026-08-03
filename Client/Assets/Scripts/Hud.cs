@@ -55,10 +55,38 @@ namespace WordCraft.View
             if (runner == null) return;
             World world = runner.World;
 
+            TopBar(world);
             BottomPanel(world);
 
             if (world.MatchOver) ResultBanner(world, runner.LocalPeer);
             if (runner.Session.State == SessionState.Stopped) StopBanner(runner.Session);
+        }
+
+        /// <summary>
+        /// Top: what the player has to know without asking. Population turns red at
+        /// the cap because a capped peer produces nothing and the simulation says so
+        /// silently; the number going red is the only warning there is.
+        /// </summary>
+        private void TopBar(World world)
+        {
+            var bar = new Rect(0f, 0f, Screen.width, TopBarHeight);
+            GUI.color = new Color(0.06f, 0.06f, 0.08f, 0.88f);
+            GUI.DrawTexture(bar, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            int peer = runner.LocalPeer;
+            int used = world.GetPopulation(peer);
+            int cap = world.PopulationCap(peer);
+
+            GUI.Label(new Rect(10f, 4f, 180f, 20f), "mana " + world.GetResources(peer));
+
+            GUI.color = used >= cap ? new Color(1f, 0.45f, 0.35f) : Color.white;
+            GUI.Label(new Rect(150f, 4f, 180f, 20f), "pop " + used + "/" + cap);
+            GUI.color = Color.white;
+
+            GUI.Label(new Rect(280f, 4f, 160f, 20f), "tick " + world.Tick);
+            GUI.Label(new Rect(400f, 4f, 420f, 20f),
+                StateText(runner.Session) + "  peer " + peer + "  (" + runner.Link + ")");
         }
 
         private void BottomPanel(World world)
@@ -195,6 +223,16 @@ namespace WordCraft.View
             if (e.Owner < 0) return e.Kind.ToString();
             string name = FactionData.Name(world.FactionOf(e.Owner), e.Role);
             return name.Length > 0 ? name : e.Role.ToString();
+        }
+
+        private static string StateText(LockstepSession session)
+        {
+            switch (session.State)
+            {
+                case SessionState.Handshaking: return "handshaking";
+                case SessionState.Running: return "running";
+                default: return "STOPPED";
+            }
         }
 
         private static Color PeerColor(int peer) =>
