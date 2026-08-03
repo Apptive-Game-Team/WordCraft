@@ -27,6 +27,7 @@ namespace WordCraft.View
             SameLogSameHashes();
             ViewReadsDoNotMutate();
             RosterArtResolves();
+            RestartIsClean();
 
             ulong final = FinalHash();
             Debug.Log("final hash after " + ScriptedLog.Ticks + " ticks: 0x" + final.ToString("X16"));
@@ -115,6 +116,66 @@ namespace WordCraft.View
                             "roster sprite missing: " + (Faction)f + "." + (Role)r + "[" + s + "] -> " + file);
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// A second match in the same process has to be the first match again.
+        /// Two built players clicking through the start screen is not something a
+        /// batch run can drive, so the reset itself is checked instead: run one
+        /// match forward, go back to the menu, start another, and require the new
+        /// world to be a different object that starts exactly where the old one did.
+        ///
+        /// The runner is driven directly rather than through Unity's lifecycle,
+        /// because the editor never calls Awake and every reset lives in the two
+        /// methods the start screen's buttons call.
+        /// </summary>
+        private static void RestartIsClean()
+        {
+            var go = new GameObject("restart check");
+            var runner = go.AddComponent<MatchRunner>();
+
+            try
+            {
+                // Port 0 takes whatever the OS has free, so the check never fights
+                // the default port and never needs a peer: no connection is required
+                // for the reset to be observable.
+                if (Check(runner.StartMatch(null, 0, ScriptedLog.Peer0Faction) == null,
+                    "the first match would not start")) return;
+
+                World first = runner.World;
+                LockstepSession firstSession = runner.Session;
+                int count = first.EntityCount;
+                ulong start = first.Hash();
+
+                // Move it, or a restart that changed nothing would pass by accident.
+                var idle = new List<Command>();
+                for (int t = 0; t < 60; t++) first.Step(idle);
+                if (Check(first.Hash() != start, "the first world never moved, so this check proves nothing")) return;
+
+                runner.ShowStart();
+                if (Check(runner.StartMatch(null, 0, ScriptedLog.Peer0Faction) == null,
+                    "the second match would not start")) return;
+
+                Check(!ReferenceEquals(runner.World, first), "the restart reused the first world");
+                Check(!ReferenceEquals(runner.Session, firstSession), "the restart reused the first session");
+                Check(runner.World.Tick == 0, "the second match began at tick " + runner.World.Tick);
+                Check(runner.World.EntityCount == count,
+                    "the second match has " + runner.World.EntityCount + " entities, the first had " + count);
+                Check(runner.World.Hash() == start,
+                    "the second match begins at 0x" + runner.World.Hash().ToString("X16") +
+                    ", the first began at 0x" + start.ToString("X16"));
+
+                // The interpolation buffers are per match too, and a stale one puts
+                // every entity a match late without touching a single hash.
+                Entity last = runner.World.GetEntity(count - 1);
+                Check(runner.DrawPosition(count - 1) == MatchRunner.ToView(last.Position),
+                    "the draw positions carried over from the first match");
+            }
+            finally
+            {
+                runner.ShowStart(); // closes the socket
+                Object.DestroyImmediate(go);
             }
         }
 

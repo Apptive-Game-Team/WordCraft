@@ -90,6 +90,25 @@ namespace WordCraft.View
                 targetSize = cam.orthographicSize;
             }
 
+            // Only the match screen drives the camera. WASD is also how an address
+            // gets typed into the start screen, and a map sliding under the menu is
+            // nobody's idea of a text field. The ease below keeps running, so a
+            // camera sent back to the middle for the menu actually gets there.
+            if (MatchRunner.Instance == null || MatchRunner.Instance.Phase == Phase.Match) Controls();
+
+            Clamp();
+
+            // Exponential ease, so the rate is the same on a 30fps machine and a
+            // 144fps one. A plain Lerp against a raw delta is not, and the
+            // difference is exactly the sort of thing a player feels but cannot name.
+            float k = 1f - Mathf.Exp(-Smoothing * Time.unscaledDeltaTime);
+            cam.orthographicSize = Mathf.Lerp(cam.orthographicSize, targetSize, k);
+            cam.transform.position = Vector3.Lerp(cam.transform.position, target, k);
+        }
+
+        /// <summary>Pan, zoom and bookmark: everything the camera does that a key asked for.</summary>
+        private void Controls()
+        {
             float scroll = Input.GetAxis("Mouse ScrollWheel");
             if (!Mathf.Approximately(scroll, 0f)) Zoom(scroll);
 
@@ -119,14 +138,6 @@ namespace WordCraft.View
             }
 
             Bookmarks();
-            Clamp();
-
-            // Exponential ease, so the rate is the same on a 30fps machine and a
-            // 144fps one. A plain Lerp against a raw delta is not, and the
-            // difference is exactly the sort of thing a player feels but cannot name.
-            float k = 1f - Mathf.Exp(-Smoothing * Time.unscaledDeltaTime);
-            cam.orthographicSize = Mathf.Lerp(cam.orthographicSize, targetSize, k);
-            cam.transform.position = Vector3.Lerp(cam.transform.position, target, k);
         }
 
         /// <summary>

@@ -41,6 +41,10 @@ namespace WordCraft.View
         private readonly List<int>[] groups = new List<int>[Groups];
 
         private MatchRunner runner;
+
+        /// <summary>The world these ids belong to. A new one makes every one of them a lie.</summary>
+        private World held;
+
         private Camera cam;
         private Vector2 anchor;
         private bool dragging;
@@ -95,6 +99,18 @@ namespace WordCraft.View
         private void Update()
         {
             if (runner == null) return;
+
+            // Ids outlive nothing: a restart renumbers from zero, so a selection or
+            // a control group held over from the last match would name an entity
+            // that does not exist, and recalling it would read off the end.
+            if (!ReferenceEquals(runner.World, held))
+            {
+                held = runner.World;
+                selected.Clear();
+                for (int g = 0; g < Groups; g++) groups[g] = null;
+                idleCursor = 0;
+            }
+
             if (cam == null)
             {
                 cam = Camera.main;

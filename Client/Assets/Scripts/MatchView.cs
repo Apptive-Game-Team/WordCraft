@@ -52,6 +52,10 @@ namespace WordCraft.View
         public Camera Cam { get; private set; }
 
         private MatchRunner runner;
+
+        /// <summary>The world these renderers were built for. A new one means new renderers.</summary>
+        private World shown;
+
         private Sprite disc;
         private Sprite square;
         private readonly List<SpriteRenderer> views = new List<SpriteRenderer>();
@@ -118,6 +122,21 @@ namespace WordCraft.View
         {
             if (runner == null) return;
             World world = runner.World;
+
+            // Every pool is indexed by entity id. A restart hands out the same ids
+            // to different entities, so keeping the old renderers would draw the new
+            // match with the previous one's sprites and leave its dead standing.
+            if (!ReferenceEquals(world, shown))
+            {
+                Drop(views);
+                Drop(rings);
+                Drop(barBacks);
+                Drop(barFills);
+                Drop(queueFills);
+                Drop(rallyMarkers);
+                footprints.Clear(); // parallel to views, and Create refills it
+                shown = world;
+            }
 
             for (int i = views.Count; i < world.EntityCount; i++) views.Add(Create(world, world.GetEntity(i)));
 
@@ -391,6 +410,16 @@ namespace WordCraft.View
 
         private Sprite Shape(EntityKind kind) =>
             kind == EntityKind.Unit || kind == EntityKind.Worker ? disc : square;
+
+        /// <summary>Empties a pool. Rings are children of their view, so ordering does not matter.</summary>
+        private static void Drop(List<SpriteRenderer> pool)
+        {
+            for (int i = 0; i < pool.Count; i++)
+            {
+                if (pool[i] != null) Destroy(pool[i].gameObject);
+            }
+            pool.Clear();
+        }
 
         private SpriteRenderer Overlay(string name, Color color, int order)
         {

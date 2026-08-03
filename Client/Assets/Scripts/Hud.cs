@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using WordCraft.Net;
 using WordCraft.Sim;
@@ -5,6 +6,10 @@ using WordCraft.Sim;
 namespace WordCraft.View
 {
     /// <summary>
+    /// The client's three screens: the start menu, the match HUD, and the result.
+    /// A phase and a switch, because there are three of them and there is no fourth
+    /// waiting; a scene manager here would be one screen per scene asset.
+    ///
     /// Match HUD: a bar across the top and a panel across the bottom.
     ///
     /// IMGUI on purpose, and kept that way at roadmap 3-1. UI Toolkit needs a
@@ -28,8 +33,26 @@ namespace WordCraft.View
         private const float EntryWidth = 108f;
         private const float EntryHeight = 22f;
 
+        private const float MenuWidth = 470f;
+        private const float MenuHeight = 300f;
+
+        /// <summary>The address the player last joined. Typing an IP twice is not a game.</summary>
+        private const string AddressKey = "wordcraft.address";
+
+        private static readonly Color PanelColor = new Color(0.06f, 0.06f, 0.08f, 0.94f);
+        private static readonly Color HaltColor = new Color(0.35f, 0.05f, 0.05f, 0.94f);
+        private static readonly Color PickedColor = new Color(0.6f, 1f, 0.65f);
+        private static readonly Color BadColor = new Color(1f, 0.5f, 0.42f);
+
         private MatchRunner runner;
         private Selection selection;
+
+        // Start screen form state. Local to the view; nothing here reaches the
+        // simulation until StartMatch turns it into a MatchConfig.
+        private string address = "";
+        private string portText = MatchRunner.DefaultPort.ToString();
+        private Faction faction = MatchConfig.DefaultFaction(0);
+        private string formError;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot() => new GameObject("WordCraft HUD").AddComponent<Hud>();
@@ -40,26 +63,194 @@ namespace WordCraft.View
         {
             runner = MatchRunner.Instance;
             selection = Selection.Instance;
+            address = PlayerPrefs.GetString(AddressKey, "");
         }
 
         /// <summary>
         /// True when a screen-space point is over the HUD instead of the world.
         /// Both the picker and the order code ask before acting, so a click on a
         /// command button never also drags a selection box across the map.
+        ///
+        /// Off the match screen the whole window is UI: the menu sits over a live
+        /// map, and a press on "play again" must not also box-select behind it.
         /// </summary>
-        public static bool OverUi(Vector2 screenPosition) =>
-            screenPosition.y <= BottomPanelHeight || screenPosition.y >= Screen.height - TopBarHeight;
+        public static bool OverUi(Vector2 screenPosition)
+        {
+            MatchRunner runner = MatchRunner.Instance;
+            if (runner != null && runner.Phase != Phase.Match) return true;
+            return screenPosition.y <= BottomPanelHeight || screenPosition.y >= Screen.height - TopBarHeight;
+        }
 
         private void OnGUI()
         {
             if (runner == null) return;
-            World world = runner.World;
 
-            TopBar(world);
-            BottomPanel(world);
+            switch (runner.Phase)
+            {
+                case Phase.Start:
+                    StartScreen();
+                    break;
+                case Phase.Result:
+                    ResultScreen();
+                    break;
+                default:
+                    TopBar(runner.World);
+                    BottomPanel(runner.World);
+                    break;
+            }
+        }
 
-            if (world.MatchOver) ResultBanner(world, runner.LocalPeer);
-            if (runner.Session.State == SessionState.Stopped) StopBanner(runner.Session);
+        // ---- start screen ----
+
+        /// <summary>
+        /// Host or join, who to play, and where. Drawn over the idle map, which is
+        /// why it is opaque.
+        /// </summary>
+        private void StartScreen()
+        {
+            Rect panel = Middle(MenuWidth, MenuHeight);
+            Fill(panel, PanelColor);
+
+            GUILayout.BeginArea(Inside(panel));
+            GUILayout.Label("WORDCRAFT");
+            GUILayout.Space(8f);
+
+            GUILayout.Label("faction");
+            FactionPicker();
+            GUILayout.Space(8f);
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("address", GUILayout.Width(56f));
+            address = GUILayout.TextField(address ?? "", 45);
+            GUILayout.Label("port", GUILayout.Width(30f));
+            portText = GUILayout.TextField(portText ?? "", 5, GUILayout.Width(58f));
+            GUILayout.EndHorizontal();
+            GUILayout.Space(10f);
+
+            if (runner.Connecting) ConnectionState();
+            else HostOrJoin();
+
+            GUILayout.EndArea();
+        }
+
+        /// <summary>All six by name, because a faction the player cannot see is not a choice.</summary>
+        private void FactionPicker()
+        {
+            string[] names = Enum.GetNames(typeof(Faction));
+            for (int row = 0; row < names.Length; row += 3)
+            {
+                GUILayout.BeginHorizontal();
+                for (int i = row; i < row + 3 && i < names.Length; i++)
+                {
+                    GUI.color = (int)faction == i ? PickedColor : Color.white;
+                    if (GUILayout.Button(names[i], GUILayout.Height(24f))) faction = (Faction)i;
+                    GUI.color = Color.white;
+                }
+                GUILayout.EndHorizontal();
+            }
+        }
+
+        private void HostOrJoin()
+        {
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("HOST", GUILayout.Height(30f))) Begin(null);
+            if (GUILayout.Button("JOIN", GUILayout.Height(30f))) Begin(address);
+            GUILayout.EndHorizontal();
+
+            if (formError != null)
+            {
+                GUI.color = BadColor;
+                GUILayout.Label(formError);
+                GUI.color = Color.white;
+            }
+            GUILayout.Label("one machine hosts, the other joins its address. same port on both.");
+        }
+
+        private void Begin(string remote)
+        {
+            if (!int.TryParse(portText, out int port))
+            {
+                formError = "port is not a number: " + portText;
+                return;
+            }
+
+            formError = runner.StartMatch(remote, port, faction);
+            if (formError != null || remote == null) return;
+
+            PlayerPrefs.SetString(AddressKey, remote.Trim());
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>
+        /// Where the connection has got to. The handshake produces exact rejection
+        /// reasons, so the reason is shown as it was written rather than flattened
+        /// into "could not connect".
+        /// </summary>
+        private void ConnectionState()
+        {
+            LockstepSession session = runner.Session;
+            bool rejected = session.State == SessionState.Stopped;
+
+            GUI.color = rejected ? BadColor : Color.white;
+            GUILayout.Label(ConnectionText(session));
+            GUI.color = Color.white;
+
+            GUILayout.Space(6f);
+            if (GUILayout.Button(rejected ? "back" : "cancel", GUILayout.Height(26f))) runner.ShowStart();
+        }
+
+        private string ConnectionText(LockstepSession session)
+        {
+            switch (session.State)
+            {
+                case SessionState.Running: return "connected";
+                // Verbatim. The handshake already says exactly what disagreed and
+                // what it expected, and "could not connect" throws all of it away.
+                case SessionState.Stopped: return session.StopReason ?? "rejected, no reason recorded";
+                default: return runner.PeerHeard ? "handshaking, " + runner.Link : runner.Link;
+            }
+        }
+
+        // ---- result screen ----
+
+        /// <summary>
+        /// How it ended and how long it took. A halt shows the stop reason as the
+        /// session wrote it, tick and both hashes included, because that string is
+        /// what a player can copy into a bug report.
+        /// </summary>
+        private void ResultScreen()
+        {
+            Rect panel = Middle(MenuWidth + 220f, 210f);
+            Fill(panel, runner.Halted ? HaltColor : PanelColor);
+
+            GUILayout.BeginArea(Inside(panel));
+            GUILayout.Label(runner.Outcome ?? "MATCH OVER");
+
+            if (runner.Halted)
+            {
+                GUILayout.Label(runner.Session.StopReason ?? "no reason recorded");
+                if (!runner.Session.ReportComplete) GUILayout.Label("waiting for the peer state dump...");
+            }
+
+            GUILayout.Space(6f);
+            GUILayout.Label(runner.EndTick + " ticks, " + runner.EndSeconds.ToString("0.0") + " s");
+            GUILayout.Space(10f);
+
+            if (GUILayout.Button("play again", GUILayout.Height(30f))) runner.ShowStart();
+            GUILayout.EndArea();
+        }
+
+        private static Rect Middle(float width, float height) =>
+            new Rect((Screen.width - width) * 0.5f, (Screen.height - height) * 0.5f, width, height);
+
+        private static Rect Inside(Rect panel) =>
+            new Rect(panel.x + 18f, panel.y + 14f, panel.width - 36f, panel.height - 28f);
+
+        private static void Fill(Rect area, Color color)
+        {
+            GUI.color = color;
+            GUI.DrawTexture(area, Texture2D.whiteTexture);
+            GUI.color = Color.white;
         }
 
         /// <summary>
@@ -246,42 +437,5 @@ namespace WordCraft.View
 
         private static Color PeerColor(int peer) =>
             peer >= 0 && peer < MatchView.PeerColor.Length ? MatchView.PeerColor[peer] : Color.gray;
-
-        /// <summary>
-        /// The simulation decided this, not the client, so both players read the
-        /// same result on the same tick without anyone announcing it over the wire.
-        /// </summary>
-        private static void ResultBanner(World world, int localPeer)
-        {
-            var rect = new Rect(Screen.width * 0.5f - 160f, TopBarHeight + 24f, 320f, 56f);
-            GUI.color = new Color(0.06f, 0.06f, 0.08f, 0.92f);
-            GUI.DrawTexture(rect, Texture2D.whiteTexture);
-            GUI.color = Color.white;
-
-            GUILayout.BeginArea(new Rect(rect.x + 14f, rect.y + 12f, rect.width - 28f, rect.height - 24f));
-            GUILayout.Label(world.Winner < 0
-                ? "DRAW: both bases fell on the same tick"
-                : world.Winner == localPeer ? "VICTORY: enemy base destroyed" : "DEFEAT: base destroyed");
-            GUILayout.EndArea();
-        }
-
-        /// <summary>
-        /// A halted session is the whole reason the stop reason exists: it names
-        /// the divergent tick and field, and it must not be something the player
-        /// has to find in a log file.
-        /// </summary>
-        private static void StopBanner(LockstepSession session)
-        {
-            var rect = new Rect(Screen.width * 0.5f - 340f, Screen.height * 0.5f - 60f, 680f, 120f);
-            GUI.color = new Color(0.6f, 0.05f, 0.05f, 0.92f);
-            GUI.DrawTexture(rect, Texture2D.whiteTexture);
-            GUI.color = Color.white;
-
-            GUILayout.BeginArea(new Rect(rect.x + 14f, rect.y + 12f, rect.width - 28f, rect.height - 24f));
-            GUILayout.Label("MATCH STOPPED");
-            GUILayout.Label(session.StopReason ?? "no reason recorded");
-            if (!session.ReportComplete) GUILayout.Label("waiting for the peer state dump...");
-            GUILayout.EndArea();
-        }
     }
 }
