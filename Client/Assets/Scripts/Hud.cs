@@ -163,6 +163,14 @@ namespace WordCraft.View
             if (GUILayout.Button("JOIN", GUILayout.Height(30f))) Begin(address);
             GUILayout.EndHorizontal();
 
+            // No address, no port, no handshake: nothing here can be malformed, so
+            // this one takes no error path and starts the match outright.
+            if (GUILayout.Button("SOLO", GUILayout.Height(30f)))
+            {
+                formError = null;
+                runner.StartSolo(faction);
+            }
+
             if (formError != null)
             {
                 GUI.color = BadColor;
@@ -170,6 +178,7 @@ namespace WordCraft.View
                 GUI.color = Color.white;
             }
             GUILayout.Label("one machine hosts, the other joins its address. same port on both.");
+            GUILayout.Label("solo plays the simulation's own opponent, no network at all.");
         }
 
         private void Begin(string remote)
