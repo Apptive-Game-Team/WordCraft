@@ -85,7 +85,7 @@ namespace WordCraft.View
             // no selected worker could place.
             if (BuildMenuOpen && SelectionKind() != CardKind.Worker) BuildMenuOpen = false;
 
-            CardSlot[] card = CommandCard.Of(Kind());
+            CardSlot[] card = CommandCard.Of(Kind(), runner.World.FactionOf(runner.LocalPeer));
             for (int i = 0; i < CommandCard.Cells; i++)
             {
                 if (Input.GetKeyDown(CommandCard.Keys[i])) Run(card[i]);

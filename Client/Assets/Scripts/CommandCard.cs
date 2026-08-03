@@ -102,25 +102,71 @@ namespace WordCraft.View
         /// </summary>
         private static readonly CardSlot[] buildMenu = new CardSlot[Cells];
 
-        private static readonly CardSlot[] building =
-        {
-            Cmd("Rally", CommandType.SetRallyPoint), Cmd("Cancel", CommandType.CancelProduction), Empty,
-            Empty, Empty, Empty,
-            Make(Role.Melee), Make(Role.Ranged), Make(Role.Signature),
-        };
+        /// <summary>What a building may produce, in the order the bottom row lists them.</summary>
+        private static readonly Role[] producible = { Role.Melee, Role.Ranged, Role.Signature };
+
+        /// <summary>
+        /// Filled per faction, like the build submenu. A cell reading "Melee" says
+        /// nothing about what walks out of the building; the roster name and the
+        /// price do, and they are the two things a player decides on.
+        /// </summary>
+        private static readonly CardSlot[] building = new CardSlot[Cells];
 
         private static readonly CardSlot[] none = new CardSlot[Cells];
 
-        /// <summary>The card for this selection kind. Always Cells long.</summary>
-        public static CardSlot[] Of(CardKind kind)
+        /// <summary>
+        /// The card for this selection kind, laid out for this faction. Always
+        /// Cells long. The HUD and the keys both call this, so what a key fires is
+        /// always what the button under it says.
+        /// </summary>
+        public static CardSlot[] Of(CardKind kind, Faction faction)
         {
             switch (kind)
             {
                 case CardKind.Fighter: return fighter;
                 case CardKind.Worker: return worker;
-                case CardKind.Building: return building;
+                case CardKind.Building: return Building(faction);
                 case CardKind.BuildMenu: return buildMenu;
                 default: return none;
+            }
+        }
+
+        /// <summary>
+        /// What this faction's buildings can produce, named and priced. Roles the
+        /// faction does not field are left blank rather than shown and refused —
+        /// the humans have no melee unit at all, by design.
+        /// </summary>
+        public static CardSlot[] Building(Faction faction)
+        {
+            for (int i = 0; i < Cells; i++) building[i] = Empty;
+            building[0] = Cmd("Rally", CommandType.SetRallyPoint);
+            building[1] = Cmd("Cancel", CommandType.CancelProduction);
+
+            int cell = Cols * 2; // bottom row: what this thing makes
+            for (int i = 0; i < producible.Length && cell < Cells; i++)
+            {
+                Role role = producible[i];
+                if (!FactionData.Has(faction, role)) { cell++; continue; }
+                building[cell++] = new CardSlot
+                {
+                    Label = FactionData.Name(faction, role) + "\n" + World.ProduceCost,
+                    Type = CommandType.Produce,
+                    Produce = role,
+                };
+            }
+            return building;
+        }
+
+        /// <summary>What the card is for, drawn over it so the player is never guessing.</summary>
+        public static string Title(CardKind kind)
+        {
+            switch (kind)
+            {
+                case CardKind.Fighter: return "orders";
+                case CardKind.Worker: return "worker";
+                case CardKind.Building: return "produce";
+                case CardKind.BuildMenu: return "build  ·  esc to cancel";
+                default: return "";
             }
         }
 
@@ -193,7 +239,5 @@ namespace WordCraft.View
         private static CardSlot Cmd(string label, CommandType type) =>
             new CardSlot { Label = label, Type = type };
 
-        private static CardSlot Make(Role role) =>
-            new CardSlot { Label = role.ToString(), Type = CommandType.Produce, Produce = role };
     }
 }

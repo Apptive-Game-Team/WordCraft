@@ -416,7 +416,15 @@ namespace WordCraft.View
             Orders orders = Orders.Instance;
             if (orders == null) return;
 
-            CardSlot[] card = CommandCard.Of(orders.Kind());
+            CardKind kind = orders.Kind();
+            CardSlot[] card = CommandCard.Of(kind, runner.World.FactionOf(runner.LocalPeer));
+
+            // The card changes under the same rectangle, so it says what it is.
+            // Without this a build submenu and a produce row look alike.
+            GUI.color = new Color(1f, 1f, 1f, 0.6f);
+            GUI.Label(new Rect(area.x + 2f, area.y - 16f, area.width, 16f), CommandCard.Title(kind));
+            GUI.color = Color.white;
+
             float size = CardCell - 4f;
 
             for (int i = 0; i < CommandCard.Cells; i++)
