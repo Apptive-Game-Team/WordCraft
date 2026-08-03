@@ -982,7 +982,10 @@ namespace WordCraft.Replay
         // beat, and every assertion below is about what peer 1 did on its own.
         private const int SoloAi = 1;
         private const int SoloTicks = 600;
-        private const int SoloWinTicks = 3000;
+        // The AI takes the enemy base around tick 750. The budget is loose enough
+        // that a slower opening is not a failure, and tight enough that an opponent
+        // which stopped attacking altogether is.
+        private const int SoloWinTicks = 1200;
 
         /// <summary>
         /// A solo match is reproducible. The opponent lives inside Step, so this is
