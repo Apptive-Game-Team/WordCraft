@@ -3,13 +3,18 @@ using UnityEngine;
 namespace WordCraft.View
 {
     /// <summary>
-    /// Pan with WASD or the arrow keys or a middle-button drag, zoom with the
-    /// wheel. Frame time drives all of it, which is safe only because the camera
-    /// is not simulation state and no peer ever hears about it.
+    /// Pan with WASD or the arrow keys, with the mouse at a screen edge, or with a
+    /// middle-button drag; zoom with the wheel. Frame time drives all of it, which
+    /// is safe only because the camera is not simulation state and no peer ever
+    /// hears about it.
     /// </summary>
     public sealed class CameraRig : MonoBehaviour
     {
         private const float PanUnitsPerSecond = 26f;
+
+        /// <summary>How near an edge the pointer has to be before the map scrolls.</summary>
+        private const float EdgePixels = 8f;
+
         private const float ZoomStep = 6f;
         private const float MinSize = 6f;
         private const float MaxSize = 34f;
@@ -70,12 +75,33 @@ namespace WordCraft.View
             }
             else
             {
-                var axis = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
+                var axis = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical")) + EdgePush();
                 float speed = PanUnitsPerSecond * (cam.orthographicSize / ReferenceSize);
-                position += (Vector3)(axis.normalized * (speed * Time.unscaledDeltaTime));
+                // Clamped rather than normalised, so keys and edge together are not
+                // faster than either alone but a light key press is still a light pan.
+                position += (Vector3)(Vector2.ClampMagnitude(axis, 1f) * (speed * Time.unscaledDeltaTime));
             }
 
             Place(position);
+        }
+
+        /// <summary>
+        /// Which way the pointer sitting at a screen edge pushes the map. A pointer
+        /// outside the window pushes nowhere, so an alt-tab does not leave the map
+        /// sliding. The HUD is deliberately not excluded: the bottom edge scrolls
+        /// through the panel, which is what every RTS does.
+        /// </summary>
+        private static Vector2 EdgePush()
+        {
+            Vector3 m = Input.mousePosition;
+            if (m.x < 0f || m.y < 0f || m.x > Screen.width || m.y > Screen.height) return Vector2.zero;
+
+            var push = Vector2.zero;
+            if (m.x <= EdgePixels) push.x = -1f;
+            else if (m.x >= Screen.width - 1f - EdgePixels) push.x = 1f;
+            if (m.y <= EdgePixels) push.y = -1f;
+            else if (m.y >= Screen.height - 1f - EdgePixels) push.y = 1f;
+            return push;
         }
 
         /// <summary>The one place the camera is written, so every mover clamps the same way.</summary>
