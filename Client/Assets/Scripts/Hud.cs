@@ -27,6 +27,9 @@ namespace WordCraft.View
         public const float TopBarHeight = 26f;
         public const float BottomPanelHeight = 150f;
 
+        /// <summary>The minimap is square and as tall as the bar, which is what sizes it.</summary>
+        private const float MinimapSize = BottomPanelHeight;
+
         private const float InfoWidth = 300f;
         private const float CardCell = 74f;
         private const float CardWidth = CommandCard.Cols * CardCell + 16f;
@@ -73,6 +76,9 @@ namespace WordCraft.View
         ///
         /// Off the match screen the whole window is UI: the menu sits over a live
         /// map, and a press on "play again" must not also box-select behind it.
+        ///
+        /// The minimap is inside the bottom panel, so it is already covered here:
+        /// a click on it must not also drag a selection box across the world.
         /// </summary>
         public static bool OverUi(Vector2 screenPosition)
         {
@@ -300,11 +306,17 @@ namespace WordCraft.View
                 ? -1
                 : CommandCard.Representative(world, selection.Selected, runner.LocalPeer);
 
-            Info(new Rect(8f, panel.y + 8f, InfoWidth, BottomPanelHeight - 16f), world, lead);
+            // Flush into the corner and the full height of the bar: the minimap is
+            // aimed at by muscle memory, and a margin around it is a margin the
+            // pointer can miss into.
+            Minimap.Draw(new Rect(0f, panel.y, MinimapSize, MinimapSize), runner);
+
+            float textX = MinimapSize + 8f;
+            Info(new Rect(textX, panel.y + 8f, InfoWidth, BottomPanelHeight - 16f), world, lead);
 
             float cardX = Screen.width - CardWidth - 8f;
-            List(new Rect(InfoWidth + 16f, panel.y + 8f,
-                Mathf.Max(0f, cardX - InfoWidth - 24f), BottomPanelHeight - 16f), world);
+            List(new Rect(textX + InfoWidth + 8f, panel.y + 8f,
+                Mathf.Max(0f, cardX - textX - InfoWidth - 16f), BottomPanelHeight - 16f), world);
             Card(new Rect(cardX, panel.y + 8f, CardWidth, BottomPanelHeight - 16f));
         }
 
