@@ -285,7 +285,14 @@ namespace WordCraft.Sim
                     entities[i] = b;
                     // Fixed rally offset: the spawn point must not depend on how many
                     // units already stand there.
-                    int spawned = SpawnUnit(b.Owner, b.ProduceRole, b.Position + RallyOffset);
+                    //
+                    // A worker has to come out a Worker. Kind is what GatherSystem
+                    // and the Gather command both test, so a produced worker built
+                    // as a plain Unit would carry worker stats, no weapon, and no
+                    // way to ever gather anything.
+                    int spawned = b.ProduceRole == Role.Worker
+                        ? SpawnWorker(b.Owner, b.Position + RallyOffset)
+                        : SpawnUnit(b.Owner, b.ProduceRole, b.Position + RallyOffset);
                     // Walked, not teleported: a rally point costs what crossing the
                     // ground costs, and the unit is catchable on the way.
                     if (b.HasRallyPoint) SetDestination(spawned, b.RallyPoint);

@@ -37,6 +37,7 @@ namespace WordCraft.Replay
                 HoldPositionNeverChases();
                 ProducedUnitsWalkToTheRallyPoint();
                 CancellingProductionRefundsInFull();
+                ProducedWorkersCanGather();
                 RosterSlotsAreAddressable();
                 EveryBuildingRoleCanBePlaced();
                 BuildRefusesWhatTheFactionDoesNotHave();
@@ -698,6 +699,40 @@ namespace WordCraft.Replay
             banked = world.GetResources(0);
             world.Step(Cancel(QueueBase, 0, 6));
             Check(world.GetResources(0) == banked, "cancelling an empty queue paid out");
+        }
+
+        private const int WorkerBase = 0;
+        private const int WorkerNode = 1;
+        private const int MadeWorker = 2;
+
+        /// <summary>
+        /// A produced worker comes out a Worker. Kind is what the Gather command
+        /// and the gather loop both test, so one that came off the queue as a plain
+        /// Unit would stand beside a node it could never touch, carrying worker
+        /// stats and no weapon.
+        /// </summary>
+        private static void ProducedWorkersCanGather()
+        {
+            var world = new World(Seed);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.SpawnResourceNode(At(9, 5), 200);                      // 1
+            world.GrantResources(0, 1000);
+
+            var idle = new List<Command>();
+            world.Step(Produce(WorkerBase, 0, 0, Role.Worker));
+            for (int t = 0; t < World.ProduceTicks + 5 && world.EntityCount == 2; t++) world.Step(idle);
+
+            Check(world.EntityCount == 3, "the queued worker never appeared");
+            Check(world.GetEntity(MadeWorker).Kind == EntityKind.Worker,
+                "a produced worker came out a " + world.GetEntity(MadeWorker).Kind);
+
+            int banked = world.GetResources(0);
+            world.Step(new List<Command>
+            {
+                new Command(0, 0, 1, CommandType.Gather, MadeWorker, FixVec2.Zero, WorkerNode)
+            });
+            for (int t = 0; t < OrderTicks; t++) world.Step(idle);
+            Check(world.GetResources(0) > banked, "a produced worker never delivered anything");
         }
 
         private static List<Command> Cancel(int building, int peer, int seq) =>
