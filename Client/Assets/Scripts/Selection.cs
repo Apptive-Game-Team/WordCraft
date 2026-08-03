@@ -9,12 +9,13 @@ namespace WordCraft.View
     /// to the peer, so two players can hold different selections without the
     /// simulations differing by a bit. Nothing here writes to the world.
     ///
-    ///   drag            box select units and workers
+    ///   drag            box select units and workers, fighters winning ties
     ///   click           take one entity, buildings included
     ///   double click    every entity of that type on screen
     ///   shift           add, or remove one already selected
     ///   ctrl 1-9        assign a control group
     ///   1-9             recall it; twice in a row centres the camera on it
+    ///   backspace       camera onto your base
     /// </summary>
     public sealed class Selection : MonoBehaviour
     {
@@ -30,6 +31,9 @@ namespace WordCraft.View
         private const int Groups = 9;
 
         private readonly List<int> selected = new List<int>();
+
+        /// <summary>Scratch for one box, so deciding what the box caught allocates nothing.</summary>
+        private readonly List<int> boxed = new List<int>();
 
         // Control groups hold ids, not entities, and dead ids are dropped on
         // recall. Ids are never reused by the simulation, so a stale id can only
@@ -101,6 +105,7 @@ namespace WordCraft.View
             // Group keys work while the left button belongs to something else: an
             // armed command is aimed at whatever the groups just recalled.
             GroupKeys();
+            if (Input.GetKeyDown(KeyCode.Backspace)) JumpToBase();
 
             if (Blocked)
             {
@@ -170,6 +175,9 @@ namespace WordCraft.View
             Vector2 max = cam.ScreenToWorldPoint(Vector2.Max(a, b));
             World world = runner.World;
 
+            boxed.Clear();
+            bool fighters = false;
+
             for (int i = 0; i < world.EntityCount; i++)
             {
                 Entity e = world.GetEntity(i);
@@ -178,7 +186,20 @@ namespace WordCraft.View
 
                 Vector2 p = runner.DrawPosition(i);
                 if (p.x < min.x || p.x > max.x || p.y < min.y || p.y > max.y) continue;
-                if (!selected.Contains(i)) selected.Add(i);
+
+                boxed.Add(i);
+                fighters |= e.Kind == EntityKind.Unit;
+            }
+
+            // A box over the mining line and the army takes the army and leaves the
+            // miners digging. Dragging workers into an attack is the constant
+            // annoyance of the genre, and it is why every RTS drops them when a
+            // fighter is in the box too. A box of nothing but workers still takes them.
+            for (int i = 0; i < boxed.Count; i++)
+            {
+                int id = boxed[i];
+                if (fighters && world.GetEntity(id).Kind == EntityKind.Worker) continue;
+                if (!selected.Contains(id)) selected.Add(id);
             }
         }
 
@@ -243,6 +264,26 @@ namespace WordCraft.View
             Vector2 sum = Vector2.zero;
             for (int i = 0; i < selected.Count; i++) sum += runner.DrawPosition(selected[i]);
             CameraRig.Instance.CenterOn(sum / selected.Count);
+        }
+
+        /// <summary>
+        /// Camera onto your own base, without selecting it: the point is to look at
+        /// home while a fight is happening elsewhere, not to lose the army that is
+        /// in it. Backspace, which is what StarCraft II binds this to. The scenario
+        /// gives each peer exactly one base, so the first match is the only match.
+        /// </summary>
+        private void JumpToBase()
+        {
+            if (CameraRig.Instance == null) return;
+            World world = runner.World;
+
+            for (int i = 0; i < world.EntityCount; i++)
+            {
+                Entity e = world.GetEntity(i);
+                if (!e.Alive || e.Owner != runner.LocalPeer || e.Role != Role.Base) continue;
+                CameraRig.Instance.CenterOn(runner.DrawPosition(i));
+                return;
+            }
         }
 
         /// <summary>
