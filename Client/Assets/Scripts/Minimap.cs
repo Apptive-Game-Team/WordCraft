@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using WordCraft.Sim;
 
@@ -12,6 +13,10 @@ namespace WordCraft.View
     ///   left click   put the camera there
     ///   left drag    keep putting it there
     ///   right click  the order a right click at that world point would give
+    ///
+    /// Something of yours taking damage off screen leaves a mark here for a
+    /// couple of seconds, which is the only way a player learns their base is
+    /// being levelled while they are looking at the front line.
     ///
     /// A Texture2D repainted from entity state plus a few GUI rectangles. A
     /// second camera onto a RenderTexture would cost a whole extra render pass to
@@ -42,12 +47,35 @@ namespace WordCraft.View
 
         private static readonly Color32 NodeColor = new Color32(255, 209, 64, 255);
         private static readonly Color ViewColor = new Color(1f, 1f, 1f, 0.75f);
+        private static readonly Color MarkColor = new Color(1f, 0.3f, 0.25f);
+
+        /// <summary>How long a hit somewhere else stays lit, in seconds.</summary>
+        private const float MarkSeconds = 2.5f;
+
+        /// <summary>A hit this near a live mark refreshes it instead of adding another.</summary>
+        private const float MarkMergeCells = 4f;
+
+        private const float MarkPixels = 7f;
 
         private static Texture2D texture;
         private static Color32[] pixels;
 
         /// <summary>True while a left drag that began on the square is still down.</summary>
         private static bool scrubbing;
+
+        /// <summary>
+        /// Hp last seen, per entity id. A drop between frames is a hit; the
+        /// simulation says nothing about hits and may not be asked to.
+        /// </summary>
+        private static readonly List<int> lastHp = new List<int>();
+
+        private static readonly List<Mark> marks = new List<Mark>();
+
+        private struct Mark
+        {
+            public Vector2 Point;
+            public float Until;
+        }
 
         /// <summary>The world the state above belongs to. A new one makes it a lie.</summary>
         private static World shown;
@@ -65,6 +93,8 @@ namespace WordCraft.View
                 // A restart hands out ids from zero again, so nothing held across
                 // one is about the match being played now.
                 scrubbing = false;
+                lastHp.Clear();
+                marks.Clear();
                 shown = world;
             }
 
@@ -74,6 +104,73 @@ namespace WordCraft.View
             Paint(world);
             GUI.DrawTexture(area, texture);
             ViewRect(area);
+            Marks(area, world, runner.LocalPeer);
+        }
+
+        /// <summary>
+        /// Something of yours is being hit somewhere you are not looking. Read off
+        /// hp falling between frames, because a hit is not state and Sim may not
+        /// grow a field to say it happened.
+        ///
+        /// Only what is off screen is marked. A fight the player is watching needs
+        /// no second telling, and a mark under the battle they already have selected
+        /// is noise on the one channel that has to mean "look away from this".
+        /// </summary>
+        private static void Marks(Rect area, World world, int localPeer)
+        {
+            // Entities are appended and never removed, and a new one arrives at
+            // full hp, so seeding from the entity itself cannot fake a hit.
+            for (int i = lastHp.Count; i < world.EntityCount; i++) lastHp.Add(world.GetEntity(i).Hp);
+
+            Camera cam = Camera.main;
+            for (int i = 0; i < world.EntityCount; i++)
+            {
+                Entity e = world.GetEntity(i);
+                int was = lastHp[i];
+                lastHp[i] = e.Hp;
+
+                if (e.Hp >= was || e.Owner != localPeer) continue;
+                Vector2 p = MatchRunner.ToView(e.Position);
+                if (cam != null && OnScreen(cam, p)) continue;
+                Add(p);
+            }
+
+            for (int i = marks.Count - 1; i >= 0; i--)
+            {
+                float left = marks[i].Until - Time.unscaledTime;
+                if (left <= 0f)
+                {
+                    marks.RemoveAt(i);
+                    continue;
+                }
+
+                GUI.color = new Color(MarkColor.r, MarkColor.g, MarkColor.b, left / MarkSeconds);
+                Line(X(area, marks[i].Point.x) - MarkPixels * 0.5f,
+                    Y(area, marks[i].Point.y) - MarkPixels * 0.5f, MarkPixels, MarkPixels);
+            }
+            GUI.color = Color.white;
+        }
+
+        private static bool OnScreen(Camera cam, Vector2 point)
+        {
+            Vector3 v = cam.WorldToViewportPoint(point);
+            return v.x >= 0f && v.x <= 1f && v.y >= 0f && v.y <= 1f;
+        }
+
+        /// <summary>
+        /// One fight is one mark. A battle damages a dozen bodies a second, and a
+        /// mark each would be a red smear that never fades while it lasts.
+        /// </summary>
+        private static void Add(Vector2 point)
+        {
+            float until = Time.unscaledTime + MarkSeconds;
+            for (int i = 0; i < marks.Count; i++)
+            {
+                if (Vector2.Distance(marks[i].Point, point) > MarkMergeCells) continue;
+                marks[i] = new Mark { Point = marks[i].Point, Until = until };
+                return;
+            }
+            marks.Add(new Mark { Point = point, Until = until });
         }
 
         /// <summary>
@@ -82,8 +179,8 @@ namespace WordCraft.View
         /// is not simulation state and no peer hears about it.
         ///
         /// A right press is an order, handed to Orders as a world point so the
-        /// minimap never decides what a right click means. Press only: a right
-        /// drag is one order, not one an event.
+        /// minimap never decides what a right click means. Press only, so holding
+        /// the button down is one order rather than one per event.
         ///
         /// IMGUI events rather than Input, because OnGUI runs several times a
         /// frame and Input.GetMouseButtonDown is true on every one of them. The
