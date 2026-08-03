@@ -17,13 +17,33 @@ namespace WordCraft.View
         /// <summary>Zoom level the pan speed was tuned at, so panning feels equal at every zoom.</summary>
         private const float ReferenceSize = 18f;
 
+        public static CameraRig Instance { get; private set; }
+
         private Camera cam;
         private Vector3 dragAnchor;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot() => new GameObject("WordCraft Camera Rig").AddComponent<CameraRig>();
 
-        private void Awake() => DontDestroyOnLoad(gameObject);
+        private void Awake()
+        {
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
+        }
+
+        /// <summary>Puts a world point in the middle of the screen. Control groups and the idle
+        /// worker button jump this way; it is a camera move and nothing else hears about it.</summary>
+        public void CenterOn(Vector2 point)
+        {
+            if (cam == null) cam = Camera.main;
+            if (cam == null) return;
+            Place(new Vector3(point.x, point.y, 0f));
+        }
 
         private void Update()
         {
@@ -55,6 +75,12 @@ namespace WordCraft.View
                 position += (Vector3)(axis.normalized * (speed * Time.unscaledDeltaTime));
             }
 
+            Place(position);
+        }
+
+        /// <summary>The one place the camera is written, so every mover clamps the same way.</summary>
+        private void Place(Vector3 position)
+        {
             position.x = Mathf.Clamp(position.x, 0f, MatchScenario.MapSize);
             position.y = Mathf.Clamp(position.y, 0f, MatchScenario.MapSize);
             position.z = -10f;

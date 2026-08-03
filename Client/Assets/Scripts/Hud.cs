@@ -87,6 +87,15 @@ namespace WordCraft.View
             GUI.Label(new Rect(280f, 4f, 160f, 20f), "tick " + world.Tick);
             GUI.Label(new Rect(400f, 4f, 420f, 20f),
                 StateText(runner.Session) + "  peer " + peer + "  (" + runner.Link + ")");
+
+            if (selection == null) return;
+            int idle = selection.IdleWorkerCount();
+            GUI.enabled = idle > 0;
+            if (GUI.Button(new Rect(Screen.width - 130f, 2f, 122f, TopBarHeight - 4f), "idle worker " + idle))
+            {
+                selection.CycleIdleWorker();
+            }
+            GUI.enabled = true;
         }
 
         private void BottomPanel(World world)
