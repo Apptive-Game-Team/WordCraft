@@ -35,6 +35,22 @@ namespace WordCraft.View
         // rendered entity per frame.
         public bool Contains(int id) => selected.Contains(id);
 
+        /// <summary>Drops everything else. What clicking one entry of the HUD list means.</summary>
+        public void SelectOnly(int id)
+        {
+            selected.Clear();
+            selected.Add(id);
+        }
+
+        /// <summary>Narrows the selection to one role. What ctrl-clicking an entry means.</summary>
+        public void KeepRole(Role role)
+        {
+            for (int i = selected.Count - 1; i >= 0; i--)
+            {
+                if (runner.World.GetEntity(selected[i]).Role != role) selected.RemoveAt(i);
+            }
+        }
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot() => new GameObject("WordCraft Selection").AddComponent<Selection>();
 
@@ -68,7 +84,7 @@ namespace WordCraft.View
                 return;
             }
 
-            if (Input.GetMouseButtonDown(0))
+            if (Input.GetMouseButtonDown(0) && !Hud.OverUi(Input.mousePosition))
             {
                 anchor = Input.mousePosition;
                 dragging = true;
