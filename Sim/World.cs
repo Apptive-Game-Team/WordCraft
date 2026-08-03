@@ -277,6 +277,11 @@ namespace WordCraft.Sim
             {
                 tickCommands.Clear();
                 for (int i = 0; i < commands.Count; i++) tickCommands.Add(commands[i]);
+                // A simulated peer's input is computed rather than received, so it
+                // is appended before the sort and ordered against a human peer's by
+                // the same PeerId, Seq rule. Every peer computes the same commands
+                // from the same world, so none of this crosses the wire.
+                AiSystem();
                 tickCommands.Sort(Command.CanonicalCompare);
 
                 for (int i = 0; i < tickCommands.Count; i++) Apply(tickCommands[i]);
@@ -574,6 +579,8 @@ namespace WordCraft.Sim
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)resources[p]);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)factions[p]);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)population[p]);
+            for (int p = 0; p < MaxPeers; p++) Mix(ref h, aiPeers[p] ? 1UL : 0UL);
+            for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)aiSeq[p]);
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];

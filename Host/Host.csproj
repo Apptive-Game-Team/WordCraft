@@ -14,4 +14,13 @@
     <ProjectReference Include="../Sim/Sim.csproj" />
   </ItemGroup>
 
+  <!--
+    The client's scenario, compiled here as well as by Unity and by Replay, and
+    free of UnityEngine for the same reason. A solo run has to be the map a
+    player actually plays, or it verifies an opponent nobody will ever meet.
+  -->
+  <ItemGroup>
+    <Compile Include="../Client/Assets/Scripts/MatchScenario.cs" />
+  </ItemGroup>
+
 </Project>
