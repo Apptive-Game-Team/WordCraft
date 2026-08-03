@@ -44,6 +44,9 @@ namespace WordCraft.Replay
                 BuildIsGatedByTheTechTier();
                 BuildRefusesOccupiedAndOffMapCells();
                 ScriptedLogPlacesEveryBuilding();
+                SoloMatchIsReproducible();
+                TheAiPlaysARealGame();
+                SoloMatchReachesTheWinCondition();
                 ClientLogMatchesGoldenHash();
                 SimAssemblyIsClean();
             }
@@ -972,6 +975,155 @@ namespace WordCraft.Replay
                 hashes[t] = world.Hash();
             }
             return hashes;
+        }
+
+        // The solo match: one human peer that does nothing and one the simulation
+        // plays. Peer 1 is the AI, so peer 0 is the passive opponent it has to
+        // beat, and every assertion below is about what peer 1 did on its own.
+        private const int SoloAi = 1;
+        private const int SoloTicks = 600;
+        private const int SoloWinTicks = 3000;
+
+        /// <summary>
+        /// A solo match is reproducible. The opponent lives inside Step, so this is
+        /// the check that its decisions are simulation state like everything else:
+        /// two runs from one seed, and every tick has to agree.
+        /// </summary>
+        private static void SoloMatchIsReproducible()
+        {
+            ulong[] left = RunSolo(SoloTicks, out _, out _);
+            ulong[] right = RunSolo(SoloTicks, out _, out _);
+
+            for (int t = 0; t < left.Length; t++)
+            {
+                Check(left[t] == right[t], "solo hash drift at tick " + t);
+            }
+        }
+
+        /// <summary>
+        /// The opponent plays a game. Every clause here is one of the things it was
+        /// asked to do, in the order it was asked to do them: gather, produce,
+        /// build, and walk at the enemy. A check that only proved it did not crash
+        /// would pass on an opponent that stood still for thirty seconds.
+        /// </summary>
+        private static void TheAiPlaysARealGame()
+        {
+            RunSolo(SoloTicks, out World world, out bool banked);
+
+            // Against a world built from the same seed and never stepped, so what
+            // the nodes started with is read rather than remembered.
+            World untouched = MatchScenario.Build(Seed, ScriptedLog.Peer0Faction, ScriptedLog.Peer1Faction);
+            Check(NodeTotal(world) < NodeTotal(untouched), "the AI never gathered from a node");
+            // Resources only ever rise on a delivery, so a rise is a full trip:
+            // walked out, mined, walked back. A drained node alone is not that.
+            Check(banked, "the AI mined but never delivered");
+
+            Check(CountOwned(world, SoloAi, EntityKind.Worker) > 2,
+                "the AI never grew past the two workers it started with");
+            Check(CountOwned(world, SoloAi, EntityKind.Unit) > 2,
+                "the AI never produced a fighter");
+            Check(CountOwned(world, SoloAi, EntityKind.Building) > 1,
+                "the AI never built anything");
+            Check(Built(world, SoloAi, Role.Production), "the AI never built a second production building");
+            Check(Built(world, SoloAi, Role.Supply), "the AI never built supply");
+            Check(world.GetPopulation(SoloAi) < world.PopulationCap(SoloAi),
+                "the AI let itself hit the population cap");
+
+            // Moved toward the enemy, not merely ordered to: a unit closer to the
+            // enemy base than its own base is has crossed ground to get there.
+            int enemyBase = FindBase(world, 1 - SoloAi);
+            int homeBase = FindBase(world, SoloAi);
+            Check(enemyBase >= 0 && homeBase >= 0, "a base went missing before the assertions");
+
+            Fix start = (world.GetEntity(homeBase).Position - world.GetEntity(enemyBase).Position).SqrMagnitude;
+            bool advanced = false;
+            for (int i = 0; i < world.EntityCount && !advanced; i++)
+            {
+                Entity e = world.GetEntity(i);
+                if (!e.Alive || e.Owner != SoloAi || e.Kind != EntityKind.Unit) continue;
+                if (e.Mode != OrderMode.AttackMove) continue;
+                advanced = (e.Position - world.GetEntity(enemyBase).Position).SqrMagnitude < start;
+            }
+            Check(advanced, "no AI unit ever moved toward the enemy");
+        }
+
+        /// <summary>
+        /// The whole thing end to end: the opponent takes a match off a peer that
+        /// never issues a command. Run twice, because a win that landed on a
+        /// different tick on two runs would be a desync wearing a victory screen.
+        /// </summary>
+        private static void SoloMatchReachesTheWinCondition()
+        {
+            ulong[] first = RunSolo(SoloWinTicks, out World world, out _);
+            ulong[] second = RunSolo(SoloWinTicks, out _, out _);
+
+            Check(world.MatchOver, "the AI never finished the match");
+            Check(world.Winner == SoloAi, "wrong winner: " + world.Winner);
+            Check(!world.GetEntity(FindBase(world, 1 - SoloAi)).Alive,
+                "the match ended with the enemy base still standing");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "solo win hash drift at tick " + t);
+            }
+        }
+
+        /// <summary>
+        /// The scenario the client builds, with peer 1 played by the simulation and
+        /// peer 0 issuing nothing. banked reports whether the AI's bank ever rose,
+        /// which only a delivery does.
+        /// </summary>
+        private static ulong[] RunSolo(int ticks, out World world, out bool banked)
+        {
+            world = MatchScenario.Build(Seed, ScriptedLog.Peer0Faction, ScriptedLog.Peer1Faction);
+            world.SetPeerAi(SoloAi, true);
+
+            var idle = new List<Command>();
+            var hashes = new ulong[ticks];
+            banked = false;
+            int last = world.GetResources(SoloAi);
+
+            for (int t = 0; t < ticks; t++)
+            {
+                world.Step(idle);
+                if (world.GetResources(SoloAi) > last) banked = true;
+                last = world.GetResources(SoloAi);
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        /// <summary>What is left in the ground, over every node on the map.</summary>
+        private static int NodeTotal(World world)
+        {
+            int total = 0;
+            for (int i = 0; i < world.EntityCount; i++)
+            {
+                Entity e = world.GetEntity(i);
+                if (e.Kind == EntityKind.ResourceNode) total += e.Resource;
+            }
+            return total;
+        }
+
+        private static int CountOwned(World world, int peer, EntityKind kind)
+        {
+            int n = 0;
+            for (int i = 0; i < world.EntityCount; i++)
+            {
+                Entity e = world.GetEntity(i);
+                if (e.Alive && e.Owner == peer && e.Kind == kind) n++;
+            }
+            return n;
+        }
+
+        private static int FindBase(World world, int peer)
+        {
+            for (int i = 0; i < world.EntityCount; i++)
+            {
+                Entity e = world.GetEntity(i);
+                if (e.Kind == EntityKind.Building && e.Role == Role.Base && e.Owner == peer) return i;
+            }
+            return -1;
         }
 
         private static List<Command> Build(int peer, int seq, Role role, FixVec2 where) =>
