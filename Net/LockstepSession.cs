@@ -44,6 +44,17 @@ namespace WordCraft.Net
         public static Faction DefaultFaction(int peer) =>
             peer == 0 ? Faction.TreeSpirits : Faction.Hellfire;
 
+        /// <summary>
+        /// True when there is no peer on the wire at all. The barrier is satisfied
+        /// by the local peer alone, and nothing is sent or waited for. Everything
+        /// else is deliberately unchanged — same World, same tick rate, same input
+        /// delay, same canonical ordering — so a solo match still replays from its
+        /// input log and the hash checks still mean what they meant.
+        ///
+        /// The opponent is a peer inside the simulation, not one on the wire.
+        /// </summary>
+        public bool Solo;
+
         /// <summary>Ticks between issuing a command and executing it. 3 at 20 Hz absorbs 150 ms.</summary>
         public int InputDelay = 3;
 
@@ -174,6 +185,18 @@ namespace WordCraft.Net
         {
             if (!started) { started = true; lastRecvMs = nowMs; }
 
+            // Nobody to greet, nobody to time out, nobody to hash against. A solo
+            // match starts on its first pump and the rest of this method is about
+            // a peer that does not exist.
+            if (cfg.Solo)
+            {
+                if (State != SessionState.Handshaking) return;
+                remoteFaction = cfg.RemoteFaction ?? MatchConfig.DefaultFaction(remotePeer);
+                remoteFactionKnown = true;
+                BeginMatch();
+                return;
+            }
+
             Receive(nowMs);
 
             if (State == SessionState.Handshaking)
@@ -224,7 +247,10 @@ namespace WordCraft.Net
             if (State != SessionState.Running) return false;
 
             int t = world.Tick;
-            if (!inputs[remotePeer].TryGetValue(t, out Command[] remoteCmds)) return false;
+            // The one line single player turns on. A solo peer has no remote input
+            // and never will, so waiting for it is a barrier that never opens.
+            Command[] remoteCmds = Array.Empty<Command>();
+            if (!cfg.Solo && !inputs[remotePeer].TryGetValue(t, out remoteCmds)) return false;
 
             // Seal before stepping: once tick t runs, the commands issued during
             // it belong to t+delay and that bucket must never change afterwards.
@@ -239,6 +265,10 @@ namespace WordCraft.Net
             world.Step(batch); // the only line in this assembly that advances the simulation
 
             inputs[remotePeer].Remove(t);
+            // Nobody will ever acknowledge a solo peer's input, so it acknowledges
+            // itself. Without this every tick's input is held for the length of the
+            // match waiting for a resend request that cannot come.
+            if (cfg.Solo) ackedThrough = t;
             PruneLocal();
 
             // Push the freshly sealed tick out now; the resend timer is the
@@ -246,7 +276,8 @@ namespace WordCraft.Net
             SendInputs();
             lastSendMs = nowMs;
 
-            if (cfg.HashInterval > 0 && world.Tick % cfg.HashInterval == 0) Checkpoint(nowMs);
+            // A checkpoint is one half of a comparison. Solo there is no other half.
+            if (!cfg.Solo && cfg.HashInterval > 0 && world.Tick % cfg.HashInterval == 0) Checkpoint(nowMs);
             return true;
         }
 
@@ -377,6 +408,8 @@ namespace WordCraft.Net
 
         private void SendInputs()
         {
+            if (cfg.Solo) return; // guarded here so every caller is covered by one line
+
             // ponytail: resends every unacked tick wholesale instead of keeping a
             // sliding window. Commands are 29 bytes and the ack lag is a few
             // ticks, so this fits one datagram; add a window only if it stops fitting.

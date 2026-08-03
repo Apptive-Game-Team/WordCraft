@@ -18,6 +18,24 @@ namespace WordCraft.Net
     }
 
     /// <summary>
+    /// A link with nothing on the other end, for a solo session. It never sends
+    /// and never receives, but a session still holds an ITransport and a null
+    /// there would be a crash rather than a quiet nothing.
+    /// </summary>
+    public sealed class NullTransport : ITransport
+    {
+        public static readonly NullTransport It = new NullTransport();
+
+        public void Send(byte[] data, int length) { }
+
+        public bool TryReceive(out byte[] packet)
+        {
+            packet = null;
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Direct IP UDP, no external service. The listening side learns the remote
     /// endpoint from the first datagram it receives.
     /// </summary>

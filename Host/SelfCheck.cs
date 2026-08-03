@@ -23,6 +23,7 @@ namespace WordCraft.Host
                 ContentMismatchIsRejectedBeforeTick0();
                 FactionMismatchIsRejectedBeforeTick0();
                 PeerTimeoutEndsTheMatch();
+                SoloRunsWithoutAPeer();
             }
             catch (Exception ex)
             {
@@ -31,7 +32,8 @@ namespace WordCraft.Host
             }
 
             Console.WriteLine("OK: lockstep self-check passed (" + Ticks +
-                              " ticks over a lossy link, desync located, handshake rejected, timeout handled)");
+                              " ticks over a lossy link, desync located, handshake rejected," +
+                              " timeout handled, solo barrier opens)");
             return 0;
         }
 
@@ -161,6 +163,44 @@ namespace WordCraft.Host
             Check((b.Session.StopReason ?? "").Contains("timeout"), "peer 1 reason: " + b.Session.StopReason);
             Check(a.World.Tick <= cut + cfg.InputDelay + 4,
                 "peer 0 ran past the last delivered input: " + cut + " -> " + a.World.Tick);
+        }
+
+        /// <summary>
+        /// One peer, no link, and the barrier opens every tick anyway. Before this
+        /// a lone peer sat at tick 0 forever waiting on remote input that was never
+        /// coming, which is the reason single player could not exist.
+        ///
+        /// The command at the end is the other half: a solo peer's own input still
+        /// goes through the seal, the input delay, and the canonical sort, so a
+        /// solo match replays from its log exactly like a networked one.
+        /// </summary>
+        private static void SoloRunsWithoutAPeer()
+        {
+            var cfg = new MatchConfig { Solo = true };
+            var world = new World(cfg.Seed);
+            world.SpawnUnit(0, Role.Melee, new FixVec2(Fix.FromInt(10), Fix.FromInt(10)));
+            var session = new LockstepSession(world, NullTransport.It, cfg, 0);
+
+            session.Update(0);
+            Check(session.State == SessionState.Running, "a solo session never started: " + session.StopReason);
+
+            const int SoloTicks = 100;
+            for (int t = 0; t < SoloTicks; t++)
+            {
+                session.Update(t);
+                Check(session.TryStep(t), "the solo barrier closed at tick " + world.Tick);
+            }
+            Check(world.Tick == SoloTicks, "a solo match ran " + world.Tick + " ticks, wanted " + SoloTicks);
+
+            var where = new FixVec2(Fix.FromInt(20), Fix.FromInt(10));
+            session.Issue(CommandType.Move, 0, where);
+            for (int t = 0; t <= cfg.InputDelay; t++)
+            {
+                session.Update(SoloTicks + t);
+                Check(session.TryStep(SoloTicks + t), "the solo barrier closed while a command was in flight");
+            }
+            Check(world.GetEntity(0).Target.Equals(where),
+                "a solo peer's own command never executed after " + cfg.InputDelay + " ticks of delay");
         }
 
         private static bool Stopped(Peer p) => p.Session.State == SessionState.Stopped;
