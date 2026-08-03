@@ -39,6 +39,14 @@ namespace WordCraft.Net
 
         public int LocalPort => ((IPEndPoint)socket.LocalEndPoint).Port;
 
+        /// <summary>
+        /// Datagrams accepted from the peer. The session cannot answer "has anyone
+        /// answered yet", because it goes from Handshaking straight to Running on
+        /// the first valid Hello; only the socket knows the difference between a
+        /// start screen still waiting and one already talking to somebody.
+        /// </summary>
+        public int Received { get; private set; }
+
         public void Send(byte[] data, int length)
         {
             if (remote == null) return; // listener has not heard from anyone yet
@@ -58,6 +66,7 @@ namespace WordCraft.Net
                 else if (!from.Equals(remote)) return false; // stray sender, not our peer
                 packet = new byte[n];
                 Buffer.BlockCopy(rx, 0, packet, 0, n);
+                Received++;
                 return true;
             }
             catch (SocketException)
