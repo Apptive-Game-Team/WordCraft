@@ -27,6 +27,17 @@ namespace WordCraft.View
         private static readonly Color BarBackColor = new Color(0.04f, 0.04f, 0.05f, 0.85f);
         private static readonly Color QueueColor = new Color(0.45f, 0.85f, 1.00f, 0.95f);
         private static readonly Color RallyColor = new Color(0.55f, 1.00f, 0.60f, 0.85f);
+        private static readonly Color RingColor = new Color(1.00f, 1.00f, 1.00f, 0.75f);
+        private static readonly Color HoverColor = new Color(1.00f, 1.00f, 1.00f, 0.28f);
+
+        /// <summary>How far a ring stands out past the art, as a fraction of the visible height.</summary>
+        private const float RingBandRatio = 0.012f;
+
+        /// <summary>Floor on that band, in cells, so zooming right in does not swallow the unit.</summary>
+        private const float RingBandFloor = 0.10f;
+
+        /// <summary>How near the cursor an entity has to be to light up. Matches the pickers.</summary>
+        private const float HoverRadius = 1.1f;
 
         // Overlay geometry, in grid cells. A bar is the same size whatever the art
         // under it, so a row of damaged units reads as one row.
@@ -42,7 +53,15 @@ namespace WordCraft.View
         private Sprite disc;
         private Sprite square;
         private readonly List<SpriteRenderer> views = new List<SpriteRenderer>();
+
+        // Rings are not children of the art they ring. The art is scaled to fit its
+        // footprint, and a child would inherit that scale, which is exactly what a
+        // ring whose thickness has to answer to the zoom instead must not do.
         private readonly List<SpriteRenderer> rings = new List<SpriteRenderer>();
+        private readonly List<float> footprints = new List<float>();
+
+        /// <summary>One highlight, moved to whatever the cursor is over.</summary>
+        private SpriteRenderer hover;
 
         // Overlays, parallel to views. Kept off the entity's own transform because
         // authored art is scaled to fit its footprint and a bar must not inherit that.
@@ -77,6 +96,10 @@ namespace WordCraft.View
             var ground = NewRenderer("Ground", square, GroundColor, -100);
             ground.transform.position = new Vector3(mid, mid, 0f);
             ground.transform.localScale = new Vector3(MatchScenario.MapSize, MatchScenario.MapSize, 1f);
+
+            // Under everything an entity draws, above the ground.
+            hover = NewRenderer("Hover", disc, HoverColor, 3);
+            hover.enabled = false;
         }
 
         private void Start() => runner = MatchRunner.Instance;
@@ -110,6 +133,7 @@ namespace WordCraft.View
                 rings[i].enabled = picked;
                 Vector2 p = runner.DrawPosition(i);
                 sr.transform.position = new Vector3(p.x, p.y, 0f);
+                if (picked) Ring(rings[i], footprints[i], p);
                 Overlays(i, e, p, picked);
 
                 // A site under construction reads as a ghost until it finishes.
@@ -127,6 +151,42 @@ namespace WordCraft.View
             }
 
             for (int i = markers; i < rallyMarkers.Count; i++) rallyMarkers[i].enabled = false;
+            Hover(world);
+        }
+
+        /// <summary>
+        /// A ring the width of the art's footprint plus a band, and the band follows
+        /// the zoom. A band fixed in world units disappears with the whole map on
+        /// screen; a band fixed in pixels swallows the unit zoomed right in. Neither
+        /// is legible at both ends, so the band is a fraction of what is visible.
+        /// </summary>
+        private void Ring(SpriteRenderer ring, float footprint, Vector2 p)
+        {
+            float band = Mathf.Max(RingBandFloor, Cam.orthographicSize * RingBandRatio);
+            float d = footprint + band * 2f;
+            ring.transform.position = new Vector3(p.x, p.y, 0f);
+            ring.transform.localScale = new Vector3(d, d, 1f);
+        }
+
+        /// <summary>
+        /// Lights up whatever the cursor is over, friend or enemy, so a click has a
+        /// visible target before it is a committed order. Nothing lights up under
+        /// the HUD, because a click there never reaches the world either.
+        /// </summary>
+        // ponytail: a full entity scan every frame. It is the same scan the pickers
+        // already do per click over a few dozen entities; index the grid the day
+        // that stops being true.
+        private void Hover(World world)
+        {
+            int id = Hud.OverUi(Input.mousePosition)
+                ? -1
+                : runner.EntityAt(Cam.ScreenToWorldPoint(Input.mousePosition), HoverRadius, mineOnly: false);
+
+            hover.enabled = id >= 0;
+            if (id < 0) return;
+
+            hover.sprite = Shape(world.GetEntity(id).Kind);
+            Ring(hover, footprints[id], runner.DrawPosition(id));
         }
 
         /// <summary>
@@ -192,7 +252,7 @@ namespace WordCraft.View
         private SpriteRenderer Create(World world, Entity e)
         {
             Color owner = e.Owner >= 0 && e.Owner < PeerColor.Length ? PeerColor[e.Owner] : Color.gray;
-            Sprite shape = e.Kind == EntityKind.Unit || e.Kind == EntityKind.Worker ? disc : square;
+            Sprite shape = Shape(e.Kind);
             Color color;
             float scale;
             float spin = 0f;
@@ -225,11 +285,10 @@ namespace WordCraft.View
             sr.transform.localScale = drawn != null ? FitScale(drawn, e) : new Vector3(scale, scale, 1f);
             sr.transform.rotation = Quaternion.Euler(0f, 0f, drawn != null ? 0f : spin);
 
-            var ring = NewRenderer("Ring", shape, new Color(1f, 1f, 1f, 0.75f), sr.sortingOrder - 1);
-            ring.transform.SetParent(sr.transform, worldPositionStays: false);
-            ring.transform.localScale = Vector3.one * 1.35f;
+            var ring = NewRenderer("Ring", shape, RingColor, sr.sortingOrder - 1);
             ring.enabled = false;
             rings.Add(ring);
+            footprints.Add(drawn != null ? Cells(e.Role) : scale);
 
             barBacks.Add(Overlay("HpBack", BarBackColor, OverlayOrder));
             barFills.Add(Overlay("HpFill", Color.white, OverlayOrder + 1));
@@ -263,21 +322,27 @@ namespace WordCraft.View
         /// </summary>
         private static Vector3 FitScale(Sprite sprite, Entity e)
         {
-            float cells;
-            switch (e.Role)
-            {
-                case Role.Base: cells = 4.0f; break;
-                case Role.Production: cells = 3.0f; break;
-                case Role.Defense: cells = 2.5f; break;
-                case Role.Worker: cells = 1.2f; break;
-                default: cells = 1.8f; break;
-            }
-
             Vector2 size = sprite.bounds.size;
             float longest = Mathf.Max(size.x, size.y);
-            float k = longest > 0f ? cells / longest : 1f;
+            float k = longest > 0f ? Cells(e.Role) / longest : 1f;
             return new Vector3(k, k, 1f);
         }
+
+        /// <summary>A role's footprint on the grid. What the art is fitted to and what a ring rings.</summary>
+        private static float Cells(Role role)
+        {
+            switch (role)
+            {
+                case Role.Base: return 4.0f;
+                case Role.Production: return 3.0f;
+                case Role.Defense: return 2.5f;
+                case Role.Worker: return 1.2f;
+                default: return 1.8f;
+            }
+        }
+
+        private Sprite Shape(EntityKind kind) =>
+            kind == EntityKind.Unit || kind == EntityKind.Worker ? disc : square;
 
         private SpriteRenderer Overlay(string name, Color color, int order)
         {
