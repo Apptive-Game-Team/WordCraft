@@ -891,8 +891,10 @@ namespace WordCraft.Replay
             world.SpawnUnit(1, Role.Melee,
                 new FixVec2(Fix.FromInt(31) + half, Fix.FromInt(30) + half)); // 9
 
-            world.GrantResources(0, 100);
-            world.GrantResources(1, 100);
+            // Enough to place the production building the log puts down at tick 150
+            // without waiting on the gather loop, which is under test separately.
+            world.GrantResources(0, 300);
+            world.GrantResources(1, 300);
             return world;
         }
 
@@ -923,8 +925,8 @@ namespace WordCraft.Replay
             // in each other's face, so this is the order deciding the kill.
             log[5].Add(new Command(5, 0, seq[0]++, CommandType.Attack, MatchFighter0, FixVec2.Zero, MatchFighter1));
 
-            log[150].Add(new Command(150, 0, seq[0]++, CommandType.Build, -1, At(20, 20)));
-            log[150].Add(new Command(150, 1, seq[1]++, CommandType.Build, -1, At(44, 48)));
+            log[150].Add(new Command(150, 0, seq[0]++, CommandType.Build, -1, At(20, 20), (int)Role.Production));
+            log[150].Add(new Command(150, 1, seq[1]++, CommandType.Build, -1, At(44, 48), (int)Role.Production));
 
             // One worker off the loop, the other left on it, so the run still banks
             // deliveries while a cancelled loop is in the same hash.

@@ -52,7 +52,7 @@ namespace WordCraft.Sim
         /// content produce different results from the same input, so this travels
         /// in the handshake and a mismatch is a rejection before tick 0.
         /// </summary>
-        public const uint ContentVersion = 11;
+        public const uint ContentVersion = 12;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -160,13 +160,74 @@ namespace WordCraft.Sim
             /* Ranged     */ 2,
             /* Signature  */ 3,
             /* Supply     */ 1,
-            /* Tech       */ 1,
+            /* Tech       */ 2, // the production building comes first, or T3 is one purchase away
+        };
+
+        /// <summary>
+        /// What a building costs to place, indexed by Role. Zero on a role that is
+        /// not a building; nothing may be placed on a zero, and IsBuilding is what
+        /// says so. Data rather than a case in the command handler, so retuning a
+        /// build order is one number here.
+        /// </summary>
+        private static readonly int[] buildCosts =
+        {
+            /* None       */ 0,
+            /* Base       */ 400,
+            /* Worker     */ 0,
+            /* Production */ 150,
+            /* Defense    */ 100,
+            /* Melee      */ 0,
+            /* Ranged     */ 0,
+            /* Signature  */ 0,
+            /* Supply     */ 75,
+            /* Tech       */ 200,
+        };
+
+        /// <summary>
+        /// How long a building takes to stand up, in whole ticks at 20 Hz. Never
+        /// seconds: a duration converted from wall-clock time is a duration two
+        /// peers can round differently.
+        /// </summary>
+        private static readonly int[] buildTicks =
+        {
+            /* None       */ 0,
+            /* Base       */ 200,
+            /* Worker     */ 0,
+            /* Production */ 100,
+            /* Defense    */ 60,
+            /* Melee      */ 0,
+            /* Ranged     */ 0,
+            /* Signature  */ 0,
+            /* Supply     */ 50,
+            /* Tech       */ 120,
         };
 
         public static UnitStats Stats(Role role) => stats[(int)role];
 
         /// <summary>What the owner's tier must reach before this role can be produced.</summary>
         public static int Tier(Role role) => tiers[(int)role];
+
+        /// <summary>What placing this building costs. Zero on anything not a building.</summary>
+        public static int BuildCost(Role role) => buildCosts[(int)role];
+
+        /// <summary>How many whole ticks this building spends under construction.</summary>
+        public static int BuildTicks(Role role) => buildTicks[(int)role];
+
+        /// <summary>
+        /// The roles a Build command may name. Listed here rather than derived from
+        /// EntityKind, because a role's kind is only known once an entity exists and
+        /// a Build is validated before one does.
+        /// </summary>
+        public static bool IsBuilding(Role role) =>
+            role == Role.Base || role == Role.Production || role == Role.Defense ||
+            role == Role.Supply || role == Role.Tech;
+
+        /// <summary>
+        /// True when this faction fields this slot at all. An empty name is a slot
+        /// docs/FACTIONS.md leaves out on purpose, and a faction cannot build or
+        /// produce what its roster does not list.
+        /// </summary>
+        public static bool Has(Faction faction, Role role) => names[Index(faction, role)].Length > 0;
 
         /// <summary>
         /// How many entries this slot holds. Always at least one, so a caller that

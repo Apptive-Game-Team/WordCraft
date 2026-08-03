@@ -20,7 +20,7 @@ namespace WordCraft.View
         /// on. Update it only when the simulation intentionally changes, and only
         /// after both runtimes agree on the new value.
         /// </summary>
-        public const ulong GoldenHash = 0xBDEC4584E9A15C77UL;
+        public const ulong GoldenHash = 0x5957FF4E4F100E87UL;
 
         /// <summary>
         /// The factions the golden hash was taken over. Factions are hashed, so
@@ -55,8 +55,22 @@ namespace WordCraft.View
             Add(log, 40, 0, seq, CommandType.Move, Ranged0, At(33, 31), 0);
             Add(log, 40, 1, seq, CommandType.Move, Ranged1, At(29, 31), 0);
 
-            Add(log, 150, 0, seq, CommandType.Build, -1, At(20, 20), 0);
-            Add(log, 150, 1, seq, CommandType.Build, -1, At(44, 44), 0);
+            // One of every building a faction can place, in the order a player
+            // reaches them: the production building opens tier 2, which is what the
+            // tech building needs, so a log that only ever placed one kind would
+            // leave the tier gate on Build untested by the golden hash.
+            Add(log, 150, 0, seq, CommandType.Build, -1, At(20, 20), (int)Role.Production);
+            Add(log, 150, 1, seq, CommandType.Build, -1, At(44, 44), (int)Role.Production);
+
+            Add(log, 300, 0, seq, CommandType.Build, -1, At(22, 20), (int)Role.Supply);
+            Add(log, 300, 1, seq, CommandType.Build, -1, At(42, 44), (int)Role.Supply);
+
+            // After the production building has finished at 250, so tier 2 stands.
+            Add(log, 380, 0, seq, CommandType.Build, -1, At(20, 22), (int)Role.Tech);
+            Add(log, 380, 1, seq, CommandType.Build, -1, At(44, 42), (int)Role.Tech);
+
+            Add(log, 480, 0, seq, CommandType.Build, -1, At(22, 22), (int)Role.Defense);
+            Add(log, 480, 1, seq, CommandType.Build, -1, At(42, 42), (int)Role.Defense);
 
             Add(log, 300, 0, seq, CommandType.Produce, Base0, FixVec2.Zero, 0);
             Add(log, 300, 1, seq, CommandType.Produce, Base1, FixVec2.Zero, 0);
