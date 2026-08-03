@@ -233,6 +233,34 @@ namespace WordCraft.View
             return null;
         }
 
+        /// <summary>
+        /// A match against the simulation's own opponent, with nothing on the wire.
+        ///
+        /// This goes straight to Phase.Match rather than waiting the way StartMatch
+        /// does. There is no handshake to wait on, and the start-screen branch of
+        /// Update only advances while Connecting, which is false without a
+        /// transport — parking here would leave the lobby up forever.
+        /// </summary>
+        public void StartSolo(Faction faction)
+        {
+            transport?.Dispose();
+            transport = null;
+
+            Faction opponent = MatchConfig.DefaultFaction(1);
+            var cfg = new MatchConfig { Solo = true, LocalFaction = faction, RemoteFaction = opponent };
+            config = cfg;
+            peerTimeoutMs = cfg.TimeoutMs;
+
+            LocalPeer = 0;
+            World = MatchScenario.Build(cfg.Seed, faction, opponent);
+            World.SetPeerAi(1, true);
+            Session = new LockstepSession(World, DeadTransport.It, cfg, 0);
+            Link = "solo";
+
+            Phase = Phase.Match;
+            ResetMatchState();
+        }
+
         /// <summary>Every per-match field, in one place, so a restart cannot miss one.</summary>
         private void ResetMatchState()
         {
