@@ -9,6 +9,9 @@ namespace WordCraft.View
     /// which is the only question a player of this game asks that the screen in
     /// front of them cannot.
     ///
+    ///   left click   put the camera there
+    ///   left drag    keep putting it there
+    ///
     /// A Texture2D repainted from entity state plus a few GUI rectangles. A
     /// second camera onto a RenderTexture would cost a whole extra render pass to
     /// draw the real art at four pixels across, which is a smear.
@@ -42,6 +45,12 @@ namespace WordCraft.View
         private static Texture2D texture;
         private static Color32[] pixels;
 
+        /// <summary>True while a left drag that began on the square is still down.</summary>
+        private static bool scrubbing;
+
+        /// <summary>The world the state above belongs to. A new one makes it a lie.</summary>
+        private static World shown;
+
         /// <summary>
         /// Paints the map into <paramref name="area"/>. Call from OnGUI; the
         /// texture is rebuilt on the repaint pass only, because OnGUI runs several
@@ -49,12 +58,65 @@ namespace WordCraft.View
         /// </summary>
         public static void Draw(Rect area, MatchRunner runner)
         {
+            World world = runner.World;
+            if (!ReferenceEquals(world, shown))
+            {
+                // A restart hands out ids from zero again, so nothing held across
+                // one is about the match being played now.
+                scrubbing = false;
+                shown = world;
+            }
+
+            Mouse(area);
             if (Event.current.type != EventType.Repaint) return;
 
-            Paint(runner.World);
+            Paint(world);
             GUI.DrawTexture(area, texture);
             ViewRect(area);
         }
+
+        /// <summary>
+        /// A press puts the camera where it landed and a drag keeps doing it, so
+        /// scrubbing across the map sweeps the view across the map. Nothing here
+        /// is sent to the peer: the camera is not simulation state.
+        ///
+        /// IMGUI events rather than Input, because OnGUI runs several times a
+        /// frame and Input.GetMouseButtonDown is true on every one of them. The
+        /// drag is gated on having started here: a selection box dragged across
+        /// the bar must not teleport the camera on its way past.
+        /// </summary>
+        private static void Mouse(Rect area)
+        {
+            Event ev = Event.current;
+            if (ev.type == EventType.MouseUp) scrubbing = false;
+
+            // Deliberately not fenced to the square: a scrub that runs off the
+            // edge keeps following the pointer, clamped, rather than sticking.
+            if (scrubbing && ev.type == EventType.MouseDrag)
+            {
+                Center(ToWorld(area, ev.mousePosition));
+                ev.Use();
+                return;
+            }
+
+            if (ev.type != EventType.MouseDown || ev.button != 0) return;
+            if (!area.Contains(ev.mousePosition)) return;
+
+            scrubbing = true;
+            Center(ToWorld(area, ev.mousePosition));
+            ev.Use();
+        }
+
+        private static void Center(Vector2 point)
+        {
+            if (CameraRig.Instance != null) CameraRig.Instance.CenterOn(point);
+        }
+
+        /// <summary>A point on the square as a point on the map. Clamped, so a drag off the edge still lands.</summary>
+        private static Vector2 ToWorld(Rect area, Vector2 mouse) =>
+            new Vector2(
+                Mathf.Clamp01((mouse.x - area.x) / area.width) * MatchScenario.MapSize,
+                (1f - Mathf.Clamp01((mouse.y - area.y) / area.height)) * MatchScenario.MapSize);
 
         /// <summary>
         /// Every alive entity, every frame, over a cleared buffer.
