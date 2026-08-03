@@ -115,7 +115,9 @@ namespace WordCraft.View
         {
             CommandType type = Pending;
             Pending = CommandType.None;
-            selection.Blocked = false;
+            // Blocked is deliberately left set until the next Update. Script order
+            // between this component and Selection is undefined, and clearing it
+            // here lets the very click that fired the order also start a selection.
 
             if (type == CommandType.Build)
             {
