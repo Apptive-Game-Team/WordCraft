@@ -129,6 +129,10 @@ namespace WordCraft.View
         /// keeping the top row where the worker card's own commands live, so the
         /// submenu reads as an extension of the card rather than a new screen.
         /// </summary>
+        // ponytail: every building the faction lists is shown live, whether or not
+        // the peer can afford it or has the tier for it; the simulation refuses the
+        // rest silently. Grey a cell against resources and TierOf the day players
+        // start learning the menu by being refused.
         public static CardSlot[] BuildMenu(Faction faction)
         {
             for (int i = 0; i < Cells; i++) buildMenu[i] = Empty;

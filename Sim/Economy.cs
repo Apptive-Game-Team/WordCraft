@@ -135,6 +135,10 @@ namespace WordCraft.Sim
         /// answer that counts is the one taken here during Apply: a view that
         /// asked a moment earlier is looking at a world one tick stale.
         /// </summary>
+        // ponytail: a Build names a peer and a cell, never a worker. A peer can
+        // place anywhere on the map with nothing standing there. Read the builder
+        // out of Command.EntityId and require it within InteractRange the day
+        // placement is supposed to cost a walk.
         public bool CanBuild(int peer, Role role, FixVec2 position)
         {
             if (peer < 0 || peer >= MaxPeers) return false;
