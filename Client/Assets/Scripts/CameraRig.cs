@@ -4,28 +4,61 @@ namespace WordCraft.View
 {
     /// <summary>
     /// Pan with WASD or the arrow keys, with the mouse at a screen edge, or with a
-    /// middle-button drag; zoom with the wheel. Frame time drives all of it, which
-    /// is safe only because the camera is not simulation state and no peer ever
-    /// hears about it.
+    /// middle-button drag; zoom the wheel toward the cursor. Every input moves a
+    /// target and the camera eases onto it, which is safe only because the camera
+    /// is not simulation state and no peer ever hears about it.
+    ///
+    ///   WASD / arrows   pan
+    ///   screen edge     pan
+    ///   middle drag     pan
+    ///   wheel           zoom toward the cursor
+    ///   Z               save a camera bookmark
+    ///   X               jump back to it
     /// </summary>
     public sealed class CameraRig : MonoBehaviour
     {
         private const float PanUnitsPerSecond = 26f;
 
         /// <summary>How near an edge the pointer has to be before the map scrolls.</summary>
-        private const float EdgePixels = 8f;
+        private const float EdgePixels = 14f;
 
-        private const float ZoomStep = 6f;
+        /// <summary>
+        /// Wheel notch to zoom factor, as e^(-rate * notch). Multiplicative rather
+        /// than a fixed step, so one notch changes the view by the same proportion
+        /// however far out it already is. Wheels and trackpads report wildly
+        /// different magnitudes; this is the knob to turn if it feels wrong.
+        /// </summary>
+        private const float ZoomRate = 2.2f;
+
         private const float MinSize = 6f;
         private const float MaxSize = 34f;
 
         /// <summary>Zoom level the pan speed was tuned at, so panning feels equal at every zoom.</summary>
         private const float ReferenceSize = 18f;
 
+        /// <summary>How much void the view is allowed past the map edge.</summary>
+        private const float MarginCells = 4f;
+
+        /// <summary>
+        /// Ease rate per second. High on purpose: this is an RTS, not a flight sim,
+        /// and a camera that floats or overshoots feels worse than one that snaps.
+        /// </summary>
+        private const float Smoothing = 18f;
+
         public static CameraRig Instance { get; private set; }
 
         private Camera cam;
-        private Vector3 dragAnchor;
+
+        // Where the camera is heading. Input moves these; the camera chases them.
+        private Vector3 target;
+        private float targetSize;
+
+        private Vector2 dragAnchorScreen;
+        private Vector3 dragAnchorTarget;
+
+        // ponytail: one bookmark. An array and F5-F8 the day one is not enough.
+        private Vector3 bookmark;
+        private bool hasBookmark;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot() => new GameObject("WordCraft Camera Rig").AddComponent<CameraRig>();
@@ -41,14 +74,10 @@ namespace WordCraft.View
             if (Instance == this) Instance = null;
         }
 
-        /// <summary>Puts a world point in the middle of the screen. Control groups and the idle
-        /// worker button jump this way; it is a camera move and nothing else hears about it.</summary>
-        public void CenterOn(Vector2 point)
-        {
-            if (cam == null) cam = Camera.main;
-            if (cam == null) return;
-            Place(new Vector3(point.x, point.y, 0f));
-        }
+        /// <summary>Puts a world point in the middle of the screen. Control groups, the idle
+        /// worker button and the base jump go this way; it is a camera move and nothing else
+        /// hears about it. Eased like every other move, so a jump reads as a jump and not a cut.</summary>
+        public void CenterOn(Vector2 point) => target = new Vector3(point.x, point.y, -10f);
 
         private void Update()
         {
@@ -56,43 +85,97 @@ namespace WordCraft.View
             {
                 cam = Camera.main;
                 if (cam == null) return;
+                // Adopt whatever the view set up rather than jumping on the first frame.
+                target = cam.transform.position;
+                targetSize = cam.orthographicSize;
             }
 
             float scroll = Input.GetAxis("Mouse ScrollWheel");
-            if (!Mathf.Approximately(scroll, 0f))
+            if (!Mathf.Approximately(scroll, 0f)) Zoom(scroll);
+
+            if (Input.GetMouseButtonDown(2))
             {
-                cam.orthographicSize = Mathf.Clamp(cam.orthographicSize - scroll * ZoomStep, MinSize, MaxSize);
+                dragAnchorScreen = Input.mousePosition;
+                dragAnchorTarget = target;
             }
 
-            Vector3 position = cam.transform.position;
-
-            if (Input.GetMouseButtonDown(2)) dragAnchor = MouseWorld();
             if (Input.GetMouseButton(2))
             {
-                // Drag the ground, not the camera: the point under the cursor has
-                // to stay under the cursor or the map feels like it is sliding.
-                position += dragAnchor - MouseWorld();
+                // Drag the ground, not the camera: the point grabbed stays under the
+                // cursor. Measured from where the drag started rather than from the
+                // eased camera, or the drag chases its own smoothing and never settles.
+                Vector2 moved = (Vector2)Input.mousePosition - dragAnchorScreen;
+                target = dragAnchorTarget - (Vector3)(moved * WorldPerPixel());
             }
             else
             {
                 var axis = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical")) + EdgePush();
-                float speed = PanUnitsPerSecond * (cam.orthographicSize / ReferenceSize);
+                // Speed follows the zoom, so the screen moves at one apparent rate at
+                // every zoom: zoomed out covers more world in the same wrist movement.
+                float speed = PanUnitsPerSecond * (targetSize / ReferenceSize);
                 // Clamped rather than normalised, so keys and edge together are not
                 // faster than either alone but a light key press is still a light pan.
-                position += (Vector3)(Vector2.ClampMagnitude(axis, 1f) * (speed * Time.unscaledDeltaTime));
+                target += (Vector3)(Vector2.ClampMagnitude(axis, 1f) * (speed * Time.unscaledDeltaTime));
             }
 
-            Place(position);
+            Bookmarks();
+            Clamp();
+
+            // Exponential ease, so the rate is the same on a 30fps machine and a
+            // 144fps one. A plain Lerp against a raw delta is not, and the
+            // difference is exactly the sort of thing a player feels but cannot name.
+            float k = 1f - Mathf.Exp(-Smoothing * Time.unscaledDeltaTime);
+            cam.orthographicSize = Mathf.Lerp(cam.orthographicSize, targetSize, k);
+            cam.transform.position = Vector3.Lerp(cam.transform.position, target, k);
+        }
+
+        /// <summary>
+        /// Zooms about the cursor: the world point under the pointer stays under the
+        /// pointer. Zooming toward the screen centre instead is the single most
+        /// common thing that makes an RTS camera feel wrong, because the thing being
+        /// zoomed in on slides away while you zoom in on it.
+        /// </summary>
+        private void Zoom(float scroll)
+        {
+            Vector2 fromCentre = (Vector2)Input.mousePosition - new Vector2(Screen.width, Screen.height) * 0.5f;
+            Vector2 grabbed = (Vector2)target + fromCentre * WorldPerPixel();
+
+            targetSize = Mathf.Clamp(targetSize * Mathf.Exp(-scroll * ZoomRate), MinSize, MaxSize);
+
+            // Same pixel offset, new scale: put the camera where that point lands back under the cursor.
+            Vector2 kept = grabbed - fromCentre * WorldPerPixel();
+            target = new Vector3(kept.x, kept.y, target.z);
+        }
+
+        /// <summary>
+        /// One saved viewpoint. Z and X because the command card owns RTY/FGH/VBN,
+        /// the camera owns WASD, the control groups own the digits, and the
+        /// bottom-left pair is what a left hand resting on WASD can still reach.
+        /// </summary>
+        private void Bookmarks()
+        {
+            if (Input.GetKeyDown(KeyCode.Z))
+            {
+                bookmark = target;
+                hasBookmark = true;
+            }
+            else if (Input.GetKeyDown(KeyCode.X) && hasBookmark)
+            {
+                target = bookmark;
+            }
         }
 
         /// <summary>
         /// Which way the pointer sitting at a screen edge pushes the map. A pointer
-        /// outside the window pushes nowhere, so an alt-tab does not leave the map
-        /// sliding. The HUD is deliberately not excluded: the bottom edge scrolls
-        /// through the panel, which is what every RTS does.
+        /// outside the window, or a window that is not focused at all, pushes
+        /// nowhere: alt-tabbing away must not leave the map sliding. The HUD is
+        /// deliberately not excluded: the bottom edge scrolls through the panel,
+        /// which is what every RTS does.
         /// </summary>
         private static Vector2 EdgePush()
         {
+            if (!Application.isFocused) return Vector2.zero;
+
             Vector3 m = Input.mousePosition;
             if (m.x < 0f || m.y < 0f || m.x > Screen.width || m.y > Screen.height) return Vector2.zero;
 
@@ -104,20 +187,28 @@ namespace WordCraft.View
             return push;
         }
 
-        /// <summary>The one place the camera is written, so every mover clamps the same way.</summary>
-        private void Place(Vector3 position)
+        /// <summary>The one place the target is fenced, so every mover is fenced the same way.</summary>
+        private void Clamp()
         {
-            position.x = Mathf.Clamp(position.x, 0f, MatchScenario.MapSize);
-            position.y = Mathf.Clamp(position.y, 0f, MatchScenario.MapSize);
-            position.z = -10f;
-            cam.transform.position = position;
+            target.x = OnMap(target.x, targetSize * cam.aspect);
+            target.y = OnMap(target.y, targetSize);
+            target.z = -10f;
         }
 
-        private Vector3 MouseWorld()
+        /// <summary>
+        /// Keeps the visible edge on the map give or take a margin, rather than
+        /// keeping the camera centre on it, which lets half a screen of void in.
+        /// Zoomed far enough out the view is wider than the map and no position
+        /// satisfies that at all, so it centres instead.
+        /// </summary>
+        private static float OnMap(float v, float half)
         {
-            Vector3 world = cam.ScreenToWorldPoint(Input.mousePosition);
-            world.z = 0f;
-            return world;
+            float lo = half - MarginCells;
+            float hi = MatchScenario.MapSize + MarginCells - half;
+            return lo > hi ? MatchScenario.MapSize * 0.5f : Mathf.Clamp(v, lo, hi);
         }
+
+        /// <summary>World units per screen pixel at the target zoom. Orthographic, so both axes agree.</summary>
+        private float WorldPerPixel() => 2f * targetSize / Screen.height;
     }
 }
