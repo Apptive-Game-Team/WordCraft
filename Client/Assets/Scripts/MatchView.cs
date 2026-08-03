@@ -24,6 +24,14 @@ namespace WordCraft.View
 
         private static readonly Color NodeColor = new Color(1.00f, 0.82f, 0.25f);
         private static readonly Color GroundColor = new Color(0.11f, 0.12f, 0.14f);
+        private static readonly Color BarBackColor = new Color(0.04f, 0.04f, 0.05f, 0.85f);
+        private static readonly Color QueueColor = new Color(0.45f, 0.85f, 1.00f, 0.95f);
+        private static readonly Color RallyColor = new Color(0.55f, 1.00f, 0.60f, 0.85f);
+
+        // Overlay geometry, in grid cells. A bar is the same size whatever the art
+        // under it, so a row of damaged units reads as one row.
+        private const float BarHeight = 0.16f;
+        private const int OverlayOrder = 50;
 
         /// <summary>Where the imported WordOnline sprites live, relative to a Resources folder.</summary>
         public const string SpriteFolder = "Art/Sprites/";
@@ -35,6 +43,17 @@ namespace WordCraft.View
         private Sprite square;
         private readonly List<SpriteRenderer> views = new List<SpriteRenderer>();
         private readonly List<SpriteRenderer> rings = new List<SpriteRenderer>();
+
+        // Overlays, parallel to views. Kept off the entity's own transform because
+        // authored art is scaled to fit its footprint and a bar must not inherit that.
+        private readonly List<SpriteRenderer> barBacks = new List<SpriteRenderer>();
+        private readonly List<SpriteRenderer> barFills = new List<SpriteRenderer>();
+        private readonly List<SpriteRenderer> queueFills = new List<SpriteRenderer>();
+
+        // Rally markers are a pool, not one per entity: only the selected buildings
+        // that have set one are ever drawn.
+        private readonly List<SpriteRenderer> rallyMarkers = new List<SpriteRenderer>();
+
         private readonly Dictionary<string, Sprite> art = new Dictionary<string, Sprite>();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -73,6 +92,7 @@ namespace WordCraft.View
 
             for (int i = views.Count; i < world.EntityCount; i++) views.Add(Create(world, world.GetEntity(i)));
 
+            int markers = 0;
             for (int i = 0; i < world.EntityCount; i++)
             {
                 Entity e = world.GetEntity(i);
@@ -81,13 +101,16 @@ namespace WordCraft.View
                 {
                     sr.enabled = false;
                     rings[i].enabled = false;
+                    Overlays(i, e, Vector2.zero, picked: false);
                     continue;
                 }
 
+                bool picked = Selection.Instance != null && Selection.Instance.Contains(i);
                 sr.enabled = true;
-                rings[i].enabled = Selection.Instance != null && Selection.Instance.Contains(i);
+                rings[i].enabled = picked;
                 Vector2 p = runner.DrawPosition(i);
                 sr.transform.position = new Vector3(p.x, p.y, 0f);
+                Overlays(i, e, p, picked);
 
                 // A site under construction reads as a ghost until it finishes.
                 if (e.Kind == EntityKind.Building)
@@ -96,7 +119,74 @@ namespace WordCraft.View
                     c.a = e.BuildTicksLeft > 0 ? 0.35f : 1f;
                     sr.color = c;
                 }
+
+                if (picked && e.Kind == EntityKind.Building && e.HasRallyPoint)
+                {
+                    Rally(markers++, MatchRunner.ToView(e.RallyPoint));
+                }
             }
+
+            for (int i = markers; i < rallyMarkers.Count; i++) rallyMarkers[i].enabled = false;
+        }
+
+        /// <summary>
+        /// Health bar over anything hurt or selected, production progress under a
+        /// selected building. Both are read straight off the entity every frame and
+        /// held nowhere, so the overlay cannot drift from what the simulation says.
+        /// </summary>
+        private void Overlays(int i, Entity e, Vector2 p, bool picked)
+        {
+            bool node = e.Kind == EntityKind.ResourceNode;
+            bool hurt = e.Hp < e.MaxHp;
+            bool bar = e.Alive && !node && (hurt || picked);
+
+            barBacks[i].enabled = bar;
+            barFills[i].enabled = bar;
+            if (bar)
+            {
+                float width = e.Kind == EntityKind.Building ? 2.2f : 1.1f;
+                float y = p.y + (e.Kind == EntityKind.Building ? 1.7f : 0.75f);
+                float ratio = e.MaxHp > 0 ? Mathf.Clamp01(e.Hp / (float)e.MaxHp) : 0f;
+
+                Place(barBacks[i], p.x, y, width, 1f);
+                Place(barFills[i], p.x, y, width, ratio);
+                barFills[i].color = ratio > 0.5f ? new Color(0.35f, 0.9f, 0.4f)
+                    : ratio > 0.25f ? new Color(0.95f, 0.85f, 0.3f)
+                    : new Color(0.95f, 0.35f, 0.3f);
+            }
+
+            // ProduceTicksLeft counts down and is zero in the tick before a queued
+            // unit starts, so an empty bar means queued-not-started, not finished.
+            bool queue = e.Alive && picked && e.Kind == EntityKind.Building && e.QueueCount > 0;
+            queueFills[i].enabled = queue;
+            if (queue)
+            {
+                float done = e.ProduceTicksLeft == 0
+                    ? 0f
+                    : (World.ProduceTicks - e.ProduceTicksLeft) / (float)World.ProduceTicks;
+                Place(queueFills[i], p.x, p.y + 1.45f, 2.2f, done);
+            }
+        }
+
+        /// <summary>Grows a bar from its left edge rather than its middle.</summary>
+        private static void Place(SpriteRenderer sr, float x, float y, float width, float fill)
+        {
+            float w = width * fill;
+            sr.transform.position = new Vector3(x - (width - w) * 0.5f, y, 0f);
+            sr.transform.localScale = new Vector3(w, BarHeight, 1f);
+        }
+
+        private void Rally(int index, Vector2 point)
+        {
+            while (rallyMarkers.Count <= index)
+            {
+                var made = NewRenderer("Rally", square, RallyColor, OverlayOrder);
+                made.transform.localScale = new Vector3(0.7f, 0.7f, 1f);
+                made.transform.rotation = Quaternion.Euler(0f, 0f, 45f);
+                rallyMarkers.Add(made);
+            }
+            rallyMarkers[index].transform.position = new Vector3(point.x, point.y, 0f);
+            rallyMarkers[index].enabled = true;
         }
 
         private SpriteRenderer Create(World world, Entity e)
@@ -141,6 +231,10 @@ namespace WordCraft.View
             ring.enabled = false;
             rings.Add(ring);
 
+            barBacks.Add(Overlay("HpBack", BarBackColor, OverlayOrder));
+            barFills.Add(Overlay("HpFill", Color.white, OverlayOrder + 1));
+            queueFills.Add(Overlay("Queue", QueueColor, OverlayOrder + 1));
+
             return sr;
         }
 
@@ -183,6 +277,13 @@ namespace WordCraft.View
             float longest = Mathf.Max(size.x, size.y);
             float k = longest > 0f ? cells / longest : 1f;
             return new Vector3(k, k, 1f);
+        }
+
+        private SpriteRenderer Overlay(string name, Color color, int order)
+        {
+            SpriteRenderer sr = NewRenderer(name, square, color, order);
+            sr.enabled = false;
+            return sr;
         }
 
         private SpriteRenderer NewRenderer(string name, Sprite sprite, Color color, int order)
