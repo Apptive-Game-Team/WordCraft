@@ -50,6 +50,7 @@ namespace WordCraft.Replay
                 TheMassedBonusIsWaterSlimesOnly();
                 ADeadGolemBlocksTheGroundItFellOn();
                 RemnantsBlockTheOwnersOwnUnits();
+                MirrorMatchesAreReproducible();
                 ScriptedLogPlacesEveryBuilding();
                 SoloMatchIsReproducible();
                 TheAiPlaysARealGame();
@@ -1186,6 +1187,75 @@ namespace WordCraft.Replay
 
             Entity target = world.GetEntity(VolleyDummy);
             return target.MaxHp - target.Hp;
+        }
+
+        private const int MirrorTicks = 800;
+
+        /// <summary>
+        /// Every faction against itself, played by the simulation on both sides,
+        /// run twice from one seed. docs/FACTION-MECHANICS.md asks for the mirror
+        /// before the next mechanic goes in, and the reason is that a mirror has no
+        /// balance variable in it: what a pair of runs disagrees about can only be
+        /// the mechanic. Every tick is compared, not the last one, so a divergence
+        /// that healed itself is still caught.
+        /// </summary>
+        private static void MirrorMatchesAreReproducible()
+        {
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                ulong[] first = RunMirror(faction, out World world);
+                ulong[] second = RunMirror(faction, out _);
+
+                for (int t = 0; t < first.Length; t++)
+                {
+                    Check(first[t] == second[t], faction + " mirror hash drift at tick " + t);
+                }
+                // Two AI peers that never met would make every mirror pass without
+                // either mechanic ever being reached.
+                Check(Fought(world), "the " + faction + " mirror never killed anything");
+                // And the one mirror whose mechanic lives in the death path
+                // actually reached it, so its hashes are comparing something.
+                Check(faction != Faction.RockGolems || Littered(world),
+                    "the RockGolems mirror fought a whole battle and left no debris");
+            }
+        }
+
+        /// <summary>True once any cell in this world has been given debris.</summary>
+        private static bool Littered(World world)
+        {
+            for (int c = 0; c < World.GridCells; c++)
+            {
+                if (world.RemnantExpiry(c) != 0) return true;
+            }
+            return false;
+        }
+
+        private static ulong[] RunMirror(Faction faction, out World world)
+        {
+            world = MatchScenario.Build(Seed, faction, faction);
+            world.SetPeerAi(0, true);
+            world.SetPeerAi(1, true);
+
+            var idle = new List<Command>();
+            var hashes = new ulong[MirrorTicks];
+            for (int t = 0; t < MirrorTicks; t++)
+            {
+                world.Step(idle);
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        /// <summary>True once anything in this world has died.</summary>
+        private static bool Fought(World world)
+        {
+            for (int i = 0; i < world.EntityCount; i++)
+            {
+                Entity e = world.GetEntity(i);
+                if (!e.Alive && e.Kind != EntityKind.ResourceNode) return true;
+            }
+            return false;
         }
 
         // 돌 골렘 부족 잔해. A wall from edge to edge with exactly one gap, and a
