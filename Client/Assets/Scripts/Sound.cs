@@ -306,6 +306,13 @@ namespace WordCraft.View
 
                 if (wasAlive && !e.Alive)
                 {
+                    // 돌 골렘 부족 잔해 gets no clip of its own. Debris lands on the
+                    // frame the golem falls, at the golem's own cell, and this line
+                    // is already sounding that death there; a second clip on the
+                    // same frame at the same place is one event heard twice, and
+                    // the frame cap would drop one of them at random anyway. There
+                    // is no stone or rubble clip in Resources/Audio either, and
+                    // borrowing magic_drop would make one sound mean two things.
                     Add(e.Kind == EntityKind.Building ? buildingDeath : unitDeath,
                         MatchRunner.ToView(e.Position));
                     continue;

@@ -237,10 +237,11 @@ namespace WordCraft.View
         /// <summary>
         /// Every alive entity, every frame, over a copy of the baked terrain.
         /// </summary>
-        // ponytail: 16k pixel copy, one blob per entity, and a 64 KB texture
-        // upload per frame, for a few dozen entities on a 64x64 map. Repaint only
-        // the cells that changed, or keep static things in a second texture drawn
-        // underneath, the day a profile says this costs anything.
+        // ponytail: 16k pixel copy, a 4096-cell debris scan, one blob per entity,
+        // and a 64 KB texture upload per frame, for a few dozen entities on a
+        // 64x64 map. Repaint only the cells that changed, or keep static things in
+        // a second texture drawn underneath, the day a profile says this costs
+        // anything.
         private static void Paint(World world)
         {
             if (texture == null)
@@ -254,6 +255,7 @@ namespace WordCraft.View
             }
 
             backdrop.CopyTo(pixels, 0);
+            Debris(world);
 
             for (int i = 0; i < world.EntityCount; i++)
             {
@@ -264,6 +266,39 @@ namespace WordCraft.View
 
             texture.SetPixels32(pixels);
             texture.Apply(updateMipmaps: false);
+        }
+
+        /// <summary>
+        /// 돌 골렘 부족 잔해, over the terrain copy and under the dots. A wall that
+        /// appears in the middle of a match changes where an army can go, and where
+        /// an army can go is the only question this square answers — debris left
+        /// out of it would send a player scrubbing across a map that no longer
+        /// connects the way it is drawn.
+        ///
+        /// Not in the backdrop, which is painted once because terrain cannot
+        /// change. This one can, so it is painted onto the copy every frame.
+        ///
+        /// Its own tone rather than MinimapRock: over the ground so it reads as
+        /// blocked, under the rock so it does not read as permanent. No countdown
+        /// here — a cell is two pixels, and how long is left is the field's to say.
+        /// </summary>
+        private static void Debris(World world)
+        {
+            // Res is a whole multiple of the map, so a cell is a square block of
+            // pixels rather than something to resample.
+            const int block = Res / MatchScenario.MapSize;
+
+            for (int cell = 0; cell < World.GridCells; cell++)
+            {
+                if (!world.HasRemnant(cell)) continue;
+
+                int x0 = cell % MatchScenario.MapSize * block;
+                int y0 = cell / MatchScenario.MapSize * block;
+                for (int y = y0; y < y0 + block; y++)
+                {
+                    for (int x = x0; x < x0 + block; x++) pixels[y * Res + x] = UiStyle.MinimapRemnant;
+                }
+            }
         }
 
         /// <summary>

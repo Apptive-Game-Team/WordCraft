@@ -143,6 +143,38 @@ namespace WordCraft.View
         public static readonly Color MinimapWater = Rgb(0x122031);
         public static readonly Color MinimapRock = Rgb(0x4A4854);
 
+        // ---- field: 돌 골렘 부족 잔해 ----
+        //
+        // Debris is terrain with a clock on it, so it answers to the terrain rule
+        // above — raised out of the ground means blocked — and not to the roster
+        // rule, which draws authored art untinted so a palette identifies a faction.
+
+        /// <summary>
+        /// What the debris art is multiplied by. The imported sprite is warm tan
+        /// and untinted it reads as a body lying on the floor; through this its
+        /// midtone lands on Rock and its lit faces on RockLit, which is what the
+        /// tile layer already means by blocked. Chosen by measuring the sprite, not
+        /// by eye: median luminance 67.3 against Rock's 67.6, top decile 94.1
+        /// against RockLit's 96.0.
+        ///
+        /// It stays a hair warmer than the slab it borrows its value from, which is
+        /// the terrain layer's second axis doing its usual job — value says blocked,
+        /// hue says which blocked thing this is.
+        /// </summary>
+        public static readonly Color Remnant = Rgb(0x928BAA);
+
+        /// <summary>
+        /// What debris has faded to on the tick before it lapses. Never zero: the
+        /// cell is blocked right up to the last tick, and debris a player cannot see
+        /// is the bug this whole layer exists to remove. At this alpha the midtone
+        /// still composites to 48.7 over Ground's 30.0, so the faded pile is a wall
+        /// about to go rather than a wall that has gone.
+        /// </summary>
+        public const float RemnantFade = 0.5f;
+
+        /// <summary>Debris on the minimap. Over the ground so it blocks, under the rock so it is not permanent.</summary>
+        public static readonly Color MinimapRemnant = Rgb(0x3A3844);
+
         /// <summary>Texels a cell is baked at. One cell is a flat colour plus an edge, not a picture.</summary>
         public const int TileTexels = 8;
 
