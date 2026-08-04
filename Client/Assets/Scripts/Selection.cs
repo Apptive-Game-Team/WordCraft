@@ -351,14 +351,8 @@ namespace WordCraft.View
                 Mathf.Min(a.x, b.x), Screen.height - Mathf.Max(a.y, b.y),
                 Mathf.Max(a.x, b.x), Screen.height - Mathf.Min(a.y, b.y));
 
-            GUI.color = new Color(0.45f, 0.95f, 0.55f, 0.12f);
-            GUI.DrawTexture(rect, Texture2D.whiteTexture);
-            GUI.color = new Color(0.45f, 0.95f, 0.55f, 0.85f);
-            GUI.DrawTexture(new Rect(rect.xMin, rect.yMin, rect.width, 1f), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(rect.xMin, rect.yMax, rect.width, 1f), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(rect.xMin, rect.yMin, 1f, rect.height), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(rect.xMax, rect.yMin, 1f, rect.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            UiStyle.Fill(rect, UiStyle.Marquee);
+            UiStyle.Frame(rect, UiStyle.MarqueeEdge);
         }
     }
 }
