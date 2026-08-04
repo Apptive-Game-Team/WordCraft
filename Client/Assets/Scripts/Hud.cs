@@ -97,6 +97,19 @@ namespace WordCraft.View
             }
         }
 
+        /// <summary>
+        /// A menu button: the control plus the click that says it was pressed. Only
+        /// the start and result screens use it. In a match a press already has a
+        /// confirmation of its own — the command click, or the cell inverting — and
+        /// a second sound under it would be one press making two noises.
+        /// </summary>
+        private static bool MenuButton(string label, float height, bool armed = false)
+        {
+            if (!UiStyle.Button(label, height, armed)) return false;
+            Sound.Menu();
+            return true;
+        }
+
         // ---- start screen ----
 
         /// <summary>
@@ -147,7 +160,7 @@ namespace WordCraft.View
                 for (int i = row; i < row + PickerCols && i < names.Length; i++)
                 {
                     if (i > row) GUILayout.Space(UiStyle.S1);
-                    if (UiStyle.Button(names[i], UiStyle.Control, (int)faction == i)) faction = (Faction)i;
+                    if (MenuButton(names[i], UiStyle.Control, (int)faction == i)) faction = (Faction)i;
                 }
                 GUILayout.EndHorizontal();
                 GUILayout.Space(UiStyle.S1);
@@ -157,15 +170,15 @@ namespace WordCraft.View
         private void HostOrJoin()
         {
             GUILayout.BeginHorizontal();
-            bool host = UiStyle.Button("HOST", UiStyle.ControlTall);
+            bool host = MenuButton("HOST", UiStyle.ControlTall);
             GUILayout.Space(UiStyle.S2);
-            bool join = UiStyle.Button("JOIN", UiStyle.ControlTall);
+            bool join = MenuButton("JOIN", UiStyle.ControlTall);
             GUILayout.EndHorizontal();
             GUILayout.Space(UiStyle.S2);
 
             // No address, no port, no handshake: nothing here can be malformed, so
             // this one takes no error path and starts the match outright.
-            bool solo = UiStyle.Button("SOLO", UiStyle.ControlTall);
+            bool solo = MenuButton("SOLO", UiStyle.ControlTall);
             GUILayout.Space(UiStyle.S3);
 
             if (formError != null)
@@ -219,7 +232,7 @@ namespace WordCraft.View
                 UiStyle.Toned(rejected ? UiStyle.Danger : UiStyle.Ink));
             GUILayout.Space(UiStyle.S3);
 
-            if (UiStyle.Button(rejected ? "back" : "cancel", UiStyle.Control)) runner.ShowStart();
+            if (MenuButton(rejected ? "back" : "cancel", UiStyle.Control)) runner.ShowStart();
         }
 
         private string ConnectionText(LockstepSession session)
@@ -266,7 +279,7 @@ namespace WordCraft.View
                 UiStyle.MicroStyle);
             GUILayout.Space(UiStyle.S4);
 
-            if (UiStyle.Button("play again", UiStyle.ControlTall)) runner.ShowStart();
+            if (MenuButton("play again", UiStyle.ControlTall)) runner.ShowStart();
             GUILayout.EndArea();
         }
 

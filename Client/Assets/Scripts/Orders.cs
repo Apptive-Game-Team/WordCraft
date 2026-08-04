@@ -6,9 +6,10 @@ namespace WordCraft.View
 {
     /// <summary>
     /// Turns clicks and card presses into commands. Every path out of here is
-    /// Session.Issue, which queues the command for Tick + InputDelay on both
-    /// peers; nothing here touches the world, so a dropped order is a missing
-    /// command and never a simulation that disagrees with the peer's.
+    /// Issue, and through it Session.Issue, which queues the command for
+    /// Tick + InputDelay on both peers; nothing here touches the world, so a
+    /// dropped order is a missing command and never a simulation that disagrees
+    /// with the peer's.
     ///
     ///   right click        move, gather a node, or attack an enemy
     ///   card key or button the command in that cell, see CommandCard
@@ -165,7 +166,7 @@ namespace WordCraft.View
                 // would spend the first one's cost and have the simulation refuse
                 // the rest. Sent whatever the ghost's tint says: the tint is a
                 // guess made a tick late, and the simulation is what decides.
-                runner.Session.Issue(CommandType.Build, -1, MatchRunner.ToSim(point), (int)role);
+                Issue(CommandType.Build, -1, MatchRunner.ToSim(point), (int)role);
                 return;
             }
 
@@ -198,7 +199,7 @@ namespace WordCraft.View
                 if (!e.Alive || e.Owner != runner.LocalPeer) continue;
                 if (type == CommandType.Move && e.Speed.Raw == 0) continue;
 
-                runner.Session.Issue(type, id, target, arg);
+                Issue(type, id, target, arg);
             }
         }
 
@@ -226,25 +227,42 @@ namespace WordCraft.View
 
                 if (node && e.Kind == EntityKind.Worker)
                 {
-                    runner.Session.Issue(CommandType.Gather, id, FixVec2.Zero, hit);
+                    Issue(CommandType.Gather, id, FixVec2.Zero, hit);
                 }
                 else if (enemy)
                 {
                     // A building cannot chase, but a turret takes the order standing
                     // still, so it is sent one too and the simulation sorts it out.
-                    runner.Session.Issue(CommandType.Attack, id, FixVec2.Zero, hit);
+                    Issue(CommandType.Attack, id, FixVec2.Zero, hit);
                 }
                 else if (e.Speed.Raw != 0)
                 {
-                    runner.Session.Issue(CommandType.Move, id, target);
+                    Issue(CommandType.Move, id, target);
                 }
                 else if (e.Kind == EntityKind.Building)
                 {
                     // Right-clicking the ground with a building selected is what
                     // every RTS means by a rally point.
-                    runner.Session.Issue(CommandType.SetRallyPoint, id, target);
+                    Issue(CommandType.SetRallyPoint, id, target);
                 }
             }
+        }
+
+        /// <summary>
+        /// Every command this file sends, and the click that says it went. One way
+        /// out means one place the confirmation can live, and an order that is
+        /// dropped here — a right click through the minimap after the session
+        /// stopped is the only way in that Update does not already gate — makes no
+        /// sound, which is the whole point of the sound.
+        ///
+        /// Sound.Command dedupes per frame, so an order given to forty selected
+        /// units is forty of these and one click.
+        /// </summary>
+        private void Issue(CommandType type, int entity, FixVec2 target, int arg = 0)
+        {
+            if (runner.Session.State != SessionState.Running) return;
+            runner.Session.Issue(type, entity, target, arg);
+            Sound.Command();
         }
 
         private Vector2 MouseWorld() => cam.ScreenToWorldPoint(Input.mousePosition);
