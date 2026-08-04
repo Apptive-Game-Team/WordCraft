@@ -32,6 +32,9 @@ namespace WordCraft.View
         private const int GroundOrder = -100;
         private const int HoverOrder = 3;
 
+        /// <summary>Debris is terrain: over the baked map, under everything that is alive.</summary>
+        private const int RemnantOrder = -50;
+
         /// <summary>
         /// How far a worker primitive is lifted toward white. Same owner hue, paler
         /// body, so a worker is told from a fighter without a second colour.
@@ -40,6 +43,13 @@ namespace WordCraft.View
 
         /// <summary>Where the imported WordOnline sprites live, relative to a Resources folder.</summary>
         public const string SpriteFolder = "Art/Sprites/";
+
+        /// <summary>
+        /// Debris art, named here rather than looked up through FactionData: the
+        /// roster's signature slot is deliberately empty because a death state is
+        /// not a unit, so there is no slot for this to be the sprite of.
+        /// </summary>
+        private const string RemnantArt = "RockRemnant";
 
         public Camera Cam { get; private set; }
 
@@ -77,6 +87,12 @@ namespace WordCraft.View
         // that have set one are ever drawn.
         private readonly List<SpriteRenderer> rallyMarkers = new List<SpriteRenderer>();
 
+        // One renderer per blocked cell, pooled and re-aimed every frame. Not
+        // indexed by anything the simulation owns, so a restart needs no reset:
+        // the tail is switched off every frame anyway.
+        private readonly List<SpriteRenderer> remnants = new List<SpriteRenderer>();
+        private Sprite remnantArt;
+
         /// <summary>The building under the cursor during placement. One, made once.</summary>
         private SpriteRenderer ghost;
         private Role ghostRole;
@@ -91,6 +107,7 @@ namespace WordCraft.View
             DontDestroyOnLoad(gameObject);
             disc = MakeSprite(round: true);
             square = MakeSprite(round: false);
+            remnantArt = Resources.Load<Sprite>(SpriteFolder + RemnantArt);
 
             float mid = MatchScenario.MapSize / 2f;
             Cam = new GameObject("Camera").AddComponent<Camera>();
@@ -181,8 +198,70 @@ namespace WordCraft.View
             }
 
             for (int i = markers; i < rallyMarkers.Count; i++) rallyMarkers[i].enabled = false;
+            Remnants(world);
             Hover(world);
             Ghost(world);
+        }
+
+        /// <summary>
+        /// 돌 골렘 부족 잔해: a rock on every cell the simulation is blocking.
+        ///
+        /// Not baked into the terrain texture. That is one 512x512 upload per
+        /// world because terrain never changes; debris appears and lapses mid
+        /// match, and rebaking the map every time a golem falls pays the whole
+        /// map's cost for one cell. A pooled renderer a cell is the same shape
+        /// the rally markers already use.
+        ///
+        /// Drawn as terrain rather than as a body. Roster art goes down untinted
+        /// because a palette is what identifies a faction; this is tinted into the
+        /// blocked value band instead, so what a player reads is a wall.
+        ///
+        /// Alpha carries how much life is left, which is what SiteAlpha already
+        /// means on a building that is not finished — one idiom, one thing to
+        /// learn. Alpha rather than scale because debris blocks its whole cell
+        /// until the last tick: a pile that shrank would open gaps between
+        /// neighbours that a player would walk into. It never reaches zero, or
+        /// this would end where it started, with an invisible wall.
+        /// </summary>
+        // ponytail: every cell tested every frame, 4096 int compares for a map
+        // that holds a handful of these. It is less than the entity loop above it
+        // and it needs nothing from Sim; ask the simulation for a list of live
+        // cells the day a profile disagrees.
+        private void Remnants(World world)
+        {
+            int used = 0;
+            for (int cell = 0; cell < World.GridCells; cell++)
+            {
+                if (!world.HasRemnant(cell)) continue;
+
+                SpriteRenderer sr = Debris(used++);
+                Vector2 p = MatchRunner.ToView(World.CellCenter(cell));
+                sr.transform.position = new Vector3(p.x, p.y, 0f);
+
+                float left = (world.RemnantExpiry(cell) - world.Tick) / (float)World.RemnantTicks;
+                Color c = UiStyle.Remnant;
+                c.a = Mathf.Lerp(UiStyle.RemnantFade, 1f, Mathf.Clamp01(left));
+                sr.color = c;
+                sr.enabled = true;
+            }
+
+            for (int i = used; i < remnants.Count; i++) remnants[i].enabled = false;
+        }
+
+        /// <summary>
+        /// One pooled debris renderer, fitted to a single cell so the art covers
+        /// exactly what the simulation is blocking and no more.
+        /// </summary>
+        private SpriteRenderer Debris(int index)
+        {
+            while (remnants.Count <= index)
+            {
+                SpriteRenderer made = NewRenderer("Remnant",
+                    remnantArt != null ? remnantArt : square, UiStyle.Remnant, RemnantOrder);
+                made.transform.localScale = remnantArt != null ? FitScale(remnantArt, 1f) : Vector3.one;
+                remnants.Add(made);
+            }
+            return remnants[index];
         }
 
         /// <summary>
@@ -390,11 +469,14 @@ namespace WordCraft.View
         /// were drawn for another game at another pixels-per-unit, so their own
         /// size means nothing here.
         /// </summary>
-        private static Vector3 FitScale(Sprite sprite, Role role)
+        private static Vector3 FitScale(Sprite sprite, Role role) => FitScale(sprite, Cells(role));
+
+        /// <summary>The same fit for something that has no role, like a cell of debris.</summary>
+        private static Vector3 FitScale(Sprite sprite, float cells)
         {
             Vector2 size = sprite.bounds.size;
             float longest = Mathf.Max(size.x, size.y);
-            float k = longest > 0f ? Cells(role) / longest : 1f;
+            float k = longest > 0f ? cells / longest : 1f;
             return new Vector3(k, k, 1f);
         }
 
