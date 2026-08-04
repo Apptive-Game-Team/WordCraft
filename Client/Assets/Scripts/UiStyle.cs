@@ -109,6 +109,56 @@ namespace WordCraft.View
         public static readonly Color Ground = Rgb(0x1C1E24);
         public static readonly Color Node = Rgb(0xFFD140);
 
+        // ---- field: terrain ----
+
+        // One rule carries the whole layer: walkable ground is the darkest thing
+        // on the map and anything raised out of it is blocked. Value alone answers
+        // "can I walk there", so the answer survives a greyscale screenshot, a
+        // colour-blind player and the map drawn at eleven pixels a cell.
+        //
+        //   Ground  0x1C1E24   open
+        //   Water   0x1B3050   impassable
+        //   Rock    0x454250   impassable
+        //
+        // Hue then separates the two blocked kinds from each other, and the edge
+        // tones below separate them from the ground they touch.
+
+        public static readonly Color Water = Rgb(0x1B3050);
+
+        /// <summary>A water cell with water on all four sides. Gives a lake a middle.</summary>
+        public static readonly Color WaterDeep = Rgb(0x142440);
+
+        /// <summary>The foam rim, inside the water, on every side that meets something else.</summary>
+        public static readonly Color WaterShore = Rgb(0x3E7099);
+
+        public static readonly Color Rock = Rgb(0x454250);
+
+        /// <summary>The lit rim of the slab, on its top and left faces. Light comes from the top left.</summary>
+        public static readonly Color RockLit = Rgb(0x625E6E);
+
+        /// <summary>The shadow the slab throws, painted on the ground below and to its right.</summary>
+        public static readonly Color RockShade = Rgb(0x0E0F13);
+
+        /// <summary>The minimap's two blocked kinds. Same order of value as the field's, lifted to sit on MinimapGround.</summary>
+        public static readonly Color MinimapWater = Rgb(0x122031);
+        public static readonly Color MinimapRock = Rgb(0x4A4854);
+
+        /// <summary>Texels a cell is baked at. One cell is a flat colour plus an edge, not a picture.</summary>
+        public const int TileTexels = 8;
+
+        /// <summary>How deep an edge band cuts into its cell, in texels. A quarter of a cell.</summary>
+        public const int TileBand = 2;
+
+        /// <summary>How much deeper or shallower that band runs cell to cell. A rim of one thickness is a stripe.</summary>
+        public const int TileJitter = 1;
+
+        /// <summary>
+        /// How far every other blocked cell is lifted, so a lake is not one
+        /// rectangle of paint. Open ground gets none: it is most of the map, and a
+        /// grain there is four thousand visible squares.
+        /// </summary>
+        public const float TileGrain = 0.06f;
+
         public static readonly Color Ring = Rgba(0xFFFFFF, 0.75f);
         public static readonly Color HoverRing = Rgba(0xFFFFFF, 0.28f);
         public static readonly Color MeterBack = Rgba(0x0A0A0D, 0.85f);

@@ -61,6 +61,12 @@ namespace WordCraft.View
         /// <summary>One highlight, moved to whatever the cursor is over.</summary>
         private SpriteRenderer hover;
 
+        /// <summary>
+        /// The whole map, one sprite. Flat until a world exists, because the start
+        /// screen has no terrain to draw and the menu sits over this.
+        /// </summary>
+        private SpriteRenderer ground;
+
         // Overlays, parallel to views. Kept off the entity's own transform because
         // authored art is scaled to fit its footprint and a bar must not inherit that.
         private readonly List<SpriteRenderer> barBacks = new List<SpriteRenderer>();
@@ -95,7 +101,7 @@ namespace WordCraft.View
             Cam.backgroundColor = UiStyle.Sky;
             DontDestroyOnLoad(Cam.gameObject);
 
-            var ground = NewRenderer("Ground", square, UiStyle.Ground, GroundOrder);
+            ground = NewRenderer("Ground", square, UiStyle.Ground, GroundOrder);
             ground.transform.position = new Vector3(mid, mid, 0f);
             ground.transform.localScale = new Vector3(MatchScenario.MapSize, MatchScenario.MapSize, 1f);
 
@@ -128,6 +134,13 @@ namespace WordCraft.View
                 Drop(rallyMarkers);
                 footprints.Clear(); // parallel to views, and Create refills it
                 shown = world;
+
+                // Terrain is fixed for the whole match, so the map is baked here and
+                // never touched again. The sprite is one cell to one unit, so the
+                // quad that was scaled up to cover the map now sits at scale one.
+                ground.sprite = Tiles.Field(world);
+                ground.color = Color.white; // a picture, not a tint
+                ground.transform.localScale = Vector3.one;
             }
 
             for (int i = views.Count; i < world.EntityCount; i++) views.Add(Create(world, world.GetEntity(i)));

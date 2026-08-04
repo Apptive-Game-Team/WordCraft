@@ -49,6 +49,13 @@ namespace WordCraft.View
         private static Texture2D texture;
         private static Color32[] pixels;
 
+        /// <summary>
+        /// The terrain, painted once per world. Terrain cannot change during a
+        /// match, so the ground under the dots is a copy rather than a repaint —
+        /// which is cheaper than the flat clear this replaced, not dearer.
+        /// </summary>
+        private static Color32[] backdrop;
+
         /// <summary>True while a left drag that began on the square is still down.</summary>
         private static bool scrubbing;
 
@@ -84,6 +91,7 @@ namespace WordCraft.View
                 scrubbing = false;
                 lastHp.Clear();
                 marks.Clear();
+                Backdrop(world);
                 shown = world;
             }
 
@@ -227,9 +235,9 @@ namespace WordCraft.View
                 (1f - Mathf.Clamp01((mouse.y - area.y) / area.height)) * MatchScenario.MapSize);
 
         /// <summary>
-        /// Every alive entity, every frame, over a cleared buffer.
+        /// Every alive entity, every frame, over a copy of the baked terrain.
         /// </summary>
-        // ponytail: 16k pixel clear, one blob per entity, and a 64 KB texture
+        // ponytail: 16k pixel copy, one blob per entity, and a 64 KB texture
         // upload per frame, for a few dozen entities on a 64x64 map. Repaint only
         // the cells that changed, or keep static things in a second texture drawn
         // underneath, the day a profile says this costs anything.
@@ -245,7 +253,7 @@ namespace WordCraft.View
                 pixels = new Color32[Res * Res];
             }
 
-            for (int i = 0; i < pixels.Length; i++) pixels[i] = UiStyle.MinimapGround;
+            backdrop.CopyTo(pixels, 0);
 
             for (int i = 0; i < world.EntityCount; i++)
             {
@@ -256,6 +264,30 @@ namespace WordCraft.View
 
             texture.SetPixels32(pixels);
             texture.Apply(updateMipmaps: false);
+        }
+
+        /// <summary>
+        /// The map itself, under everything. Water and rock are the two things a
+        /// player has to know about a place they are not looking at: where the
+        /// army cannot go is what makes the empty half of the square mean anything.
+        ///
+        /// Flat fills, no shoreline: a cell is two pixels here and an edge band at
+        /// that size is a smear rather than a shape. What carries across from the
+        /// field is the order of value, so the map is the same shape twice.
+        /// </summary>
+        private static void Backdrop(World world)
+        {
+            if (backdrop == null) backdrop = new Color32[Res * Res];
+            for (int y = 0; y < Res; y++)
+            {
+                int cy = y * MatchScenario.MapSize / Res;
+                for (int x = 0; x < Res; x++)
+                {
+                    int cx = x * MatchScenario.MapSize / Res;
+                    backdrop[y * Res + x] =
+                        Tiles.MinimapTint(world.TerrainAt(cy * MatchScenario.MapSize + cx));
+                }
+            }
         }
 
         /// <summary>
