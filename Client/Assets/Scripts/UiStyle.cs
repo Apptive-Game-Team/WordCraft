@@ -161,26 +161,38 @@ namespace WordCraft.View
 
         // --------------------------------------------------------------- metrics
 
-        public const float TopBar = 28f;
-        public const float BottomPanel = 152f;
-
         /// <summary>A control the hand aims at. Tall is the one a screen is about.</summary>
         public const float Control = 26f;
         public const float ControlTall = 34f;
 
-        public const float CardCellSize = 72f;
+        /// <summary>A muted name with its number under it. The top bar is sized from this.</summary>
+        public const float ReadoutHeight = Micro + S1 + Line;
+        public const float ReadoutWidth = 120f;
+
+        // The command card sizes the bottom panel, not the other way round. It is
+        // nine fixed cells and it may not be cropped: the previous layout let the
+        // bottom row fall off the screen, which hid three commands entirely.
+        public const float CardCellSize = 54f;
         public const float KeyCap = 16f;
         public const float CardWidth = 3f * CardCellSize + 2f * S1;
+        public const float CardHeight = CardWidth;
 
-        public const float ChipWidth = 116f;
-        public const float ChipHeight = 22f;
-
-        public const float InfoWidth = 300f;
-        public const float MenuWidth = 470f;
-        public const float MenuHeight = 320f;
+        public const float TopBar = S2 + ReadoutHeight + S1;
+        public const float BottomPanel = S2 + Micro + S1 + CardHeight + S2;
 
         /// <summary>Square, and as tall as the bar it lives in. That is what sizes it.</summary>
         public const float MinimapSize = BottomPanel;
+
+        public const float ChipWidth = 132f;
+        public const float ChipHeight = 20f;
+
+        public const float InfoWidth = 260f;
+        public const float IdleWidth = 140f;
+
+        public const float MenuWidth = 470f;
+        public const float MenuHeight = 372f;
+        public const float ResultWidth = 690f;
+        public const float ResultHeight = 240f;
 
         // ---------------------------------------------------------------- styles
 
@@ -189,15 +201,13 @@ namespace WordCraft.View
         // time, which is the whole reason the HUD needs no asset folder.
 
         private static bool built;
-        private static GUIStyle text, dim, micro, header, big, display, tinted;
+        private static GUIStyle micro, header, big, display, tinted;
         private static GUIStyle field, button, buttonArmed, buttonOff;
         private static GUIStyle cell, keycap, chip;
 
         // Exposed for the two GUILayout screens. Everything drawn during a match
         // is a component below and never reaches for a style directly.
-        public static GUIStyle TextStyle { get { Build(); return text; } }
-        public static GUIStyle DimStyle { get { Build(); return dim; } }
-        public static GUIStyle MicroStyle { get { Build(); return micro; } }
+        public static GUIStyle MicroStyle { get { Build(); micro.normal.textColor = InkDim; return micro; } }
         public static GUIStyle BigStyle { get { Build(); return big; } }
         public static GUIStyle DisplayStyle { get { Build(); return display; } }
         public static GUIStyle FieldStyle { get { Build(); return field; } }
@@ -227,8 +237,6 @@ namespace WordCraft.View
             if (built) return;
             built = true;
 
-            text = Label(Body, Ink, TextAnchor.UpperLeft);
-            dim = Label(Body, InkDim, TextAnchor.UpperLeft);
             micro = Label(Micro, InkDim, TextAnchor.UpperLeft);
             header = Label(Micro, InkMute, TextAnchor.UpperLeft);
             big = Label(Big, Ink, TextAnchor.UpperLeft);
@@ -354,16 +362,13 @@ namespace WordCraft.View
         /// quietest text on screen on purpose: the label is read once and the value
         /// under it is read every fight.
         /// </summary>
-        public static void Header(Rect area, string label)
-        {
-            Build();
-            GUI.Label(area, label, header);
-        }
+        public static void Header(Rect area, string label) => Header(area, label, InkMute);
 
-        public static void Label(Rect area, string s)
+        public static void Header(Rect area, string label, Color tone)
         {
             Build();
-            GUI.Label(area, s, text);
+            header.normal.textColor = tone;
+            GUI.Label(area, label, header);
         }
 
         public static void Label(Rect area, string s, Color tone)
@@ -373,16 +378,17 @@ namespace WordCraft.View
             GUI.Label(area, s, tinted);
         }
 
-        public static void Note(Rect area, string s)
-        {
-            Build();
-            GUI.Label(area, s, dim);
-        }
+        /// <summary>
+        /// Secondary information: a count, a state, a hint, a diagnostic. Micro and
+        /// dim, so it is there when looked for and invisible when not.
+        /// </summary>
+        public static void Note(Rect area, string s) => Note(area, s, InkDim);
 
-        public static void Title(Rect area, string s)
+        public static void Note(Rect area, string s, Color tone)
         {
             Build();
-            GUI.Label(area, s, display);
+            micro.normal.textColor = tone;
+            GUI.Label(area, s, micro);
         }
 
         public static bool Button(Rect area, string label, bool armed = false, bool enabled = true)

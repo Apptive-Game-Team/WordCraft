@@ -12,11 +12,15 @@ namespace WordCraft.View
     ///
     /// Match HUD: a bar across the top and a panel across the bottom.
     ///
+    /// Every colour and every measurement comes from UiStyle, and every widget is
+    /// one of its components. This file decides where things go and what they say;
+    /// it decides nothing about how they look. See docs/UI-STYLE.md.
+    ///
     /// IMGUI on purpose, and kept that way at roadmap 3-1. UI Toolkit needs a
     /// PanelSettings and a theme stylesheet, which are serialised assets, and the
     /// client boots from an empty scene through RuntimeInitializeOnLoadMethod so a
     /// gameplay change never has to touch one. IMGUI needs no asset at all, so the
-    /// whole HUD stays a diff in one file.
+    /// whole HUD stays a diff in two files.
     ///
     /// ponytail: IMGUI relayouts and allocates strings every frame. It is a few
     /// dozen widgets, so it does not show; move to UI Toolkit the day the HUD
@@ -24,28 +28,14 @@ namespace WordCraft.View
     /// </summary>
     public sealed class Hud : MonoBehaviour
     {
-        public const float TopBarHeight = 26f;
-        public const float BottomPanelHeight = 150f;
-
-        /// <summary>The minimap is square and as tall as the bar, which is what sizes it.</summary>
-        private const float MinimapSize = BottomPanelHeight;
-
-        private const float InfoWidth = 300f;
-        private const float CardCell = 74f;
-        private const float CardWidth = CommandCard.Cols * CardCell + 16f;
-        private const float EntryWidth = 108f;
-        private const float EntryHeight = 22f;
-
-        private const float MenuWidth = 470f;
-        private const float MenuHeight = 300f;
-
         /// <summary>The address the player last joined. Typing an IP twice is not a game.</summary>
         private const string AddressKey = "wordcraft.address";
 
-        private static readonly Color PanelColor = new Color(0.06f, 0.06f, 0.08f, 0.94f);
-        private static readonly Color HaltColor = new Color(0.35f, 0.05f, 0.05f, 0.94f);
-        private static readonly Color PickedColor = new Color(0.6f, 1f, 0.65f);
-        private static readonly Color BadColor = new Color(1f, 0.5f, 0.42f);
+        /// <summary>Wide enough for five digits and no wider, so it reads as a port.</summary>
+        private const float PortWidth = UiStyle.S5 * 2f;
+
+        /// <summary>The faction picker is two rows of three. Six names, one glance.</summary>
+        private const int PickerCols = 3;
 
         private MatchRunner runner;
         private Selection selection;
@@ -84,7 +74,8 @@ namespace WordCraft.View
         {
             MatchRunner runner = MatchRunner.Instance;
             if (runner != null && runner.Phase != Phase.Match) return true;
-            return screenPosition.y <= BottomPanelHeight || screenPosition.y >= Screen.height - TopBarHeight;
+            return screenPosition.y <= UiStyle.BottomPanel ||
+                   screenPosition.y >= Screen.height - UiStyle.TopBar;
         }
 
         private void OnGUI()
@@ -110,28 +101,35 @@ namespace WordCraft.View
 
         /// <summary>
         /// Host or join, who to play, and where. Drawn over the idle map, which is
-        /// why it is opaque.
+        /// why it is opaque. Laid out top to bottom in one column: a menu read once
+        /// is the one place in this client where reading order beats density.
         /// </summary>
         private void StartScreen()
         {
-            Rect panel = Middle(MenuWidth, MenuHeight);
-            Fill(panel, PanelColor);
+            Rect panel = UiStyle.Middle(UiStyle.MenuWidth, UiStyle.MenuHeight);
+            UiStyle.PanelBox(panel, UiStyle.Panel);
 
-            GUILayout.BeginArea(Inside(panel));
-            GUILayout.Label("WORDCRAFT");
-            GUILayout.Space(8f);
+            GUILayout.BeginArea(UiStyle.Inside(panel));
+            GUILayout.Label("WORDCRAFT", UiStyle.DisplayStyle);
+            GUILayout.Space(UiStyle.S4);
 
-            GUILayout.Label("faction");
+            GUILayout.Label("faction", UiStyle.MicroStyle);
+            GUILayout.Space(UiStyle.S1);
             FactionPicker();
-            GUILayout.Space(8f);
+            GUILayout.Space(UiStyle.S4);
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("address", GUILayout.Width(56f));
-            address = GUILayout.TextField(address ?? "", 45);
-            GUILayout.Label("port", GUILayout.Width(30f));
-            portText = GUILayout.TextField(portText ?? "", 5, GUILayout.Width(58f));
+            GUILayout.Label("address", UiStyle.MicroStyle);
+            GUILayout.Label("port", UiStyle.MicroStyle, GUILayout.Width(PortWidth));
             GUILayout.EndHorizontal();
-            GUILayout.Space(10f);
+            GUILayout.Space(UiStyle.S1);
+
+            GUILayout.BeginHorizontal();
+            address = GUILayout.TextField(address ?? "", 45, UiStyle.FieldStyle);
+            GUILayout.Space(UiStyle.S2);
+            portText = GUILayout.TextField(portText ?? "", 5, UiStyle.FieldStyle, GUILayout.Width(PortWidth));
+            GUILayout.EndHorizontal();
+            GUILayout.Space(UiStyle.S4);
 
             if (runner.Connecting) ConnectionState();
             else HostOrJoin();
@@ -143,42 +141,53 @@ namespace WordCraft.View
         private void FactionPicker()
         {
             string[] names = Enum.GetNames(typeof(Faction));
-            for (int row = 0; row < names.Length; row += 3)
+            for (int row = 0; row < names.Length; row += PickerCols)
             {
                 GUILayout.BeginHorizontal();
-                for (int i = row; i < row + 3 && i < names.Length; i++)
+                for (int i = row; i < row + PickerCols && i < names.Length; i++)
                 {
-                    GUI.color = (int)faction == i ? PickedColor : Color.white;
-                    if (GUILayout.Button(names[i], GUILayout.Height(24f))) faction = (Faction)i;
-                    GUI.color = Color.white;
+                    if (i > row) GUILayout.Space(UiStyle.S1);
+                    if (UiStyle.Button(names[i], UiStyle.Control, (int)faction == i)) faction = (Faction)i;
                 }
                 GUILayout.EndHorizontal();
+                GUILayout.Space(UiStyle.S1);
             }
         }
 
         private void HostOrJoin()
         {
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("HOST", GUILayout.Height(30f))) Begin(null);
-            if (GUILayout.Button("JOIN", GUILayout.Height(30f))) Begin(address);
+            bool host = UiStyle.Button("HOST", UiStyle.ControlTall);
+            GUILayout.Space(UiStyle.S2);
+            bool join = UiStyle.Button("JOIN", UiStyle.ControlTall);
             GUILayout.EndHorizontal();
+            GUILayout.Space(UiStyle.S2);
 
             // No address, no port, no handshake: nothing here can be malformed, so
             // this one takes no error path and starts the match outright.
-            if (GUILayout.Button("SOLO", GUILayout.Height(30f)))
+            bool solo = UiStyle.Button("SOLO", UiStyle.ControlTall);
+            GUILayout.Space(UiStyle.S3);
+
+            if (formError != null)
+            {
+                GUILayout.Label(formError, UiStyle.Toned(UiStyle.Danger));
+                GUILayout.Space(UiStyle.S2);
+            }
+
+            GUILayout.Label("one machine hosts, the other joins its address. same port on both.",
+                UiStyle.MicroStyle);
+            GUILayout.Label("solo plays the simulation's own opponent, no network at all.",
+                UiStyle.MicroStyle);
+
+            // Acted on after the labels, so a press does not relayout the block it
+            // was pressed in halfway through drawing it.
+            if (host) Begin(null);
+            else if (join) Begin(address);
+            else if (solo)
             {
                 formError = null;
                 runner.StartSolo(faction);
             }
-
-            if (formError != null)
-            {
-                GUI.color = BadColor;
-                GUILayout.Label(formError);
-                GUI.color = Color.white;
-            }
-            GUILayout.Label("one machine hosts, the other joins its address. same port on both.");
-            GUILayout.Label("solo plays the simulation's own opponent, no network at all.");
         }
 
         private void Begin(string remote)
@@ -206,12 +215,11 @@ namespace WordCraft.View
             LockstepSession session = runner.Session;
             bool rejected = session.State == SessionState.Stopped;
 
-            GUI.color = rejected ? BadColor : Color.white;
-            GUILayout.Label(ConnectionText(session));
-            GUI.color = Color.white;
+            GUILayout.Label(ConnectionText(session),
+                UiStyle.Toned(rejected ? UiStyle.Danger : UiStyle.Ink));
+            GUILayout.Space(UiStyle.S3);
 
-            GUILayout.Space(6f);
-            if (GUILayout.Button(rejected ? "back" : "cancel", GUILayout.Height(26f))) runner.ShowStart();
+            if (UiStyle.Button(rejected ? "back" : "cancel", UiStyle.Control)) runner.ShowStart();
         }
 
         private string ConnectionText(LockstepSession session)
@@ -231,176 +239,227 @@ namespace WordCraft.View
         /// <summary>
         /// How it ended and how long it took. A halt shows the stop reason as the
         /// session wrote it, tick and both hashes included, because that string is
-        /// what a player can copy into a bug report.
+        /// what a player can copy into a bug report. The panel itself goes red on a
+        /// halt: an outcome and a crash must not share a surface.
         /// </summary>
         private void ResultScreen()
         {
-            Rect panel = Middle(MenuWidth + 220f, 210f);
-            Fill(panel, runner.Halted ? HaltColor : PanelColor);
+            Rect panel = UiStyle.Middle(UiStyle.ResultWidth, UiStyle.ResultHeight);
+            UiStyle.PanelBox(panel, runner.Halted ? UiStyle.HaltPanel : UiStyle.Panel);
 
-            GUILayout.BeginArea(Inside(panel));
-            GUILayout.Label(runner.Outcome ?? "MATCH OVER");
+            GUILayout.BeginArea(UiStyle.Inside(panel));
+            GUILayout.Label(runner.Outcome ?? "MATCH OVER", UiStyle.DisplayStyle);
+            GUILayout.Space(UiStyle.S2);
 
             if (runner.Halted)
             {
-                GUILayout.Label(runner.Session.StopReason ?? "no reason recorded");
-                if (!runner.Session.ReportComplete) GUILayout.Label("waiting for the peer state dump...");
+                GUILayout.Label(runner.Session.StopReason ?? "no reason recorded",
+                    UiStyle.Toned(UiStyle.Danger));
+                if (!runner.Session.ReportComplete)
+                {
+                    GUILayout.Label("waiting for the peer state dump...", UiStyle.MicroStyle);
+                }
+                GUILayout.Space(UiStyle.S2);
             }
 
-            GUILayout.Space(6f);
-            GUILayout.Label(runner.EndTick + " ticks, " + runner.EndSeconds.ToString("0.0") + " s");
-            GUILayout.Space(10f);
+            GUILayout.Label(runner.EndTick + " ticks  ·  " + runner.EndSeconds.ToString("0.0") + " s",
+                UiStyle.MicroStyle);
+            GUILayout.Space(UiStyle.S4);
 
-            if (GUILayout.Button("play again", GUILayout.Height(30f))) runner.ShowStart();
+            if (UiStyle.Button("play again", UiStyle.ControlTall)) runner.ShowStart();
             GUILayout.EndArea();
         }
 
-        private static Rect Middle(float width, float height) =>
-            new Rect((Screen.width - width) * 0.5f, (Screen.height - height) * 0.5f, width, height);
-
-        private static Rect Inside(Rect panel) =>
-            new Rect(panel.x + 18f, panel.y + 14f, panel.width - 36f, panel.height - 28f);
-
-        private static void Fill(Rect area, Color color)
-        {
-            GUI.color = color;
-            GUI.DrawTexture(area, Texture2D.whiteTexture);
-            GUI.color = Color.white;
-        }
+        // ---- match: top bar ----
 
         /// <summary>
-        /// Top: what the player has to know without asking. Population turns red at
-        /// the cap because a capped peer produces nothing and the simulation says so
-        /// silently; the number going red is the only warning there is.
+        /// What the player has to know without asking, in the order they ask it.
+        /// Mana and population are readouts because they are numbers read mid-fight;
+        /// everything else up here is diagnostic and is drawn at the quietest weight
+        /// the system has, so it never competes with them.
+        ///
+        /// Population turns red at the cap because a capped peer produces nothing and
+        /// the simulation says so silently; the number going red is the only warning
+        /// there is.
         /// </summary>
         private void TopBar(World world)
         {
-            var bar = new Rect(0f, 0f, Screen.width, TopBarHeight);
-            GUI.color = new Color(0.06f, 0.06f, 0.08f, 0.88f);
-            GUI.DrawTexture(bar, Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            var bar = new Rect(0f, 0f, Screen.width, UiStyle.TopBar);
+            UiStyle.BarBox(bar, edgeOnTop: false);
 
             int peer = runner.LocalPeer;
             int used = world.GetPopulation(peer);
             int cap = world.PopulationCap(peer);
 
-            GUI.Label(new Rect(10f, 4f, 180f, 20f), "mana " + world.GetResources(peer));
+            float x = UiStyle.S4;
+            float y = UiStyle.S2;
 
-            GUI.color = used >= cap ? new Color(1f, 0.45f, 0.35f) : Color.white;
-            GUI.Label(new Rect(150f, 4f, 180f, 20f), "pop " + used + "/" + cap);
-            GUI.color = Color.white;
+            UiStyle.Readout(new Rect(x, y, UiStyle.ReadoutWidth, UiStyle.ReadoutHeight),
+                "mana", world.GetResources(peer).ToString(), UiStyle.Ink);
+            x += UiStyle.ReadoutWidth;
 
-            GUI.Label(new Rect(280f, 4f, 160f, 20f), "tick " + world.Tick);
-            GUI.Label(new Rect(400f, 4f, 420f, 20f),
-                StateText(runner.Session) + "  peer " + peer + "  (" + runner.Link + ")");
+            UiStyle.Readout(new Rect(x, y, UiStyle.ReadoutWidth, UiStyle.ReadoutHeight),
+                "pop", used + " / " + cap, used >= cap ? UiStyle.Danger : UiStyle.Ink);
+            x += UiStyle.ReadoutWidth + UiStyle.S4;
+
+            bool stopped = runner.Session.State == SessionState.Stopped;
+            float right = Screen.width - UiStyle.IdleWidth - UiStyle.S4 - UiStyle.S4;
+            float width = Mathf.Max(0f, right - x);
+
+            UiStyle.Note(new Rect(x, y, width, UiStyle.Micro + UiStyle.S1),
+                StateText(runner.Session), stopped ? UiStyle.Danger : UiStyle.InkMute);
+            UiStyle.Note(new Rect(x, y + UiStyle.Micro + UiStyle.S1, width, UiStyle.Line),
+                "peer " + peer + "  ·  tick " + world.Tick + "  ·  " + runner.Link, UiStyle.InkMute);
 
             if (selection == null) return;
             int idle = selection.IdleWorkerCount();
-            GUI.enabled = idle > 0;
-            if (GUI.Button(new Rect(Screen.width - 130f, 2f, 122f, TopBarHeight - 4f), "idle worker " + idle))
+            var button = new Rect(Screen.width - UiStyle.IdleWidth - UiStyle.S4,
+                (UiStyle.TopBar - UiStyle.Control) * 0.5f, UiStyle.IdleWidth, UiStyle.Control);
+            if (UiStyle.Button(button, "idle worker  " + idle, armed: false, enabled: idle > 0))
             {
                 selection.CycleIdleWorker();
             }
-            GUI.enabled = true;
         }
 
+        // ---- match: bottom panel ----
+
+        /// <summary>
+        /// Four columns, left to right in the order the hand reaches for them: the
+        /// map, who is selected, the whole selection, the commands. The map and the
+        /// card are flush against their corners because both are aimed at by muscle
+        /// memory, and a margin around either is a margin the pointer can miss into.
+        /// </summary>
         private void BottomPanel(World world)
         {
-            var panel = new Rect(0f, Screen.height - BottomPanelHeight, Screen.width, BottomPanelHeight);
-            GUI.color = new Color(0.06f, 0.06f, 0.08f, 0.88f);
-            GUI.DrawTexture(panel, Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            var panel = new Rect(0f, Screen.height - UiStyle.BottomPanel, Screen.width, UiStyle.BottomPanel);
+            UiStyle.BarBox(panel, edgeOnTop: true);
 
             int lead = selection == null
                 ? -1
                 : CommandCard.Representative(world, selection.Selected, runner.LocalPeer);
 
-            // Flush into the corner and the full height of the bar: the minimap is
-            // aimed at by muscle memory, and a margin around it is a margin the
-            // pointer can miss into.
-            Minimap.Draw(new Rect(0f, panel.y, MinimapSize, MinimapSize), runner);
+            Minimap.Draw(new Rect(0f, panel.y, UiStyle.MinimapSize, UiStyle.MinimapSize), runner);
 
-            float textX = MinimapSize + 8f;
-            Info(new Rect(textX, panel.y + 8f, InfoWidth, BottomPanelHeight - 16f), world, lead);
+            float top = panel.y + UiStyle.S2;
+            float height = UiStyle.BottomPanel - UiStyle.S2 * 2f;
 
-            float cardX = Screen.width - CardWidth - 8f;
-            List(new Rect(textX + InfoWidth + 8f, panel.y + 8f,
-                Mathf.Max(0f, cardX - textX - InfoWidth - 16f), BottomPanelHeight - 16f), world);
-            Card(new Rect(cardX, panel.y + 8f, CardWidth, BottomPanelHeight - 16f));
+            float infoX = UiStyle.MinimapSize + UiStyle.S3;
+            float cardX = Screen.width - UiStyle.CardWidth - UiStyle.S3;
+
+            Info(new Rect(infoX, top, UiStyle.InfoWidth, height), world, lead);
+
+            float listX = infoX + UiStyle.InfoWidth + UiStyle.S3;
+            UiStyle.Fill(new Rect(listX - UiStyle.S2, top, UiStyle.Hairline, height), UiStyle.Edge);
+
+            List(new Rect(listX, top, Mathf.Max(0f, cardX - listX - UiStyle.S3), height), world);
+            Card(new Rect(cardX, top, UiStyle.CardWidth, height));
         }
 
-        /// <summary>Left: who this is, how hurt, whose. One representative plus the count.</summary>
+        /// <summary>Who this is, how hurt, whose. One representative plus the count.</summary>
         private void Info(Rect area, World world, int lead)
         {
-            GUILayout.BeginArea(area);
+            float y = area.y;
+            UiStyle.Header(new Rect(area.x, y, area.width, UiStyle.Micro + UiStyle.S1), "selected");
+            y += UiStyle.Micro + UiStyle.S1;
+
             if (lead < 0)
             {
-                GUILayout.Label("nothing selected");
-                GUILayout.Label("drag to select, right click to order");
-                GUILayout.EndArea();
+                UiStyle.Note(new Rect(area.x, y, area.width, UiStyle.Line), "nothing");
+                UiStyle.Note(new Rect(area.x, y + UiStyle.Line + UiStyle.S2, area.width, UiStyle.Line),
+                    "drag to select  ·  right click to order", UiStyle.InkMute);
                 return;
             }
 
             Entity e = world.GetEntity(lead);
-            GUILayout.Label(FactionData.Name(world.FactionOf(e.Owner), e.Role));
-            GUILayout.Label("hp " + e.Hp + " / " + e.MaxHp);
+            GUI.Label(new Rect(area.x, y, area.width, UiStyle.Line + UiStyle.S1),
+                FactionData.Name(world.FactionOf(e.Owner), e.Role), UiStyle.BigStyle);
+            y += UiStyle.Line + UiStyle.S2;
 
-            GUI.color = UiStyle.Owner(e.Owner);
-            GUILayout.Label("peer " + e.Owner + "  " + world.FactionOf(e.Owner));
-            GUI.color = Color.white;
+            float ratio = e.MaxHp > 0 ? Mathf.Clamp01(e.Hp / (float)e.MaxHp) : 0f;
+            UiStyle.Meter(new Rect(area.x, y, area.width, UiStyle.S1), ratio, UiStyle.Health(ratio));
+            y += UiStyle.S1 + UiStyle.S1;
+
+            UiStyle.Note(new Rect(area.x, y, area.width, UiStyle.Line),
+                e.Hp + " / " + e.MaxHp + "  hp");
+            y += UiStyle.Line;
+
+            // The one place a per-player hue is allowed in the HUD: it names an
+            // owner. A swatch plus the text, because colour alone is not a label.
+            UiStyle.Fill(new Rect(area.x, y + UiStyle.S1, UiStyle.S2, UiStyle.S2), UiStyle.Owner(e.Owner));
+            UiStyle.Label(new Rect(area.x + UiStyle.S3, y, area.width - UiStyle.S3, UiStyle.Line),
+                "peer " + e.Owner + "  " + world.FactionOf(e.Owner), UiStyle.Owner(e.Owner));
+            y += UiStyle.Line + UiStyle.S1;
 
             int count = selection.Selected.Count;
-            if (count > 1) GUILayout.Label(count + " selected");
-
-            if (e.Kind == EntityKind.Building)
+            if (count > 1)
             {
-                GUILayout.Label(e.BuildTicksLeft > 0
-                    ? "under construction, " + e.BuildTicksLeft + "t left"
-                    : "queue " + e.QueueCount + "  next in " + e.ProduceTicksLeft + "t");
-            }
-            else if (e.Kind == EntityKind.Worker)
-            {
-                GUILayout.Label("carrying " + e.CarryAmount);
+                UiStyle.Note(new Rect(area.x, y, area.width, UiStyle.Line), count + " selected");
+                y += UiStyle.Line;
             }
 
+            string state = StateOf(e);
+            if (state != null)
+            {
+                UiStyle.Note(new Rect(area.x, y, area.width, UiStyle.Line), state);
+                y += UiStyle.Line;
+            }
+
+            // The pending order is the only thing on this panel the player is in the
+            // middle of, so it is the only thing wearing the accent.
             if (Orders.Instance != null && Orders.Instance.Pending != CommandType.None)
             {
-                GUILayout.Label(Orders.Instance.Pending + ": click a target, Esc cancels");
+                UiStyle.Label(new Rect(area.x, y, area.width, UiStyle.Line),
+                    Orders.Instance.Pending + ": click a target, Esc cancels", UiStyle.Accent);
             }
-            GUILayout.EndArea();
+        }
+
+        private static string StateOf(Entity e)
+        {
+            if (e.Kind == EntityKind.Building)
+            {
+                return e.BuildTicksLeft > 0
+                    ? "under construction, " + e.BuildTicksLeft + "t left"
+                    : "queue " + e.QueueCount + "  ·  next in " + e.ProduceTicksLeft + "t";
+            }
+            return e.Kind == EntityKind.Worker ? "carrying " + e.CarryAmount : null;
         }
 
         /// <summary>
-        /// Middle: the selection as a grid. A click keeps that one entity, a
+        /// The selection as a grid of chips. A click keeps that one entity, a
         /// ctrl-click keeps every entity of the same role already selected.
         /// </summary>
         private void List(Rect area, World world)
         {
-            if (selection == null || area.width < EntryWidth) return;
+            if (selection == null || area.width < UiStyle.ChipWidth) return;
 
-            int cols = Mathf.Max(1, (int)(area.width / EntryWidth));
-            int rows = Mathf.Max(1, (int)(area.height / EntryHeight));
+            UiStyle.Header(new Rect(area.x, area.y, area.width, UiStyle.Micro + UiStyle.S1), "selection");
+            var grid = new Rect(area.x, area.y + UiStyle.Micro + UiStyle.S1,
+                area.width, area.height - UiStyle.Micro - UiStyle.S1);
+
+            float step = UiStyle.ChipWidth + UiStyle.S1;
+            float rowStep = UiStyle.ChipHeight + UiStyle.S1;
+            int cols = Mathf.Max(1, (int)(grid.width / step));
+            int rows = Mathf.Max(1, (int)(grid.height / rowStep));
             bool ctrl = Event.current.control || Event.current.command;
 
             for (int i = 0; i < selection.Selected.Count; i++)
             {
                 if (i >= cols * rows)
                 {
-                    GUI.Label(new Rect(area.x, area.yMax - EntryHeight, EntryWidth, EntryHeight),
+                    UiStyle.Note(new Rect(grid.x, grid.yMax - UiStyle.ChipHeight,
+                            UiStyle.ChipWidth, UiStyle.ChipHeight),
                         "+" + (selection.Selected.Count - i) + " more");
                     return;
                 }
 
                 int id = selection.Selected[i];
                 Entity e = world.GetEntity(id);
-                var cell = new Rect(area.x + i % cols * EntryWidth, area.y + i / cols * EntryHeight,
-                    EntryWidth - 3f, EntryHeight - 3f);
+                var cell = new Rect(grid.x + i % cols * step, grid.y + i / cols * rowStep,
+                    UiStyle.ChipWidth, UiStyle.ChipHeight);
 
-                GUI.color = e.Hp * 2 < e.MaxHp ? new Color(1f, 0.55f, 0.5f) : Color.white;
-                bool clicked = GUI.Button(cell, Short(world, e) + " " + e.Hp);
-                GUI.color = Color.white;
+                float ratio = e.MaxHp > 0 ? Mathf.Clamp01(e.Hp / (float)e.MaxHp) : 0f;
+                if (!UiStyle.Chip(cell, Short(world, e) + "  " + e.Hp, ratio)) continue;
 
-                if (!clicked) continue;
                 if (ctrl) selection.KeepRole(e.Role);
                 else selection.SelectOnly(id);
                 return; // the list just changed under the loop
@@ -408,8 +467,8 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// Right: the 3x3 card. The key is drawn on its own cell because the cell
-        /// is the thing worth learning; see CommandCard for the table behind it.
+        /// The 3x3 card. The key is drawn on its own cell because the cell is the
+        /// thing worth learning; see CommandCard for the table behind it.
         /// </summary>
         private void Card(Rect area)
         {
@@ -421,28 +480,29 @@ namespace WordCraft.View
 
             // The card changes under the same rectangle, so it says what it is.
             // Without this a build submenu and a produce row look alike.
-            GUI.color = new Color(1f, 1f, 1f, 0.6f);
-            GUI.Label(new Rect(area.x + 2f, area.y - 16f, area.width, 16f), CommandCard.Title(kind));
-            GUI.color = Color.white;
+            UiStyle.Header(new Rect(area.x, area.y, area.width, UiStyle.Micro + UiStyle.S1),
+                CommandCard.Title(kind));
 
-            float size = CardCell - 4f;
+            float top = area.y + UiStyle.Micro + UiStyle.S1;
+            float step = UiStyle.CardCellSize + UiStyle.S1;
 
             for (int i = 0; i < CommandCard.Cells; i++)
             {
-                var cell = new Rect(area.x + i % CommandCard.Cols * CardCell,
-                    area.y + i / CommandCard.Cols * CardCell, size, size);
+                var cell = new Rect(area.x + i % CommandCard.Cols * step,
+                    top + i / CommandCard.Cols * step,
+                    UiStyle.CardCellSize, UiStyle.CardCellSize);
 
                 if (card[i].Type == CommandType.None)
                 {
-                    GUI.color = new Color(1f, 1f, 1f, 0.12f);
-                    GUI.DrawTexture(cell, Texture2D.whiteTexture);
-                    GUI.color = Color.white;
+                    UiStyle.EmptyCell(cell);
                     continue;
                 }
 
-                GUI.color = orders.Pending == card[i].Type ? new Color(0.6f, 1f, 0.65f) : Color.white;
-                if (GUI.Button(cell, CommandCard.Keys[i].ToString() + "\n" + card[i].Label)) orders.Run(card[i]);
-                GUI.color = Color.white;
+                if (UiStyle.CardCell(cell, CommandCard.Keys[i].ToString(), card[i].Label,
+                        orders.Pending == card[i].Type))
+                {
+                    orders.Run(card[i]);
+                }
             }
         }
 
