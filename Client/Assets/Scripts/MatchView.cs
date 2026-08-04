@@ -442,7 +442,8 @@ namespace WordCraft.View
                 for (int x = 0; x < size; x++)
                 {
                     bool inside = !round || Vector2.Distance(new Vector2(x, y), centre) <= radius;
-                    pixels[y * size + x] = new Color32(255, 255, 255, inside ? (byte)255 : (byte)0);
+                    // A mask, not a colour: the tint comes from the SpriteRenderer.
+                    pixels[y * size + x] = inside ? (Color32)Color.white : (Color32)Color.clear;
                 }
             }
 
