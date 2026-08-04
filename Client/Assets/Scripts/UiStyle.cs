@@ -199,6 +199,11 @@ namespace WordCraft.View
         // Built once, lazily, because GUI.skin only exists inside OnGUI. Nothing
         // here is a serialised asset: the backgrounds are 1x1 textures made at run
         // time, which is the whole reason the HUD needs no asset folder.
+        //
+        // ponytail: those backgrounds are HideAndDontSave and never freed, and the
+        // toned styles are one shared object whose colour is set per call. Both are
+        // fine for one process drawing one HUD on one thread. Pool the textures and
+        // clone the styles the day an editor window wants them too.
 
         private static bool built;
         private static GUIStyle micro, header, big, display, tinted;
