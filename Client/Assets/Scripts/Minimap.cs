@@ -56,6 +56,17 @@ namespace WordCraft.View
         /// </summary>
         private static Color32[] backdrop;
 
+        /// <summary>
+        /// The same terrain with the fog already burnt into it. Rebuilt when vision
+        /// changes, which is once every few ticks, so a frame still costs one copy.
+        /// A minimap that showed the whole map would make the field's fog cosmetic:
+        /// this square is where a player looks to find out what is happening
+        /// somewhere else, which is exactly what scouting is supposed to buy.
+        /// </summary>
+        private static Color32[] fogged;
+
+        private static int foggedVersion = -1;
+
         /// <summary>True while a left drag that began on the square is still down.</summary>
         private static bool scrubbing;
 
@@ -92,6 +103,7 @@ namespace WordCraft.View
                 lastHp.Clear();
                 marks.Clear();
                 Backdrop(world);
+                foggedVersion = -1;
                 shown = world;
             }
 
@@ -254,14 +266,22 @@ namespace WordCraft.View
                 pixels = new Color32[Res * Res];
             }
 
-            backdrop.CopyTo(pixels, 0);
+            if (foggedVersion != Fog.Version) Fogged();
+            fogged.CopyTo(pixels, 0);
             Debris(world);
 
             for (int i = 0; i < world.EntityCount; i++)
             {
                 Entity e = world.GetEntity(i);
-                if (!e.Alive) continue;
-                Blob(e.Position, Tint(e), e.Kind == EntityKind.Building ? BuildingRadius : UnitRadius);
+                byte show = Fog.Show(i, e);
+                if (show == Fog.Hidden) continue;
+
+                // Remembered things are dimmed the same amount the ground under
+                // them is, so one square reads as one picture of one moment.
+                Color32 tint = show == Fog.Memory
+                    ? Color32.Lerp(Tint(e), UiStyle.FogUnseen, UiStyle.FogSeen.a)
+                    : Tint(e);
+                Blob(e.Position, tint, e.Kind == EntityKind.Building ? BuildingRadius : UnitRadius);
             }
 
             texture.SetPixels32(pixels);
@@ -292,8 +312,15 @@ namespace WordCraft.View
             {
                 if (!world.HasRemnant(cell)) continue;
 
-                int x0 = cell % MatchScenario.MapSize * block;
-                int y0 = cell / MatchScenario.MapSize * block;
+                int cx = cell % MatchScenario.MapSize;
+                int cy = cell / MatchScenario.MapSize;
+
+                // Debris obeys the fog. Rubble painted on ground this peer has
+                // never seen would report a fight it has no way of knowing about.
+                if (Fog.AtCell(cx, cy) == Fog.Hidden) continue;
+
+                int x0 = cx * block;
+                int y0 = cy * block;
                 for (int y = y0; y < y0 + block; y++)
                 {
                     for (int x = x0; x < x0 + block; x++) pixels[y * Res + x] = UiStyle.MinimapRemnant;
@@ -321,6 +348,31 @@ namespace WordCraft.View
                     int cx = x * MatchScenario.MapSize / Res;
                     backdrop[y * Res + x] =
                         Tiles.MinimapTint(world.TerrainAt(cy * MatchScenario.MapSize + cx));
+                }
+            }
+        }
+
+        /// <summary>
+        /// The terrain with this peer's vision applied: never-seen cells are the
+        /// same nothing the field paints them, remembered cells are the terrain
+        /// pushed one step down in value, and lit cells are the terrain itself.
+        /// </summary>
+        private static void Fogged()
+        {
+            if (fogged == null) fogged = new Color32[Res * Res];
+            foggedVersion = Fog.Version;
+
+            for (int y = 0; y < Res; y++)
+            {
+                int cy = y * MatchScenario.MapSize / Res;
+                for (int x = 0; x < Res; x++)
+                {
+                    int i = y * Res + x;
+                    byte state = Fog.AtCell(x * MatchScenario.MapSize / Res, cy);
+                    fogged[i] = state == Fog.Hidden ? (Color32)UiStyle.FogUnseen
+                        : state == Fog.Memory
+                            ? Color32.Lerp(backdrop[i], UiStyle.FogUnseen, UiStyle.FogSeen.a)
+                            : backdrop[i];
                 }
             }
         }
