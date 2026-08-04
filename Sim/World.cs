@@ -31,6 +31,19 @@ namespace WordCraft.Sim
     }
 
     /// <summary>
+    /// What one map cell is made of. One byte per cell, fixed for the whole match
+    /// and decided when the map is built. Values are hashed as world state; never
+    /// renumber them. Open is 0 so a world nobody painted is all open ground,
+    /// which is what every harness fixture relies on.
+    /// </summary>
+    public enum Terrain : byte
+    {
+        Open = 0,
+        Water = 1,
+        Rock = 2,
+    }
+
+    /// <summary>
     /// One flat struct for every kind of entity. A worker leaves the building
     /// fields at zero and vice versa; that costs a few bytes and saves a type
     /// hierarchy whose fields would have to be hashed one by one anyway.
@@ -152,6 +165,11 @@ namespace WordCraft.Sim
 
         private readonly List<Command> tickCommands = new List<Command>();
 
+        // The terrain layer. A byte per cell rather than a tile object: it is read
+        // on every pathfinding step and hashed on every tick, and neither wants an
+        // indirection. Written only while the map is being built.
+        private readonly byte[] terrain = new byte[GridCells];
+
         public int EntityCount => entities.Count;
         public Entity GetEntity(int id) => entities[id];
         public int GetResources(int peer) => resources[peer];
@@ -188,6 +206,26 @@ namespace WordCraft.Sim
             if (e.Owner < 0 || e.Owner >= MaxPeers) return;
             population[e.Owner]--;
         }
+
+        public Terrain TerrainAt(int cell) => (Terrain)terrain[cell];
+
+        /// <summary>
+        /// Scenario setup only, and only before the first tick. Terrain is hashed,
+        /// so a peer that repainted a cell mid-match would desync every other peer.
+        /// </summary>
+        public void SetTerrain(int x, int y, Terrain kind) => terrain[y * GridSize + x] = (byte)kind;
+
+        /// <summary>
+        /// Whether a mover may occupy this cell. Terrain is a wall or it is
+        /// nothing: there is no movement cost, so a route is decided by length
+        /// alone and the pathfinder stays on integer costs.
+        ///
+        /// air is the seam docs/FACTION-MECHANICS.md asks for ("공중 유닛은 지형과
+        /// 잔해를 무시하고 이동한다"). There are no air units yet, so every caller
+        /// passes false; the parameter exists so the rule has one place to land
+        /// rather than being retrofitted into every movement path later.
+        /// </summary>
+        public bool IsPassable(int cell, bool air) => air || terrain[cell] == (byte)Terrain.Open;
 
         /// <summary>Scenario setup only. Never call this from a system.</summary>
         public void GrantResources(int peer, int amount) => resources[peer] += amount;
@@ -581,6 +619,17 @@ namespace WordCraft.Sim
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)population[p]);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, aiPeers[p] ? 1UL : 0UL);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)aiSeq[p]);
+            // Terrain never changes after the map is built, but it is hashed every
+            // tick anyway: two peers that generated different maps have to diverge
+            // on tick 1, not twenty seconds later when a unit first walks into
+            // water that only one of them has. Eight cells to a word, so hashing an
+            // immutable 4096-byte layer every tick stays off the tick budget.
+            for (int c = 0; c < GridCells; c += 8)
+            {
+                ulong word = 0;
+                for (int b = 0; b < 8; b++) word |= (ulong)terrain[c + b] << (b * 8);
+                Mix(ref h, word);
+            }
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
