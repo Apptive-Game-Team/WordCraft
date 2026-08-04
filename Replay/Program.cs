@@ -45,6 +45,12 @@ namespace WordCraft.Replay
                 BuildRefusesOccupiedAndOffMapCells();
                 GroundRoutesAroundImpassableTerrain();
                 BuildRefusesImpassableTerrain();
+                MassedArchersHitHarderThanScatteredOnes();
+                TheMassedBonusCaps();
+                TheMassedBonusIsWaterSlimesOnly();
+                ADeadGolemBlocksTheGroundItFellOn();
+                RemnantsBlockTheOwnersOwnUnits();
+                MirrorMatchesAreReproducible();
                 ScriptedLogPlacesEveryBuilding();
                 SoloMatchIsReproducible();
                 TheAiPlaysARealGame();
@@ -1057,6 +1063,325 @@ namespace WordCraft.Replay
             // The control: the same order one cell over, on open ground.
             world.Step(Build(0, seq, Role.Supply, At(21, 20)));
             Check(world.EntityCount == 2, "the control build on open ground was refused too");
+        }
+
+        // 물 슬라임 일제 사격. Ranged fires every AttackTicks and fires on the tick
+        // it acquires, so a run of VolleyTicks lands exactly VolleyShots volleys.
+        private const int VolleyTicks = 100;
+        private const int VolleyShots = 6; // ticks 0, 18, 36, 54, 72, 90
+        private const int VolleyDummy = 0;
+
+        /// <summary>
+        /// Eight archers packed inside the bonus radius, all within weapon range of
+        /// the same target. Max pairwise distance is sqrt(8), comfortably inside 3.
+        /// </summary>
+        private static readonly FixVec2[] Massed8 =
+        {
+            At(27, 31), At(28, 31), At(29, 31),
+            At(27, 32),             At(29, 32),
+            At(27, 33), At(28, 33), At(29, 33),
+        };
+
+        /// <summary>
+        /// The same eight archers on a 4-cell lattice around the target: still every
+        /// one of them in weapon range, no two of them inside the bonus radius.
+        /// </summary>
+        private static readonly FixVec2[] Scattered8 =
+        {
+            At(28, 28), At(32, 28), At(36, 28),
+            At(28, 32),             At(36, 32),
+            At(28, 36), At(32, 36), At(36, 36),
+        };
+
+        /// <summary>Five archers, each seeing the other four: exactly at the cap.</summary>
+        private static readonly FixVec2[] Massed5 =
+        {
+            At(28, 31),
+            At(27, 32), At(28, 32), At(29, 32),
+            At(28, 33),
+        };
+
+        /// <summary>Ten in the same blob. Every one of them sees more than the cap allows.</summary>
+        private static readonly FixVec2[] Massed10 =
+        {
+            At(27, 31), At(28, 31), At(29, 31),
+            At(27, 32), At(28, 32), At(29, 32), At(30, 32),
+            At(27, 33), At(28, 33), At(29, 33),
+        };
+
+        /// <summary>
+        /// Formation is firepower. Eight archers stacked have to out-damage eight
+        /// spread out by exactly the bonus, not merely win eventually: a check that
+        /// only asserted both squads killed something would pass with the mechanic
+        /// deleted.
+        /// </summary>
+        private static void MassedArchersHitHarderThanScatteredOnes()
+        {
+            int shot = FactionData.Stats(Role.Ranged).Damage;
+            int massed = VolleyDamage(Faction.WaterSlimes, Massed8);
+            int scattered = VolleyDamage(Faction.WaterSlimes, Scattered8);
+
+            Check(scattered == Scattered8.Length * shot * VolleyShots,
+                "scattered archers dealt " + scattered + ", expected the unbuffed " +
+                Scattered8.Length * shot * VolleyShots);
+            Check(massed == Massed8.Length * (shot + World.VolleyMaxBonus) * VolleyShots,
+                "massed archers dealt " + massed + ", expected " +
+                Massed8.Length * (shot + World.VolleyMaxBonus) * VolleyShots);
+        }
+
+        /// <summary>
+        /// The cap is a cap. Five archers already sit on it, so the sixth through
+        /// the tenth buy nothing: per-archer output has to be identical, or the
+        /// bonus is a stacking multiplier and a big enough ball wins on its own.
+        /// </summary>
+        private static void TheMassedBonusCaps()
+        {
+            int shot = FactionData.Stats(Role.Ranged).Damage;
+            int five = VolleyDamage(Faction.WaterSlimes, Massed5);
+            int ten = VolleyDamage(Faction.WaterSlimes, Massed10);
+
+            int perArcher = (shot + World.VolleyMaxBonus) * VolleyShots;
+            Check(five == Massed5.Length * perArcher,
+                "five archers dealt " + five + ", expected " + Massed5.Length * perArcher);
+            Check(ten == Massed10.Length * perArcher,
+                "ten archers dealt " + ten + ", expected " + Massed10.Length * perArcher);
+            Check(five / Massed5.Length == ten / Massed10.Length,
+                "the tenth archer changed what each one hits for");
+        }
+
+        /// <summary>
+        /// The bonus belongs to one faction. The same eight bodies in the same
+        /// formation under another banner shoot for the roster number and nothing
+        /// more, which is what makes the mechanic an identity rather than a rule
+        /// about standing close together.
+        /// </summary>
+        private static void TheMassedBonusIsWaterSlimesOnly()
+        {
+            int shot = FactionData.Stats(Role.Ranged).Damage;
+            int plain = VolleyDamage(Faction.RockGolems, Massed8);
+
+            Check(plain == Massed8.Length * shot * VolleyShots,
+                "another faction's massed archers dealt " + plain + ", expected the unbuffed " +
+                Massed8.Length * shot * VolleyShots);
+            Check(plain < VolleyDamage(Faction.WaterSlimes, Massed8),
+                "the massed bonus is not faction specific");
+        }
+
+        /// <summary>
+        /// What one formation takes off a target over VolleyTicks. The target is a
+        /// Role.None unit: no speed, no weapon, no reach, and hp far past anything
+        /// the run can spend, so the number that comes back is the archers' output
+        /// and not a race to a kill.
+        /// </summary>
+        private static int VolleyDamage(Faction faction, FixVec2[] archers)
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, faction);
+            world.SetPeerFaction(1, Faction.TreeSpirits);
+
+            world.SpawnUnit(1, Role.None, At(32, 32), hpOverride: 1000000); // 0
+            foreach (FixVec2 where in archers) world.SpawnUnit(0, Role.Ranged, where);
+
+            var idle = new List<Command>();
+            for (int t = 0; t < VolleyTicks; t++) world.Step(idle);
+
+            Entity target = world.GetEntity(VolleyDummy);
+            return target.MaxHp - target.Hp;
+        }
+
+        private const int MirrorTicks = 800;
+
+        /// <summary>
+        /// Every faction against itself, played by the simulation on both sides,
+        /// run twice from one seed. docs/FACTION-MECHANICS.md asks for the mirror
+        /// before the next mechanic goes in, and the reason is that a mirror has no
+        /// balance variable in it: what a pair of runs disagrees about can only be
+        /// the mechanic. Every tick is compared, not the last one, so a divergence
+        /// that healed itself is still caught.
+        /// </summary>
+        private static void MirrorMatchesAreReproducible()
+        {
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                ulong[] first = RunMirror(faction, out World world);
+                ulong[] second = RunMirror(faction, out _);
+
+                for (int t = 0; t < first.Length; t++)
+                {
+                    Check(first[t] == second[t], faction + " mirror hash drift at tick " + t);
+                }
+                // Two AI peers that never met would make every mirror pass without
+                // either mechanic ever being reached.
+                Check(Fought(world), "the " + faction + " mirror never killed anything");
+                // And the one mirror whose mechanic lives in the death path
+                // actually reached it, so its hashes are comparing something.
+                Check(faction != Faction.RockGolems || Littered(world),
+                    "the RockGolems mirror fought a whole battle and left no debris");
+            }
+        }
+
+        /// <summary>True once any cell in this world has been given debris.</summary>
+        private static bool Littered(World world)
+        {
+            for (int c = 0; c < World.GridCells; c++)
+            {
+                if (world.RemnantExpiry(c) != 0) return true;
+            }
+            return false;
+        }
+
+        private static ulong[] RunMirror(Faction faction, out World world)
+        {
+            world = MatchScenario.Build(Seed, faction, faction);
+            world.SetPeerAi(0, true);
+            world.SetPeerAi(1, true);
+
+            var idle = new List<Command>();
+            var hashes = new ulong[MirrorTicks];
+            for (int t = 0; t < MirrorTicks; t++)
+            {
+                world.Step(idle);
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        /// <summary>True once anything in this world has died.</summary>
+        private static bool Fought(World world)
+        {
+            for (int i = 0; i < world.EntityCount; i++)
+            {
+                Entity e = world.GetEntity(i);
+                if (!e.Alive && e.Kind != EntityKind.ResourceNode) return true;
+            }
+            return false;
+        }
+
+        // 돌 골렘 부족 잔해. A wall from edge to edge with exactly one gap, and a
+        // golem killed standing in it: the debris either closes the map in two or
+        // the mechanic does nothing, with no third answer to argue about.
+        private const int RemnantWallX = 20;
+        private const int RemnantGapY = 10;
+        private const int RemnantWalkTicks = 300;
+
+        /// <summary>
+        /// Debris blocks the only way through, and the way reopens the tick it
+        /// lapses. Checked through the pathfinder rather than by reading the grid
+        /// back, because what the mechanic promises is a closed route, and the
+        /// control faction is what proves it is the golem and not the death.
+        /// </summary>
+        private static void ADeadGolemBlocksTheGroundItFellOn()
+        {
+            World world = BuildRemnantWorld(Faction.RockGolems, executioner: true, out int golem);
+            int gap = World.CellOf(At(RemnantWallX, RemnantGapY));
+            var idle = new List<Command>();
+
+            Check(GapIsOpen(world), "the gap was already closed before anything died");
+
+            world.Step(idle);
+            Check(!world.GetEntity(golem).Alive, "the golem never died");
+            Check(world.HasRemnant(gap), "a dead golem left no debris");
+            Check(world.RemnantExpiry(gap) == World.RemnantTicks,
+                "debris lapses on tick " + world.RemnantExpiry(gap) + ", expected " + World.RemnantTicks);
+            Check(!GapIsOpen(world), "debris did not close the only way through");
+
+            while (world.Tick < World.RemnantTicks - 1)
+            {
+                world.Step(idle);
+                Check(!GapIsOpen(world), "debris lapsed early, on tick " + world.Tick);
+            }
+
+            world.Step(idle);
+            Check(!world.HasRemnant(gap), "debris outlived its expiry");
+            Check(GapIsOpen(world), "the gap never reopened");
+
+            // The control: the same death under another banner leaves nothing. Any
+            // faction losing a unit would pass every assertion above.
+            World other = BuildRemnantWorld(Faction.TreeSpirits, executioner: true, out int mortal);
+            other.Step(idle);
+            Check(!other.GetEntity(mortal).Alive, "the control unit never died");
+            Check(!other.HasRemnant(gap), "another faction's dead left debris");
+        }
+
+        /// <summary>
+        /// The debris blocks the side that made it. Its owner's own unit is walked
+        /// at the gap and has to be stopped short, against a control run of the
+        /// same order over the same ground with nothing dead in it.
+        /// </summary>
+        private static void RemnantsBlockTheOwnersOwnUnits()
+        {
+            Fix wall = Fix.FromInt(RemnantWallX);
+
+            World blocked = BuildRemnantWorld(Faction.RockGolems, executioner: true, out _);
+            Fix reached = WalkAtTheGap(blocked, out bool arrived);
+            Check(!arrived, "its owner's own unit walked through the debris");
+            // Every tick, not only the last: a unit that crossed and came back
+            // would pass an end-state check.
+            Check(reached < wall, "its owner's own unit stood past the wall at x=" + reached);
+
+            World open = BuildRemnantWorld(Faction.RockGolems, executioner: false, out int golem);
+            WalkAtTheGap(open, out bool controlArrived);
+            Check(open.GetEntity(golem).Alive, "the control run killed the golem after all");
+            Check(controlArrived, "the control unit never got through an open gap either");
+        }
+
+        /// <summary>
+        /// Walks one of the debris owner's own units at the far side of the gap and
+        /// returns the furthest east it ever stood.
+        /// </summary>
+        private static Fix WalkAtTheGap(World world, out bool arrived)
+        {
+            int mover = world.SpawnUnit(0, Role.Melee, At(2, RemnantGapY));
+            var order = new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.Move, mover, At(30, RemnantGapY))
+            };
+            var idle = new List<Command>();
+
+            Fix furthest = Fix.Zero;
+            arrived = false;
+            for (int t = 0; t < RemnantWalkTicks; t++)
+            {
+                // The order goes in on tick 1, after the golem has fallen on tick 0,
+                // so the route is computed against the map the debris made.
+                world.Step(t == 1 ? order : idle);
+                Entity e = world.GetEntity(mover);
+                if (e.Position.X > furthest) furthest = e.Position.X;
+                if (e.Position.Equals(At(30, RemnantGapY))) arrived = true;
+            }
+            return furthest;
+        }
+
+        /// <summary>True when a ground route still runs from one side of the wall to the other.</summary>
+        private static bool GapIsOpen(World world)
+        {
+            var path = new List<int>();
+            return Pathfinder.FindPath(world,
+                World.CellOf(At(RemnantWallX - 5, RemnantGapY)),
+                World.CellOf(At(RemnantWallX + 5, RemnantGapY)), path, air: false);
+        }
+
+        /// <summary>
+        /// A wall across the map with one gap in it, a combat unit of the named
+        /// faction standing in the gap one hit from death, and optionally the enemy
+        /// that deals it. The kill goes through the combat system rather than a test
+        /// hook, so the debris is dropped by the path a match takes.
+        /// </summary>
+        private static World BuildRemnantWorld(Faction owner, bool executioner, out int doomed)
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, owner);
+            world.SetPeerFaction(1, Faction.TreeSpirits);
+
+            for (int y = 0; y < World.GridSize; y++)
+            {
+                if (y != RemnantGapY) world.SetTerrain(RemnantWallX, y, TileKind.Rock);
+            }
+
+            doomed = world.SpawnUnit(0, Role.Melee, At(RemnantWallX, RemnantGapY), hpOverride: 1);
+            if (executioner) world.SpawnUnit(1, Role.Melee, At(RemnantWallX + 1, RemnantGapY));
+            return world;
         }
 
         /// <summary>
