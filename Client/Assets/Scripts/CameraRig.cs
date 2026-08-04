@@ -30,10 +30,34 @@ namespace WordCraft.View
         /// </summary>
         private const float ZoomRate = 2.2f;
 
+        /// <summary>
+        /// Closest in. 12 cells tall, so a unit's 1.8 cell footprint is 15% of the
+        /// screen and a base's 4 cells is a third of it: past this the screen holds
+        /// less than one fight and zooming in stops telling the player anything.
+        /// </summary>
         private const float MinSize = 6f;
-        private const float MaxSize = 34f;
 
-        /// <summary>Zoom level the pan speed was tuned at, so panning feels equal at every zoom.</summary>
+        /// <summary>
+        /// Where a match opens: 24 cells tall, about a quarter of the map, which is
+        /// a base and the ground in front of it. The view builds the camera at its
+        /// own size and this overrides it on the first frame, because framing is
+        /// this file's job and a second copy of the number drifts from this one.
+        /// </summary>
+        private const float DefaultSize = 12f;
+
+        /// <summary>
+        /// Furthest out: half the map tall, and never wider than the map (see
+        /// MaxZoom). Two reasons, and the second is the one that bites. A view
+        /// larger than the map makes the map an object floating in a frame rather
+        /// than the frame itself, and every unit on it too small to click. And the
+        /// clamp below has no position to offer once the view outgrows the map, so
+        /// it centres instead and panning simply stops working — which is exactly
+        /// what the old 34 did at 68 cells against a 64 cell map.
+        /// </summary>
+        private const float MaxSize = 16f;
+
+        /// <summary>Zoom level the pan speed was tuned at, so panning feels equal at every zoom.
+        /// No longer a reachable zoom: speed is proportional to size, so this only sets the ratio.</summary>
         private const float ReferenceSize = 18f;
 
         /// <summary>How much void the view is allowed past the map edge.</summary>
@@ -74,10 +98,12 @@ namespace WordCraft.View
             if (Instance == this) Instance = null;
         }
 
-        /// <summary>Puts a world point in the middle of the screen. Control groups, the idle
-        /// worker button and the base jump go this way; it is a camera move and nothing else
-        /// hears about it. Eased like every other move, so a jump reads as a jump and not a cut.</summary>
-        public void CenterOn(Vector2 point) => target = new Vector3(point.x, point.y, -10f);
+        /// <summary>Puts a world point in the middle of the screen the player can see, which is
+        /// not the middle of the window (see FramingOffset). Control groups, the idle worker
+        /// button and the base jump go this way; it is a camera move and nothing else hears
+        /// about it. Eased like every other move, so a jump reads as a jump and not a cut.</summary>
+        public void CenterOn(Vector2 point) =>
+            target = new Vector3(point.x, point.y - FramingOffset(), -10f);
 
         private void Update()
         {
@@ -85,9 +111,12 @@ namespace WordCraft.View
             {
                 cam = Camera.main;
                 if (cam == null) return;
-                // Adopt whatever the view set up rather than jumping on the first frame.
+                // Adopt where the view put it rather than jumping on the first frame,
+                // but take over the zoom: snapped rather than eased, so the player
+                // does not watch a zoom on boot that they did not ask for.
                 target = cam.transform.position;
-                targetSize = cam.orthographicSize;
+                targetSize = DefaultSize;
+                cam.orthographicSize = DefaultSize;
             }
 
             // Only the match screen drives the camera. WASD is also how an address
@@ -151,7 +180,7 @@ namespace WordCraft.View
             Vector2 fromCentre = (Vector2)Input.mousePosition - new Vector2(Screen.width, Screen.height) * 0.5f;
             Vector2 grabbed = (Vector2)target + fromCentre * WorldPerPixel();
 
-            targetSize = Mathf.Clamp(targetSize * Mathf.Exp(-scroll * ZoomRate), MinSize, MaxSize);
+            targetSize = Mathf.Clamp(targetSize * Mathf.Exp(-scroll * ZoomRate), MinSize, MaxZoom());
 
             // Same pixel offset, new scale: put the camera where that point lands back under the cursor.
             Vector2 kept = grabbed - fromCentre * WorldPerPixel();
@@ -201,16 +230,56 @@ namespace WordCraft.View
         /// <summary>The one place the target is fenced, so every mover is fenced the same way.</summary>
         private void Clamp()
         {
+            // Re-clamped every frame rather than only on a wheel notch: the far
+            // limit depends on the aspect and a player can resize the window.
+            targetSize = Mathf.Clamp(targetSize, MinSize, MaxZoom());
+
+            // The fence is on what the player is looking at, not on where the
+            // camera sits, or the offset below would eat the bottom of the map:
+            // the last cells of the map would sit behind the command card and the
+            // clamp would call that arriving at the edge.
+            //
+            // ponytail: fenced against the whole window's half-height, not the
+            // visible band's, so at the bottom edge the void the panel hides is
+            // counted as void the player can see. It lands within a cell of right
+            // at both ends of the zoom range; subtract the panel from the
+            // half-height the day someone can see the difference.
+            float framed = target.y + FramingOffset();
+
             target.x = OnMap(target.x, targetSize * cam.aspect);
-            target.y = OnMap(target.y, targetSize);
+            target.y = OnMap(framed, targetSize) - FramingOffset();
             target.z = -10f;
         }
 
         /// <summary>
+        /// The far limit, pulled in on a wide window so the view is never wider
+        /// than the map. On 16:9 the constant binds; a 21:9 monitor at that same
+        /// constant would see 76 cells of a 64 cell map across, which is a screen
+        /// of void either side and, worse, a horizontal clamp with nothing left to
+        /// clamp to, so it locks to the map's centre line and panning dies.
+        /// </summary>
+        private float MaxZoom() =>
+            Mathf.Clamp(MatchScenario.MapSize / (2f * cam.aspect), MinSize, MaxSize);
+
+        /// <summary>
+        /// How far below what it is framing the camera sits, in world units. The
+        /// HUD's bottom panel is far taller than its top bar, so the middle of the
+        /// window is not the middle of what the player can see; a camera centred on
+        /// the window sends every jump — a control group, the base key, a minimap
+        /// click — to a point behind the command card. Half the difference puts it
+        /// back in the open. Read off the HUD's own two constants, so a taller
+        /// command card moves the camera with it instead of stranding a copy of
+        /// 200 and 44 in this file.
+        /// </summary>
+        private float FramingOffset() =>
+            (UiStyle.BottomPanel - UiStyle.TopBar) * 0.5f * WorldPerPixel();
+
+        /// <summary>
         /// Keeps the visible edge on the map give or take a margin, rather than
         /// keeping the camera centre on it, which lets half a screen of void in.
-        /// Zoomed far enough out the view is wider than the map and no position
-        /// satisfies that at all, so it centres instead.
+        /// A view wider than the map satisfies no position at all, so it centres
+        /// instead; MaxZoom now keeps the view inside the map on any sane monitor,
+        /// and this branch is what is left for the insane ones.
         /// </summary>
         private static float OnMap(float v, float half)
         {
