@@ -237,10 +237,11 @@ namespace WordCraft.View
         /// <summary>
         /// Every alive entity, every frame, over a copy of the baked terrain.
         /// </summary>
-        // ponytail: 16k pixel copy, one blob per entity, and a 64 KB texture
-        // upload per frame, for a few dozen entities on a 64x64 map. Repaint only
-        // the cells that changed, or keep static things in a second texture drawn
-        // underneath, the day a profile says this costs anything.
+        // ponytail: 16k pixel copy, a 4096-cell debris scan, one blob per entity,
+        // and a 64 KB texture upload per frame, for a few dozen entities on a
+        // 64x64 map. Repaint only the cells that changed, or keep static things in
+        // a second texture drawn underneath, the day a profile says this costs
+        // anything.
         private static void Paint(World world)
         {
             if (texture == null)
