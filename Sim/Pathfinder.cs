@@ -28,8 +28,13 @@ namespace WordCraft.Sim
         /// <summary>
         /// Fills outPath with the cells to walk after leaving start, ending on goal.
         /// Returns false and leaves outPath empty when no route exists.
+        ///
+        /// air is passed straight to World.IsPassable and is false for every mover
+        /// that exists today. Terrain is tested per neighbour rather than folded
+        /// into the blocked grid, because the blocked grid forces start and goal
+        /// open and a goal inside a lake has to stay unreachable.
         /// </summary>
-        public static bool FindPath(World world, int start, int goal, List<int> outPath)
+        public static bool FindPath(World world, int start, int goal, List<int> outPath, bool air)
         {
             outPath.Clear();
             if (start == goal) return true;
@@ -98,6 +103,10 @@ namespace WordCraft.Sim
 
                     int nc = ny * World.GridSize + nx;
                     if (blockedStamp[nc] == generation) continue;
+                    // Impassable terrain rejects a neighbour exactly the way a
+                    // building does, and at the same point in the loop, so equal
+                    // cost ties still resolve on the lower cell index.
+                    if (!world.IsPassable(nc, air)) continue;
 
                     Visit(nc);
                     if (closed[nc]) continue;

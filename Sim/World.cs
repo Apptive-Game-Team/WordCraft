@@ -36,7 +36,7 @@ namespace WordCraft.Sim
     /// renumber them. Open is 0 so a world nobody painted is all open ground,
     /// which is what every harness fixture relies on.
     /// </summary>
-    public enum Terrain : byte
+    public enum TileKind : byte
     {
         Open = 0,
         Water = 1,
@@ -207,13 +207,13 @@ namespace WordCraft.Sim
             population[e.Owner]--;
         }
 
-        public Terrain TerrainAt(int cell) => (Terrain)terrain[cell];
+        public TileKind TerrainAt(int cell) => (TileKind)terrain[cell];
 
         /// <summary>
         /// Scenario setup only, and only before the first tick. Terrain is hashed,
         /// so a peer that repainted a cell mid-match would desync every other peer.
         /// </summary>
-        public void SetTerrain(int x, int y, Terrain kind) => terrain[y * GridSize + x] = (byte)kind;
+        public void SetTerrain(int x, int y, TileKind kind) => terrain[y * GridSize + x] = (byte)kind;
 
         /// <summary>
         /// Whether a mover may occupy this cell. Terrain is a wall or it is
@@ -225,7 +225,7 @@ namespace WordCraft.Sim
         /// passes false; the parameter exists so the rule has one place to land
         /// rather than being retrofitted into every movement path later.
         /// </summary>
-        public bool IsPassable(int cell, bool air) => air || terrain[cell] == (byte)Terrain.Open;
+        public bool IsPassable(int cell, bool air) => air || terrain[cell] == (byte)TileKind.Open;
 
         /// <summary>Scenario setup only. Never call this from a system.</summary>
         public void GrantResources(int peer, int amount) => resources[peer] += amount;
@@ -549,7 +549,8 @@ namespace WordCraft.Sim
             e.Target = destination;
             e.PathIndex = 0;
             entities[id] = e;
-            Pathfinder.FindPath(this, CellOf(e.Position), CellOf(destination), paths[id]);
+            // air: false everywhere until an air unit exists. See World.IsPassable.
+            Pathfinder.FindPath(this, CellOf(e.Position), CellOf(destination), paths[id], air: false);
         }
 
         /// <summary>True when the entity has walked its whole path and holds no new order.</summary>
@@ -570,15 +571,19 @@ namespace WordCraft.Sim
                 FixVec2 goal = e.PathIndex < path.Count ? CellCenter(path[e.PathIndex]) : e.Target;
 
                 FixVec2 delta = goal - e.Position;
-                if (delta.Magnitude <= e.Speed)
-                {
-                    e.Position = goal;
-                    if (e.PathIndex < path.Count) e.PathIndex++;
-                }
-                else
-                {
-                    e.Position = e.Position + delta.Normalized() * e.Speed;
-                }
+                bool arrives = delta.Magnitude <= e.Speed;
+                FixVec2 next = arrives ? goal : e.Position + delta.Normalized() * e.Speed;
+
+                // The last word on where a body may stand. The pathfinder already
+                // routes around terrain, so this only ever catches the straight
+                // line an entity walks when no route exists, which is exactly the
+                // case that would otherwise put a unit in the middle of a lake.
+                // It stops rather than slides: a slide is a second movement rule
+                // and both peers would have to agree on it.
+                if (!IsPassable(CellOf(next), air: false)) continue;
+
+                e.Position = next;
+                if (arrives && e.PathIndex < path.Count) e.PathIndex++;
                 entities[i] = e;
             }
         }
