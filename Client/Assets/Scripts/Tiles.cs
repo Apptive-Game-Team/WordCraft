@@ -21,6 +21,11 @@ namespace WordCraft.View
     ///
     /// Reads the world and writes nothing to it, like the rest of the view.
     /// </summary>
+    // ponytail: eight texels a cell is the ceiling on how much a cell can say.
+    // An edge band fits; a rounded shore corner, a cliff face, a patch of reeds
+    // do not, and zoomed all the way in a texel is eleven screen pixels of flat
+    // colour. Raise TileTexels, or stamp authored tile art over this, the day a
+    // cell has to carry more than which side of it meets something else.
     public static class Tiles
     {
         // Sides, in the order the texel loop applies them. Up last, so a rock
