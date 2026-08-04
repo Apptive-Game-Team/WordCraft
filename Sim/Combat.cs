@@ -59,12 +59,7 @@ namespace WordCraft.Sim
                     {
                         a.AttackCooldown = s.AttackTicks;
                         t.Hp -= s.Damage + VolleyBonus(a);
-                        if (t.Hp <= 0)
-                        {
-                            t.Hp = 0;
-                            t.Alive = false;
-                            ReleasePopulation(t);
-                        }
+                        if (t.Hp <= 0) Kill(ref t);
                         entities[t.Id] = t;
                     }
                 }

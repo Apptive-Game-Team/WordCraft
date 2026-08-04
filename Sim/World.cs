@@ -142,6 +142,12 @@ namespace WordCraft.Sim
         public static readonly Fix InteractRange = Fix.FromInt(2);
         public static readonly Fix AcquireRange = Fix.FromInt(10);
 
+        /// <summary>
+        /// 돌 골렘 부족 잔해: how long the debris a fallen golem leaves blocks the
+        /// ground, in whole ticks. Twenty seconds, per docs/FACTION-MECHANICS.md.
+        /// </summary>
+        public const int RemnantTicks = 400;
+
         /// <summary>Where a finished unit appears, relative to its building. Fixed, so peers agree.</summary>
         public static readonly FixVec2 RallyOffset = new FixVec2(Fix.FromInt(2), Fix.Zero);
 
@@ -173,6 +179,17 @@ namespace WordCraft.Sim
         // on every pathfinding step and hashed on every tick, and neither wants an
         // indirection. Written only while the map is being built.
         private readonly byte[] terrain = new byte[GridCells];
+
+        // 돌 골렘 부족 잔해. The tick each cell's debris lapses on, or 0 for a cell
+        // that never had any. Hashed: it is what every path is computed against,
+        // so two peers that disagreed here would route two different armies.
+        //
+        // A grid rather than an entity because debris is not a body: it has no hp,
+        // nothing may target it, and an entity would have to be skipped by target
+        // acquisition, the victory scan, and the population count alike. A grid is
+        // also what the pathfinder already asks, through IsPassable, so neither its
+        // neighbour order nor its tie-breaking has to move.
+        private readonly int[] remnantExpiry = new int[GridCells];
 
         public int EntityCount => entities.Count;
         public Entity GetEntity(int id) => entities[id];
@@ -211,6 +228,40 @@ namespace WordCraft.Sim
             population[e.Owner]--;
         }
 
+        /// <summary>
+        /// The one place a body stops existing. Everything that has to happen
+        /// exactly once per death goes through here, so a second way to kill
+        /// something cannot get one of them wrong.
+        /// </summary>
+        private void Kill(ref Entity e)
+        {
+            e.Hp = 0;
+            e.Alive = false;
+            ReleasePopulation(e);
+            DropRemnant(e);
+        }
+
+        /// <summary>
+        /// 돌 골렘 부족 잔해: a fallen 돌 골렘 combat unit leaves rock debris on the
+        /// cell it fell on, blocking the ground for RemnantTicks. It blocks its own
+        /// side too. That is the mechanic, not a bug: where a 돌 골렘 player chooses
+        /// to fight is a heavier decision than it is for anyone else, because the
+        /// terrain the fight leaves behind was made of their own bodies.
+        ///
+        /// Dropped from inside the combat system's pass, which is where deaths
+        /// happen, so creation and expiry both land at one fixed point in the
+        /// system order and two peers repath against the same map on the same tick.
+        /// </summary>
+        private void DropRemnant(Entity e)
+        {
+            if (e.Kind != EntityKind.Unit) return; // workers and buildings leave nothing
+            if (e.Owner < 0 || e.Owner >= MaxPeers) return;
+            if (factions[e.Owner] != Faction.RockGolems) return;
+            // Overwrites rather than stacks: a second body on one cell resets the
+            // clock, and a count nobody can see is a count nobody can play around.
+            remnantExpiry[CellOf(e.Position)] = Tick + RemnantTicks;
+        }
+
         public TileKind TerrainAt(int cell) => (TileKind)terrain[cell];
 
         /// <summary>
@@ -228,8 +279,19 @@ namespace WordCraft.Sim
         /// 잔해를 무시하고 이동한다"). There are no air units yet, so every caller
         /// passes false; the parameter exists so the rule has one place to land
         /// rather than being retrofitted into every movement path later.
+        ///
+        /// Debris is tested here, in the one place both the pathfinder and the
+        /// mover already ask, so a route and the step that walks it can never
+        /// disagree about what is standing in the way.
         /// </summary>
-        public bool IsPassable(int cell, bool air) => air || terrain[cell] == (byte)TileKind.Open;
+        public bool IsPassable(int cell, bool air) =>
+            air || (terrain[cell] == (byte)TileKind.Open && remnantExpiry[cell] <= Tick);
+
+        /// <summary>The tick this cell's debris lapses on, or 0 when it never had any.</summary>
+        public int RemnantExpiry(int cell) => remnantExpiry[cell];
+
+        /// <summary>True while debris still stands on this cell.</summary>
+        public bool HasRemnant(int cell) => remnantExpiry[cell] > Tick;
 
         /// <summary>Scenario setup only. Never call this from a system.</summary>
         public void GrantResources(int peer, int amount) => resources[peer] += amount;
@@ -643,6 +705,20 @@ namespace WordCraft.Sim
                 ulong word = 0;
                 for (int b = 0; b < 8; b++) word |= (ulong)terrain[c + b] << (b * 8);
                 Mix(ref h, word);
+            }
+            // Debris expiry, the one field the faction mechanics add. Sparse, so
+            // only the occupied cells are mixed, each with its own index: two
+            // different cells can never fold to the same pair, and a match where
+            // nothing has died yet pays nothing but the scan.
+            // ponytail: a full grid walk per tick for a handful of cells, and a
+            // lapsed entry is left in the array rather than swept. Both are the
+            // same fix, a list of live cells, and neither is worth it until this
+            // shows up in a profile.
+            for (int c = 0; c < GridCells; c++)
+            {
+                if (remnantExpiry[c] == 0) continue;
+                Mix(ref h, (ulong)c);
+                Mix(ref h, (ulong)remnantExpiry[c]);
             }
             for (int i = 0; i < entities.Count; i++)
             {

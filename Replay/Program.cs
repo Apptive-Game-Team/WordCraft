@@ -48,6 +48,8 @@ namespace WordCraft.Replay
                 MassedArchersHitHarderThanScatteredOnes();
                 TheMassedBonusCaps();
                 TheMassedBonusIsWaterSlimesOnly();
+                ADeadGolemBlocksTheGroundItFellOn();
+                RemnantsBlockTheOwnersOwnUnits();
                 ScriptedLogPlacesEveryBuilding();
                 SoloMatchIsReproducible();
                 TheAiPlaysARealGame();
@@ -1184,6 +1186,132 @@ namespace WordCraft.Replay
 
             Entity target = world.GetEntity(VolleyDummy);
             return target.MaxHp - target.Hp;
+        }
+
+        // 돌 골렘 부족 잔해. A wall from edge to edge with exactly one gap, and a
+        // golem killed standing in it: the debris either closes the map in two or
+        // the mechanic does nothing, with no third answer to argue about.
+        private const int RemnantWallX = 20;
+        private const int RemnantGapY = 10;
+        private const int RemnantWalkTicks = 300;
+
+        /// <summary>
+        /// Debris blocks the only way through, and the way reopens the tick it
+        /// lapses. Checked through the pathfinder rather than by reading the grid
+        /// back, because what the mechanic promises is a closed route, and the
+        /// control faction is what proves it is the golem and not the death.
+        /// </summary>
+        private static void ADeadGolemBlocksTheGroundItFellOn()
+        {
+            World world = BuildRemnantWorld(Faction.RockGolems, executioner: true, out int golem);
+            int gap = World.CellOf(At(RemnantWallX, RemnantGapY));
+            var idle = new List<Command>();
+
+            Check(GapIsOpen(world), "the gap was already closed before anything died");
+
+            world.Step(idle);
+            Check(!world.GetEntity(golem).Alive, "the golem never died");
+            Check(world.HasRemnant(gap), "a dead golem left no debris");
+            Check(world.RemnantExpiry(gap) == World.RemnantTicks,
+                "debris lapses on tick " + world.RemnantExpiry(gap) + ", expected " + World.RemnantTicks);
+            Check(!GapIsOpen(world), "debris did not close the only way through");
+
+            while (world.Tick < World.RemnantTicks - 1)
+            {
+                world.Step(idle);
+                Check(!GapIsOpen(world), "debris lapsed early, on tick " + world.Tick);
+            }
+
+            world.Step(idle);
+            Check(!world.HasRemnant(gap), "debris outlived its expiry");
+            Check(GapIsOpen(world), "the gap never reopened");
+
+            // The control: the same death under another banner leaves nothing. Any
+            // faction losing a unit would pass every assertion above.
+            World other = BuildRemnantWorld(Faction.TreeSpirits, executioner: true, out int mortal);
+            other.Step(idle);
+            Check(!other.GetEntity(mortal).Alive, "the control unit never died");
+            Check(!other.HasRemnant(gap), "another faction's dead left debris");
+        }
+
+        /// <summary>
+        /// The debris blocks the side that made it. Its owner's own unit is walked
+        /// at the gap and has to be stopped short, against a control run of the
+        /// same order over the same ground with nothing dead in it.
+        /// </summary>
+        private static void RemnantsBlockTheOwnersOwnUnits()
+        {
+            Fix wall = Fix.FromInt(RemnantWallX);
+
+            World blocked = BuildRemnantWorld(Faction.RockGolems, executioner: true, out _);
+            Fix reached = WalkAtTheGap(blocked, out bool arrived);
+            Check(!arrived, "its owner's own unit walked through the debris");
+            // Every tick, not only the last: a unit that crossed and came back
+            // would pass an end-state check.
+            Check(reached < wall, "its owner's own unit stood past the wall at x=" + reached);
+
+            World open = BuildRemnantWorld(Faction.RockGolems, executioner: false, out int golem);
+            WalkAtTheGap(open, out bool controlArrived);
+            Check(open.GetEntity(golem).Alive, "the control run killed the golem after all");
+            Check(controlArrived, "the control unit never got through an open gap either");
+        }
+
+        /// <summary>
+        /// Walks one of the debris owner's own units at the far side of the gap and
+        /// returns the furthest east it ever stood.
+        /// </summary>
+        private static Fix WalkAtTheGap(World world, out bool arrived)
+        {
+            int mover = world.SpawnUnit(0, Role.Melee, At(2, RemnantGapY));
+            var order = new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.Move, mover, At(30, RemnantGapY))
+            };
+            var idle = new List<Command>();
+
+            Fix furthest = Fix.Zero;
+            arrived = false;
+            for (int t = 0; t < RemnantWalkTicks; t++)
+            {
+                // The order goes in on tick 1, after the golem has fallen on tick 0,
+                // so the route is computed against the map the debris made.
+                world.Step(t == 1 ? order : idle);
+                Entity e = world.GetEntity(mover);
+                if (e.Position.X > furthest) furthest = e.Position.X;
+                if (e.Position.Equals(At(30, RemnantGapY))) arrived = true;
+            }
+            return furthest;
+        }
+
+        /// <summary>True when a ground route still runs from one side of the wall to the other.</summary>
+        private static bool GapIsOpen(World world)
+        {
+            var path = new List<int>();
+            return Pathfinder.FindPath(world,
+                World.CellOf(At(RemnantWallX - 5, RemnantGapY)),
+                World.CellOf(At(RemnantWallX + 5, RemnantGapY)), path, air: false);
+        }
+
+        /// <summary>
+        /// A wall across the map with one gap in it, a combat unit of the named
+        /// faction standing in the gap one hit from death, and optionally the enemy
+        /// that deals it. The kill goes through the combat system rather than a test
+        /// hook, so the debris is dropped by the path a match takes.
+        /// </summary>
+        private static World BuildRemnantWorld(Faction owner, bool executioner, out int doomed)
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, owner);
+            world.SetPeerFaction(1, Faction.TreeSpirits);
+
+            for (int y = 0; y < World.GridSize; y++)
+            {
+                if (y != RemnantGapY) world.SetTerrain(RemnantWallX, y, TileKind.Rock);
+            }
+
+            doomed = world.SpawnUnit(0, Role.Melee, At(RemnantWallX, RemnantGapY), hpOverride: 1);
+            if (executioner) world.SpawnUnit(1, Role.Melee, At(RemnantWallX + 1, RemnantGapY));
+            return world;
         }
 
         /// <summary>
