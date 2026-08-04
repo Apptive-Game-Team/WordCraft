@@ -48,11 +48,13 @@ namespace WordCraft.Sim
     public static class FactionData
     {
         /// <summary>
-        /// Bump on any change to the tables below. Two peers running different
-        /// content produce different results from the same input, so this travels
-        /// in the handshake and a mismatch is a rejection before tick 0.
+        /// Bump on any change to the tables below, or to the map MatchScenario
+        /// paints. Two peers running different content produce different results
+        /// from the same input, so this travels in the handshake and a mismatch is
+        /// a rejection before tick 0. Terrain counts: a peer generating a different
+        /// map has to be turned away at the handshake rather than desync on tick 1.
         /// </summary>
-        public const uint ContentVersion = 12;
+        public const uint ContentVersion = 13;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;

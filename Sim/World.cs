@@ -31,6 +31,23 @@ namespace WordCraft.Sim
     }
 
     /// <summary>
+    /// What one map cell is made of. One byte per cell, fixed for the whole match
+    /// and decided when the map is built. Values are hashed as world state; never
+    /// renumber them. Open is 0 so a world nobody painted is all open ground,
+    /// which is what every harness fixture relies on.
+    /// </summary>
+    // ponytail: passable or not, and nothing else. No movement cost, no elevation,
+    // no vision blocking. Adding a cost is the one that reaches furthest: the
+    // pathfinder's uniform step cost of 1 and its Manhattan heuristic are only
+    // admissible while every open cell costs the same.
+    public enum TileKind : byte
+    {
+        Open = 0,
+        Water = 1,
+        Rock = 2,
+    }
+
+    /// <summary>
     /// One flat struct for every kind of entity. A worker leaves the building
     /// fields at zero and vice versa; that costs a few bytes and saves a type
     /// hierarchy whose fields would have to be hashed one by one anyway.
@@ -152,6 +169,11 @@ namespace WordCraft.Sim
 
         private readonly List<Command> tickCommands = new List<Command>();
 
+        // The terrain layer. A byte per cell rather than a tile object: it is read
+        // on every pathfinding step and hashed on every tick, and neither wants an
+        // indirection. Written only while the map is being built.
+        private readonly byte[] terrain = new byte[GridCells];
+
         public int EntityCount => entities.Count;
         public Entity GetEntity(int id) => entities[id];
         public int GetResources(int peer) => resources[peer];
@@ -188,6 +210,26 @@ namespace WordCraft.Sim
             if (e.Owner < 0 || e.Owner >= MaxPeers) return;
             population[e.Owner]--;
         }
+
+        public TileKind TerrainAt(int cell) => (TileKind)terrain[cell];
+
+        /// <summary>
+        /// Scenario setup only, and only before the first tick. Terrain is hashed,
+        /// so a peer that repainted a cell mid-match would desync every other peer.
+        /// </summary>
+        public void SetTerrain(int x, int y, TileKind kind) => terrain[y * GridSize + x] = (byte)kind;
+
+        /// <summary>
+        /// Whether a mover may occupy this cell. Terrain is a wall or it is
+        /// nothing: there is no movement cost, so a route is decided by length
+        /// alone and the pathfinder stays on integer costs.
+        ///
+        /// air is the seam docs/FACTION-MECHANICS.md asks for ("공중 유닛은 지형과
+        /// 잔해를 무시하고 이동한다"). There are no air units yet, so every caller
+        /// passes false; the parameter exists so the rule has one place to land
+        /// rather than being retrofitted into every movement path later.
+        /// </summary>
+        public bool IsPassable(int cell, bool air) => air || terrain[cell] == (byte)TileKind.Open;
 
         /// <summary>Scenario setup only. Never call this from a system.</summary>
         public void GrantResources(int peer, int amount) => resources[peer] += amount;
@@ -511,7 +553,8 @@ namespace WordCraft.Sim
             e.Target = destination;
             e.PathIndex = 0;
             entities[id] = e;
-            Pathfinder.FindPath(this, CellOf(e.Position), CellOf(destination), paths[id]);
+            // air: false everywhere until an air unit exists. See World.IsPassable.
+            Pathfinder.FindPath(this, CellOf(e.Position), CellOf(destination), paths[id], air: false);
         }
 
         /// <summary>True when the entity has walked its whole path and holds no new order.</summary>
@@ -532,15 +575,21 @@ namespace WordCraft.Sim
                 FixVec2 goal = e.PathIndex < path.Count ? CellCenter(path[e.PathIndex]) : e.Target;
 
                 FixVec2 delta = goal - e.Position;
-                if (delta.Magnitude <= e.Speed)
-                {
-                    e.Position = goal;
-                    if (e.PathIndex < path.Count) e.PathIndex++;
-                }
-                else
-                {
-                    e.Position = e.Position + delta.Normalized() * e.Speed;
-                }
+                bool arrives = delta.Magnitude <= e.Speed;
+                FixVec2 next = arrives ? goal : e.Position + delta.Normalized() * e.Speed;
+
+                // The last word on where a body may stand. The pathfinder already
+                // routes around terrain, so this only ever catches the straight
+                // line an entity walks when no route exists, which is exactly the
+                // case that would otherwise put a unit in the middle of a lake.
+                // ponytail: it stops dead rather than sliding along the edge, so a
+                // unit with no route parks against the shore and stays there. Give
+                // it a slide the day units are expected to find their own way round
+                // something the path did not know about.
+                if (!IsPassable(CellOf(next), air: false)) continue;
+
+                e.Position = next;
+                if (arrives && e.PathIndex < path.Count) e.PathIndex++;
                 entities[i] = e;
             }
         }
@@ -581,6 +630,20 @@ namespace WordCraft.Sim
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)population[p]);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, aiPeers[p] ? 1UL : 0UL);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)aiSeq[p]);
+            // Terrain never changes after the map is built, but it is hashed every
+            // tick anyway: two peers that generated different maps have to diverge
+            // on tick 1, not twenty seconds later when a unit first walks into
+            // water that only one of them has.
+            // ponytail: eight cells to a word is the whole optimisation, so this
+            // still walks 512 words per tick over a layer that never changes. Fold
+            // it to a digest taken once when the map is built if Hash() ever shows
+            // up in a profile.
+            for (int c = 0; c < GridCells; c += 8)
+            {
+                ulong word = 0;
+                for (int b = 0; b < 8; b++) word |= (ulong)terrain[c + b] << (b * 8);
+                Mix(ref h, word);
+            }
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];

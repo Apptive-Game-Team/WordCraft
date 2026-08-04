@@ -155,6 +155,11 @@ namespace WordCraft.Sim
             if (position.X >= Fix.FromInt(GridSize) || position.Y >= Fix.FromInt(GridSize)) return false;
 
             int cell = CellOf(position);
+            // Nothing stands in water or on rock. Checked here rather than in
+            // TryPlaceBuilding so the client's placement ghost, which calls this,
+            // greys out the same cells the simulation is going to refuse.
+            if (!IsPassable(cell, air: false)) return false;
+
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];

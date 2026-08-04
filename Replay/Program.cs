@@ -43,6 +43,8 @@ namespace WordCraft.Replay
                 BuildRefusesWhatTheFactionDoesNotHave();
                 BuildIsGatedByTheTechTier();
                 BuildRefusesOccupiedAndOffMapCells();
+                GroundRoutesAroundImpassableTerrain();
+                BuildRefusesImpassableTerrain();
                 ScriptedLogPlacesEveryBuilding();
                 SoloMatchIsReproducible();
                 TheAiPlaysARealGame();
@@ -186,12 +188,36 @@ namespace WordCraft.Replay
 
         /// <summary>
         /// Every start position has a counterpart under a 180 degree rotation of
-        /// the grid, with the same role and the same numbers. Eyeballing a layout
-        /// is how a map ends up a cell out of true and one side ends up closer.
+        /// the grid, with the same role and the same numbers, and so does every
+        /// terrain cell. Eyeballing a layout is how a map ends up a cell out of true
+        /// and one side ends up closer, and a wall is the easiest thing of all to
+        /// get a cell wrong in.
         /// </summary>
         private static void MapIsExactlySymmetric()
         {
             World world = MatchScenario.Build(Seed, ScriptedLog.Peer0Faction, ScriptedLog.Peer1Faction);
+
+            for (int y = 0; y < World.GridSize; y++)
+            {
+                for (int x = 0; x < World.GridSize; x++)
+                {
+                    int cell = y * World.GridSize + x;
+                    int mirror = (World.GridSize - 1 - y) * World.GridSize + (World.GridSize - 1 - x);
+                    Check(world.TerrainAt(cell) == world.TerrainAt(mirror),
+                        "terrain at " + x + "," + y + " is " + world.TerrainAt(cell) +
+                        " but its mirror is " + world.TerrainAt(mirror));
+                }
+            }
+
+            // And that there is terrain to be symmetric about: an all-open map
+            // passes the loop above without asserting anything at all.
+            int impassable = 0;
+            for (int cell = 0; cell < World.GridCells; cell++)
+            {
+                if (world.TerrainAt(cell) != TileKind.Open) impassable++;
+            }
+            Check(impassable > 0, "the map has no terrain, so the symmetry check proves nothing");
+
             // Cell x sits at x + 1/2, its mirror at (GridSize - 1 - x) + 1/2, so a
             // mirrored pair's coordinates always sum to exactly GridSize.
             Fix span = Fix.FromInt(World.GridSize);
@@ -926,6 +952,111 @@ namespace WordCraft.Replay
             // And the cell it took is now occupied for the next one.
             world.Step(Build(0, seq + 1, Role.Supply, At(20, 20)));
             Check(world.EntityCount == 3, "two buildings were placed on one cell");
+        }
+
+        private const int Router = 0;   // ordered across the wall
+        private const int Bumper = 1;   // ordered into it
+        private const int WallX = 20;
+        private const int WallEndY = 20; // the wall runs from the top edge down to here
+
+        /// <summary>
+        /// Two orders against one wall. The first is ordered to the far side and
+        /// has to walk around the end of it; the second is ordered onto the wall
+        /// itself, which is the order with no legal answer. Neither is allowed to
+        /// stand on rock on any tick of the run, which is checked every tick rather
+        /// than at the end: a unit that crossed the wall and came back off it would
+        /// pass a final-state check.
+        /// </summary>
+        private static void GroundRoutesAroundImpassableTerrain()
+        {
+            ulong[] first = RunTerrainWalk(out World world, out bool trespassed, out bool wentRound);
+            ulong[] second = RunTerrainWalk(out _, out _, out _);
+
+            Check(!trespassed, "a ground unit stood on impassable terrain");
+            Check(world.GetEntity(Router).Position.Equals(At(30, 10)),
+                "the unit ordered across the wall never arrived");
+            // Straight there is 20 cells of open ground; the only reason to be south
+            // of the wall's end is that the route went around it.
+            Check(wentRound, "the unit reached the far side without going around the wall");
+
+            Check(!world.GetEntity(Bumper).Position.Equals(At(WallX, 10)),
+                "the unit ordered onto the wall reached the cell it was sent to");
+            Check(world.TerrainAt(World.CellOf(world.GetEntity(Bumper).Position)) == TileKind.Open,
+                "the unit ordered onto the wall finished standing in it");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "terrain walk hash drift at tick " + t);
+            }
+        }
+
+        private static ulong[] RunTerrainWalk(out World world, out bool trespassed, out bool wentRound)
+        {
+            world = new World(Seed);
+            // A wall hung from the top edge, so there is exactly one way round it
+            // and the route it forces is unambiguous.
+            for (int y = 0; y <= WallEndY; y++) world.SetTerrain(WallX, y, TileKind.Rock);
+
+            world.SpawnUnit(0, Role.Melee, At(10, 10)); // 0
+            // Far enough south that its own walk never meets the other unit, so the
+            // two halves of the run stay independent.
+            world.SpawnUnit(0, Role.Melee, At(10, 40)); // 1
+
+            var orders = new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.Move, Router, At(30, 10)),
+                new Command(0, 0, 1, CommandType.Move, Bumper, At(WallX, 10))
+            };
+            var idle = new List<Command>();
+
+            trespassed = false;
+            wentRound = false;
+            var hashes = new ulong[OrderTicks];
+            for (int t = 0; t < OrderTicks; t++)
+            {
+                world.Step(t == 0 ? orders : idle);
+                foreach (int id in new[] { Router, Bumper })
+                {
+                    Entity e = world.GetEntity(id);
+                    if (world.TerrainAt(World.CellOf(e.Position)) != TileKind.Open) trespassed = true;
+                }
+                if (world.GetEntity(Router).Position.Y > Fix.FromInt(WallEndY)) wentRound = true;
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        /// <summary>
+        /// Water and rock refuse a building the same way an occupied cell does, and
+        /// refuse it whole. Checked through CanBuild as well as through the command,
+        /// because the client tints its placement ghost with the first and the
+        /// simulation decides with the second; a ghost that disagreed would offer
+        /// the player a cell the match then refuses.
+        /// </summary>
+        private static void BuildRefusesImpassableTerrain()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.TreeSpirits);
+            world.SetTerrain(20, 20, TileKind.Rock);
+            world.SetTerrain(25, 25, TileKind.Water);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.GrantResources(0, 5000);
+
+            Check(!world.CanBuild(0, Role.Supply, At(20, 20)), "the ghost would allow a building on rock");
+            Check(!world.CanBuild(0, Role.Supply, At(25, 25)), "the ghost would allow a building in water");
+
+            int banked = world.GetResources(0);
+            int seq = 0;
+            foreach (FixVec2 where in new[] { At(20, 20), At(25, 25) })
+            {
+                world.Step(Build(0, seq++, Role.Supply, where));
+                Check(world.EntityCount == 1, "a Build on impassable terrain placed something");
+                Check(world.GetResources(0) == banked, "a refused Build still spent resources");
+            }
+
+            // The control: the same order one cell over, on open ground.
+            world.Step(Build(0, seq, Role.Supply, At(21, 20)));
+            Check(world.EntityCount == 2, "the control build on open ground was refused too");
         }
 
         /// <summary>

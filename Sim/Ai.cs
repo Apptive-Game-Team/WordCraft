@@ -225,9 +225,10 @@ namespace WordCraft.Sim
         /// peer running this arrives at the same cell with no tie-break of its own.
         /// </summary>
         // ponytail: rings around the base and nothing else. It can box its own
-        // workers behind a wall of supply buildings and it has no idea where a
-        // choke or an expansion is. Give it real placement the day the map has
-        // terrain worth reading.
+        // workers behind a wall of supply buildings, and now that the map has
+        // terrain it walks past chokes it cannot see. CanBuild refuses the cells it
+        // may not have, so the ring is safe, merely blind. Give it real placement
+        // the day where it builds is supposed to be a decision.
         private void AiBuild(int peer, Role role)
         {
             int home = AiHome(peer);
