@@ -238,6 +238,12 @@ namespace WordCraft.View
             // camera sits, or the offset below would eat the bottom of the map:
             // the last cells of the map would sit behind the command card and the
             // clamp would call that arriving at the edge.
+            //
+            // ponytail: fenced against the whole window's half-height, not the
+            // visible band's, so at the bottom edge the void the panel hides is
+            // counted as void the player can see. It lands within a cell of right
+            // at both ends of the zoom range; subtract the panel from the
+            // half-height the day someone can see the difference.
             float framed = target.y + FramingOffset();
 
             target.x = OnMap(target.x, targetSize * cam.aspect);
