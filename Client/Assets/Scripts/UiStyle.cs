@@ -239,6 +239,33 @@ namespace WordCraft.View
         public const float InfoWidth = 260f;
         public const float IdleWidth = 140f;
 
+        /// <summary>The button that opens the mixer. Narrow: one word, and it is not the point of the bar.</summary>
+        public const float MixerButton = 92f;
+
+        /// <summary>
+        /// Everything pinned to the right of the top bar. The diagnostics to its
+        /// left stop here, so one number moves when a control is added rather than
+        /// three subtractions being kept in step by hand.
+        /// </summary>
+        public const float TopRightWidth = MixerButton + S2 + IdleWidth + S4;
+
+        /// <summary>A mixer level's track. Thick enough to hit without aiming, thin enough not to read as a button.</summary>
+        public const float SliderTrack = S2;
+
+        /// <summary>One level: its name, the gap, its track.</summary>
+        public const float MixerRow = Micro + S1 + SliderTrack;
+
+        public const float MixerWidth = 220f;
+        public const float MixerHeight = S3 + Micro + S1 + 3f * (MixerRow + S3);
+
+        /// <summary>
+        /// Where the mixer hangs: under the button that opens it, in the corner that
+        /// button lives in, so the panel and the control that summoned it are one
+        /// shape rather than two things to find.
+        /// </summary>
+        public static Rect MixerPanel() =>
+            new Rect(Screen.width - MixerWidth - S4, TopBar + S2, MixerWidth, MixerHeight);
+
         public const float MenuWidth = 470f;
         public const float MenuHeight = 372f;
         public const float ResultWidth = 690f;
@@ -259,6 +286,7 @@ namespace WordCraft.View
         private static GUIStyle micro, header, big, display, tinted;
         private static GUIStyle field, button, buttonArmed, buttonOff;
         private static GUIStyle cell, keycap, chip;
+        private static GUIStyle sliderTrack, sliderThumb;
 
         // Exposed for the two GUILayout screens. Everything drawn during a match
         // is a component below and never reaches for a style directly.
@@ -321,6 +349,14 @@ namespace WordCraft.View
             chip = Button(Raised, Lifted, Ink, TextAnchor.MiddleLeft);
             chip.fontSize = Micro;
             chip.padding = new RectOffset((int)S1, (int)S1, 0, 0);
+
+            // The track draws nothing: Slider paints the well and the fill itself,
+            // so the level is a value and not a widget with a groove in it. The
+            // thumb is a hairline notch cut into the fill's leading edge.
+            sliderTrack = new GUIStyle { fixedHeight = SliderTrack };
+            sliderThumb = new GUIStyle { fixedWidth = S1, fixedHeight = SliderTrack };
+            sliderThumb.normal.background = Solid(Void);
+            sliderThumb.active.background = Solid(Void);
         }
 
         private static GUIStyle Label(int size, Color color, TextAnchor anchor)
@@ -513,6 +549,21 @@ namespace WordCraft.View
         {
             Fill(area, Void);
             Fill(new Rect(area.x, area.y, area.width * Mathf.Clamp01(fill), area.height), color);
+        }
+
+        /// <summary>
+        /// A level from 0 to 1 the player drags. The same shape as Meter — a Void
+        /// well with a fill — because "how much of this is there" is one question
+        /// and deserves one idiom. The fill wears the accent rather than a semantic
+        /// colour: a level is not a state, it is the thing the player is in the
+        /// middle of, which is the only thing the accent ever means.
+        /// </summary>
+        public static float Slider(Rect area, float value)
+        {
+            Build();
+            Fill(area, Void);
+            Fill(new Rect(area.x, area.y, area.width * Mathf.Clamp01(value), area.height), Accent);
+            return GUI.HorizontalSlider(area, value, 0f, 1f, sliderTrack, sliderThumb);
         }
 
         /// <summary>

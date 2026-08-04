@@ -47,6 +47,13 @@ namespace WordCraft.View
         private Faction faction = MatchConfig.DefaultFaction(0);
         private string formError;
 
+        /// <summary>
+        /// Whether the mixer is showing. Static because OverUi is static and has to
+        /// know: the panel floats over the map, and a drag on a level must not also
+        /// box-select the army underneath it.
+        /// </summary>
+        private static bool mixerOpen;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot() => new GameObject("WordCraft HUD").AddComponent<Hud>();
 
@@ -74,8 +81,17 @@ namespace WordCraft.View
         {
             MatchRunner runner = MatchRunner.Instance;
             if (runner != null && runner.Phase != Phase.Match) return true;
-            return screenPosition.y <= UiStyle.BottomPanel ||
-                   screenPosition.y >= Screen.height - UiStyle.TopBar;
+            if (screenPosition.y <= UiStyle.BottomPanel ||
+                screenPosition.y >= Screen.height - UiStyle.TopBar)
+            {
+                return true;
+            }
+
+            // The mixer floats over the map rather than inside a bar, so it is the
+            // one panel this has to be told about. Input y grows up and GUI y grows
+            // down, hence the flip.
+            return mixerOpen && UiStyle.MixerPanel().Contains(
+                new Vector2(screenPosition.x, Screen.height - screenPosition.y));
         }
 
         private void OnGUI()
@@ -93,8 +109,23 @@ namespace WordCraft.View
                 default:
                     TopBar(runner.World);
                     BottomPanel(runner.World);
+                    // Last, so it floats over both bars rather than under them.
+                    if (mixerOpen) Mixer();
                     break;
             }
+        }
+
+        /// <summary>
+        /// A menu button: the control plus the click that says it was pressed. Only
+        /// the start and result screens use it. In a match a press already has a
+        /// confirmation of its own — the command click, or the cell inverting — and
+        /// a second sound under it would be one press making two noises.
+        /// </summary>
+        private static bool MenuButton(string label, float height, bool armed = false)
+        {
+            if (!UiStyle.Button(label, height, armed)) return false;
+            Sound.Menu();
+            return true;
         }
 
         // ---- start screen ----
@@ -147,7 +178,7 @@ namespace WordCraft.View
                 for (int i = row; i < row + PickerCols && i < names.Length; i++)
                 {
                     if (i > row) GUILayout.Space(UiStyle.S1);
-                    if (UiStyle.Button(names[i], UiStyle.Control, (int)faction == i)) faction = (Faction)i;
+                    if (MenuButton(names[i], UiStyle.Control, (int)faction == i)) faction = (Faction)i;
                 }
                 GUILayout.EndHorizontal();
                 GUILayout.Space(UiStyle.S1);
@@ -157,15 +188,15 @@ namespace WordCraft.View
         private void HostOrJoin()
         {
             GUILayout.BeginHorizontal();
-            bool host = UiStyle.Button("HOST", UiStyle.ControlTall);
+            bool host = MenuButton("HOST", UiStyle.ControlTall);
             GUILayout.Space(UiStyle.S2);
-            bool join = UiStyle.Button("JOIN", UiStyle.ControlTall);
+            bool join = MenuButton("JOIN", UiStyle.ControlTall);
             GUILayout.EndHorizontal();
             GUILayout.Space(UiStyle.S2);
 
             // No address, no port, no handshake: nothing here can be malformed, so
             // this one takes no error path and starts the match outright.
-            bool solo = UiStyle.Button("SOLO", UiStyle.ControlTall);
+            bool solo = MenuButton("SOLO", UiStyle.ControlTall);
             GUILayout.Space(UiStyle.S3);
 
             if (formError != null)
@@ -219,7 +250,7 @@ namespace WordCraft.View
                 UiStyle.Toned(rejected ? UiStyle.Danger : UiStyle.Ink));
             GUILayout.Space(UiStyle.S3);
 
-            if (UiStyle.Button(rejected ? "back" : "cancel", UiStyle.Control)) runner.ShowStart();
+            if (MenuButton(rejected ? "back" : "cancel", UiStyle.Control)) runner.ShowStart();
         }
 
         private string ConnectionText(LockstepSession session)
@@ -266,7 +297,7 @@ namespace WordCraft.View
                 UiStyle.MicroStyle);
             GUILayout.Space(UiStyle.S4);
 
-            if (UiStyle.Button("play again", UiStyle.ControlTall)) runner.ShowStart();
+            if (MenuButton("play again", UiStyle.ControlTall)) runner.ShowStart();
             GUILayout.EndArea();
         }
 
@@ -303,7 +334,7 @@ namespace WordCraft.View
             x += UiStyle.ReadoutWidth + UiStyle.S4;
 
             bool stopped = runner.Session.State == SessionState.Stopped;
-            float right = Screen.width - UiStyle.IdleWidth - UiStyle.S4 - UiStyle.S4;
+            float right = Screen.width - UiStyle.TopRightWidth - UiStyle.S4;
             float width = Mathf.Max(0f, right - x);
 
             UiStyle.Note(new Rect(x, y, width, UiStyle.Micro + UiStyle.S1),
@@ -311,14 +342,70 @@ namespace WordCraft.View
             UiStyle.Note(new Rect(x, y + UiStyle.Micro + UiStyle.S1, width, UiStyle.Line),
                 "peer " + peer + "  ·  tick " + world.Tick + "  ·  " + runner.Link, UiStyle.InkMute);
 
+            float controls = Screen.width - UiStyle.TopRightWidth;
+            float row = (UiStyle.TopBar - UiStyle.Control) * 0.5f;
+
+            // Armed, because the accent inverting is how every other control on this
+            // HUD says "this is the one you are in the middle of". The press itself
+            // makes no sound: the panel appearing is the confirmation.
+            if (UiStyle.Button(new Rect(controls, row, UiStyle.MixerButton, UiStyle.Control),
+                    "sound", armed: mixerOpen))
+            {
+                mixerOpen = !mixerOpen;
+                // Levels are written to PlayerPrefs as they are dragged and flushed
+                // here, because a drag is sixty writes a second and Save writes a file.
+                if (!mixerOpen) PlayerPrefs.Save();
+            }
+
             if (selection == null) return;
             int idle = selection.IdleWorkerCount();
-            var button = new Rect(Screen.width - UiStyle.IdleWidth - UiStyle.S4,
-                (UiStyle.TopBar - UiStyle.Control) * 0.5f, UiStyle.IdleWidth, UiStyle.Control);
+            var button = new Rect(controls + UiStyle.MixerButton + UiStyle.S2, row,
+                UiStyle.IdleWidth, UiStyle.Control);
             if (UiStyle.Button(button, "idle worker  " + idle, armed: false, enabled: idle > 0))
             {
                 selection.CycleIdleWorker();
             }
+        }
+
+        // ---- match: mixer ----
+
+        /// <summary>
+        /// Master, music and effects, over the map, reachable without leaving the
+        /// match — which is the only place the levels can honestly be judged, since
+        /// what a player is turning down is a battle and not a menu.
+        ///
+        /// Three levels rather than one, because the bed and the fight are turned
+        /// down for different reasons: one is taste and the other is the room.
+        /// </summary>
+        private static void Mixer()
+        {
+            Rect panel = UiStyle.MixerPanel();
+            UiStyle.PanelBox(panel, UiStyle.Panel);
+
+            Rect inside = UiStyle.Inside(panel);
+            float y = inside.y;
+            UiStyle.Header(new Rect(inside.x, y, inside.width, UiStyle.Micro + UiStyle.S1), "sound");
+            y += UiStyle.Micro + UiStyle.S1;
+
+            Sound.Master = Level(inside, ref y, "master", Sound.Master);
+            Sound.Music = Level(inside, ref y, "music", Sound.Music);
+            Sound.Effects = Level(inside, ref y, "effects", Sound.Effects);
+        }
+
+        /// <summary>
+        /// One level: the name and the number on one line, the track under it. The
+        /// number is in the label rather than aligned to the right edge, because a
+        /// right-aligned Note is a second text component for one row of one panel.
+        /// </summary>
+        private static float Level(Rect inside, ref float y, string name, float value)
+        {
+            UiStyle.Note(new Rect(inside.x, y, inside.width, UiStyle.Micro + UiStyle.S1),
+                name + "  " + Mathf.RoundToInt(value * 100f) + "%");
+            y += UiStyle.Micro + UiStyle.S1;
+
+            float next = UiStyle.Slider(new Rect(inside.x, y, inside.width, UiStyle.SliderTrack), value);
+            y += UiStyle.SliderTrack + UiStyle.S3;
+            return next;
         }
 
         // ---- match: bottom panel ----
