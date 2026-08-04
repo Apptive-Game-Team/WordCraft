@@ -5,6 +5,14 @@ namespace WordCraft.Sim
     /// </summary>
     public sealed partial class World
     {
+        /// <summary>
+        /// 물 슬라임 일제 사격: how far an allied archer counts from, in cells.
+        /// </summary>
+        public static readonly Fix VolleyRadius = Fix.FromInt(3);
+
+        /// <summary>Most damage the massed bonus can ever add, per docs/FACTION-MECHANICS.md.</summary>
+        public const int VolleyMaxBonus = 4;
+
         private void CombatSystem()
         {
             // Attackers act in ascending id order and damage lands immediately, so
@@ -50,7 +58,7 @@ namespace WordCraft.Sim
                     if (a.AttackCooldown == 0)
                     {
                         a.AttackCooldown = s.AttackTicks;
-                        t.Hp -= s.Damage;
+                        t.Hp -= s.Damage + VolleyBonus(a);
                         if (t.Hp <= 0)
                         {
                             t.Hp = 0;
@@ -86,6 +94,41 @@ namespace WordCraft.Sim
 
                 entities[i] = a;
             }
+        }
+
+        /// <summary>
+        /// 물 슬라임 일제 사격: +1 damage for every other allied archer standing
+        /// within VolleyRadius, up to VolleyMaxBonus. Formation is firepower.
+        ///
+        /// Counted at the moment of the shot rather than carried on the entity, so
+        /// the mechanic adds no hashed field at all: a cached bonus would be state
+        /// that has to be refreshed everywhere a unit moves or dies, and the tick
+        /// one peer forgot is the tick the two worlds part company.
+        /// </summary>
+        // ponytail: a linear scan per shot, so O(n^2) across a tick of archers.
+        // That is the ceiling AcquireTarget already lives under, and both go to a
+        // grid bucket broad phase on the same day.
+        private int VolleyBonus(Entity archer)
+        {
+            if (archer.Kind != EntityKind.Unit || archer.Role != Role.Ranged) return 0;
+            if (archer.Owner < 0 || archer.Owner >= MaxPeers) return 0;
+            if (factions[archer.Owner] != Faction.WaterSlimes) return 0;
+
+            // Ascending entity id, never a keyed collection. A count does not care
+            // about order, but the loop that produces it is not allowed to become
+            // one that does, and the cap makes it care: stopping early has to stop
+            // on the same archer everywhere.
+            int allies = 0;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity o = entities[i];
+                if (!o.Alive || o.Id == archer.Id) continue;
+                if (o.Owner != archer.Owner) continue;
+                if (o.Kind != EntityKind.Unit || o.Role != Role.Ranged) continue;
+                if (!WithinRange(o.Position, archer.Position, VolleyRadius)) continue;
+                if (++allies == VolleyMaxBonus) break;
+            }
+            return allies;
         }
 
         /// <summary>

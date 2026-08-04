@@ -45,6 +45,9 @@ namespace WordCraft.Replay
                 BuildRefusesOccupiedAndOffMapCells();
                 GroundRoutesAroundImpassableTerrain();
                 BuildRefusesImpassableTerrain();
+                MassedArchersHitHarderThanScatteredOnes();
+                TheMassedBonusCaps();
+                TheMassedBonusIsWaterSlimesOnly();
                 ScriptedLogPlacesEveryBuilding();
                 SoloMatchIsReproducible();
                 TheAiPlaysARealGame();
@@ -1057,6 +1060,130 @@ namespace WordCraft.Replay
             // The control: the same order one cell over, on open ground.
             world.Step(Build(0, seq, Role.Supply, At(21, 20)));
             Check(world.EntityCount == 2, "the control build on open ground was refused too");
+        }
+
+        // 물 슬라임 일제 사격. Ranged fires every AttackTicks and fires on the tick
+        // it acquires, so a run of VolleyTicks lands exactly VolleyShots volleys.
+        private const int VolleyTicks = 100;
+        private const int VolleyShots = 6; // ticks 0, 18, 36, 54, 72, 90
+        private const int VolleyDummy = 0;
+
+        /// <summary>
+        /// Eight archers packed inside the bonus radius, all within weapon range of
+        /// the same target. Max pairwise distance is sqrt(8), comfortably inside 3.
+        /// </summary>
+        private static readonly FixVec2[] Massed8 =
+        {
+            At(27, 31), At(28, 31), At(29, 31),
+            At(27, 32),             At(29, 32),
+            At(27, 33), At(28, 33), At(29, 33),
+        };
+
+        /// <summary>
+        /// The same eight archers on a 4-cell lattice around the target: still every
+        /// one of them in weapon range, no two of them inside the bonus radius.
+        /// </summary>
+        private static readonly FixVec2[] Scattered8 =
+        {
+            At(28, 28), At(32, 28), At(36, 28),
+            At(28, 32),             At(36, 32),
+            At(28, 36), At(32, 36), At(36, 36),
+        };
+
+        /// <summary>Five archers, each seeing the other four: exactly at the cap.</summary>
+        private static readonly FixVec2[] Massed5 =
+        {
+            At(28, 31),
+            At(27, 32), At(28, 32), At(29, 32),
+            At(28, 33),
+        };
+
+        /// <summary>Ten in the same blob. Every one of them sees more than the cap allows.</summary>
+        private static readonly FixVec2[] Massed10 =
+        {
+            At(27, 31), At(28, 31), At(29, 31),
+            At(27, 32), At(28, 32), At(29, 32), At(30, 32),
+            At(27, 33), At(28, 33), At(29, 33),
+        };
+
+        /// <summary>
+        /// Formation is firepower. Eight archers stacked have to out-damage eight
+        /// spread out by exactly the bonus, not merely win eventually: a check that
+        /// only asserted both squads killed something would pass with the mechanic
+        /// deleted.
+        /// </summary>
+        private static void MassedArchersHitHarderThanScatteredOnes()
+        {
+            int shot = FactionData.Stats(Role.Ranged).Damage;
+            int massed = VolleyDamage(Faction.WaterSlimes, Massed8);
+            int scattered = VolleyDamage(Faction.WaterSlimes, Scattered8);
+
+            Check(scattered == Scattered8.Length * shot * VolleyShots,
+                "scattered archers dealt " + scattered + ", expected the unbuffed " +
+                Scattered8.Length * shot * VolleyShots);
+            Check(massed == Massed8.Length * (shot + World.VolleyMaxBonus) * VolleyShots,
+                "massed archers dealt " + massed + ", expected " +
+                Massed8.Length * (shot + World.VolleyMaxBonus) * VolleyShots);
+        }
+
+        /// <summary>
+        /// The cap is a cap. Five archers already sit on it, so the sixth through
+        /// the tenth buy nothing: per-archer output has to be identical, or the
+        /// bonus is a stacking multiplier and a big enough ball wins on its own.
+        /// </summary>
+        private static void TheMassedBonusCaps()
+        {
+            int shot = FactionData.Stats(Role.Ranged).Damage;
+            int five = VolleyDamage(Faction.WaterSlimes, Massed5);
+            int ten = VolleyDamage(Faction.WaterSlimes, Massed10);
+
+            int perArcher = (shot + World.VolleyMaxBonus) * VolleyShots;
+            Check(five == Massed5.Length * perArcher,
+                "five archers dealt " + five + ", expected " + Massed5.Length * perArcher);
+            Check(ten == Massed10.Length * perArcher,
+                "ten archers dealt " + ten + ", expected " + Massed10.Length * perArcher);
+            Check(five / Massed5.Length == ten / Massed10.Length,
+                "the tenth archer changed what each one hits for");
+        }
+
+        /// <summary>
+        /// The bonus belongs to one faction. The same eight bodies in the same
+        /// formation under another banner shoot for the roster number and nothing
+        /// more, which is what makes the mechanic an identity rather than a rule
+        /// about standing close together.
+        /// </summary>
+        private static void TheMassedBonusIsWaterSlimesOnly()
+        {
+            int shot = FactionData.Stats(Role.Ranged).Damage;
+            int plain = VolleyDamage(Faction.RockGolems, Massed8);
+
+            Check(plain == Massed8.Length * shot * VolleyShots,
+                "another faction's massed archers dealt " + plain + ", expected the unbuffed " +
+                Massed8.Length * shot * VolleyShots);
+            Check(plain < VolleyDamage(Faction.WaterSlimes, Massed8),
+                "the massed bonus is not faction specific");
+        }
+
+        /// <summary>
+        /// What one formation takes off a target over VolleyTicks. The target is a
+        /// Role.None unit: no speed, no weapon, no reach, and hp far past anything
+        /// the run can spend, so the number that comes back is the archers' output
+        /// and not a race to a kill.
+        /// </summary>
+        private static int VolleyDamage(Faction faction, FixVec2[] archers)
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, faction);
+            world.SetPeerFaction(1, Faction.TreeSpirits);
+
+            world.SpawnUnit(1, Role.None, At(32, 32), hpOverride: 1000000); // 0
+            foreach (FixVec2 where in archers) world.SpawnUnit(0, Role.Ranged, where);
+
+            var idle = new List<Command>();
+            for (int t = 0; t < VolleyTicks; t++) world.Step(idle);
+
+            Entity target = world.GetEntity(VolleyDummy);
+            return target.MaxHp - target.Hp;
         }
 
         /// <summary>
