@@ -114,9 +114,12 @@ namespace WordCraft.View
                             continue; // open ground beside water: the rim is the water's
                         }
 
-                        // A band a texel deeper on some cells than others. A shoreline
-                        // of one constant thickness is a rectangle with a stripe on it.
-                        band[s] = UiStyle.TileBand + (Hash(cx + s * 8191, cy - s * 4093) & 1);
+                        // A band a texel shallower or deeper from cell to cell. A
+                        // shoreline of one constant thickness is not a shoreline, it
+                        // is a rectangle with a stripe painted round it.
+                        const int spread = 2 * UiStyle.TileJitter + 1;
+                        band[s] = UiStyle.TileBand + Hash(cx + s * 8191, cy - s * 4093) % spread
+                                  - UiStyle.TileJitter;
                     }
 
                     int originX = cx * texels;
@@ -173,8 +176,10 @@ namespace WordCraft.View
                     c = UiStyle.Rock;
                     break;
                 default:
-                    c = UiStyle.Ground;
-                    break;
+                    // No grain on open ground. It is most of the map and the map's
+                    // negative space, and a grain on it is four thousand visible
+                    // squares: the exact spreadsheet this layer exists not to be.
+                    return UiStyle.Ground;
             }
             return (Hash(cx, cy) & 1) == 0 ? c : Color.Lerp(c, UiStyle.Ink, UiStyle.TileGrain);
         }
@@ -208,8 +213,13 @@ namespace WordCraft.View
         /// </summary>
         private static int Hash(int x, int y)
         {
+            // Mixed twice on purpose. One round leaves the low bit as the parity of
+            // x + y, and a low bit that is a parity paints a checkerboard over the
+            // whole map — which is what this drew the first time it was looked at.
             int h = (x * 73856093) ^ (y * 19349663);
             h ^= h >> 13;
+            h *= 1274126177;
+            h ^= h >> 16;
             return h & 0x7FFFFFFF;
         }
     }

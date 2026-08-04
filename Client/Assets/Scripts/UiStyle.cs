@@ -149,7 +149,14 @@ namespace WordCraft.View
         /// <summary>How deep an edge band cuts into its cell, in texels. A quarter of a cell.</summary>
         public const int TileBand = 2;
 
-        /// <summary>How far every other cell is lifted, so a lake is not one rectangle of paint.</summary>
+        /// <summary>How much deeper or shallower that band runs cell to cell. A rim of one thickness is a stripe.</summary>
+        public const int TileJitter = 1;
+
+        /// <summary>
+        /// How far every other blocked cell is lifted, so a lake is not one
+        /// rectangle of paint. Open ground gets none: it is most of the map, and a
+        /// grain there is four thousand visible squares.
+        /// </summary>
         public const float TileGrain = 0.06f;
 
         public static readonly Color Ring = Rgba(0xFFFFFF, 0.75f);
