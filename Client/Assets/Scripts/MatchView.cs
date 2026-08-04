@@ -36,6 +36,20 @@ namespace WordCraft.View
         private const int RemnantOrder = -50;
 
         /// <summary>
+        /// The fog sits over everything the world draws, so a remembered building
+        /// is dimmed by the same sprite that dims the ground under it rather than
+        /// by a second tint kept in step with the first by hand.
+        /// </summary>
+        private const int FogOrder = 60;
+
+        /// <summary>
+        /// The local peer's own marks: a rally point and a placement ghost may both
+        /// be put down in ground this peer cannot see, and fog never hides what the
+        /// player is doing right now.
+        /// </summary>
+        private const int AboveFogOrder = FogOrder + 1;
+
+        /// <summary>
         /// How far a worker primitive is lifted toward white. Same owner hue, paler
         /// body, so a worker is told from a fighter without a second colour.
         /// </summary>
@@ -76,6 +90,9 @@ namespace WordCraft.View
         /// screen has no terrain to draw and the menu sits over this.
         /// </summary>
         private SpriteRenderer ground;
+
+        /// <summary>The mask over it. One sprite, repainted on the fog's cadence rather than the frame's.</summary>
+        private SpriteRenderer fog;
 
         // Overlays, parallel to views. Kept off the entity's own transform because
         // authored art is scaled to fit its footprint and a bar must not inherit that.
@@ -125,6 +142,10 @@ namespace WordCraft.View
             // Under everything an entity draws, above the ground.
             hover = NewRenderer("Hover", disc, UiStyle.HoverRing, HoverOrder);
             hover.enabled = false;
+
+            fog = NewRenderer("Fog", Fog.Field(), Color.white, FogOrder); // a mask, not a tint
+            fog.transform.position = new Vector3(mid, mid, 0f);
+            fog.enabled = false;
         }
 
         private void Start() => runner = MatchRunner.Instance;
@@ -162,16 +183,32 @@ namespace WordCraft.View
 
             for (int i = views.Count; i < world.EntityCount; i++) views.Add(Create(world, world.GetEntity(i)));
 
+            Fog.Update(runner);
+            fog.enabled = Fog.Active;
+
             int markers = 0;
             for (int i = 0; i < world.EntityCount; i++)
             {
                 Entity e = world.GetEntity(i);
                 SpriteRenderer sr = views[i];
-                if (!e.Alive)
+                byte show = Fog.Show(i, e);
+                if (show == Fog.Hidden)
                 {
                     sr.enabled = false;
                     rings[i].enabled = false;
-                    Overlays(i, e, Vector2.zero, picked: false);
+                    Overlays(i);
+                    continue;
+                }
+
+                // Remembered: the renderer is left exactly as the last frame that
+                // could see it left it, which is what "last known state" means for a
+                // thing that cannot move. Nothing is read off the entity here, so a
+                // building razed out of sight goes on standing and one raised out of
+                // sight does not appear. Its meters go, because hp is not remembered.
+                if (show == Fog.Memory)
+                {
+                    rings[i].enabled = false;
+                    Overlays(i);
                     continue;
                 }
 
@@ -292,6 +329,12 @@ namespace WordCraft.View
         /// Lights up whatever the cursor is over, friend or enemy, so a click has a
         /// visible target before it is a committed order. Nothing lights up under
         /// the HUD, because a click there never reaches the world either.
+        ///
+        /// Nothing the fog is hiding lights up either, or sweeping the cursor over
+        /// black ground would map the enemy army through it. The click still lands:
+        /// the pickers ask the simulation and the simulation sees everything. This
+        /// is the view hiding a ring, not a rule about what may be targeted, which
+        /// is a rule view-only fog cannot have.
         /// </summary>
         // ponytail: a full entity scan every frame. It is the same scan the pickers
         // already do per click over a few dozen entities; index the grid the day
@@ -302,8 +345,8 @@ namespace WordCraft.View
                 ? -1
                 : runner.EntityAt(Cam.ScreenToWorldPoint(Input.mousePosition), HoverRadius, mineOnly: false);
 
-            hover.enabled = id >= 0;
-            if (id < 0) return;
+            hover.enabled = id >= 0 && Fog.Show(id, world.GetEntity(id)) == Fog.Seen;
+            if (!hover.enabled) return;
 
             hover.sprite = Shape(world.GetEntity(id).Kind);
             Ring(hover, footprints[id], runner.DrawPosition(id));
@@ -333,7 +376,7 @@ namespace WordCraft.View
             FixVec2 aimed = MatchRunner.ToSim(Cam.ScreenToWorldPoint(Input.mousePosition));
             bool legal = world.CanBuild(runner.LocalPeer, role, aimed);
 
-            if (ghost == null) ghost = NewRenderer("BuildGhost", square, UiStyle.GhostOk, OverlayOrder);
+            if (ghost == null) ghost = NewRenderer("BuildGhost", square, UiStyle.GhostOk, AboveFogOrder);
             if (ghostRole != role)
             {
                 ghostRole = role;
@@ -355,6 +398,14 @@ namespace WordCraft.View
         /// selected building. Both are read straight off the entity every frame and
         /// held nowhere, so the overlay cannot drift from what the simulation says.
         /// </summary>
+        /// <summary>Every meter off: the thing is dead, unseen, or only remembered.</summary>
+        private void Overlays(int i)
+        {
+            barBacks[i].enabled = false;
+            barFills[i].enabled = false;
+            queueFills[i].enabled = false;
+        }
+
         private void Overlays(int i, Entity e, Vector2 p, bool picked)
         {
             bool node = e.Kind == EntityKind.ResourceNode;
@@ -399,7 +450,7 @@ namespace WordCraft.View
         {
             while (rallyMarkers.Count <= index)
             {
-                var made = NewRenderer("Rally", square, UiStyle.Rally, OverlayOrder);
+                var made = NewRenderer("Rally", square, UiStyle.Rally, AboveFogOrder);
                 made.transform.localScale = new Vector3(0.7f, 0.7f, 1f);
                 made.transform.rotation = Quaternion.Euler(0f, 0f, 45f);
                 rallyMarkers.Add(made);
