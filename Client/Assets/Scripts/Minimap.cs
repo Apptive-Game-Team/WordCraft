@@ -37,24 +37,13 @@ namespace WordCraft.View
         private const int UnitRadius = 1;     // 3x3 px
         private const int BuildingRadius = 2; // 5x5 px, so buildings read as the bigger thing
 
-        /// <summary>
-        /// Lighter than the world's ground, so the square reads as an object
-        /// against the near-black panel, and dark enough that both peer colours
-        /// stay legible on it. Enemy orange on dark grey is the pairing that has
-        /// to survive a glance; that is what fixes this value.
-        /// </summary>
-        private static readonly Color32 GroundColor = new Color32(38, 40, 46, 255);
-
-        private static readonly Color32 NodeColor = new Color32(255, 209, 64, 255);
-        private static readonly Color ViewColor = new Color(1f, 1f, 1f, 0.75f);
-        private static readonly Color MarkColor = new Color(1f, 0.3f, 0.25f);
-
         /// <summary>How long a hit somewhere else stays lit, in seconds.</summary>
         private const float MarkSeconds = 2.5f;
 
         /// <summary>A hit this near a live mark refreshes it instead of adding another.</summary>
         private const float MarkMergeCells = 4f;
 
+        /// <summary>A mark is a square this many pixels across. Big enough to catch the eye off-centre.</summary>
         private const float MarkPixels = 7f;
 
         private static Texture2D texture;
@@ -105,6 +94,11 @@ namespace WordCraft.View
             GUI.DrawTexture(area, texture);
             ViewRect(area);
             Marks(area, world, runner.LocalPeer);
+
+            // The frame goes on last so nothing painted inside covers it. It is the
+            // only edge the square has: it sits flush in the panel corner, and
+            // without a line the map and the panel are one dark shape.
+            UiStyle.Frame(area, UiStyle.Edge);
         }
 
         /// <summary>
@@ -144,11 +138,12 @@ namespace WordCraft.View
                     continue;
                 }
 
-                GUI.color = new Color(MarkColor.r, MarkColor.g, MarkColor.b, left / MarkSeconds);
-                Line(X(area, marks[i].Point.x) - MarkPixels * 0.5f,
-                    Y(area, marks[i].Point.y) - MarkPixels * 0.5f, MarkPixels, MarkPixels);
+                Color fade = UiStyle.MinimapMark;
+                fade.a = left / MarkSeconds;
+                UiStyle.Fill(new Rect(
+                    X(area, marks[i].Point.x) - MarkPixels * 0.5f,
+                    Y(area, marks[i].Point.y) - MarkPixels * 0.5f, MarkPixels, MarkPixels), fade);
             }
-            GUI.color = Color.white;
         }
 
         private static bool OnScreen(Camera cam, Vector2 point)
@@ -250,7 +245,7 @@ namespace WordCraft.View
                 pixels = new Color32[Res * Res];
             }
 
-            for (int i = 0; i < pixels.Length; i++) pixels[i] = GroundColor;
+            for (int i = 0; i < pixels.Length; i++) pixels[i] = UiStyle.MinimapGround;
 
             for (int i = 0; i < world.EntityCount; i++)
             {
@@ -268,11 +263,8 @@ namespace WordCraft.View
         /// here is the blue army there. Size is what tells a building from a unit;
         /// hue is only ever whose it is.
         /// </summary>
-        private static Color32 Tint(Entity e)
-        {
-            if (e.Kind == EntityKind.ResourceNode || e.Owner < 0) return NodeColor;
-            return e.Owner < MatchView.PeerColor.Length ? MatchView.PeerColor[e.Owner] : Color.gray;
-        }
+        private static Color32 Tint(Entity e) =>
+            e.Kind == EntityKind.ResourceNode || e.Owner < 0 ? UiStyle.Node : UiStyle.Owner(e.Owner);
 
         /// <summary>
         /// A filled square of pixels at a world point, clipped: a building's block
@@ -319,16 +311,8 @@ namespace WordCraft.View
             float top = Y(area, c.y + halfHeight);
             float bottom = Y(area, c.y - halfHeight);
 
-            GUI.color = ViewColor;
-            Line(left, top, right - left, 1f);
-            Line(left, bottom, right - left, 1f);
-            Line(left, top, 1f, bottom - top);
-            Line(right, top, 1f, bottom - top);
-            GUI.color = Color.white;
+            UiStyle.Frame(Rect.MinMaxRect(left, top, right, bottom), UiStyle.MinimapView);
         }
-
-        private static void Line(float x, float y, float width, float height) =>
-            GUI.DrawTexture(new Rect(x, y, width, height), Texture2D.whiteTexture);
 
         /// <summary>World x to a pixel column of the square. Clamped, so nothing draws outside it.</summary>
         private static float X(Rect area, float worldX) =>
