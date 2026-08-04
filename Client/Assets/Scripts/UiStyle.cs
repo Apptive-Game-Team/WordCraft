@@ -191,6 +191,30 @@ namespace WordCraft.View
         /// </summary>
         public const float TileGrain = 0.06f;
 
+        // ---- field: fog ----
+
+        // Two tones and no third: the lit state is the absence of both. Unexplored
+        // ground wears the same value as the sky beyond the map edge, so the part
+        // of the map this peer has never walked into reads as nothing rather than
+        // as a place painted dark.
+
+        /// <summary>Never seen. Opaque, and the same value as <see cref="Sky"/>.</summary>
+        public static readonly Color FogUnseen = Rgb(0x0D0D10);
+
+        /// <summary>
+        /// Seen before, not now. The same tone at part alpha, so remembered ground
+        /// is the lit ground pushed one step down in value — the separation rule
+        /// the whole client uses, applied to time instead of to shape.
+        /// </summary>
+        public static readonly Color FogSeen = Rgba(0x0D0D10, 0.55f);
+
+        /// <summary>
+        /// Ticks between vision passes. A unit covers a quarter of a cell a tick,
+        /// so the fog edge is at most one cell behind the army that owns it, and
+        /// four fifths of the frames pay nothing at all.
+        /// </summary>
+        public const int FogTicks = 4;
+
         public static readonly Color Ring = Rgba(0xFFFFFF, 0.75f);
         public static readonly Color HoverRing = Rgba(0xFFFFFF, 0.28f);
         public static readonly Color MeterBack = Rgba(0x0A0A0D, 0.85f);

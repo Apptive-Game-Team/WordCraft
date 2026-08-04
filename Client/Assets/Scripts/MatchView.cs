@@ -487,8 +487,12 @@ namespace WordCraft.View
             return new Vector3(k, k, 1f);
         }
 
-        /// <summary>A role's footprint on the grid. What the art is fitted to and what a ring rings.</summary>
-        private static float Cells(Role role)
+        /// <summary>
+        /// A role's footprint on the grid. What the art is fitted to, what a ring
+        /// rings, and the floor on what a building of that role can see: a thing
+        /// is never fogged under its own feet.
+        /// </summary>
+        public static float Cells(Role role)
         {
             switch (role)
             {
