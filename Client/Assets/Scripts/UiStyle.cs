@@ -151,16 +151,24 @@ namespace WordCraft.View
 
         /// <summary>
         /// What the debris art is multiplied by. The imported sprite is warm tan
-        /// and at full strength reads as a body lying on the floor; through this it
-        /// lands between Rock and RockLit, which is what the tile layer already
-        /// means by blocked.
+        /// and untinted it reads as a body lying on the floor; through this its
+        /// midtone lands on Rock and its lit faces on RockLit, which is what the
+        /// tile layer already means by blocked. Chosen by measuring the sprite, not
+        /// by eye: median luminance 67.3 against Rock's 67.6, top decile 94.1
+        /// against RockLit's 96.0.
+        ///
+        /// It stays a hair warmer than the slab it borrows its value from, which is
+        /// the terrain layer's second axis doing its usual job — value says blocked,
+        /// hue says which blocked thing this is.
         /// </summary>
-        public static readonly Color Remnant = Rgb(0x6F6A81);
+        public static readonly Color Remnant = Rgb(0x928BAA);
 
         /// <summary>
         /// What debris has faded to on the tick before it lapses. Never zero: the
         /// cell is blocked right up to the last tick, and debris a player cannot see
-        /// is the bug this whole layer exists to remove.
+        /// is the bug this whole layer exists to remove. At this alpha the midtone
+        /// still composites to 48.7 over Ground's 30.0, so the faded pile is a wall
+        /// about to go rather than a wall that has gone.
         /// </summary>
         public const float RemnantFade = 0.5f;
 

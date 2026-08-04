@@ -249,8 +249,16 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// One pooled debris renderer, fitted to a single cell so the art covers
-        /// exactly what the simulation is blocking and no more.
+        /// One pooled debris renderer, covering exactly the cell the simulation is
+        /// blocking and no more.
+        ///
+        /// Stretched to the cell rather than fitted to its longest edge the way
+        /// roster art is. The source is 128x89, so a fit would leave a third of a
+        /// cell of clear ground between two stacked remnants — a hole in a wall
+        /// that has none, which is the one thing this layer may not draw. Fitting
+        /// the short edge instead would spill the art a fifth of a cell over each
+        /// horizontal neighbour, which lies the other way. A pile of rubble
+        /// squashed is still a pile of rubble; a wall with a gap is a route.
         /// </summary>
         private SpriteRenderer Debris(int index)
         {
@@ -258,7 +266,9 @@ namespace WordCraft.View
             {
                 SpriteRenderer made = NewRenderer("Remnant",
                     remnantArt != null ? remnantArt : square, UiStyle.Remnant, RemnantOrder);
-                made.transform.localScale = remnantArt != null ? FitScale(remnantArt, 1f) : Vector3.one;
+                Vector2 size = remnantArt != null ? (Vector2)remnantArt.bounds.size : Vector2.one;
+                made.transform.localScale = new Vector3(
+                    size.x > 0f ? 1f / size.x : 1f, size.y > 0f ? 1f / size.y : 1f, 1f);
                 remnants.Add(made);
             }
             return remnants[index];
@@ -469,14 +479,11 @@ namespace WordCraft.View
         /// were drawn for another game at another pixels-per-unit, so their own
         /// size means nothing here.
         /// </summary>
-        private static Vector3 FitScale(Sprite sprite, Role role) => FitScale(sprite, Cells(role));
-
-        /// <summary>The same fit for something that has no role, like a cell of debris.</summary>
-        private static Vector3 FitScale(Sprite sprite, float cells)
+        private static Vector3 FitScale(Sprite sprite, Role role)
         {
             Vector2 size = sprite.bounds.size;
             float longest = Mathf.Max(size.x, size.y);
-            float k = longest > 0f ? cells / longest : 1f;
+            float k = longest > 0f ? Cells(role) / longest : 1f;
             return new Vector3(k, k, 1f);
         }
 
