@@ -16,22 +16,6 @@ namespace WordCraft.View
     /// </summary>
     public sealed class MatchView : MonoBehaviour
     {
-        public static readonly Color[] PeerColor =
-        {
-            new Color(0.35f, 0.62f, 1.00f),
-            new Color(1.00f, 0.45f, 0.32f),
-        };
-
-        private static readonly Color NodeColor = new Color(1.00f, 0.82f, 0.25f);
-        private static readonly Color GroundColor = new Color(0.11f, 0.12f, 0.14f);
-        private static readonly Color BarBackColor = new Color(0.04f, 0.04f, 0.05f, 0.85f);
-        private static readonly Color QueueColor = new Color(0.45f, 0.85f, 1.00f, 0.95f);
-        private static readonly Color RallyColor = new Color(0.55f, 1.00f, 0.60f, 0.85f);
-        private static readonly Color RingColor = new Color(1.00f, 1.00f, 1.00f, 0.75f);
-        private static readonly Color HoverColor = new Color(1.00f, 1.00f, 1.00f, 0.28f);
-        private static readonly Color GhostOkColor = new Color(0.45f, 1.00f, 0.55f, 0.55f);
-        private static readonly Color GhostBadColor = new Color(1.00f, 0.35f, 0.30f, 0.55f);
-
         /// <summary>How far a ring stands out past the art, as a fraction of the visible height.</summary>
         private const float RingBandRatio = 0.012f;
 
@@ -45,6 +29,14 @@ namespace WordCraft.View
         // under it, so a row of damaged units reads as one row.
         private const float BarHeight = 0.16f;
         private const int OverlayOrder = 50;
+        private const int GroundOrder = -100;
+        private const int HoverOrder = 3;
+
+        /// <summary>
+        /// How far a worker primitive is lifted toward white. Same owner hue, paler
+        /// body, so a worker is told from a fighter without a second colour.
+        /// </summary>
+        private const float WorkerLift = 0.45f;
 
         /// <summary>Where the imported WordOnline sprites live, relative to a Resources folder.</summary>
         public const string SpriteFolder = "Art/Sprites/";
@@ -100,15 +92,15 @@ namespace WordCraft.View
             Cam.orthographic = true;
             Cam.orthographicSize = 18f;
             Cam.transform.position = new Vector3(mid, mid, -10f);
-            Cam.backgroundColor = new Color(0.05f, 0.05f, 0.06f);
+            Cam.backgroundColor = UiStyle.Sky;
             DontDestroyOnLoad(Cam.gameObject);
 
-            var ground = NewRenderer("Ground", square, GroundColor, -100);
+            var ground = NewRenderer("Ground", square, UiStyle.Ground, GroundOrder);
             ground.transform.position = new Vector3(mid, mid, 0f);
             ground.transform.localScale = new Vector3(MatchScenario.MapSize, MatchScenario.MapSize, 1f);
 
             // Under everything an entity draws, above the ground.
-            hover = NewRenderer("Hover", disc, HoverColor, 3);
+            hover = NewRenderer("Hover", disc, UiStyle.HoverRing, HoverOrder);
             hover.enabled = false;
         }
 
@@ -165,7 +157,7 @@ namespace WordCraft.View
                 if (e.Kind == EntityKind.Building)
                 {
                     Color c = sr.color;
-                    c.a = e.BuildTicksLeft > 0 ? 0.35f : 1f;
+                    c.a = e.BuildTicksLeft > 0 ? UiStyle.SiteAlpha : 1f;
                     sr.color = c;
                 }
 
@@ -239,7 +231,7 @@ namespace WordCraft.View
             FixVec2 aimed = MatchRunner.ToSim(Cam.ScreenToWorldPoint(Input.mousePosition));
             bool legal = world.CanBuild(runner.LocalPeer, role, aimed);
 
-            if (ghost == null) ghost = NewRenderer("BuildGhost", square, GhostOkColor, OverlayOrder);
+            if (ghost == null) ghost = NewRenderer("BuildGhost", square, UiStyle.GhostOk, OverlayOrder);
             if (ghostRole != role)
             {
                 ghostRole = role;
@@ -252,7 +244,7 @@ namespace WordCraft.View
             // what the player sees is where the building lands.
             Vector2 cell = MatchRunner.ToView(World.CellCenter(World.CellOf(aimed)));
             ghost.transform.position = new Vector3(cell.x, cell.y, 0f);
-            ghost.color = legal ? GhostOkColor : GhostBadColor;
+            ghost.color = legal ? UiStyle.GhostOk : UiStyle.GhostBad;
             ghost.enabled = true;
         }
 
@@ -277,9 +269,7 @@ namespace WordCraft.View
 
                 Place(barBacks[i], p.x, y, width, 1f);
                 Place(barFills[i], p.x, y, width, ratio);
-                barFills[i].color = ratio > 0.5f ? new Color(0.35f, 0.9f, 0.4f)
-                    : ratio > 0.25f ? new Color(0.95f, 0.85f, 0.3f)
-                    : new Color(0.95f, 0.35f, 0.3f);
+                barFills[i].color = UiStyle.Health(ratio);
             }
 
             // ProduceTicksLeft counts down and is zero in the tick before a queued
@@ -307,7 +297,7 @@ namespace WordCraft.View
         {
             while (rallyMarkers.Count <= index)
             {
-                var made = NewRenderer("Rally", square, RallyColor, OverlayOrder);
+                var made = NewRenderer("Rally", square, UiStyle.Rally, OverlayOrder);
                 made.transform.localScale = new Vector3(0.7f, 0.7f, 1f);
                 made.transform.rotation = Quaternion.Euler(0f, 0f, 45f);
                 rallyMarkers.Add(made);
@@ -318,7 +308,7 @@ namespace WordCraft.View
 
         private SpriteRenderer Create(World world, Entity e)
         {
-            Color owner = e.Owner >= 0 && e.Owner < PeerColor.Length ? PeerColor[e.Owner] : Color.gray;
+            Color owner = UiStyle.Owner(e.Owner);
             Sprite shape = Shape(e.Kind);
             Color color;
             float scale;
@@ -327,7 +317,7 @@ namespace WordCraft.View
             switch (e.Kind)
             {
                 case EntityKind.Worker:
-                    color = Color.Lerp(owner, Color.white, 0.45f);
+                    color = Color.Lerp(owner, Color.white, WorkerLift);
                     scale = 0.6f;
                     break;
                 case EntityKind.Unit:
@@ -339,7 +329,7 @@ namespace WordCraft.View
                     scale = 1.6f;
                     break;
                 default:
-                    color = NodeColor;
+                    color = UiStyle.Node;
                     scale = 0.9f;
                     // Rotated square: a diamond reads as "not a building" at a glance.
                     spin = 45f;
@@ -352,14 +342,14 @@ namespace WordCraft.View
             sr.transform.localScale = drawn != null ? FitScale(drawn, e.Role) : new Vector3(scale, scale, 1f);
             sr.transform.rotation = Quaternion.Euler(0f, 0f, drawn != null ? 0f : spin);
 
-            var ring = NewRenderer("Ring", shape, RingColor, sr.sortingOrder - 1);
+            var ring = NewRenderer("Ring", shape, UiStyle.Ring, sr.sortingOrder - 1);
             ring.enabled = false;
             rings.Add(ring);
             footprints.Add(drawn != null ? Cells(e.Role) : scale);
 
-            barBacks.Add(Overlay("HpBack", BarBackColor, OverlayOrder));
+            barBacks.Add(Overlay("HpBack", UiStyle.MeterBack, OverlayOrder));
             barFills.Add(Overlay("HpFill", Color.white, OverlayOrder + 1));
-            queueFills.Add(Overlay("Queue", QueueColor, OverlayOrder + 1));
+            queueFills.Add(Overlay("Queue", UiStyle.Queue, OverlayOrder + 1));
 
             return sr;
         }

@@ -268,11 +268,8 @@ namespace WordCraft.View
         /// here is the blue army there. Size is what tells a building from a unit;
         /// hue is only ever whose it is.
         /// </summary>
-        private static Color32 Tint(Entity e)
-        {
-            if (e.Kind == EntityKind.ResourceNode || e.Owner < 0) return NodeColor;
-            return e.Owner < MatchView.PeerColor.Length ? MatchView.PeerColor[e.Owner] : Color.gray;
-        }
+        private static Color32 Tint(Entity e) =>
+            e.Kind == EntityKind.ResourceNode || e.Owner < 0 ? UiStyle.Node : UiStyle.Owner(e.Owner);
 
         /// <summary>
         /// A filled square of pixels at a world point, clipped: a building's block

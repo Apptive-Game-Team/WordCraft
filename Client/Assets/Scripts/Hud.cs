@@ -345,7 +345,7 @@ namespace WordCraft.View
             GUILayout.Label(FactionData.Name(world.FactionOf(e.Owner), e.Role));
             GUILayout.Label("hp " + e.Hp + " / " + e.MaxHp);
 
-            GUI.color = PeerColor(e.Owner);
+            GUI.color = UiStyle.Owner(e.Owner);
             GUILayout.Label("peer " + e.Owner + "  " + world.FactionOf(e.Owner));
             GUI.color = Color.white;
 
@@ -463,8 +463,5 @@ namespace WordCraft.View
                 default: return "STOPPED";
             }
         }
-
-        private static Color PeerColor(int peer) =>
-            peer >= 0 && peer < MatchView.PeerColor.Length ? MatchView.PeerColor[peer] : Color.gray;
     }
 }
