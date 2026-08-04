@@ -36,6 +36,10 @@ namespace WordCraft.Sim
     /// renumber them. Open is 0 so a world nobody painted is all open ground,
     /// which is what every harness fixture relies on.
     /// </summary>
+    // ponytail: passable or not, and nothing else. No movement cost, no elevation,
+    // no vision blocking. Adding a cost is the one that reaches furthest: the
+    // pathfinder's uniform step cost of 1 and its Manhattan heuristic are only
+    // admissible while every open cell costs the same.
     public enum TileKind : byte
     {
         Open = 0,
@@ -578,8 +582,10 @@ namespace WordCraft.Sim
                 // routes around terrain, so this only ever catches the straight
                 // line an entity walks when no route exists, which is exactly the
                 // case that would otherwise put a unit in the middle of a lake.
-                // It stops rather than slides: a slide is a second movement rule
-                // and both peers would have to agree on it.
+                // ponytail: it stops dead rather than sliding along the edge, so a
+                // unit with no route parks against the shore and stays there. Give
+                // it a slide the day units are expected to find their own way round
+                // something the path did not know about.
                 if (!IsPassable(CellOf(next), air: false)) continue;
 
                 e.Position = next;
@@ -627,8 +633,11 @@ namespace WordCraft.Sim
             // Terrain never changes after the map is built, but it is hashed every
             // tick anyway: two peers that generated different maps have to diverge
             // on tick 1, not twenty seconds later when a unit first walks into
-            // water that only one of them has. Eight cells to a word, so hashing an
-            // immutable 4096-byte layer every tick stays off the tick budget.
+            // water that only one of them has.
+            // ponytail: eight cells to a word is the whole optimisation, so this
+            // still walks 512 words per tick over a layer that never changes. Fold
+            // it to a digest taken once when the map is built if Hash() ever shows
+            // up in a profile.
             for (int c = 0; c < GridCells; c += 8)
             {
                 ulong word = 0;
