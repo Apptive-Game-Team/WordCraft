@@ -98,10 +98,12 @@ namespace WordCraft.View
             if (Instance == this) Instance = null;
         }
 
-        /// <summary>Puts a world point in the middle of the screen. Control groups, the idle
-        /// worker button and the base jump go this way; it is a camera move and nothing else
-        /// hears about it. Eased like every other move, so a jump reads as a jump and not a cut.</summary>
-        public void CenterOn(Vector2 point) => target = new Vector3(point.x, point.y, -10f);
+        /// <summary>Puts a world point in the middle of the screen the player can see, which is
+        /// not the middle of the window (see FramingOffset). Control groups, the idle worker
+        /// button and the base jump go this way; it is a camera move and nothing else hears
+        /// about it. Eased like every other move, so a jump reads as a jump and not a cut.</summary>
+        public void CenterOn(Vector2 point) =>
+            target = new Vector3(point.x, point.y - FramingOffset(), -10f);
 
         private void Update()
         {
@@ -232,8 +234,14 @@ namespace WordCraft.View
             // limit depends on the aspect and a player can resize the window.
             targetSize = Mathf.Clamp(targetSize, MinSize, MaxZoom());
 
+            // The fence is on what the player is looking at, not on where the
+            // camera sits, or the offset below would eat the bottom of the map:
+            // the last cells of the map would sit behind the command card and the
+            // clamp would call that arriving at the edge.
+            float framed = target.y + FramingOffset();
+
             target.x = OnMap(target.x, targetSize * cam.aspect);
-            target.y = OnMap(target.y, targetSize);
+            target.y = OnMap(framed, targetSize) - FramingOffset();
             target.z = -10f;
         }
 
@@ -246,6 +254,19 @@ namespace WordCraft.View
         /// </summary>
         private float MaxZoom() =>
             Mathf.Clamp(MatchScenario.MapSize / (2f * cam.aspect), MinSize, MaxSize);
+
+        /// <summary>
+        /// How far below what it is framing the camera sits, in world units. The
+        /// HUD's bottom panel is far taller than its top bar, so the middle of the
+        /// window is not the middle of what the player can see; a camera centred on
+        /// the window sends every jump — a control group, the base key, a minimap
+        /// click — to a point behind the command card. Half the difference puts it
+        /// back in the open. Read off the HUD's own two constants, so a taller
+        /// command card moves the camera with it instead of stranding a copy of
+        /// 200 and 44 in this file.
+        /// </summary>
+        private float FramingOffset() =>
+            (UiStyle.BottomPanel - UiStyle.TopBar) * 0.5f * WorldPerPixel();
 
         /// <summary>
         /// Keeps the visible edge on the map give or take a margin, rather than
