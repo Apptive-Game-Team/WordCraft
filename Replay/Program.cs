@@ -39,6 +39,7 @@ namespace WordCraft.Replay
                 CancellingProductionRefundsInFull();
                 ProducedWorkersCanGather();
                 RosterSlotsAreAddressable();
+                EveryRosterSlotHasStats();
                 EveryBuildingRoleCanBePlaced();
                 BuildRefusesWhatTheFactionDoesNotHave();
                 BuildIsGatedByTheTechTier();
@@ -811,6 +812,27 @@ namespace WordCraft.Replay
         }
 
         /// <summary>
+        /// Every faction and role has to land on a real stat row. The table is
+        /// filled by a loop over a shared row plus an override list, so the way it
+        /// breaks is not a wrong number: it is a row nothing wrote, which reads as
+        /// a default struct with zero hp. A unit spawned on one of those is dead
+        /// the tick it appears, and nothing else in this harness would say why.
+        /// </summary>
+        private static void EveryRosterSlotHasStats()
+        {
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                for (int r = 0; r < FactionData.RoleCount; r++)
+                {
+                    var faction = (Faction)f;
+                    var role = (Role)r;
+                    Check(FactionData.Stats(faction, role).Hp > 0,
+                        "no stats at " + faction + "." + role);
+                }
+            }
+        }
+
+        /// <summary>
         /// The roles a Build may name, in the order the command card shows them.
         /// Every faction lists all five, so a build menu is never empty.
         /// </summary>
@@ -1117,7 +1139,7 @@ namespace WordCraft.Replay
         /// </summary>
         private static void MassedArchersHitHarderThanScatteredOnes()
         {
-            int shot = FactionData.Stats(Role.Ranged).Damage;
+            int shot = FactionData.Stats(Faction.WaterSlimes, Role.Ranged).Damage;
             int massed = VolleyDamage(Faction.WaterSlimes, Massed8);
             int scattered = VolleyDamage(Faction.WaterSlimes, Scattered8);
 
@@ -1136,7 +1158,7 @@ namespace WordCraft.Replay
         /// </summary>
         private static void TheMassedBonusCaps()
         {
-            int shot = FactionData.Stats(Role.Ranged).Damage;
+            int shot = FactionData.Stats(Faction.WaterSlimes, Role.Ranged).Damage;
             int five = VolleyDamage(Faction.WaterSlimes, Massed5);
             int ten = VolleyDamage(Faction.WaterSlimes, Massed10);
 
@@ -1157,7 +1179,9 @@ namespace WordCraft.Replay
         /// </summary>
         private static void TheMassedBonusIsWaterSlimesOnly()
         {
-            int shot = FactionData.Stats(Role.Ranged).Damage;
+            // RockGolems, not WaterSlimes: this is the number the unbuffed side is
+            // expected to deal, and it stops being the same number at 4-1.
+            int shot = FactionData.Stats(Faction.RockGolems, Role.Ranged).Damage;
             int plain = VolleyDamage(Faction.RockGolems, Massed8);
 
             Check(plain == Massed8.Length * shot * VolleyShots,

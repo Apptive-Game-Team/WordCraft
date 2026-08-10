@@ -60,14 +60,30 @@ namespace WordCraft.Sim
         public const int RoleCount = 10;
 
         /// <summary>
-        /// Indexed by Role. One block per role, shared by every faction: balance
-        /// past "matches finish" is an explicit non-goal, and identical numbers are
-        /// what keeps the mirrored map fair rather than merely symmetric.
+        /// Stats per faction and role, subscripted by <see cref="Index"/> exactly
+        /// like names and sprites, so one index answers every roster question.
+        ///
+        /// Filled from <see cref="sharedStats"/> and <see cref="statOverrides"/>
+        /// rather than written out sixty times. Sixty rows that are meant to stay
+        /// identical are sixty chances to mistype one, and a mistyped row is not a
+        /// compile error: it is a mirrored map that is still symmetric but no
+        /// longer fair. Where a faction departs from the shared row should read as
+        /// a short list, not as a difference found by diffing six blocks.
+        ///
+        /// A loop rather than a parsed file. The rule this file keeps is that
+        /// content stays plain constants, because an importer can round or reorder
+        /// differently on two machines. Copying an integer row six times can do
+        /// neither.
         /// </summary>
-        // ponytail: faction choice is cosmetic while every faction reads the same
-        // row. Widen this to [faction, role] the day balance stops being a non-goal;
-        // the mirrored map stops being fair on the same day.
-        private static readonly UnitStats[] stats =
+        private static readonly UnitStats[] stats;
+
+        /// <summary>
+        /// The row every faction starts from, indexed by Role. Balance past
+        /// "matches finish" is an explicit non-goal until 4-1, and identical
+        /// numbers are what keeps the mirrored map fair rather than merely
+        /// symmetric.
+        /// </summary>
+        private static readonly UnitStats[] sharedStats =
         {
             /* None       */ new UnitStats { Hp = 1 },
             /* Base       */ new UnitStats { Hp = 400 },
@@ -80,6 +96,46 @@ namespace WordCraft.Sim
             /* Supply     */ new UnitStats { Hp = 200 },
             /* Tech       */ new UnitStats { Hp = 250 },
         };
+
+        /// <summary>
+        /// Where a faction departs from the shared row. Empty today: the six
+        /// factions still field identical numbers, and an entry arrives with the
+        /// mechanic that needs it rather than ahead of it. 지옥불 군단장 is the
+        /// first one due, per docs/FACTION-MECHANICS.md.
+        ///
+        /// A slot's second entry cannot differ from its first here, because this
+        /// is keyed by role and a role holds a list. That waits on the Produce
+        /// command carrying a slot, which is a hashed field and belongs with that
+        /// change.
+        /// </summary>
+        private static readonly (Faction Faction, Role Role, UnitStats Stats)[] statOverrides =
+        {
+        };
+
+        /// <summary>
+        /// Fills the stats table. A static constructor rather than a field
+        /// initializer, because an initializer runs in declaration order and this
+        /// reads two tables declared above it. A constructor runs after all of
+        /// them, so reordering a field cannot turn the table into a null at
+        /// type-load time.
+        /// </summary>
+        static FactionData()
+        {
+            stats = new UnitStats[FactionCount * RoleCount];
+            for (int faction = 0; faction < FactionCount; faction++)
+            {
+                for (int role = 0; role < RoleCount; role++)
+                {
+                    stats[Index((Faction)faction, (Role)role)] = sharedStats[role];
+                }
+            }
+
+            for (int i = 0; i < statOverrides.Length; i++)
+            {
+                var (faction, role, replacement) = statOverrides[i];
+                stats[Index(faction, role)] = replacement;
+            }
+        }
 
         /// <summary>
         /// Entry 0 of every slot. Faction major, role minor. An empty sprite is a
@@ -204,7 +260,12 @@ namespace WordCraft.Sim
             /* Tech       */ 120,
         };
 
-        public static UnitStats Stats(Role role) => stats[(int)role];
+        /// <summary>
+        /// The roster numbers for one faction's take on a role. Faction is
+        /// required rather than defaulted: a caller that cannot name one is a
+        /// caller reading somebody else's unit.
+        /// </summary>
+        public static UnitStats Stats(Faction faction, Role role) => stats[Index(faction, role)];
 
         /// <summary>What the owner's tier must reach before this role can be produced.</summary>
         public static int Tier(Role role) => tiers[(int)role];

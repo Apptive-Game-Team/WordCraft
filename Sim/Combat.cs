@@ -50,7 +50,7 @@ namespace WordCraft.Sim
 
                 // Read straight from the table rather than caching on the entity:
                 // one copy of a number cannot disagree with itself across peers.
-                UnitStats s = FactionData.Stats(a.Role);
+                UnitStats s = FactionData.Stats(factions[a.Owner], a.Role);
 
                 Entity t = entities[a.TargetId];
                 if (WithinRange(a.Position, t.Position, s.Range))

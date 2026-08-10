@@ -310,13 +310,13 @@ namespace WordCraft.Sim
         /// </summary>
         public int SpawnUnit(int owner, Role role, FixVec2 position, int hpOverride = -1)
         {
-            UnitStats s = FactionData.Stats(role);
+            UnitStats s = FactionData.Stats(factions[owner], role);
             return Add(EntityKind.Unit, owner, role, position, s.Speed, hpOverride < 0 ? s.Hp : hpOverride);
         }
 
         public int SpawnWorker(int owner, FixVec2 position)
         {
-            UnitStats s = FactionData.Stats(Role.Worker);
+            UnitStats s = FactionData.Stats(factions[owner], Role.Worker);
             return Add(EntityKind.Worker, owner, Role.Worker, position, s.Speed, s.Hp);
         }
 
@@ -331,7 +331,7 @@ namespace WordCraft.Sim
 
         public int SpawnBuilding(int owner, Role role, FixVec2 position, bool complete)
         {
-            int hp = FactionData.Stats(role).Hp;
+            int hp = FactionData.Stats(factions[owner], role).Hp;
             int id = Add(EntityKind.Building, owner, role, position, Fix.Zero, complete ? hp : 1);
             Entity e = entities[id];
             e.MaxHp = hp;
