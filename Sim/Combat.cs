@@ -135,14 +135,26 @@ namespace WordCraft.Sim
             (e.Kind == EntityKind.Building && e.Role == Role.Defense && e.BuildTicksLeft == 0);
 
         /// <summary>
-        /// An ordered target only has to exist and be hostile. Deliberately no
-        /// range test: the attacker walks to it, however far that is.
+        /// Whether this attacker's weapon reaches this target at all, before any
+        /// question of distance. Melee cannot touch what flies, per
+        /// docs/FACTION-MECHANICS.md 공중, and that is a property of the weapon
+        /// rather than of the order: an attack command on a flier is refused the
+        /// same way an acquisition is, or a melee squad would walk under one
+        /// forever waiting to swing.
+        /// </summary>
+        private bool CanHit(Entity attacker, Entity target) =>
+            !Flies(target) || FactionData.Stats(factions[attacker.Owner], attacker.Role).HitsAir;
+
+        /// <summary>
+        /// An ordered target only has to exist, be hostile, and be reachable by
+        /// this weapon. Deliberately no range test: the attacker walks to it,
+        /// however far that is.
         /// </summary>
         private bool OrderedTargetAlive(Entity attacker)
         {
             if (attacker.TargetId < 0 || attacker.TargetId >= entities.Count) return false;
             Entity t = entities[attacker.TargetId];
-            return t.Alive && t.Owner != attacker.Owner;
+            return t.Alive && t.Owner != attacker.Owner && CanHit(attacker, t);
         }
 
         private bool ValidTarget(Entity attacker, int targetId)
@@ -150,6 +162,7 @@ namespace WordCraft.Sim
             if (targetId < 0 || targetId >= entities.Count) return false;
             Entity t = entities[targetId];
             if (!t.Alive || t.Owner == attacker.Owner) return false;
+            if (!CanHit(attacker, t)) return false;
             return WithinRange(attacker.Position, t.Position, AcquireRange);
         }
 
@@ -169,6 +182,7 @@ namespace WordCraft.Sim
                 Entity t = entities[i];
                 if (!t.Alive || t.Kind == EntityKind.ResourceNode) continue;
                 if (t.Owner == attacker.Owner || t.Owner < 0) continue;
+                if (!CanHit(attacker, t)) continue;
 
                 Fix d = (t.Position - attacker.Position).SqrMagnitude;
                 if (d > AcquireRange * AcquireRange) continue;

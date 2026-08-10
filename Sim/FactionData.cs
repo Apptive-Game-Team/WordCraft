@@ -36,6 +36,21 @@ namespace WordCraft.Sim
         public int Damage;
         public Fix Range;
         public int AttackTicks;
+
+        /// <summary>
+        /// Flies. Terrain and debris do not stop it, and a weapon that cannot
+        /// reach air cannot touch it. Roster data rather than entity state: it
+        /// never changes for a given faction and role, so nothing hashes it and
+        /// two peers cannot disagree about it.
+        /// </summary>
+        public bool Air;
+
+        /// <summary>
+        /// Can shoot something that flies. Default false on the struct, so every
+        /// row that means "yes" says so; see sharedStats for why melee is the one
+        /// row that leaves it off.
+        /// </summary>
+        public bool HitsAir;
     }
 
     /// <summary>
@@ -82,6 +97,12 @@ namespace WordCraft.Sim
         /// "matches finish" is an explicit non-goal until 4-1, and identical
         /// numbers are what keeps the mirrored map fair rather than merely
         /// symmetric.
+        ///
+        /// HitsAir is set on everything that shoots except melee, per
+        /// docs/FACTION-MECHANICS.md 공중: a ranged weapon reaches air unless its
+        /// row says otherwise, and reach is the one thing melee does not have.
+        /// The exceptions the document names on top of that — 대포 ground only,
+        /// Towerback air only — are the human faction's, and they arrive with it.
         /// </summary>
         private static readonly UnitStats[] sharedStats =
         {
@@ -89,10 +110,10 @@ namespace WordCraft.Sim
             /* Base       */ new UnitStats { Hp = 400 },
             /* Worker     */ new UnitStats { Hp = 60, Speed = Fix.Ratio(1, 4) },
             /* Production */ new UnitStats { Hp = 400 },
-            /* Defense    */ new UnitStats { Hp = 300, Damage = 9, Range = Fix.FromInt(6), AttackTicks = 20 },
+            /* Defense    */ new UnitStats { Hp = 300, Damage = 9, Range = Fix.FromInt(6), AttackTicks = 20, HitsAir = true },
             /* Melee      */ new UnitStats { Hp = 100, Speed = Fix.Ratio(1, 4), Damage = 7, Range = Fix.FromInt(2), AttackTicks = 15 },
-            /* Ranged     */ new UnitStats { Hp = 70, Speed = Fix.Ratio(1, 4), Damage = 6, Range = Fix.FromInt(6), AttackTicks = 18 },
-            /* Signature  */ new UnitStats { Hp = 130, Speed = Fix.Ratio(3, 8), Damage = 10, Range = Fix.FromInt(3), AttackTicks = 22 },
+            /* Ranged     */ new UnitStats { Hp = 70, Speed = Fix.Ratio(1, 4), Damage = 6, Range = Fix.FromInt(6), AttackTicks = 18, HitsAir = true },
+            /* Signature  */ new UnitStats { Hp = 130, Speed = Fix.Ratio(3, 8), Damage = 10, Range = Fix.FromInt(3), AttackTicks = 22, HitsAir = true },
             /* Supply     */ new UnitStats { Hp = 200 },
             /* Tech       */ new UnitStats { Hp = 250 },
         };
