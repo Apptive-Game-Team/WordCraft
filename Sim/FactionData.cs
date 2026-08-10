@@ -69,7 +69,7 @@ namespace WordCraft.Sim
         /// a rejection before tick 0. Terrain counts: a peer generating a different
         /// map has to be turned away at the handshake rather than desync on tick 1.
         /// </summary>
-        public const uint ContentVersion = 14;
+        public const uint ContentVersion = 15;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -131,6 +131,29 @@ namespace WordCraft.Sim
         /// </summary>
         private static readonly (Faction Faction, Role Role, UnitStats Stats)[] statOverrides =
         {
+            // 지옥불 군단장. Flies, and carries no weapon at all: it kills nothing
+            // itself and pays for itself by what it spawns. Numbers from
+            // docs/FACTION-MECHANICS.md. Keeps the shared signature speed, because
+            // a unit the player has to keep alive is a unit the player has to be
+            // able to pull out.
+            (Faction.Hellfire, Role.Signature,
+                new UnitStats { Hp = 300, Speed = Fix.Ratio(3, 8), Air = true }),
+
+            // 지옥불 군단장의 자손. Airborne, shorter reach and lighter hit than the
+            // shared ranged row. Free and spawned rather than produced is the other
+            // half of this unit and is not here yet; until it is, this is Hellfire's
+            // ordinary ranged unit at ordinary cost.
+            (Faction.Hellfire, Role.Ranged,
+                new UnitStats
+                {
+                    Hp = 70,
+                    Speed = Fix.Ratio(1, 4),
+                    Damage = 5,
+                    Range = Fix.FromInt(4),
+                    AttackTicks = 18,
+                    Air = true,
+                    HitsAir = true,
+                }),
         };
 
         /// <summary>

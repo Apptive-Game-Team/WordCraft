@@ -40,6 +40,9 @@ namespace WordCraft.Replay
                 ProducedWorkersCanGather();
                 RosterSlotsAreAddressable();
                 EveryRosterSlotHasStats();
+                MeleeCannotReachAir();
+                RangedCanReachAir();
+                AirIgnoresTerrain();
                 EveryBuildingRoleCanBePlaced();
                 BuildRefusesWhatTheFactionDoesNotHave();
                 BuildIsGatedByTheTechTier();
@@ -289,6 +292,106 @@ namespace WordCraft.Replay
                 hashes[t] = world.Hash();
             }
             return hashes;
+        }
+
+        private const int AirTicks = 300;
+        private const int AirFlierId = 0;
+        private const int AirSwordsmanId = 1;
+        private const int AirArcherId = 2;
+
+        /// <summary>
+        /// Melee cannot touch what flies, and an archer can. Both halves matter:
+        /// a rule that stopped everything from shooting air would pass the first
+        /// check on its own and make the unit invincible.
+        ///
+        /// The swordsman is put inside its own reach and left there, so nothing
+        /// but the rule explains the flier surviving. Run twice, because a
+        /// refused target changes what the combat loop writes and the per-tick
+        /// hashes have to match as exactly as a hit does.
+        /// </summary>
+        private static void MeleeCannotReachAir()
+        {
+            ulong[] first = RunAir(out World world, withArcher: false);
+            ulong[] second = RunAir(out _, withArcher: false);
+
+            Entity flier = world.GetEntity(AirFlierId);
+            Check(world.Flies(flier), "the Hellfire ranged unit is not airborne");
+            Check(flier.Alive && flier.Hp == flier.MaxHp,
+                "melee reached the flier: it is on " + flier.Hp + " of " + flier.MaxHp);
+            Check(world.GetEntity(AirSwordsmanId).TargetId != AirFlierId, "melee took an air target");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "air hash drift at tick " + t);
+            }
+        }
+
+        /// <summary>
+        /// The other half. A rule that stopped everything from shooting air would
+        /// pass the check above on its own and leave the unit invincible, so the
+        /// same flier under an archer has to come off worse.
+        /// </summary>
+        private static void RangedCanReachAir()
+        {
+            RunAir(out World world, withArcher: true);
+
+            Entity flier = world.GetEntity(AirFlierId);
+            Check(!flier.Alive || flier.Hp < flier.MaxHp, "the archer never reached the flier");
+        }
+
+        /// <summary>
+        /// One Hellfire flier with an enemy swordsman standing inside its own
+        /// reach, and optionally an archer that can answer. Nobody is given an
+        /// order: acquisition is what is under test.
+        /// </summary>
+        private static ulong[] RunAir(out World world, bool withArcher)
+        {
+            world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Hellfire);
+            world.SetPeerFaction(1, Faction.TreeSpirits);
+
+            world.SpawnUnit(0, Role.Ranged, At(30, 30));  // AirFlierId, airborne
+            world.SpawnUnit(1, Role.Melee, At(31, 30));   // AirSwordsmanId, in its own reach
+            if (withArcher) world.SpawnUnit(1, Role.Ranged, At(34, 30));
+
+            var idle = new List<Command>();
+            var hashes = new ulong[AirTicks];
+            for (int t = 0; t < AirTicks; t++)
+            {
+                world.Step(idle);
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        /// <summary>
+        /// Terrain and debris do not stop something that flies. Walked over a rock
+        /// wall that has no way round, so a route existing at all is the proof: a
+        /// ground unit on the same order stays on its own side.
+        /// </summary>
+        private static void AirIgnoresTerrain()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Hellfire);
+
+            // A wall clean across the map, so nothing on the ground gets past it.
+            for (int y = 0; y < World.GridSize; y++) world.SetTerrain(32, y, TileKind.Rock);
+
+            int flier = world.SpawnUnit(0, Role.Ranged, At(30, 30));
+            int walker = world.SpawnUnit(0, Role.Melee, At(30, 34));
+
+            var orders = new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.Move, flier, At(40, 30)),
+                new Command(0, 0, 1, CommandType.Move, walker, At(40, 34)),
+            };
+
+            for (int t = 0; t < AirTicks; t++) world.Step(t == 0 ? orders : new List<Command>());
+
+            Check(world.GetEntity(flier).Position.X > Fix.FromInt(33),
+                "the flier stopped at the wall");
+            Check(world.GetEntity(walker).Position.X < Fix.FromInt(32),
+                "the walker crossed a rock wall, so the wall proves nothing");
         }
 
         private const int TurretTicks = 400;
