@@ -1,0 +1,153 @@
+# Windows and macOS builds of the Unity client.
+#
+# Push a tag to cut a release:
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# Or run it by hand from the Actions tab to get the two zips as artifacts
+# without publishing anything.
+#
+# Requires Unity credentials as repository secrets. Only a repository admin can
+# add them, and every job that opens Unity fails without them:
+#
+#   UNITY_LICENSE   contents of the .ulf activation file, for a Personal seat
+#   UNITY_EMAIL     the Unity account the licence belongs to
+#   UNITY_PASSWORD  that account's password
+#
+# https://game.ci/docs/github/activation walks through producing the .ulf.
+# A Plus or Pro seat uses UNITY_SERIAL instead of UNITY_LICENSE; swap the env
+# key below if that is the seat this repository ends up on.
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+# The release job creates a GitHub release, which is a write to the repository.
+permissions:
+  contents: write
+
+# One release at a time per ref. Not cancel-in-progress: a half-uploaded
+# release is worse than a slow one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # The gate. Nothing is built from a tree whose simulation does not agree with
+  # itself, because a release that desyncs is worse than no release: the failure
+  # surfaces on someone else's machine, twenty seconds after its cause.
+  determinism:
+    name: determinism
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          # Replay and Host target net7.0 and there is no global.json, so a
+          # newer SDK alone would not run them.
+          dotnet-version: "7.0.x"
+
+      - run: dotnet build --nologo
+
+      - name: Simulation self-check
+        run: dotnet run --project Replay
+
+      - name: Lockstep self-check
+        run: dotnet run --project Host -- selfcheck
+
+  build:
+    name: build ${{ matrix.label }}
+    needs: determinism
+    runs-on: ubuntu-latest
+    strategy:
+      # One platform failing should still leave the other downloadable.
+      fail-fast: false
+      matrix:
+        include:
+          - targetPlatform: StandaloneWindows64
+            label: windows
+          - targetPlatform: StandaloneOSX
+            label: macos
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "7.0.x"
+
+      # Client/Assets/Plugins/*.dll is gitignored, so a fresh checkout has the
+      # .meta files and no assemblies. Sim.csproj and Net.csproj copy them in on
+      # every build; without this step Unity compiles against nothing.
+      - name: Vendor Sim and Net into the client
+        run: dotnet build --nologo
+
+      - uses: actions/cache@v4
+        with:
+          path: Client/Library
+          key: Library-${{ matrix.targetPlatform }}-${{ hashFiles('Client/Assets/**', 'Client/Packages/**', 'Client/ProjectSettings/**') }}
+          restore-keys: |
+            Library-${{ matrix.targetPlatform }}-
+            Library-
+
+      - uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: Client
+          # Read from Client/ProjectSettings/ProjectVersion.txt rather than
+          # pinned here, so upgrading the editor is one file, not two.
+          unityVersion: auto
+          targetPlatform: ${{ matrix.targetPlatform }}
+          buildName: WordCraft
+
+      # Unity runs as root inside the builder image and leaves the output owned
+      # by it, which the packaging step below cannot read.
+      - name: Take ownership of the build output
+        run: sudo chown -R "$(id -u):$(id -g)" build
+
+      # -y keeps symlinks as symlinks. A macOS .app is built out of them, and a
+      # bundle whose links were followed into copies does not launch.
+      - name: Package
+        working-directory: build/${{ matrix.targetPlatform }}
+        run: zip -r -y "$GITHUB_WORKSPACE/WordCraft-${{ matrix.label }}.zip" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WordCraft-${{ matrix.label }}
+          path: WordCraft-${{ matrix.label }}.zip
+          if-no-files-found: error
+
+  release:
+    name: release
+    needs: build
+    # Hand runs stop at the artifacts. Only a tag publishes.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
+          # macOS builds here are unsigned and unnotarized. Gatekeeper refuses
+          # them on first launch, and the note is what stops that from reading
+          # as a broken download.
+          body: |
+            LAN 프로토타입 빌드입니다. 서버가 없으므로 두 사람이 같은 네트워크에서
+            한쪽이 host, 다른 쪽이 그 IP로 join 합니다.
+
+            macOS 빌드는 서명도 공증도 되어 있지 않습니다. 처음 열 때 Gatekeeper가
+            막으면 우클릭 후 열기를 쓰거나 `xattr -dr com.apple.quarantine`으로
+            격리 속성을 지우십시오.
+          append_body: true
