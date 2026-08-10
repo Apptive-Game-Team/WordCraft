@@ -39,6 +39,7 @@ namespace WordCraft.Replay
                 CancellingProductionRefundsInFull();
                 ProducedWorkersCanGather();
                 RosterSlotsAreAddressable();
+                EveryRosterSlotHasStats();
                 EveryBuildingRoleCanBePlaced();
                 BuildRefusesWhatTheFactionDoesNotHave();
                 BuildIsGatedByTheTechTier();
@@ -806,6 +807,27 @@ namespace WordCraft.Replay
                         Check(!seen.Contains(name), "duplicate roster entry " + where + " -> " + name);
                         seen.Add(name);
                     }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Every faction and role has to land on a real stat row. The table is
+        /// filled by a loop over a shared row plus an override list, so the way it
+        /// breaks is not a wrong number: it is a row nothing wrote, which reads as
+        /// a default struct with zero hp. A unit spawned on one of those is dead
+        /// the tick it appears, and nothing else in this harness would say why.
+        /// </summary>
+        private static void EveryRosterSlotHasStats()
+        {
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                for (int r = 0; r < FactionData.RoleCount; r++)
+                {
+                    var faction = (Faction)f;
+                    var role = (Role)r;
+                    Check(FactionData.Stats(faction, role).Hp > 0,
+                        "no stats at " + faction + "." + role);
                 }
             }
         }
