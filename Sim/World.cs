@@ -287,6 +287,15 @@ namespace WordCraft.Sim
         public bool IsPassable(int cell, bool air) =>
             air || (terrain[cell] == (byte)TileKind.Open && remnantExpiry[cell] <= Tick);
 
+        /// <summary>
+        /// True when this entity flies. Read off the roster rather than carried on
+        /// the entity: it never changes for a given faction and role, so making it
+        /// state would add a hashed field that can only ever hold one value and
+        /// give two peers something new to disagree about.
+        /// </summary>
+        public bool Flies(Entity e) =>
+            e.Owner >= 0 && e.Owner < MaxPeers && FactionData.Stats(factions[e.Owner], e.Role).Air;
+
         /// <summary>The tick this cell's debris lapses on, or 0 when it never had any.</summary>
         public int RemnantExpiry(int cell) => remnantExpiry[cell];
 
@@ -615,8 +624,7 @@ namespace WordCraft.Sim
             e.Target = destination;
             e.PathIndex = 0;
             entities[id] = e;
-            // air: false everywhere until an air unit exists. See World.IsPassable.
-            Pathfinder.FindPath(this, CellOf(e.Position), CellOf(destination), paths[id], air: false);
+            Pathfinder.FindPath(this, CellOf(e.Position), CellOf(destination), paths[id], Flies(e));
         }
 
         /// <summary>True when the entity has walked its whole path and holds no new order.</summary>
@@ -648,7 +656,7 @@ namespace WordCraft.Sim
                 // unit with no route parks against the shore and stays there. Give
                 // it a slide the day units are expected to find their own way round
                 // something the path did not know about.
-                if (!IsPassable(CellOf(next), air: false)) continue;
+                if (!IsPassable(CellOf(next), Flies(e))) continue;
 
                 e.Position = next;
                 if (arrives && e.PathIndex < path.Count) e.PathIndex++;
