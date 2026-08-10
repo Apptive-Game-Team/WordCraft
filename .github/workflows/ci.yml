@@ -1,0 +1,89 @@
+# Every change, on both runtimes.
+#
+# Replay covers CoreCLR. This adds the other one: Unity's Mono, which is what
+# the game actually ships on. A fixed-point or JIT difference between the two
+# shows up nowhere else, and until this existed the only thing checking it was
+# whoever remembered to open the editor.
+#
+# It is also what makes the golden hash movable. The roadmap says a moved hash
+# has to be produced independently by both runtimes before the constant is
+# touched, and every remaining faction mechanic moves it. Before this, that rule
+# could only be honoured by a developer with Unity installed.
+#
+# Needs the same Unity secrets as release.yml. See its header.
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Superseded runs are worth nothing here, unlike a release.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Deliberately a copy of the release workflow's gate rather than a shared
+  # reusable workflow. It is six lines, and the indirection costs more to read
+  # than the duplication costs to keep.
+  determinism:
+    name: determinism
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "7.0.x"
+
+      - run: dotnet build --nologo
+
+      - name: Simulation self-check
+        run: dotnet run --project Replay
+
+      - name: Lockstep self-check
+        run: dotnet run --project Host -- selfcheck
+
+  view:
+    name: view determinism
+    # Behind the cheap gate: if the simulation already disagrees with itself
+    # there is nothing for Mono to confirm, and this job takes minutes.
+    needs: determinism
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "7.0.x"
+
+      # Client/Assets/Plugins/*.dll is gitignored. Same reason as release.yml.
+      - name: Vendor Sim and Net into the client
+        run: dotnet build --nologo
+
+      - uses: actions/cache@v4
+        with:
+          path: Client/Library
+          key: Library-viewselfcheck-${{ hashFiles('Client/Assets/**', 'Client/Packages/**', 'Client/ProjectSettings/**') }}
+          restore-keys: |
+            Library-viewselfcheck-
+            Library-
+
+      # unity-builder is a build action being used to run one editor method,
+      # which is what buildMethod does. ViewSelfCheck.Run calls
+      # EditorApplication.Exit itself, 1 on failure and 0 on success, so the
+      # editor's exit code is the result and no build output is produced or
+      # wanted.
+      - uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: Client
+          unityVersion: auto
+          targetPlatform: StandaloneLinux64
+          buildMethod: WordCraft.View.ViewSelfCheck.Run
+          allowDirtyBuild: true
