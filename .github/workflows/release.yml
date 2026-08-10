@@ -4,8 +4,16 @@
 #
 #   git tag v0.1.0 && git push origin v0.1.0
 #
+# A tag carrying a hyphen is published as a pre-release: v0.1.0-alpha.1 is
+# marked, v0.1.0 is not.
+#
 # Or run it by hand from the Actions tab to get the two zips as artifacts
-# without publishing anything.
+# without publishing anything. A hand run always skips the release job, so the
+# pre-release wiring above is only ever exercised by a real tag.
+#
+# The whole thing takes about five minutes, most of it Unity. That held on the
+# first run with a cold Library cache, so a green build is quick feedback and a
+# ten-minute wait means something is wrong rather than slow.
 #
 # Requires Unity credentials as repository secrets. Only a repository admin can
 # add them, and every job that opens Unity fails without them:
@@ -44,9 +52,9 @@ jobs:
     name: determinism
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           # Replay and Host target net7.0 and there is no global.json, so a
           # newer SDK alone would not run them.
@@ -74,9 +82,9 @@ jobs:
           - targetPlatform: StandaloneOSX
             label: macos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "7.0.x"
 
@@ -140,6 +148,10 @@ jobs:
         with:
           files: dist/*.zip
           generate_release_notes: true
+          # A semver pre-release identifier is the hyphen, so v0.1.0-alpha.1 is
+          # marked and v0.1.0 is not. Without this every tag lands as Latest,
+          # and an alpha presented as the stable build is what people download.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           # macOS builds here are unsigned and unnotarized. Gatekeeper refuses
           # them on first launch, and the note is what stops that from reading
           # as a broken download.
