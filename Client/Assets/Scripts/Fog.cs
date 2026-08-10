@@ -139,11 +139,15 @@ namespace WordCraft.View
                 if (state[i] == Seen) state[i] = Memory;
             }
 
+            // One lookup for the whole sweep: everything revealed below belongs to
+            // the local peer, so every sight radius is read off the same roster.
+            Faction seeing = world.FactionOf(peer);
+
             for (int i = 0; i < world.EntityCount; i++)
             {
                 Entity e = world.GetEntity(i);
                 if (!e.Alive || e.Owner != peer) continue;
-                Reveal(MatchRunner.ToView(e.Position), Sight(e));
+                Reveal(MatchRunner.ToView(e.Position), Sight(seeing, e));
             }
 
             for (int i = 0; i < world.EntityCount; i++)
@@ -210,12 +214,13 @@ namespace WordCraft.View
         /// That puts a defence tower at 6 and everything else between 2 and 4, all
         /// of them under a unit's 10.
         /// </summary>
-        private static float Sight(Entity e) =>
+        private static float Sight(Faction faction, Entity e) =>
             Static(e)
-                ? Mathf.Max(Reach(e.Role), MatchView.Cells(e.Role))
+                ? Mathf.Max(Reach(faction, e.Role), MatchView.Cells(e.Role))
                 : Reach(World.AcquireRange);
 
-        private static float Reach(Role role) => Reach(FactionData.Stats(role).Range);
+        private static float Reach(Faction faction, Role role) =>
+            Reach(FactionData.Stats(faction, role).Range);
 
         private static float Reach(Fix f) => f.Raw / (float)Fix.One;
 

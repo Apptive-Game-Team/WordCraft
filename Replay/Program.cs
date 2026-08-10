@@ -1117,7 +1117,7 @@ namespace WordCraft.Replay
         /// </summary>
         private static void MassedArchersHitHarderThanScatteredOnes()
         {
-            int shot = FactionData.Stats(Role.Ranged).Damage;
+            int shot = FactionData.Stats(Faction.WaterSlimes, Role.Ranged).Damage;
             int massed = VolleyDamage(Faction.WaterSlimes, Massed8);
             int scattered = VolleyDamage(Faction.WaterSlimes, Scattered8);
 
@@ -1136,7 +1136,7 @@ namespace WordCraft.Replay
         /// </summary>
         private static void TheMassedBonusCaps()
         {
-            int shot = FactionData.Stats(Role.Ranged).Damage;
+            int shot = FactionData.Stats(Faction.WaterSlimes, Role.Ranged).Damage;
             int five = VolleyDamage(Faction.WaterSlimes, Massed5);
             int ten = VolleyDamage(Faction.WaterSlimes, Massed10);
 
@@ -1157,7 +1157,9 @@ namespace WordCraft.Replay
         /// </summary>
         private static void TheMassedBonusIsWaterSlimesOnly()
         {
-            int shot = FactionData.Stats(Role.Ranged).Damage;
+            // RockGolems, not WaterSlimes: this is the number the unbuffed side is
+            // expected to deal, and it stops being the same number at 4-1.
+            int shot = FactionData.Stats(Faction.RockGolems, Role.Ranged).Damage;
             int plain = VolleyDamage(Faction.RockGolems, Massed8);
 
             Check(plain == Massed8.Length * shot * VolleyShots,
