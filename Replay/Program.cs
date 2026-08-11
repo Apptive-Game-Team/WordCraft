@@ -35,6 +35,10 @@ namespace WordCraft.Replay
                 ProduceRefusesWhatIsNotOnTheList();
                 AQueueHoldsOneRoleAtATime();
                 EveryProducibleRoleIsPricedAndTimed();
+                TheWarlordSpawnsOnItsPeriod();
+                TheWarlordStopsAtFiveOffspring();
+                AKilledOffspringFreesItsSlot();
+                OffspringCannotBeProduced();
                 AttackOrderKillsWhatItNames();
                 AttackMoveStopsForWhatItMeets();
                 StopCancelsWhatIsRunning();
@@ -963,6 +967,183 @@ namespace WordCraft.Replay
                     Check(!FactionData.IsBuilding(role), "a building is on the production list at " + where);
                 }
             }
+        }
+
+        // 지옥불 군단장 주기 소환. One warlord alone on an empty map: nothing else
+        // can move, die, or be produced, so every entity that appears came out of
+        // the mechanic under test.
+        private const int WarlordId = 0;
+        private const int WarlordPeriods = 5;
+
+        /// <summary>
+        /// One offspring every World.WarlordSpawnTicks, and none in between. The
+        /// tick before each period is asserted as well as the tick itself: a
+        /// mechanic that emitted every tick would pass a check that only waited for
+        /// the count to come out right.
+        ///
+        /// Run twice for the per-tick hashes, like every other mechanic here: a
+        /// spawn is new hashed state on two entities at once, and the parent's
+        /// count is exactly the kind of field that drifts unseen.
+        /// </summary>
+        private static void TheWarlordSpawnsOnItsPeriod()
+        {
+            // The period itself, not only that the system honours whatever it is
+            // set to. Everything below is written against the constant, so without
+            // this line a retuned number would take the whole check with it.
+            Check(World.WarlordSpawnTicks == 100,
+                "지옥불 군단장 emits every " + World.WarlordSpawnTicks +
+                " ticks; docs/FACTION-MECHANICS.md says 100");
+
+            World world = BuildWarlordWorld();
+            var idle = new List<Command>();
+            var first = new ulong[World.WarlordSpawnTicks * WarlordPeriods];
+
+            for (int period = 1; period <= WarlordPeriods; period++)
+            {
+                for (int t = 0; t < World.WarlordSpawnTicks - 1; t++)
+                {
+                    world.Step(idle);
+                    first[world.Tick - 1] = world.Hash();
+                }
+                Check(world.EntityCount == period, "지옥불 군단장 emitted early, on tick " + world.Tick);
+
+                world.Step(idle);
+                first[world.Tick - 1] = world.Hash();
+                Check(world.EntityCount == period + 1,
+                    "no 자손 on tick " + world.Tick + ", period " + period);
+                Check(world.GetEntity(WarlordId).OffspringCount == period,
+                    "the warlord counts " + world.GetEntity(WarlordId).OffspringCount + " 자손, expected " + period);
+            }
+
+            Entity child = world.GetEntity(1);
+            Check(child.Role == World.WarlordOffspringRole, "자손 came out a " + child.Role);
+            Check(child.Owner == world.GetEntity(WarlordId).Owner, "자손 came out under another banner");
+            Check(child.ParentId == WarlordId, "자손 does not name its parent: " + child.ParentId);
+            Check(world.Flies(child), "자손 is not airborne");
+
+            World twin = BuildWarlordWorld();
+            for (int t = 0; t < first.Length; t++)
+            {
+                twin.Step(idle);
+                Check(twin.Hash() == first[t], "warlord hash drift at tick " + (t + 1));
+            }
+        }
+
+        /// <summary>
+        /// Five alive is the ceiling, and the clock keeps running under it: the
+        /// world is left standing for periods after the fifth and nothing more
+        /// comes out.
+        /// </summary>
+        private static void TheWarlordStopsAtFiveOffspring()
+        {
+            Check(World.WarlordOffspring == 5,
+                "지옥불 군단장 holds " + World.WarlordOffspring +
+                " 자손; docs/FACTION-MECHANICS.md says 5");
+
+            World world = BuildWarlordWorld();
+            var idle = new List<Command>();
+
+            int ticks = World.WarlordSpawnTicks * (World.WarlordOffspring + 3);
+            for (int t = 0; t < ticks; t++) world.Step(idle);
+
+            Check(world.EntityCount == World.WarlordOffspring + 1,
+                "the warlord emitted " + (world.EntityCount - 1) + " 자손, capped at " + World.WarlordOffspring);
+            Check(world.GetEntity(WarlordId).OffspringCount == World.WarlordOffspring,
+                "the carried count is " + world.GetEntity(WarlordId).OffspringCount +
+                " against " + World.WarlordOffspring + " alive");
+        }
+
+        // The executioner stands well beyond AcquireRange of the warlord, so the
+        // one offspring walked over to it is the only thing that ever fights.
+        private const int WarlordTurret = 1;
+        private const int WarlordDoomed = 2;
+
+        /// <summary>
+        /// A dead 자손 frees its slot and the warlord fills it again. One offspring
+        /// is walked into an enemy turret far from home and killed by it, so the
+        /// death goes through the combat system rather than a test hook, which is
+        /// what proves the decrement sits where bodies actually stop existing.
+        /// </summary>
+        private static void AKilledOffspringFreesItsSlot()
+        {
+            World world = BuildWarlordWorld();
+            world.SpawnBuilding(1, Role.Defense, At(50, 30), complete: true); // WarlordTurret
+            var idle = new List<Command>();
+
+            for (int t = 0; t < World.WarlordSpawnTicks * World.WarlordOffspring; t++) world.Step(idle);
+            int born = world.EntityCount;
+            Check(world.GetEntity(WarlordId).OffspringCount == World.WarlordOffspring,
+                "the warlord never reached its cap");
+
+            world.Step(new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.Move, WarlordDoomed, At(48, 30))
+            });
+
+            int died = -1;
+            for (int t = 0; t < 600 && died < 0; t++)
+            {
+                world.Step(idle);
+                if (!world.GetEntity(WarlordDoomed).Alive) died = world.Tick;
+            }
+            Check(died > 0, "the turret never killed the 자손 walked into it");
+            Check(world.EntityCount == born, "something else was born while the 자손 was dying");
+            Check(world.GetEntity(WarlordId).OffspringCount == World.WarlordOffspring - 1,
+                "a dead 자손 did not free its slot: the warlord still counts " +
+                world.GetEntity(WarlordId).OffspringCount);
+
+            // The refill is due at the warlord's next period, so a whole one is
+            // enough and anything longer would not be a refill.
+            for (int t = 0; t < World.WarlordSpawnTicks; t++) world.Step(idle);
+            Check(world.EntityCount == born + 1,
+                "the freed slot was never refilled: " + (world.EntityCount - born) + " born since the death");
+            Check(world.GetEntity(WarlordId).OffspringCount == World.WarlordOffspring,
+                "the refilled warlord counts " + world.GetEntity(WarlordId).OffspringCount);
+            Check(world.GetEntity(world.EntityCount - 1).ParentId == WarlordId,
+                "the refill does not name its parent");
+        }
+
+        /// <summary>
+        /// 자손 is spawned, never bought. A produce order naming it is refused
+        /// whole, while another faction's ranged slot is still on the list: a rule
+        /// that closed the slot for everybody would pass the first half alone.
+        /// </summary>
+        private static void OffspringCannotBeProduced()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Hellfire);
+            world.SetPeerFaction(1, Faction.TreeSpirits);
+            // Both peers hold a finished production building, so the ranged slot is
+            // open on tier for both and the list is the only thing left to refuse it.
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);         // 0
+            world.SpawnBuilding(0, Role.Production, At(8, 5), complete: true);   // 1
+            world.SpawnBuilding(1, Role.Base, At(50, 50), complete: true);       // 2
+            world.SpawnBuilding(1, Role.Production, At(47, 50), complete: true); // 3
+            world.GrantResources(0, 1000);
+            world.GrantResources(1, 1000);
+
+            int banked = world.GetResources(0);
+            int standing = world.EntityCount;
+            var idle = new List<Command>();
+            world.Step(Produce(0, 0, 0, World.WarlordOffspringRole));
+            for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
+            Check(world.GetResources(0) == banked, "a produce order for 자손 spent resources");
+            Check(world.GetEntity(0).QueueCount == 0, "a produce order for 자손 queued one");
+            Check(world.EntityCount == standing, "a produce order for 자손 made one");
+
+            banked = world.GetResources(1);
+            world.Step(Produce(2, 1, 0, World.WarlordOffspringRole));
+            Check(world.GetResources(1) < banked, "the ranged slot is closed for every faction, not just 지옥불");
+        }
+
+        /// <summary>One 지옥불 군단장 on an empty map, and nothing else at all.</summary>
+        private static World BuildWarlordWorld()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Hellfire);
+            world.SetPeerFaction(1, Faction.TreeSpirits);
+            world.SpawnUnit(0, World.WarlordRole, At(30, 30)); // WarlordId
+            return world;
         }
 
         private const int WorkerBase = 0;
