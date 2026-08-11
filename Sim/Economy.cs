@@ -227,22 +227,34 @@ namespace WordCraft.Sim
             if (!OwnedAndAlive(buildingId, peer)) return;
             Entity b = entities[buildingId];
             if (b.Kind != EntityKind.Building || b.BuildTicksLeft > 0) return;
+            // A slot the roster does not put on the production list cannot be
+            // queued at any price. That covers a building, which is placed rather
+            // than produced.
+            ProductionCost cost = FactionData.Production(factions[peer], role);
+            if (!cost.Produced) return;
             if (FactionData.Tier(role) > TierOf(peer)) return;
             if (b.QueueCount >= MaxQueue) return;
+            // One role for the whole queue, so a second order naming a different
+            // one is refused rather than silently replacing what the first order
+            // paid for. Prices differ per role now: overwriting would refund the
+            // running queue at the new role's price, which is a free 200 mana on a
+            // 군단장 order placed behind a 잿불 악마.
+            if (b.QueueCount > 0 && b.ProduceRole != role) return;
             // Refused before anything is spent: a rejected command must leave the
             // peer's resources and queue exactly as it found them.
             // ponytail: the queue does not reserve population, so a queue filled
             // under the cap can still finish over it. Reserve at queue time if
             // players start using the queue to bank units past the cap.
             if (population[peer] >= PopulationCap(peer)) return;
-            if (resources[peer] < ProduceCost) return;
+            if (resources[peer] < cost.Resources) return;
 
             // Cost is taken at queue time, so a peer cannot queue more than it can pay for.
-            resources[peer] -= ProduceCost;
+            resources[peer] -= cost.Resources;
             b.QueueCount++;
-            // ponytail: one role for the whole queue, so a second order overwrites
-            // what the first one was going to build. Give the queue a list of roles
-            // when players expect to mix unit types in one building.
+            // ponytail: one role for the whole queue, so mixing unit types means
+            // emptying it first. Give the queue a list of roles the day players
+            // expect one building to work on two things at once; that is also the
+            // day the refund needs the price each entry was bought at.
             b.ProduceRole = role;
             entities[buildingId] = b;
         }
@@ -250,9 +262,9 @@ namespace WordCraft.Sim
         /// <summary>
         /// Takes the last unit off the queue and pays it back.
         ///
-        /// Refund rule: the whole ProduceCost, no penalty. The cost is taken in
-        /// full at queue time, so a full refund is the rule that leaves a peer's
-        /// bank exactly where it would have been had the order never been given.
+        /// Refund rule: the whole price, no penalty. The cost is taken in full at
+        /// queue time, so a full refund is the rule that leaves a peer's bank
+        /// exactly where it would have been had the order never been given.
         /// A partial refund would have to be a share of elapsed production time to
         /// be fair, and that is a second number to hash for no gain in play.
         /// </summary>
@@ -266,7 +278,10 @@ namespace WordCraft.Sim
             if (b.Kind != EntityKind.Building || b.QueueCount <= 0) return;
 
             b.QueueCount--;
-            resources[peer] += ProduceCost;
+            // The queue holds one role, so the price the entry was bought at is
+            // the price that role costs now. Anything else would need the cost
+            // stored per entry, which is state the queue does not carry.
+            resources[peer] += FactionData.Production(factions[peer], b.ProduceRole).Resources;
             // The unit in progress is the last to go, so emptying the queue also
             // drops its timer. Left standing it would be hashed state that hands
             // the next order a head start it never paid for.
@@ -282,10 +297,17 @@ namespace WordCraft.Sim
                 if (!b.Alive || b.Kind != EntityKind.Building) continue;
                 if (b.BuildTicksLeft > 0 || b.QueueCount <= 0) continue;
 
-                if (b.ProduceTicksLeft == 0) b.ProduceTicksLeft = ProduceTicks;
-                b.ProduceTicksLeft--;
                 if (b.ProduceTicksLeft == 0)
                 {
+                    b.ProduceTicksLeft = FactionData.Production(factions[b.Owner], b.ProduceRole).Ticks;
+                }
+                b.ProduceTicksLeft--;
+                // At or past zero rather than exactly zero: a role priced at no
+                // ticks at all finishes on the spot instead of counting down
+                // through negative numbers forever.
+                if (b.ProduceTicksLeft <= 0)
+                {
+                    b.ProduceTicksLeft = 0;
                     b.QueueCount--;
                     entities[i] = b;
                     // Fixed rally offset: the spawn point must not depend on how many

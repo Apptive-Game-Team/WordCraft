@@ -31,6 +31,10 @@ namespace WordCraft.Replay
                 DefenseBuildingsShoot();
                 ProductionStopsAtThePopulationCap();
                 TechTiersGateProduction();
+                ProductionIsPricedPerRole();
+                ProduceRefusesWhatIsNotOnTheList();
+                AQueueHoldsOneRoleAtATime();
+                EveryProducibleRoleIsPricedAndTimed();
                 AttackOrderKillsWhatItNames();
                 AttackMoveStopsForWhatItMeets();
                 StopCancelsWhatIsRunning();
@@ -838,6 +842,127 @@ namespace WordCraft.Replay
             banked = world.GetResources(0);
             world.Step(Cancel(QueueBase, 0, 6));
             Check(world.GetResources(0) == banked, "cancelling an empty queue paid out");
+        }
+
+        private const int PricedBase = 0;
+        private const int PricedTech = 1;
+        private const int PricedWarlord = 2;
+
+        /// <summary>
+        /// 지옥불 군단장 costs 220 and 140 ticks, per docs/FACTION-MECHANICS.md,
+        /// while another faction's signature slot still costs the default. Both
+        /// halves matter: a table that moved every signature would pass the first
+        /// assertion and be a renamed global constant.
+        ///
+        /// Charged and timed through a real queue rather than read off the table
+        /// twice, because what the table says and what the production system spends
+        /// are two different claims.
+        /// </summary>
+        private static void ProductionIsPricedPerRole()
+        {
+            Check(FactionData.Production(Faction.Hellfire, Role.Signature).Resources == 220,
+                "지옥불 군단장 costs " + FactionData.Production(Faction.Hellfire, Role.Signature).Resources);
+            Check(FactionData.Production(Faction.TreeSpirits, Role.Signature).Resources == World.ProduceCost,
+                "the warlord's price leaked onto another faction's signature unit");
+
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Hellfire);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.SpawnBuilding(0, Role.Tech, At(9, 5), complete: true); // 1, opens tier 3
+            world.GrantResources(0, 1000);
+
+            int banked = world.GetResources(0);
+            var idle = new List<Command>();
+            world.Step(Produce(PricedBase, 0, 0, Role.Signature));
+            Check(world.GetResources(0) == banked - 220,
+                "queueing 지옥불 군단장 spent " + (banked - world.GetResources(0)));
+
+            // One tick short of the roster time, then the tick itself. A unit that
+            // arrived early would pass a check that only waited for it. The order
+            // tick is the first of the 140, so 138 idle ones leave exactly one.
+            int born = world.EntityCount;
+            for (int t = 0; t < 138; t++) world.Step(idle);
+            Check(world.EntityCount == born, "지옥불 군단장 arrived before its 140 ticks were up");
+            world.Step(idle);
+            Check(world.EntityCount == born + 1, "지옥불 군단장 never arrived");
+            Check(world.GetEntity(PricedWarlord).Role == Role.Signature,
+                "the queue finished a " + world.GetEntity(PricedWarlord).Role);
+        }
+
+        /// <summary>
+        /// A building is placed, never queued. The roster says so rather than the
+        /// command handler, so a queue that took one would hand the peer a base
+        /// walking around as a unit at a fighter's price.
+        /// </summary>
+        private static void ProduceRefusesWhatIsNotOnTheList()
+        {
+            var world = new World(Seed);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.GrantResources(0, 1000);
+
+            int banked = world.GetResources(0);
+            int standing = world.EntityCount;
+            var idle = new List<Command>();
+            world.Step(Produce(0, 0, 0, Role.Supply));
+            // Entity count as well as the queue: a building has no production time
+            // to spend, so one that got past the list would come out on the tick it
+            // was ordered and leave the queue back at zero behind it.
+            for (int t = 0; t < 5; t++) world.Step(idle);
+            Check(world.GetResources(0) == banked, "producing a building spent resources");
+            Check(world.GetEntity(0).QueueCount == 0, "producing a building queued one");
+            Check(world.EntityCount == standing, "producing a building made one");
+        }
+
+        /// <summary>
+        /// A queue holds one role. Roles are priced apart now, so an order that
+        /// overwrote a running queue's role would have every entry in it refunded
+        /// at the new price.
+        /// </summary>
+        private static void AQueueHoldsOneRoleAtATime()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Hellfire);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.SpawnBuilding(0, Role.Tech, At(9, 5), complete: true); // 1
+            world.GrantResources(0, 1000);
+
+            world.Step(Produce(0, 0, 0, Role.Melee));
+            int banked = world.GetResources(0);
+            world.Step(Produce(0, 0, 1, Role.Signature));
+            Check(world.GetResources(0) == banked, "a second role on a running queue spent resources");
+            Check(world.GetEntity(0).QueueCount == 1, "a second role on a running queue was accepted");
+            Check(world.GetEntity(0).ProduceRole == Role.Melee, "a second role overwrote what the queue was building");
+
+            // Emptied, then the other role: the rule is one role at a time, not one
+            // role forever.
+            world.Step(Cancel(0, 0, 2));
+            banked = world.GetResources(0);
+            world.Step(Produce(0, 0, 3, Role.Signature));
+            Check(world.GetResources(0) == banked - 220, "an emptied queue refused the other role");
+        }
+
+        /// <summary>
+        /// Every slot on the production list has a price and a clock. A row left at
+        /// zero would be a free unit or one that finishes the tick it is ordered,
+        /// and neither is a thing anybody would notice from the table alone.
+        /// </summary>
+        private static void EveryProducibleRoleIsPricedAndTimed()
+        {
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                for (int r = 0; r < FactionData.RoleCount; r++)
+                {
+                    var faction = (Faction)f;
+                    var role = (Role)r;
+                    ProductionCost cost = FactionData.Production(faction, role);
+                    if (!cost.Produced) continue;
+
+                    string where = faction + "." + role;
+                    Check(cost.Resources > 0, "free production slot at " + where);
+                    Check(cost.Ticks > 0, "instant production slot at " + where);
+                    Check(!FactionData.IsBuilding(role), "a building is on the production list at " + where);
+                }
+            }
         }
 
         private const int WorkerBase = 0;

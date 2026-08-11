@@ -129,8 +129,11 @@ namespace WordCraft.Sim
         public const int NodeHp = 1;
         public const int GatherTicks = 20;
         public const int CarryCapacity = 10;
-        public const int ProduceCost = 20;
-        public const int ProduceTicks = 40;
+        // The baseline production row, and only that. What a given faction's unit
+        // costs comes from FactionData.Production; these two are what a roster row
+        // that says nothing else falls back to.
+        public const int ProduceCost = FactionData.DefaultProduceCost;
+        public const int ProduceTicks = FactionData.DefaultProduceTicks;
         public const int MaxQueue = 5;
 
         // Population, per docs/FACTIONS.md. The hard cap is an absolute ceiling,
