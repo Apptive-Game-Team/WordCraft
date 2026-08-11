@@ -327,6 +327,19 @@ namespace WordCraft.View
         public const float ResultWidth = 690f;
         public const float ResultHeight = 240f;
 
+        /// <summary>The alert's sentence plus its key hint, one row each.</summary>
+        public const float AlertWidth = 300f;
+        public const float AlertHeight = S2 + Line + S1 + Micro + S1 + S2;
+
+        /// <summary>
+        /// Top and centred: a player's eyes are already near the top bar
+        /// reading mana and population, not down in a corner a fight never
+        /// reaches. Under the bar rather than over it, so the two hairlines
+        /// never touch.
+        /// </summary>
+        public static Rect AlertBox() =>
+            new Rect((Screen.width - AlertWidth) * 0.5f, TopBar + S2, AlertWidth, AlertHeight);
+
         // ---------------------------------------------------------------- styles
 
         // Built once, lazily, because GUI.skin only exists inside OnGUI. Nothing

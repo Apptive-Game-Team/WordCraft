@@ -109,6 +109,7 @@ namespace WordCraft.View
                 default:
                     TopBar(runner.World);
                     BottomPanel(runner.World);
+                    Alert.Draw(runner.World, runner.LocalPeer);
                     // Last, so it floats over both bars rather than under them.
                     if (mixerOpen) Mixer();
                     break;
