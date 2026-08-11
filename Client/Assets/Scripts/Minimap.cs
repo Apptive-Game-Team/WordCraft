@@ -15,8 +15,8 @@ namespace WordCraft.View
     ///   right click  the order a right click at that world point would give
     ///
     /// Something of yours taking damage off screen leaves a mark here for a
-    /// couple of seconds, which is the only way a player learns their base is
-    /// being levelled while they are looking at the front line.
+    /// couple of seconds — Alert reads the same hits and says so in words, but
+    /// the dot was here first and stays for a glance that does not need one.
     ///
     /// A Texture2D repainted from entity state plus a few GUI rectangles. A
     /// second camera onto a RenderTexture would cost a whole extra render pass to
@@ -70,12 +70,6 @@ namespace WordCraft.View
         /// <summary>True while a left drag that began on the square is still down.</summary>
         private static bool scrubbing;
 
-        /// <summary>
-        /// Hp last seen, per entity id. A drop between frames is a hit; the
-        /// simulation says nothing about hits and may not be asked to.
-        /// </summary>
-        private static readonly List<int> lastHp = new List<int>();
-
         private static readonly List<Mark> marks = new List<Mark>();
 
         private struct Mark
@@ -100,7 +94,6 @@ namespace WordCraft.View
                 // A restart hands out ids from zero again, so nothing held across
                 // one is about the match being played now.
                 scrubbing = false;
-                lastHp.Clear();
                 marks.Clear();
                 Backdrop(world);
                 foggedVersion = -1;
@@ -122,9 +115,10 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// Something of yours is being hit somewhere you are not looking. Read off
-        /// hp falling between frames, because a hit is not state and Sim may not
-        /// grow a field to say it happened.
+        /// Something of yours is being hit somewhere you are not looking. Off
+        /// screen and yours is Hits's question to answer, not this file's — the
+        /// alert asks the same one, and a second walk over every entity here
+        /// would just be this method computing Hits's own answer again.
         ///
         /// Only what is off screen is marked. A fight the player is watching needs
         /// no second telling, and a mark under the battle they already have selected
@@ -132,22 +126,8 @@ namespace WordCraft.View
         /// </summary>
         private static void Marks(Rect area, World world, int localPeer)
         {
-            // Entities are appended and never removed, and a new one arrives at
-            // full hp, so seeding from the entity itself cannot fake a hit.
-            for (int i = lastHp.Count; i < world.EntityCount; i++) lastHp.Add(world.GetEntity(i).Hp);
-
-            Camera cam = Camera.main;
-            for (int i = 0; i < world.EntityCount; i++)
-            {
-                Entity e = world.GetEntity(i);
-                int was = lastHp[i];
-                lastHp[i] = e.Hp;
-
-                if (e.Hp >= was || e.Owner != localPeer) continue;
-                Vector2 p = MatchRunner.ToView(e.Position);
-                if (cam != null && OnScreen(cam, p)) continue;
-                Add(p);
-            }
+            IReadOnlyList<Vector2> hits = Hits.OffScreen(world, localPeer, Camera.main);
+            for (int i = 0; i < hits.Count; i++) Add(hits[i]);
 
             for (int i = marks.Count - 1; i >= 0; i--)
             {
@@ -164,12 +144,6 @@ namespace WordCraft.View
                     X(area, marks[i].Point.x) - MarkPixels * 0.5f,
                     Y(area, marks[i].Point.y) - MarkPixels * 0.5f, MarkPixels, MarkPixels), fade);
             }
-        }
-
-        private static bool OnScreen(Camera cam, Vector2 point)
-        {
-            Vector3 v = cam.WorldToViewportPoint(point);
-            return v.x >= 0f && v.x <= 1f && v.y >= 0f && v.y <= 1f;
         }
 
         /// <summary>
