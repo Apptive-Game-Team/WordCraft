@@ -91,7 +91,7 @@ namespace WordCraft.Sim
         /// a rejection before tick 0. Terrain counts: a peer generating a different
         /// map has to be turned away at the handshake rather than desync on tick 1.
         /// </summary>
-        public const uint ContentVersion = 16;
+        public const uint ContentVersion = 17;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -170,9 +170,8 @@ namespace WordCraft.Sim
                 new UnitStats { Hp = 300, Speed = Fix.Ratio(3, 8), Air = true }),
 
             // 지옥불 군단장의 자손. Airborne, shorter reach and lighter hit than the
-            // shared ranged row. Free and spawned rather than produced is the other
-            // half of this unit and is not here yet; until it is, this is Hellfire's
-            // ordinary ranged unit at ordinary cost.
+            // shared ranged row. Free and spawned rather than produced, which is
+            // what productionOverrides below says and World.WarlordSpawnSystem does.
             (Faction.Hellfire, Role.Ranged,
                 new UnitStats
                 {
@@ -226,6 +225,12 @@ namespace WordCraft.Sim
             // expensive unit in the game, and it kills nothing itself: it pays for
             // itself with what it spawns.
             (Faction.Hellfire, Role.Signature, Produce(220, 140)),
+
+            // 지옥불 군단장의 자손. Free, and off the production list altogether: it
+            // comes out of a warlord every World.WarlordSpawnTicks and there is no
+            // other way to get one. A price on it would be a second way in, and
+            // then 무료 is only a discount on a unit you can also just buy.
+            (Faction.Hellfire, Role.Ranged, new ProductionCost()),
         };
 
         private static ProductionCost Produce(int resources, int ticks) =>
