@@ -60,6 +60,7 @@ namespace WordCraft.Replay
                 TheAiPlaysARealGame();
                 SoloMatchReachesTheWinCondition();
                 ClientLogMatchesGoldenHash();
+                ReplayRoundTrip.Check();
                 SimAssemblyIsClean();
             }
             catch (Exception ex)
