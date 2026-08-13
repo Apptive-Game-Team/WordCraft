@@ -25,6 +25,16 @@ namespace WordCraft.View
         /// <summary>How near the cursor an entity has to be to light up. Matches the pickers.</summary>
         private const float HoverRadius = 1.1f;
 
+        /// <summary>
+        /// The range ring's line thickness, as a fraction of its own radius,
+        /// baked into the texture in MakeRingSprite. A boundary, not a filled
+        /// area: docs/UI-STYLE.md bans a gradient outright, and a disc filled
+        /// out to a weapon's whole reach would wash the ground under it in the
+        /// exact moment — a fight in progress — this issue exists to make
+        /// legible. A line says how far without covering what is inside it.
+        /// </summary>
+        private const float RangeBandRatio = 0.08f;
+
         // Overlay geometry, in grid cells. A bar is the same size whatever the art
         // under it, so a row of damaged units reads as one row.
         private const float BarHeight = 0.16f;
@@ -82,6 +92,10 @@ namespace WordCraft.View
         private readonly List<SpriteRenderer> rings = new List<SpriteRenderer>();
         private readonly List<float> footprints = new List<float>();
 
+        /// <summary>A hairline circle at the selected entity's own weapon reach (issue #104). One per entity id, most of them always off.</summary>
+        private readonly List<SpriteRenderer> rangeRings = new List<SpriteRenderer>();
+        private Sprite rangeRingArt;
+
         /// <summary>One highlight, moved to whatever the cursor is over.</summary>
         private SpriteRenderer hover;
 
@@ -124,6 +138,7 @@ namespace WordCraft.View
             DontDestroyOnLoad(gameObject);
             disc = MakeSprite(round: true);
             square = MakeSprite(round: false);
+            rangeRingArt = MakeRingSprite();
             remnantArt = Resources.Load<Sprite>(SpriteFolder + RemnantArt);
 
             float mid = MatchScenario.MapSize / 2f;
@@ -166,6 +181,7 @@ namespace WordCraft.View
             {
                 Drop(views);
                 Drop(rings);
+                Drop(rangeRings);
                 Drop(barBacks);
                 Drop(barFills);
                 Drop(queueFills);
@@ -196,6 +212,7 @@ namespace WordCraft.View
                 {
                     sr.enabled = false;
                     rings[i].enabled = false;
+                    rangeRings[i].enabled = false;
                     Overlays(i);
                     continue;
                 }
@@ -208,6 +225,7 @@ namespace WordCraft.View
                 if (show == Fog.Memory)
                 {
                     rings[i].enabled = false;
+                    rangeRings[i].enabled = false;
                     Overlays(i);
                     continue;
                 }
@@ -218,6 +236,19 @@ namespace WordCraft.View
                 Vector2 p = runner.DrawPosition(i);
                 sr.transform.position = new Vector3(p.x, p.y, 0f);
                 if (picked) Ring(rings[i], footprints[i], p);
+
+                // "이게 저걸 때릴 수 있나" is a question the roster already answers;
+                // this only ever reads it, never a re-typed number of its own, so
+                // the ring can never say something FactionData does not (issue #104).
+                if (picked && world.Armed(e))
+                {
+                    RangeRing(rangeRings[i], FactionData.Stats(world.FactionOf(e.Owner), e.Role).Range, p);
+                }
+                else
+                {
+                    rangeRings[i].enabled = false;
+                }
+
                 Overlays(world, i, e, p, picked);
 
                 // A site under construction reads as a ghost until it finishes.
@@ -323,6 +354,25 @@ namespace WordCraft.View
             float d = footprint + band * 2f;
             ring.transform.position = new Vector3(p.x, p.y, 0f);
             ring.transform.localScale = new Vector3(d, d, 1f);
+        }
+
+        /// <summary>
+        /// Sizes and places the reach ring at a weapon's actual range, read off
+        /// the roster in cells and converted the same way Fog already converts
+        /// the same field (Fog.Reach): Fix.Raw over Fix.One, since a range is a
+        /// plain distance and never needs the position math MatchRunner.ToView
+        /// does for a point. Unlike the selection Ring, this one's thickness is
+        /// not held to a screen-space floor — the shape it draws is the
+        /// boundary the player asked about, not a sliver around a footprint
+        /// that would otherwise vanish, so it is free to scale with the map
+        /// like everything else drawn in it.
+        /// </summary>
+        private static void RangeRing(SpriteRenderer sr, Fix range, Vector2 center)
+        {
+            float radius = range.Raw / (float)Fix.One;
+            sr.transform.position = new Vector3(center.x, center.y, 0f);
+            sr.transform.localScale = new Vector3(radius * 2f, radius * 2f, 1f);
+            sr.enabled = true;
         }
 
         /// <summary>
@@ -505,6 +555,13 @@ namespace WordCraft.View
             rings.Add(ring);
             footprints.Add(drawn != null ? Cells(e.Role) : scale);
 
+            // Above the fog like the rally marker and the build ghost: both are
+            // information about what the local peer itself is doing right now,
+            // and fog never hides that (docs/UI-STYLE.md 안개).
+            var rangeRing = NewRenderer("Range", rangeRingArt, UiStyle.RangeRing, AboveFogOrder);
+            rangeRing.enabled = false;
+            rangeRings.Add(rangeRing);
+
             barBacks.Add(Overlay("HpBack", UiStyle.MeterBack, OverlayOrder));
             barFills.Add(Overlay("HpFill", Color.white, OverlayOrder + 1));
             queueFills.Add(Overlay("Queue", UiStyle.Queue, OverlayOrder + 1));
@@ -605,6 +662,38 @@ namespace WordCraft.View
                 {
                     bool inside = !round || Vector2.Distance(new Vector2(x, y), centre) <= radius;
                     // A mask, not a colour: the tint comes from the SpriteRenderer.
+                    pixels[y * size + x] = inside ? (Color32)Color.white : (Color32)Color.clear;
+                }
+            }
+
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false);
+            texture.SetPixels32(pixels);
+            texture.Apply();
+            return Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), size);
+        }
+
+        /// <summary>
+        /// A hairline circle: clear everywhere except a thin band at the very
+        /// edge, at RangeBandRatio of its own radius. Baked once at a higher
+        /// texel count than MakeSprite's discs and squares, because this one is
+        /// stretched out to a weapon's whole reach rather than to a body's own
+        /// footprint, and a thin band needs the extra resolution to survive
+        /// that stretch as a line instead of a stair-step.
+        /// </summary>
+        private static Sprite MakeRingSprite()
+        {
+            const int size = 128;
+            var pixels = new Color32[size * size];
+            float outer = size / 2f - 1f;
+            float inner = outer * (1f - RangeBandRatio);
+            var centre = new Vector2((size - 1) / 2f, (size - 1) / 2f);
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float d = Vector2.Distance(new Vector2(x, y), centre);
+                    bool inside = d <= outer && d >= inner;
                     pixels[y * size + x] = inside ? (Color32)Color.white : (Color32)Color.clear;
                 }
             }
