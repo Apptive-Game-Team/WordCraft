@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using WordCraft.Net;
+using WordCraft.Replay; // ReplayLog and ReplayHeader, compiled in from Replay; see Host.csproj
 using WordCraft.Sim;
 
 namespace WordCraft.Host
@@ -18,6 +21,7 @@ namespace WordCraft.Host
             try
             {
                 LossyMatchStaysInSync();
+                BothPeersSaveTheSameMatch();
                 DesyncHaltsAndNamesTheField();
                 SeedMismatchIsRejectedBeforeTick0();
                 ContentMismatchIsRejectedBeforeTick0();
@@ -32,7 +36,8 @@ namespace WordCraft.Host
             }
 
             Console.WriteLine("OK: lockstep self-check passed (" + Ticks +
-                              " ticks over a lossy link, desync located, handshake rejected," +
+                              " ticks over a lossy link, both peers saved the same match," +
+                              " desync located, handshake rejected," +
                               " timeout handled, solo barrier opens)");
             return 0;
         }
@@ -75,6 +80,106 @@ namespace WordCraft.Host
 
             Check(a.World.FactionOf(0) == Faction.WaterSlimes && a.World.FactionOf(1) == Faction.RockGolems,
                 "the handshake did not carry each peer's own choice");
+        }
+
+        /// <summary>
+        /// The recording half of a networked match, over the same faulty link.
+        /// Two peers save with no coordination between them and the two files
+        /// have to be the same bytes, because each holds the confirmed batch and
+        /// the confirmed batch is by definition what both of them executed. A
+        /// peer that recorded its own commands instead would still write a file
+        /// that loads and replays — into a different match — and this is what
+        /// catches that.
+        ///
+        /// Then the file is read back and stepped through a fresh world. Two
+        /// peers agreeing proves only that they wrote the same thing, not that
+        /// what they wrote is the match they played; the per-tick hashes answer
+        /// that half.
+        /// </summary>
+        private static void BothPeersSaveTheSameMatch()
+        {
+            const int RecordedTicks = 200;
+
+            var cfgA = new MatchConfig { LocalFaction = Faction.WaterSlimes };
+            var cfgB = new MatchConfig { LocalFaction = Faction.RockGolems };
+            var link = new FaultyLink(0x5AF3, dropPercent: 20, duplicatePercent: 10, baseDelayMs: 30, jitterMs: 40);
+            var a = new Peer(0, link.A, cfgA, -1, 0);
+            var b = new Peer(1, link.B, cfgB, -1, 0);
+
+            Drive(link, a, b, 0,
+                () => Stopped(a) || Stopped(b) ||
+                      (a.Session.Tick >= RecordedTicks && b.Session.Tick >= RecordedTicks),
+                600000);
+
+            Check(!Stopped(a), "peer 0 stopped: " + a.Session.StopReason);
+            Check(!Stopped(b), "peer 1 stopped: " + b.Session.StopReason);
+            Check(a.Recorder.TickCount >= RecordedTicks && b.Recorder.TickCount >= RecordedTicks,
+                "a peer recorded fewer than " + RecordedTicks + " ticks: " +
+                a.Recorder.TickCount + " and " + b.Recorder.TickCount);
+
+            string pathA = Path.Combine(Path.GetTempPath(), "wordcraft-selfcheck-peer0.wcrp");
+            string pathB = Path.Combine(Path.GetTempPath(), "wordcraft-selfcheck-peer1.wcrp");
+            try
+            {
+                a.Recorder.Save(pathA, HeaderFor(a, cfgA), RecordedTicks);
+                b.Recorder.Save(pathB, HeaderFor(b, cfgB), RecordedTicks);
+
+                Check(SameBytes(File.ReadAllBytes(pathA), File.ReadAllBytes(pathB)),
+                    "the peers saved different files: " +
+                    (ReplayComparison.FirstDifference(pathA, pathB) ?? "identical commands, different bytes"));
+
+                ReplaysToTheSameHashes(pathA, a.Hashes, RecordedTicks);
+            }
+            finally
+            {
+                if (File.Exists(pathA)) File.Delete(pathA);
+                if (File.Exists(pathB)) File.Delete(pathB);
+            }
+        }
+
+        /// <summary>
+        /// What a peer knows about the match it just played. The factions come
+        /// from the world rather than the config because only one of the two was
+        /// this peer's own choice; the other arrived in the handshake, and both
+        /// peers have to end up writing the same header from opposite sides.
+        /// </summary>
+        private static ReplayHeader HeaderFor(Peer peer, MatchConfig cfg) =>
+            new ReplayHeader(FactionData.ContentVersion, cfg.Seed,
+                peer.World.FactionOf(0), peer.World.FactionOf(1));
+
+        /// <summary>
+        /// Steps a saved match through a world built the way the match's own was,
+        /// and compares every tick against the hash the live peer recorded. The
+        /// factions are restored from the header for the same reason the session
+        /// sets them before tick 0: they are hashed state, so a replay that
+        /// skipped them would diverge on tick 1 with the log entirely correct.
+        /// </summary>
+        private static void ReplaysToTheSameHashes(string path, Dictionary<int, ulong> live, int ticks)
+        {
+            bool ok = ReplayLog.TryRead(path, out ReplayHeader header, out List<Command>[] log, out string refusal);
+            Check(ok, "a freshly saved networked match was refused: " + refusal);
+            Check(log.Length == ticks, "the saved match holds " + log.Length + " ticks, wanted " + ticks);
+
+            World world = Peer.BuildWorld(header.Seed, -1, 0);
+            world.SetPeerFaction(0, header.Peer0Faction);
+            world.SetPeerFaction(1, header.Peer1Faction);
+
+            for (int t = 0; t < log.Length; t++)
+            {
+                world.Step(log[t]);
+                Check(world.Hash() == live[world.Tick],
+                    "the replayed match left the recorded one at tick " + world.Tick);
+            }
+        }
+
+        private static bool SameBytes(byte[] a, byte[] b)
+        {
+            if (a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (a[i] != b[i]) return false;
+            }
+            return true;
         }
 
         /// <summary>One peer starts with a tampered unit; the desync must be located, not just noticed.</summary>
