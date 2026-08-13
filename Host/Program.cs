@@ -83,12 +83,13 @@ namespace WordCraft.Host
                               " (peer " + SoloOpponent + ", played by the simulation)" +
                               ", input delay " + cfg.InputDelay + ", target " + ticks + " ticks");
 
-            // What this session's own peer issued, one entry per tick actually
-            // run. Solo has nothing that takes interactive input yet, and the
-            // opponent's decisions live inside World.Step rather than as
-            // commands, so every entry is empty today — but the log is still the
-            // exact one this match ran on, and it is what -save writes out.
-            var recorded = savePath != null ? new List<List<Command>>() : null;
+            // The same recorder a networked match uses, reading the same confirmed
+            // batch. Solo has nothing that takes interactive input yet and the
+            // opponent's decisions live inside World.Step rather than as commands,
+            // so the entries are empty today — but they come from what the session
+            // executed, so the day solo does take input the log follows without
+            // this code changing.
+            var recorder = new MatchRecorder();
 
             long now = 0;
             while (world.Tick < ticks && !world.MatchOver)
@@ -98,7 +99,7 @@ namespace WordCraft.Host
                 // A solo barrier that closes is a fault, not a wait: there is
                 // nothing left that could open it later.
                 if (!session.TryStep(now)) break;
-                recorded?.Add(new List<Command>());
+                recorder.Capture(session);
                 now += 1000 / World.TicksPerSecond;
             }
 
@@ -120,7 +121,7 @@ namespace WordCraft.Host
             {
                 var header = new ReplayHeader(FactionData.ContentVersion, cfg.Seed, faction, opponent,
                     aiPeers: (byte)(1 << SoloOpponent));
-                ReplayLog.Write(savePath, header, recorded.ToArray());
+                recorder.Save(savePath, header, recorder.TickCount);
                 Console.WriteLine("saved replay to " + savePath);
             }
 

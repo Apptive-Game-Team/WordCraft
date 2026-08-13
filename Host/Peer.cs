@@ -17,6 +17,12 @@ namespace WordCraft.Host
         /// <summary>Tick to hash. Add() throws on a repeat, which is the "no tick runs twice" check.</summary>
         public readonly Dictionary<int, ulong> Hashes = new Dictionary<int, ulong>();
 
+        /// <summary>
+        /// Every peer records, always, because the check that matters is whether
+        /// two peers of one match wrote the same file.
+        /// </summary>
+        public readonly MatchRecorder Recorder = new MatchRecorder();
+
         /// <summary>Worker and node ids per owner, assigned in a fixed spawn order.</summary>
         private static int WorkerOf(int owner) => 6 + owner * 3;
         private static int NodeOf(int owner) => 8 + owner * 3;
@@ -81,6 +87,7 @@ namespace WordCraft.Host
             }
 
             if (!Session.TryStep(nowMs)) return false;
+            Recorder.Capture(Session);
             Hashes.Add(World.Tick, World.Hash());
             return true;
         }
