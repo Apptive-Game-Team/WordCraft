@@ -72,6 +72,7 @@ namespace WordCraft.Replay
                 SoloMatchReachesTheWinCondition();
                 ClientLogMatchesGoldenHash();
                 ReplayRoundTrip.Check();
+                AlertChecks.Check();
                 SimAssemblyIsClean();
             }
             catch (Exception ex)
