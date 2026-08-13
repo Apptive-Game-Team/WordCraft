@@ -20,6 +20,15 @@ namespace WordCraft.Sim
         public const Role WarlordOffspringRole = Role.Ranged;
 
         /// <summary>
+        /// Which entry of that slot 자손 is. Named rather than left to default,
+        /// because the entry behind it is 균열 파수병: a ground unit a 지옥불
+        /// player buys and can lose. A warlord emitting that one for free every
+        /// hundred ticks is a different game, and nothing about the spawn site
+        /// would have said which one it meant.
+        /// </summary>
+        public const int WarlordOffspringSlot = 0;
+
+        /// <summary>
         /// True for 지옥불 군단장 and nothing else. Read off faction and role
         /// rather than carried on the entity, for the same reason Flies is: it
         /// never changes for a given faction and role, so making it state would add
@@ -84,7 +93,8 @@ namespace WordCraft.Sim
         /// </summary>
         private void SpawnOffspring(Entity warlord)
         {
-            int id = SpawnUnit(warlord.Owner, WarlordOffspringRole, warlord.Position + RallyOffset);
+            int id = SpawnUnit(warlord.Owner, WarlordOffspringRole, WarlordOffspringSlot,
+                warlord.Position + RallyOffset);
             Entity child = entities[id];
             child.ParentId = warlord.Id;
             entities[id] = child;

@@ -50,7 +50,9 @@ namespace WordCraft.Sim
 
                 // Read straight from the table rather than caching on the entity:
                 // one copy of a number cannot disagree with itself across peers.
-                UnitStats s = FactionData.Stats(factions[a.Owner], a.Role);
+                // Through the attacker's own roster entry, so two units of one
+                // role do not fire each other's weapon.
+                UnitStats s = RosterStats(a);
 
                 Entity t = entities[a.TargetId];
                 if (WithinRange(a.Position, t.Position, s.Range))
@@ -145,13 +147,12 @@ namespace WordCraft.Sim
         /// <summary>
         /// Whether this entity's roster row carries a weapon. Read off the table
         /// rather than carried on the entity, for the same reason Flies is: it
-        /// never changes for a given faction and role, so making it state would add
-        /// a hashed field that can only ever hold one value and give two peers
-        /// something new to disagree about.
+        /// never changes for a given faction, role and entry, so making it state
+        /// would add a hashed field that can only ever hold one value and give two
+        /// peers something new to disagree about.
         /// </summary>
         public bool Armed(Entity e) =>
-            e.Owner >= 0 && e.Owner < MaxPeers &&
-            FactionData.Stats(factions[e.Owner], e.Role).HasWeapon;
+            e.Owner >= 0 && e.Owner < MaxPeers && RosterStats(e).HasWeapon;
 
         /// <summary>
         /// Whether this attacker's weapon reaches this target at all, before any
@@ -162,7 +163,7 @@ namespace WordCraft.Sim
         /// forever waiting to swing.
         /// </summary>
         private bool CanHit(Entity attacker, Entity target) =>
-            !Flies(target) || FactionData.Stats(factions[attacker.Owner], attacker.Role).HitsAir;
+            !Flies(target) || RosterStats(attacker).HitsAir;
 
         /// <summary>
         /// An ordered target only has to exist, be hostile, and be reachable by

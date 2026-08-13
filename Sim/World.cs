@@ -62,6 +62,18 @@ namespace WordCraft.Sim
         /// <summary>Roster slot. Every stat this entity fights with is looked up from it.</summary>
         public Role Role;
 
+        /// <summary>
+        /// Which entry of that slot's list this body is. Zero on everything the
+        /// roster lists once, which is most of it. Carried rather than derived,
+        /// because there is nothing to derive it from: two 지옥불 ranged units
+        /// stand on the same map under the same role and one of them flies.
+        ///
+        /// Hashed, and it has to be. Two peers that disagreed here would run the
+        /// same entity id with different hp, different reach, and different
+        /// terrain rules, and every tick after that is a different match.
+        /// </summary>
+        public int Slot;
+
         public FixVec2 Position;
         public FixVec2 Target;
         public Fix Speed;
@@ -82,6 +94,14 @@ namespace WordCraft.Sim
 
         /// <summary>What the queue is building. Set at queue time, read at spawn time.</summary>
         public Role ProduceRole;
+
+        /// <summary>
+        /// Which entry of ProduceRole the queue is building. Set and read beside
+        /// ProduceRole, and hashed for the same reason: it decides what comes off
+        /// the queue and what a cancel refunds, and the two numbers only mean
+        /// anything together.
+        /// </summary>
+        public int ProduceSlot;
 
         /// <summary>Where a unit this building finishes walks to. Only read when HasRallyPoint.</summary>
         public FixVec2 RallyPoint;
@@ -323,13 +343,27 @@ namespace WordCraft.Sim
             air || (terrain[cell] == (byte)TileKind.Open && remnantExpiry[cell] <= Tick);
 
         /// <summary>
+        /// The roster row this body fights from: its owner's faction, its role,
+        /// and its own entry of that role. One accessor rather than the lookup
+        /// written out at each call site, so no system can ask by role alone and
+        /// quietly get entry 0's numbers for entry 1's body.
+        ///
+        /// Owner is the caller's to check. Every caller here already does, because
+        /// a resource node has no faction to look anything up in.
+        /// </summary>
+        private UnitStats RosterStats(Entity e) => FactionData.Stats(factions[e.Owner], e.Role, e.Slot);
+
+        /// <summary>
         /// True when this entity flies. Read off the roster rather than carried on
-        /// the entity: it never changes for a given faction and role, so making it
-        /// state would add a hashed field that can only ever hold one value and
-        /// give two peers something new to disagree about.
+        /// the entity: it never changes for a given faction, role and entry, so
+        /// making it state would add a hashed field that can only ever hold one
+        /// value and give two peers something new to disagree about.
+        ///
+        /// The entry is what makes that true. 지옥불's ranged entry 0 is 자손 and
+        /// flies; entry 1 is 균열 파수병 and walks, and terrain stops it.
         /// </summary>
         public bool Flies(Entity e) =>
-            e.Owner >= 0 && e.Owner < MaxPeers && FactionData.Stats(factions[e.Owner], e.Role).Air;
+            e.Owner >= 0 && e.Owner < MaxPeers && RosterStats(e).Air;
 
         /// <summary>The tick this cell's debris lapses on, or 0 when it never had any.</summary>
         public int RemnantExpiry(int cell) => remnantExpiry[cell];
@@ -349,13 +383,24 @@ namespace WordCraft.Sim
         }
 
         /// <summary>
+        /// Entry 0 of the role, which is what a scenario laying out a starting
+        /// army means and what every faction with a single-entry slot has.
+        ///
         /// hpOverride exists for harnesses that need to seed a specific divergence;
         /// -1 means "take the roster value", which is what gameplay always passes.
         /// </summary>
-        public int SpawnUnit(int owner, Role role, FixVec2 position, int hpOverride = -1)
+        public int SpawnUnit(int owner, Role role, FixVec2 position, int hpOverride = -1) =>
+            SpawnUnit(owner, role, 0, position, hpOverride);
+
+        /// <summary>
+        /// One named entry of a role. The slot is written onto the body, so what
+        /// this unit fights with, what it is called, and what is drawn for it all
+        /// resolve through it for the rest of its life.
+        /// </summary>
+        public int SpawnUnit(int owner, Role role, int slot, FixVec2 position, int hpOverride = -1)
         {
-            UnitStats s = FactionData.Stats(factions[owner], role);
-            int id = Add(EntityKind.Unit, owner, role, position, s.Speed, hpOverride < 0 ? s.Hp : hpOverride);
+            UnitStats s = FactionData.Stats(factions[owner], role, slot);
+            int id = Add(EntityKind.Unit, owner, role, slot, position, s.Speed, hpOverride < 0 ? s.Hp : hpOverride);
             ArmWarlord(id);
             return id;
         }
@@ -363,22 +408,29 @@ namespace WordCraft.Sim
         public int SpawnWorker(int owner, FixVec2 position)
         {
             UnitStats s = FactionData.Stats(factions[owner], Role.Worker);
-            return Add(EntityKind.Worker, owner, Role.Worker, position, s.Speed, s.Hp);
+            return Add(EntityKind.Worker, owner, Role.Worker, 0, position, s.Speed, s.Hp);
         }
 
         public int SpawnResourceNode(FixVec2 position, int amount)
         {
-            int id = Add(EntityKind.ResourceNode, -1, Role.None, position, Fix.Zero, NodeHp);
+            int id = Add(EntityKind.ResourceNode, -1, Role.None, 0, position, Fix.Zero, NodeHp);
             Entity e = entities[id];
             e.Resource = amount;
             entities[id] = e;
             return id;
         }
 
+        /// <summary>
+        /// ponytail: entry 0 only. A Build names a role and nothing else, so 인간's
+        /// 전기 타워 and 돌 포탑 sit in the roster behind entry 0 of the defense
+        /// slot with no way to put one down. Give Build the same packed argument
+        /// Produce now takes; the entity field and the roster lookups are already
+        /// here, so that change is the command handler and nothing else.
+        /// </summary>
         public int SpawnBuilding(int owner, Role role, FixVec2 position, bool complete)
         {
             int hp = FactionData.Stats(factions[owner], role).Hp;
-            int id = Add(EntityKind.Building, owner, role, position, Fix.Zero, complete ? hp : 1);
+            int id = Add(EntityKind.Building, owner, role, 0, position, Fix.Zero, complete ? hp : 1);
             Entity e = entities[id];
             e.MaxHp = hp;
             e.BuildTicksLeft = complete ? 0 : FactionData.BuildTicks(role);
@@ -386,7 +438,7 @@ namespace WordCraft.Sim
             return id;
         }
 
-        private int Add(EntityKind kind, int owner, Role role, FixVec2 position, Fix speed, int hp)
+        private int Add(EntityKind kind, int owner, Role role, int slot, FixVec2 position, Fix speed, int hp)
         {
             var e = new Entity
             {
@@ -395,6 +447,7 @@ namespace WordCraft.Sim
                 Alive = true,
                 Kind = kind,
                 Role = role,
+                Slot = slot,
                 Position = position,
                 Target = position,
                 Speed = speed,
@@ -598,8 +651,12 @@ namespace WordCraft.Sim
                 }
 
                 case CommandType.Build:
-                    // Arg names the building, the same way Produce names the unit.
-                    // Out of range is malformed and refused rather than clamped.
+                    // Arg names the building by plain role, entry 0 only. Out of
+                    // range is malformed and refused rather than clamped, and that
+                    // one test is also what keeps a packed argument out: an entry
+                    // past the first sets bits far above RoleCount, so a Build
+                    // carrying one is refused whole rather than quietly placing
+                    // entry 0 of the role it names.
                     if (c.Arg < 0 || c.Arg >= FactionData.RoleCount) return;
                     // Role.None is what a Build with no Arg carries, and the
                     // production building is what the client has always meant by it.
@@ -775,6 +832,7 @@ namespace WordCraft.Sim
                 Mix(ref h, e.Alive ? 1UL : 0UL);
                 Mix(ref h, (ulong)e.Kind);
                 Mix(ref h, (ulong)e.Role);
+                Mix(ref h, (ulong)e.Slot);
                 Mix(ref h, (ulong)e.Position.X.Raw);
                 Mix(ref h, (ulong)e.Position.Y.Raw);
                 Mix(ref h, (ulong)e.Target.X.Raw);
@@ -791,6 +849,7 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.ProduceTicksLeft);
                 Mix(ref h, (ulong)e.QueueCount);
                 Mix(ref h, (ulong)e.ProduceRole);
+                Mix(ref h, (ulong)e.ProduceSlot);
                 Mix(ref h, (ulong)e.RallyPoint.X.Raw);
                 Mix(ref h, (ulong)e.RallyPoint.Y.Raw);
                 Mix(ref h, e.HasRallyPoint ? 1UL : 0UL);
