@@ -56,9 +56,8 @@ jobs:
 
       - uses: actions/setup-dotnet@v5
         with:
-          # Replay and Host target net7.0 and there is no global.json, so a
-          # newer SDK alone would not run them.
-          dotnet-version: "7.0.x"
+          # Replay and Host target net8.0.
+          dotnet-version: "8.0.x"
 
       - run: dotnet build --nologo
 
@@ -86,7 +85,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "7.0.x"
+          dotnet-version: "8.0.x"
 
       # Client/Assets/Plugins/*.dll is gitignored, so a fresh checkout has the
       # .meta files and no assemblies. Sim.csproj and Net.csproj copy them in on

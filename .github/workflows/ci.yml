@@ -36,7 +36,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "7.0.x"
+          dotnet-version: "8.0.x"
 
       - run: dotnet build --nologo
 
@@ -57,7 +57,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "7.0.x"
+          dotnet-version: "8.0.x"
 
       # Client/Assets/Plugins/*.dll is gitignored. Same reason as release.yml.
       - name: Vendor Sim and Net into the client
