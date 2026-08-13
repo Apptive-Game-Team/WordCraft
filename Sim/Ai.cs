@@ -148,10 +148,16 @@ namespace WordCraft.Sim
             }
         }
 
-        /// <summary>Alive, armed, this peer's, and under no order of its own.</summary>
-        private static bool AiIsFreeFighter(int peer, Entity e) =>
+        /// <summary>
+        /// Alive, armed, this peer's, and under no order of its own. Armed is asked
+        /// of the roster rather than assumed from the kind: an unarmed body counted
+        /// here would pad the squad out to AiSquadSize with something that cannot
+        /// fight, and then be sent an AttackMove the command layer refuses.
+        /// </summary>
+        private bool AiIsFreeFighter(int peer, Entity e) =>
             e.Alive && e.Owner == peer && e.Kind == EntityKind.Unit &&
-            e.Role != Role.Worker && e.Speed.Raw != 0 && e.Mode == OrderMode.None;
+            e.Role != Role.Worker && e.Speed.Raw != 0 && e.Mode == OrderMode.None &&
+            Armed(e);
 
         /// <summary>
         /// What the squad walks at: the enemy base first, any other enemy building

@@ -129,10 +129,29 @@ namespace WordCraft.Sim
         /// <summary>
         /// Units fight, and so do finished defense buildings. A site still under
         /// construction does not, for the same reason it takes no deliveries.
+        ///
+        /// A body whose roster row carries no weapon fights under no circumstances,
+        /// whatever its kind. This is the one gate every path goes through —
+        /// acquisition, the chase, and the Attack and AttackMove orders all ask it
+        /// first — so 지옥불 군단장 cannot be walked into the front line by the
+        /// simulation or ordered there by a player. Admitted here it would acquire
+        /// a target, close on it, and stand in weapon range firing nothing.
         /// </summary>
-        private static bool CanAttack(Entity e) =>
-            e.Kind == EntityKind.Unit ||
-            (e.Kind == EntityKind.Building && e.Role == Role.Defense && e.BuildTicksLeft == 0);
+        private bool CanAttack(Entity e) =>
+            Armed(e) &&
+            (e.Kind == EntityKind.Unit ||
+             (e.Kind == EntityKind.Building && e.Role == Role.Defense && e.BuildTicksLeft == 0));
+
+        /// <summary>
+        /// Whether this entity's roster row carries a weapon. Read off the table
+        /// rather than carried on the entity, for the same reason Flies is: it
+        /// never changes for a given faction and role, so making it state would add
+        /// a hashed field that can only ever hold one value and give two peers
+        /// something new to disagree about.
+        /// </summary>
+        public bool Armed(Entity e) =>
+            e.Owner >= 0 && e.Owner < MaxPeers &&
+            FactionData.Stats(factions[e.Owner], e.Role).HasWeapon;
 
         /// <summary>
         /// Whether this attacker's weapon reaches this target at all, before any

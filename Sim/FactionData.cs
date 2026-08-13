@@ -51,6 +51,23 @@ namespace WordCraft.Sim
         /// row that leaves it off.
         /// </summary>
         public bool HitsAir;
+
+        /// <summary>
+        /// Whether this row carries a weapon at all. 지옥불 군단장 is 비전투 per
+        /// docs/FACTION-MECHANICS.md and its row is the only one that answers no.
+        ///
+        /// Damage is the test rather than a flag of its own, because a flag would
+        /// be a second place to say what the row already says, and the two are
+        /// free to disagree: a row left at Damage = 0 with the flag unset is a
+        /// unit that acquires a target, walks to it, and fires nothing, which is
+        /// the exact defect this rule answers.
+        ///
+        /// Not AttackTicks either. Zero there is a rate — "fires every tick" — so
+        /// reading it as disarmed would silently take the weapon off the fastest
+        /// one anybody ever writes. Damage is what a weapon does to what it hits,
+        /// and none of it is no weapon.
+        /// </summary>
+        public bool HasWeapon => Damage > 0;
     }
 
     /// <summary>
