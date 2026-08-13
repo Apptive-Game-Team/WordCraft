@@ -12,15 +12,23 @@ RTS입니다. 게임 로직을 처리하는 서버가 없습니다. 각 피어�
 | 경로 | 역할 | 기술 |
 | --- | --- | --- |
 | [`Sim/`](Sim/) | 순수 C# 시뮬레이션. 고정소수점 연산, 결정론 RNG, 엔티티 상태, 상태 해시 | .NET Standard 2.1 |
+| [`Net/`](Net/) | P2P 락스텝 세션과 UDP 전송 | .NET Standard 2.1 |
 | [`Replay/`](Replay/) | 헤드리스 결정론 자체 검증과 리플레이 하네스 | .NET 7 |
+| [`Host/`](Host/) | 두 피어의 매치를 콘솔에서 돌리는 러너. `host`, `join`, `selfcheck` | .NET 7 |
+| [`Client/`](Client/) | Unity 뷰와 HUD. `Sim`과 `Net`을 컴파일된 어셈블리로 참조 | Unity 2022 LTS |
 
-Unity 프로젝트는 마일스톤 4에서 추가합니다. 의도적으로 늦게 만듭니다. 초기부터
-Unity 프로젝트가 있으면 `UnityEngine` 타입과 부동소수점이 시뮬레이션으로 새어들기
-쉽고, 그렇게 생긴 desync는 원인에서 멀리 떨어진 곳에서 드러납니다.
+`Sim`과 `Net`은 의도적으로 늦게 Unity와 만났습니다. 초기부터 Unity 프로젝트가
+있었다면 `UnityEngine` 타입과 부동소수점이 시뮬레이션으로 새어들기 쉬웠고, 그렇게
+생긴 desync는 원인에서 멀리 떨어진 곳에서 드러났을 것입니다.
 
 ## 시작하기
 
-.NET 7 SDK만 있으면 됩니다.
+빌드해보지 않고 바로 플레이하려면
+[Releases](https://github.com/Apptive-Game-Team/WordCraft/releases)에서 Windows·macOS
+빌드를 받습니다. 서버가 없는 LAN 프로토타입이므로 한쪽이 host, 다른 쪽이 그
+IP로 join합니다.
+
+소스에서 돌리려면 .NET 7 SDK만 있으면 됩니다.
 
 ```bash
 git clone https://github.com/Apptive-Game-Team/WordCraft.git
@@ -56,6 +64,11 @@ dotnet build
 
 `Sim/` 아래를 수정하면 반드시 다시 실행합니다.
 
+CI(`.github/workflows/ci.yml`)가 모든 push와 PR에서 이 검사를 CoreCLR로 돌리고,
+같은 시나리오를 Unity Mono에서 한 번 더 돌리는 뷰 결정론 검사를 뒤에 붙입니다.
+둘이 같은 해시를 내는지가 게이트라서, 골든 해시가 움직이면 두 런타임이 독립적으로
+같은 값을 낸 것을 CI에서 확인한 뒤에만 상수를 고칩니다.
+
 ## `Sim/` 규칙
 
 시뮬레이션은 모든 피어에서 바이트 단위로 동일한 상태를 만들어야 합니다. 아래 규칙을
@@ -72,11 +85,18 @@ dotnet build
 
 ## 마일스톤
 
-1. 결정론 코어와 리플레이 하네스 (완료)
-2. 자원 채집, 건설, 유닛 생산, 패스파인딩
-3. P2P 락스텝 네트워크 (LAN 직접 IP)
-4. Unity 뷰와 HUD
-5. 진영 콘텐츠와 승리 조건
+1. 결정론 코어와 리플레이 하네스 — 완료
+2. 자원 채집, 건설, 유닛 생산, 패스파인딩 — 완료
+3. P2P 락스텝 네트워크 (LAN 직접 IP) — 완료
+4. Unity 뷰와 HUD — 대부분 완료. 전투 가독성 일부와 경보가 남았다
+5. 진영 메커니즘과 밸런스 — 진행 중. 여섯 중 셋(물 슬라임 일제 사격, 돌 골렘
+   잔해, 지옥불 군단장)이 들어갔다. 나머지 셋과 진영별 밸런스는 남았다
+
+이 목록은 큰 상태만 남깁니다. 남은 일의 세부 순서와 트랙(쓰기 범위)별 동시
+진행 방식은 [`.plan/general/2026-08-11-parallel-milestones.md`](.plan/general/2026-08-11-parallel-milestones.md)가,
+각 항목이 왜 이 순서이고 무엇이 아직 검증 안 됐는지는
+[`.plan/general/2026-08-02-advancement-roadmap.md`](.plan/general/2026-08-02-advancement-roadmap.md)가
+갖고 있습니다.
 
 인터넷 대전, NAT 통과, 매치메이킹은 별도 계획입니다.
 
