@@ -39,6 +39,9 @@ namespace WordCraft.Replay
                 TheWarlordStopsAtFiveOffspring();
                 AKilledOffspringFreesItsSlot();
                 OffspringCannotBeProduced();
+                TheWarlordNeverGoesLookingForAFight();
+                TheWarlordRefusesAttackOrders();
+                OnlyTheWarlordIsUnarmed();
                 AttackOrderKillsWhatItNames();
                 AttackMoveStopsForWhatItMeets();
                 StopCancelsWhatIsRunning();
@@ -1135,6 +1138,187 @@ namespace WordCraft.Replay
             banked = world.GetResources(1);
             world.Step(Produce(2, 1, 0, World.WarlordOffspringRole));
             Check(world.GetResources(1) < banked, "the ranged slot is closed for every faction, not just 지옥불");
+        }
+
+        // 무기 없는 유닛. One 지옥불 군단장 with prey standing inside AcquireRange,
+        // and an armed unit of the same faction with identical prey of its own
+        // twenty cells south. The run stops short of the first 자손, so nothing
+        // armed is ever born under the warlord and every assertion below is about
+        // the warlord itself.
+        private const int DisarmedTicks = World.WarlordSpawnTicks - 10;
+        private const int DisarmedWarlord = 0;
+        private const int DisarmedPrey = 1;
+        private const int DisarmedChaser = 2;
+        private const int DisarmedChaserPrey = 3;
+
+        /// <summary>
+        /// 지옥불 군단장 carries no weapon, so it never goes looking for a fight:
+        /// it acquires nothing and chases nothing. docs/FACTION-MECHANICS.md calls
+        /// it 비전투, and it is the one unit a player has to keep alive, so walking
+        /// itself into the front line is the single thing it must not do.
+        ///
+        /// The control pair is what makes the stillness mean something: the same
+        /// faction's armed unit, the same distance from the same kind of prey,
+        /// closes on it and draws blood. Without that, a rule that stopped every
+        /// unit in the game from acquiring would pass every assertion here.
+        ///
+        /// Run twice, like every other mechanic: a refused acquisition changes what
+        /// the combat loop writes, and the per-tick hashes have to agree as exactly
+        /// as a hit does.
+        /// </summary>
+        private static void TheWarlordNeverGoesLookingForAFight()
+        {
+            ulong[] first = RunDisarmed(out World world, out bool warlordMoved);
+            ulong[] second = RunDisarmed(out _, out _);
+
+            Entity warlord = world.GetEntity(DisarmedWarlord);
+            Check(!world.Armed(warlord), "지옥불 군단장 carries a weapon after all");
+            Check(warlord.TargetId < 0, "지옥불 군단장 acquired target " + warlord.TargetId);
+            Check(!warlordMoved, "지옥불 군단장 left its position");
+            // Target is the field a chase writes, and it is hashed, so a warlord
+            // held still only by the mover would still be caught here.
+            Check(warlord.Target.Equals(At(30, 30)), "지옥불 군단장 took a walk order from combat");
+            Check(world.GetEntity(DisarmedPrey).Hp == world.GetEntity(DisarmedPrey).MaxHp,
+                "지옥불 군단장 shot something");
+
+            Entity chaser = world.GetEntity(DisarmedChaser);
+            Check(chaser.TargetId == DisarmedChaserPrey,
+                "the armed control unit acquired " + chaser.TargetId + ", so the check proves nothing");
+            Check(!chaser.Position.Equals(At(30, 50)), "the armed control unit never chased either");
+            Check(world.GetEntity(DisarmedChaserPrey).Hp < world.GetEntity(DisarmedChaserPrey).MaxHp,
+                "the armed control unit never got a shot off");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "disarmed hash drift at tick " + t);
+            }
+        }
+
+        /// <summary>
+        /// An explicit order does not get past the rule either. Attack names a
+        /// victim, AttackMove names a place, and both are refused whole on 지옥불
+        /// 군단장: it is left under no order at all rather than in a mode whose
+        /// systems never touch it. The same orders on the armed control unit are
+        /// taken, which is what says the orders themselves were well formed.
+        ///
+        /// A plain Move is the last assertion, and the important one. The unit the
+        /// player has to keep alive is the unit the player has to be able to pull
+        /// out, and a disarm written a line too wide takes that with it.
+        /// </summary>
+        private static void TheWarlordRefusesAttackOrders()
+        {
+            World world = BuildDisarmedWorld();
+            var idle = new List<Command>();
+
+            world.Step(new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.Attack, DisarmedWarlord, FixVec2.Zero, DisarmedPrey),
+                new Command(0, 0, 1, CommandType.Attack, DisarmedChaser, FixVec2.Zero, DisarmedChaserPrey),
+            });
+
+            Check(world.GetEntity(DisarmedWarlord).Mode == OrderMode.None,
+                "an attack order put 지옥불 군단장 in " + world.GetEntity(DisarmedWarlord).Mode);
+            Check(world.GetEntity(DisarmedWarlord).TargetId < 0,
+                "an attack order gave 지옥불 군단장 victim " + world.GetEntity(DisarmedWarlord).TargetId);
+            Check(world.GetEntity(DisarmedChaser).Mode == OrderMode.Attack,
+                "the control unit refused the attack order too, so the check proves nothing");
+
+            // Ordered at the prey's own cell, so a warlord that took the order
+            // would walk the whole way there and be standing on it at the end.
+            world.Step(new List<Command>
+            {
+                new Command(0, 0, 2, CommandType.AttackMove, DisarmedWarlord, At(35, 30)),
+            });
+            Check(world.GetEntity(DisarmedWarlord).Mode == OrderMode.None,
+                "an attack-move put 지옥불 군단장 in " + world.GetEntity(DisarmedWarlord).Mode);
+
+            for (int t = 0; t < DisarmedTicks; t++) world.Step(idle);
+            Check(world.GetEntity(DisarmedWarlord).Position.Equals(At(30, 30)),
+                "지옥불 군단장 walked off under an order that was refused");
+            Check(world.GetEntity(DisarmedPrey).Hp == world.GetEntity(DisarmedPrey).MaxHp,
+                "지옥불 군단장 shot what it was ordered at");
+
+            world.Step(new List<Command>
+            {
+                new Command(0, 0, 3, CommandType.Move, DisarmedWarlord, At(30, 20)),
+            });
+            for (int t = 0; t < DisarmedTicks; t++) world.Step(idle);
+            Check(world.GetEntity(DisarmedWarlord).Position.Equals(At(30, 20)),
+                "지옥불 군단장 cannot be moved by its owner");
+        }
+
+        private static ulong[] RunDisarmed(out World world, out bool warlordMoved)
+        {
+            world = BuildDisarmedWorld();
+            var idle = new List<Command>();
+
+            warlordMoved = false;
+            var hashes = new ulong[DisarmedTicks];
+            for (int t = 0; t < DisarmedTicks; t++)
+            {
+                world.Step(idle);
+                // Every tick, not only the last: a unit that walked out and came
+                // back would pass an end-state check.
+                if (!world.GetEntity(DisarmedWarlord).Position.Equals(At(30, 30))) warlordMoved = true;
+                hashes[t] = world.Hash();
+            }
+            return hashes;
+        }
+
+        /// <summary>
+        /// Workers, so neither prey shoots back and both halves of the run are
+        /// about what the attacker does rather than who wins.
+        /// </summary>
+        private static World BuildDisarmedWorld()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Hellfire);
+            world.SetPeerFaction(1, Faction.TreeSpirits);
+
+            world.SpawnUnit(0, World.WarlordRole, At(30, 30)); // DisarmedWarlord
+            world.SpawnWorker(1, At(35, 30));                  // DisarmedPrey, 5 out
+            // The control pair, 20 cells south so neither group can acquire into
+            // the other and the two halves of the run stay independent.
+            world.SpawnUnit(0, Role.Melee, At(30, 50));        // DisarmedChaser
+            world.SpawnWorker(1, At(35, 50));                  // DisarmedChaserPrey
+            return world;
+        }
+
+        /// <summary>The roles that are supposed to fight, in roster order.</summary>
+        private static readonly Role[] FightingRoles =
+        {
+            Role.Defense, Role.Melee, Role.Ranged, Role.Signature
+        };
+
+        /// <summary>
+        /// The disarm reaches exactly one row of the roster. Every other combat
+        /// slot every faction fields still carries a weapon, defense buildings
+        /// included: a rule written one field too wide would take the whole game's
+        /// combat with it, and the checks above would all still pass, because a
+        /// world where nothing acquires is also a world where the warlord stands
+        /// still.
+        /// </summary>
+        private static void OnlyTheWarlordIsUnarmed()
+        {
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                foreach (Role role in FightingRoles)
+                {
+                    // A slot the faction leaves empty fields nothing to arm.
+                    if (!FactionData.Has(faction, role)) continue;
+
+                    string where = faction + "." + role;
+                    bool armed = FactionData.Stats(faction, role).HasWeapon;
+
+                    if (faction == Faction.Hellfire && role == World.WarlordRole)
+                    {
+                        Check(!armed, "지옥불 군단장 carries a weapon: " + where);
+                        continue;
+                    }
+                    Check(armed, "an unarmed combat slot at " + where);
+                }
+            }
         }
 
         /// <summary>One 지옥불 군단장 on an empty map, and nothing else at all.</summary>
