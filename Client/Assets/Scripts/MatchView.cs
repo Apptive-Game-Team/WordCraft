@@ -25,6 +25,27 @@ namespace WordCraft.View
         /// <summary>How near the cursor an entity has to be to light up. Matches the pickers.</summary>
         private const float HoverRadius = 1.1f;
 
+        /// <summary>
+        /// The range ring's line thickness, as a fraction of its own radius,
+        /// baked into the texture in MakeRingSprite. A boundary, not a filled
+        /// area: docs/UI-STYLE.md bans a gradient outright, and a disc filled
+        /// out to a weapon's whole reach would wash the ground under it in the
+        /// exact moment — a fight in progress — this issue exists to make
+        /// legible. A line says how far without covering what is inside it.
+        /// </summary>
+        private const float RangeBandRatio = 0.08f;
+
+        /// <summary>
+        /// How long a hit's ring stays lit, in seconds. Short on purpose: a
+        /// body under sustained fire is hit every tick or two, and a flash
+        /// that outlived the next hit would never turn back off, reading as a
+        /// held tint rather than the pulse-per-hit the acceptance criteria ask
+        /// for ("피격 표시가 쌓이지 않는다. 사라진다"). A fresh hit only ever
+        /// pushes this entity's own expiry forward — see the LateUpdate stamp
+        /// below — so nothing here can accumulate a second ring on one body.
+        /// </summary>
+        private const float HitFlashSeconds = 0.35f;
+
         // Overlay geometry, in grid cells. A bar is the same size whatever the art
         // under it, so a row of damaged units reads as one row.
         private const float BarHeight = 0.16f;
@@ -82,6 +103,16 @@ namespace WordCraft.View
         private readonly List<SpriteRenderer> rings = new List<SpriteRenderer>();
         private readonly List<float> footprints = new List<float>();
 
+        /// <summary>A hairline circle at the selected entity's own weapon reach (issue #104). One per entity id, most of them always off.</summary>
+        private readonly List<SpriteRenderer> rangeRings = new List<SpriteRenderer>();
+        private Sprite rangeRingArt;
+
+        /// <summary>The fading ring a hit itself puts on a body (issue #104), sized like the selection ring and coloured like danger instead of chosen.</summary>
+        private readonly List<SpriteRenderer> hitFlashes = new List<SpriteRenderer>();
+
+        /// <summary>Unscaled time each entity's flash goes dark. -1 means never armed; parallel to views.</summary>
+        private readonly List<float> hitUntil = new List<float>();
+
         /// <summary>One highlight, moved to whatever the cursor is over.</summary>
         private SpriteRenderer hover;
 
@@ -124,6 +155,7 @@ namespace WordCraft.View
             DontDestroyOnLoad(gameObject);
             disc = MakeSprite(round: true);
             square = MakeSprite(round: false);
+            rangeRingArt = MakeRingSprite();
             remnantArt = Resources.Load<Sprite>(SpriteFolder + RemnantArt);
 
             float mid = MatchScenario.MapSize / 2f;
@@ -166,11 +198,14 @@ namespace WordCraft.View
             {
                 Drop(views);
                 Drop(rings);
+                Drop(rangeRings);
+                Drop(hitFlashes);
                 Drop(barBacks);
                 Drop(barFills);
                 Drop(queueFills);
                 Drop(rallyMarkers);
                 footprints.Clear(); // parallel to views, and Create refills it
+                hitUntil.Clear();   // same: a restart's ids owe nothing to the match before it
                 shown = world;
 
                 // Terrain is fixed for the whole match, so the map is baked here and
@@ -182,6 +217,13 @@ namespace WordCraft.View
             }
 
             for (int i = views.Count; i < world.EntityCount; i++) views.Add(Create(world, world.GetEntity(i)));
+
+            // Stamped once here rather than read again per entity below: this is
+            // the same list HitDetection hands the minimap and the alert, so a
+            // hit already lit up off-screen feedback does not walk World a second
+            // time to also light up on-screen feedback (issue #104).
+            IReadOnlyList<int> hits = HitDetection.HitIds(world, runner.LocalPeer);
+            for (int h = 0; h < hits.Count; h++) hitUntil[hits[h]] = Time.unscaledTime + HitFlashSeconds;
 
             Fog.Update(runner);
             fog.enabled = Fog.Active;
@@ -196,6 +238,8 @@ namespace WordCraft.View
                 {
                     sr.enabled = false;
                     rings[i].enabled = false;
+                    rangeRings[i].enabled = false;
+                    hitFlashes[i].enabled = false;
                     Overlays(i);
                     continue;
                 }
@@ -208,6 +252,8 @@ namespace WordCraft.View
                 if (show == Fog.Memory)
                 {
                     rings[i].enabled = false;
+                    rangeRings[i].enabled = false;
+                    hitFlashes[i].enabled = false;
                     Overlays(i);
                     continue;
                 }
@@ -218,6 +264,29 @@ namespace WordCraft.View
                 Vector2 p = runner.DrawPosition(i);
                 sr.transform.position = new Vector3(p.x, p.y, 0f);
                 if (picked) Ring(rings[i], footprints[i], p);
+
+                // "이게 저걸 때릴 수 있나" is a question the roster already answers;
+                // this only ever reads it, never a re-typed number of its own, so
+                // the ring can never say something FactionData does not (issue #104).
+                if (picked && world.Armed(e))
+                {
+                    RangeRing(rangeRings[i], FactionData.Stats(world.FactionOf(e.Owner), e.Role).Range, p);
+                }
+                else
+                {
+                    rangeRings[i].enabled = false;
+                }
+
+                bool flashing = hitUntil[i] > Time.unscaledTime;
+                hitFlashes[i].enabled = flashing;
+                if (flashing)
+                {
+                    Ring(hitFlashes[i], footprints[i], p);
+                    Color flash = UiStyle.Danger;
+                    flash.a = Mathf.Clamp01((hitUntil[i] - Time.unscaledTime) / HitFlashSeconds);
+                    hitFlashes[i].color = flash;
+                }
+
                 Overlays(world, i, e, p, picked);
 
                 // A site under construction reads as a ghost until it finishes.
@@ -323,6 +392,25 @@ namespace WordCraft.View
             float d = footprint + band * 2f;
             ring.transform.position = new Vector3(p.x, p.y, 0f);
             ring.transform.localScale = new Vector3(d, d, 1f);
+        }
+
+        /// <summary>
+        /// Sizes and places the reach ring at a weapon's actual range, read off
+        /// the roster in cells and converted the same way Fog already converts
+        /// the same field (Fog.Reach): Fix.Raw over Fix.One, since a range is a
+        /// plain distance and never needs the position math MatchRunner.ToView
+        /// does for a point. Unlike the selection Ring, this one's thickness is
+        /// not held to a screen-space floor — the shape it draws is the
+        /// boundary the player asked about, not a sliver around a footprint
+        /// that would otherwise vanish, so it is free to scale with the map
+        /// like everything else drawn in it.
+        /// </summary>
+        private static void RangeRing(SpriteRenderer sr, Fix range, Vector2 center)
+        {
+            float radius = range.Raw / (float)Fix.One;
+            sr.transform.position = new Vector3(center.x, center.y, 0f);
+            sr.transform.localScale = new Vector3(radius * 2f, radius * 2f, 1f);
+            sr.enabled = true;
         }
 
         /// <summary>
@@ -505,6 +593,18 @@ namespace WordCraft.View
             rings.Add(ring);
             footprints.Add(drawn != null ? Cells(e.Role) : scale);
 
+            // Above the fog like the rally marker and the build ghost: both are
+            // information about what the local peer itself is doing right now,
+            // and fog never hides that (docs/UI-STYLE.md 안개).
+            var rangeRing = NewRenderer("Range", rangeRingArt, UiStyle.RangeRing, AboveFogOrder);
+            rangeRing.enabled = false;
+            rangeRings.Add(rangeRing);
+
+            var flash = NewRenderer("HitFlash", shape, UiStyle.Danger, sr.sortingOrder - 1);
+            flash.enabled = false;
+            hitFlashes.Add(flash);
+            hitUntil.Add(-1f);
+
             barBacks.Add(Overlay("HpBack", UiStyle.MeterBack, OverlayOrder));
             barFills.Add(Overlay("HpFill", Color.white, OverlayOrder + 1));
             queueFills.Add(Overlay("Queue", UiStyle.Queue, OverlayOrder + 1));
@@ -605,6 +705,38 @@ namespace WordCraft.View
                 {
                     bool inside = !round || Vector2.Distance(new Vector2(x, y), centre) <= radius;
                     // A mask, not a colour: the tint comes from the SpriteRenderer.
+                    pixels[y * size + x] = inside ? (Color32)Color.white : (Color32)Color.clear;
+                }
+            }
+
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false);
+            texture.SetPixels32(pixels);
+            texture.Apply();
+            return Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), size);
+        }
+
+        /// <summary>
+        /// A hairline circle: clear everywhere except a thin band at the very
+        /// edge, at RangeBandRatio of its own radius. Baked once at a higher
+        /// texel count than MakeSprite's discs and squares, because this one is
+        /// stretched out to a weapon's whole reach rather than to a body's own
+        /// footprint, and a thin band needs the extra resolution to survive
+        /// that stretch as a line instead of a stair-step.
+        /// </summary>
+        private static Sprite MakeRingSprite()
+        {
+            const int size = 128;
+            var pixels = new Color32[size * size];
+            float outer = size / 2f - 1f;
+            float inner = outer * (1f - RangeBandRatio);
+            var centre = new Vector2((size - 1) / 2f, (size - 1) / 2f);
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float d = Vector2.Distance(new Vector2(x, y), centre);
+                    bool inside = d <= outer && d >= inner;
                     pixels[y * size + x] = inside ? (Color32)Color.white : (Color32)Color.clear;
                 }
             }

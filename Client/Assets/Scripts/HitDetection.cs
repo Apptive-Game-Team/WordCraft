@@ -14,6 +14,13 @@ namespace WordCraft.View
     /// compile this file directly (see Replay/Replay.csproj, the same way it
     /// already compiles MatchScenario.cs and ScriptedLog.cs) and check the
     /// rules headless.
+    ///
+    /// Issue #104 adds the on-screen half: a hit inside the view a player is
+    /// already looking at had no signal of its own, only the shrinking bar
+    /// Minimap and Alert already found insufficient for off-screen ones. It
+    /// wants the same "who got hit this tick" answer this file already
+    /// computes for the off-screen case, not a second walk of every entity —
+    /// see <see cref="HitIds"/>.
     /// </summary>
     public static class HitDetection
     {
@@ -22,28 +29,64 @@ namespace WordCraft.View
         // so seeding from the entity itself cannot fake a hit.
         private static readonly List<int> lastHp = new List<int>();
 
+        /// <summary>
+        /// Entity ids of the local peer's own entities whose hp fell since the
+        /// last tick this was asked for, unfiltered by where they are on
+        /// screen. The scan every caller shares: OffScreen below turns this
+        /// into world points and drops the ones a camera can already see; the
+        /// on-screen flash (issue #104) wants exactly the ones OffScreen
+        /// throws away, so it reads this list directly instead of re-deriving
+        /// "on screen" as the negation of a filter built to exclude it.
+        /// </summary>
+        private static readonly List<int> hitIds = new List<int>();
+
         private static readonly List<FixVec2> points = new List<FixVec2>();
 
         /// <summary>The world the state above belongs to. A new one makes it a lie.</summary>
         private static World shown;
 
         /// <summary>
-        /// Tick the list below was last computed for. Hp cannot fall a second
-        /// time before the simulation advances another tick, so a call at the
-        /// same tick returns the cached list rather than walking every entity
-        /// again — the same trick Minimap already plays on Fog.Version.
+        /// Tick <see cref="hitIds"/> was last computed for. Hp cannot fall a
+        /// second time before the simulation advances another tick, so a call
+        /// at the same tick reads the list already built rather than walking
+        /// every entity again — the same trick Minimap already plays on
+        /// Fog.Version.
         /// </summary>
         private static int computedTick = -1;
 
         /// <summary>
+        /// The ids <see cref="Scan"/> built this tick. Screen filtering is
+        /// cheap enough to redo on every call — a tick's hits are a handful of
+        /// entities, never World.EntityCount — so only the hp scan itself is
+        /// cached, and whichever of OffScreen or this is asked first in a tick
+        /// does not rob the other of a fresh answer.
+        /// </summary>
+        public static IReadOnlyList<int> HitIds(World world, int localPeer)
+        {
+            Scan(world, localPeer);
+            return hitIds;
+        }
+
+        /// <summary>
         /// World points the local peer's own entities were hit at since the
         /// last tick this was asked for, excluding anything <paramref
-        /// name="isOnScreen"/> already answers true for. Owned by whoever calls
-        /// it first in a given tick; every later caller in that same tick gets
-        /// the same list back and <paramref name="isOnScreen"/> is not asked
-        /// again until the next one.
+        /// name="isOnScreen"/> already answers true for.
         /// </summary>
         public static IReadOnlyList<FixVec2> OffScreen(World world, int localPeer, Func<FixVec2, bool> isOnScreen)
+        {
+            Scan(world, localPeer);
+
+            points.Clear();
+            for (int i = 0; i < hitIds.Count; i++)
+            {
+                FixVec2 p = world.GetEntity(hitIds[i]).Position;
+                if (isOnScreen(p)) continue;
+                points.Add(p);
+            }
+            return points;
+        }
+
+        private static void Scan(World world, int localPeer)
         {
             if (!ReferenceEquals(world, shown))
             {
@@ -54,10 +97,10 @@ namespace WordCraft.View
                 computedTick = -1;
             }
 
-            if (computedTick == world.Tick) return points;
+            if (computedTick == world.Tick) return;
             computedTick = world.Tick;
 
-            points.Clear();
+            hitIds.Clear();
             for (int i = lastHp.Count; i < world.EntityCount; i++) lastHp.Add(world.GetEntity(i).Hp);
 
             for (int i = 0; i < world.EntityCount; i++)
@@ -67,10 +110,8 @@ namespace WordCraft.View
                 lastHp[i] = e.Hp;
 
                 if (e.Hp >= was || e.Owner != localPeer) continue;
-                if (isOnScreen(e.Position)) continue;
-                points.Add(e.Position);
+                hitIds.Add(i);
             }
-            return points;
         }
     }
 }

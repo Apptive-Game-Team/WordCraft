@@ -88,7 +88,7 @@
 
 `Sky` `Ground` `Node` `Ring` `HoverRing` `MeterBack` `Queue` `Rally`
 `GhostOk` `GhostBad` `Marquee` `MinimapGround` `MinimapView` `MinimapMark`
-`FogUnseen` `FogSeen`.
+`FogUnseen` `FogSeen` `RangeRing`.
 
 크롬과 나란히 `UiStyle`에 사는 이유는 하나다. 색 리터럴을 쓸 수 있는
 파일이 하나여야 재도색이 검색이 아니라 diff가 된다.

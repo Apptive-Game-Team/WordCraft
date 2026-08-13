@@ -217,6 +217,15 @@ namespace WordCraft.View
 
         public static readonly Color Ring = Rgba(0xFFFFFF, 0.75f);
         public static readonly Color HoverRing = Rgba(0xFFFFFF, 0.28f);
+
+        /// <summary>
+        /// A selected, armed entity's weapon reach (issue #104). A third circle
+        /// can land on the same unit as Ring and HoverRing, so it sits at its
+        /// own alpha between the two rather than reusing either — dimmer than
+        /// the selection outline, brighter than a hover, so three rings on one
+        /// body still read as three different things instead of a smear.
+        /// </summary>
+        public static readonly Color RangeRing = Rgba(0xFFFFFF, 0.45f);
         public static readonly Color MeterBack = Rgba(0x0A0A0D, 0.85f);
         public static readonly Color Queue = Rgba(0x73D9FF, 0.95f);
         public static readonly Color Rally = Rgba(0x8CFF99, 0.85f);
