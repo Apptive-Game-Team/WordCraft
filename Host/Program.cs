@@ -17,6 +17,7 @@ namespace WordCraft.Host
     ///   dotnet run --project Host -- host [port] [ticks] [-faction &lt;name&gt;] [-save &lt;path&gt;]
     ///   dotnet run --project Host -- join &lt;ip&gt; [port] [ticks] [-faction &lt;name&gt;] [-save &lt;path&gt;]
     ///   dotnet run --project Host -- replay &lt;path&gt;
+    ///   dotnet run --project Host -- compare &lt;path&gt; &lt;path&gt;
     /// </summary>
     internal static class Program
     {
@@ -31,6 +32,7 @@ namespace WordCraft.Host
             string mode = args.Length > 0 ? args[0] : "selfcheck";
             if (mode == "selfcheck") return SelfCheck.Run();
             if (mode == "replay") return RunReplay(args);
+            if (mode == "compare") return RunCompare(args);
 
             int peerId = mode == "join" ? 1 : 0;
             if (mode != "host" && mode != "solo" && (mode != "join" || args.Length < 2))
@@ -38,7 +40,7 @@ namespace WordCraft.Host
                 Console.WriteLine("usage: selfcheck | solo [ticks] [-faction <name>] [-save <path>]" +
                                   " | host [port] [ticks] [-faction <name>] [-opponent <name>] [-save <path>]" +
                                   " | join <ip> [port] [ticks] [-faction <name>] [-opponent <name>] [-save <path>]" +
-                                  " | replay <path>");
+                                  " | replay <path> | compare <path> <path>");
                 return 2;
             }
 
@@ -215,6 +217,31 @@ namespace WordCraft.Host
         }
 
         /// <summary>
+        /// Reports the first way two saved matches differ. Both peers of a match
+        /// record the batch they executed, so their files are the same file;
+        /// when they are not, this names the tick and the command where the two
+        /// simulations stopped being the same match.
+        /// </summary>
+        private static int RunCompare(string[] args)
+        {
+            if (args.Length < 3)
+            {
+                Console.WriteLine("usage: compare <path> <path>");
+                return 2;
+            }
+
+            string difference = ReplayComparison.FirstDifference(args[1], args[2]);
+            if (difference != null)
+            {
+                Console.WriteLine("DIFFERENT: " + difference);
+                return 1;
+            }
+
+            Console.WriteLine("OK: " + args[1] + " and " + args[2] + " are the same match");
+            return 0;
+        }
+
+        /// <summary>
         /// A match against a peer on a socket, on the client's own map — the same
         /// map solo plays and the same one the replay harness rebuilds from a
         /// header, which is what makes -save here worth saving.
@@ -280,8 +307,8 @@ namespace WordCraft.Host
 
         /// <summary>
         /// Writes what this peer executed, which is what both peers executed.
-        /// Each side saves on its own with no coordination, and the two files
-        /// then answer whether they played the same match.
+        /// Each side saves on its own with no coordination, and `compare` on the
+        /// two files then answers whether they played the same match.
         ///
         /// The factions are read from the world rather than from the local
         /// config because only one of the two was ever this peer's own choice;
