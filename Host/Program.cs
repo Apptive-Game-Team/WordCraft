@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using WordCraft.Net;
+using WordCraft.Replay; // ReplayLog and ReplayHeader, compiled in from Replay; see Host.csproj
 using WordCraft.Sim;
 using WordCraft.View; // MatchScenario, compiled in from the client; see Host.csproj
 
@@ -11,9 +13,10 @@ namespace WordCraft.Host
     /// Headless runner for a two peer lockstep match.
     ///
     ///   dotnet run --project Host -- selfcheck
-    ///   dotnet run --project Host -- solo [ticks] [-faction &lt;name&gt;]
+    ///   dotnet run --project Host -- solo [ticks] [-faction &lt;name&gt;] [-save &lt;path&gt;]
     ///   dotnet run --project Host -- host [port] [ticks] [-faction &lt;name&gt;]
     ///   dotnet run --project Host -- join &lt;ip&gt; [port] [ticks] [-faction &lt;name&gt;]
+    ///   dotnet run --project Host -- replay &lt;path&gt;
     /// </summary>
     internal static class Program
     {
@@ -27,13 +30,15 @@ namespace WordCraft.Host
         {
             string mode = args.Length > 0 ? args[0] : "selfcheck";
             if (mode == "selfcheck") return SelfCheck.Run();
+            if (mode == "replay") return RunReplay(args);
 
             int peerId = mode == "join" ? 1 : 0;
             if (mode != "host" && mode != "solo" && (mode != "join" || args.Length < 2))
             {
-                Console.WriteLine("usage: selfcheck | solo [ticks] [-faction <name>]" +
+                Console.WriteLine("usage: selfcheck | solo [ticks] [-faction <name>] [-save <path>]" +
                                   " | host [port] [ticks] [-faction <name>]" +
-                                  " | join <ip> [port] [ticks] [-faction <name>]");
+                                  " | join <ip> [port] [ticks] [-faction <name>]" +
+                                  " | replay <path>");
                 return 2;
             }
 
@@ -47,7 +52,7 @@ namespace WordCraft.Host
                 return 2;
             }
 
-            if (mode == "solo") return RunSolo(Arg(args, 1, DefaultTicks), faction);
+            if (mode == "solo") return RunSolo(Arg(args, 1, DefaultTicks), faction, Flag(args, "-save"));
 
             return peerId == 0
                 ? RunUdp(0, null, Arg(args, 1, DefaultPort), Arg(args, 2, DefaultTicks), faction)
@@ -64,7 +69,7 @@ namespace WordCraft.Host
         /// waits on a network, and the clock only exists because Update and TryStep
         /// take one.
         /// </summary>
-        private static int RunSolo(int ticks, Faction faction)
+        private static int RunSolo(int ticks, Faction faction, string savePath)
         {
             Faction opponent = MatchConfig.DefaultFaction(SoloOpponent);
             var cfg = new MatchConfig { Solo = true, LocalFaction = faction, RemoteFaction = opponent };
@@ -78,6 +83,13 @@ namespace WordCraft.Host
                               " (peer " + SoloOpponent + ", played by the simulation)" +
                               ", input delay " + cfg.InputDelay + ", target " + ticks + " ticks");
 
+            // What this session's own peer issued, one entry per tick actually
+            // run. Solo has nothing that takes interactive input yet, and the
+            // opponent's decisions live inside World.Step rather than as
+            // commands, so every entry is empty today — but the log is still the
+            // exact one this match ran on, and it is what -save writes out.
+            var recorded = savePath != null ? new List<List<Command>>() : null;
+
             long now = 0;
             while (world.Tick < ticks && !world.MatchOver)
             {
@@ -86,6 +98,7 @@ namespace WordCraft.Host
                 // A solo barrier that closes is a fault, not a wait: there is
                 // nothing left that could open it later.
                 if (!session.TryStep(now)) break;
+                recorded?.Add(new List<Command>());
                 now += 1000 / World.TicksPerSecond;
             }
 
@@ -101,6 +114,54 @@ namespace WordCraft.Host
             }
 
             Report(world, SoloOpponent);
+            Console.WriteLine("OK: " + world.Tick + " ticks, final hash 0x" + world.Hash().ToString("X16"));
+
+            if (savePath != null)
+            {
+                var header = new ReplayHeader(FactionData.ContentVersion, cfg.Seed, faction, opponent,
+                    aiPeers: (byte)(1 << SoloOpponent));
+                ReplayLog.Write(savePath, header, recorded.ToArray());
+                Console.WriteLine("saved replay to " + savePath);
+            }
+
+            return 0;
+        }
+
+        /// <summary>
+        /// Reads a saved match back and steps a fresh world through exactly what
+        /// was recorded. Whatever ReplayLog.TryRead refuses, this refuses the
+        /// same way: a message and a nonzero exit, never an exception reaching
+        /// the console as a stack trace.
+        /// </summary>
+        private static int RunReplay(string[] args)
+        {
+            if (args.Length < 2)
+            {
+                Console.WriteLine("usage: replay <path>");
+                return 2;
+            }
+
+            if (!ReplayLog.TryRead(args[1], out ReplayHeader header, out List<Command>[] log, out string refusal))
+            {
+                Console.WriteLine("REFUSED: " + refusal);
+                return 1;
+            }
+
+            World world = MatchScenario.Build(header.Seed, header.Peer0Faction, header.Peer1Faction);
+            // An AI peer's decisions are computed from world state inside Step,
+            // not carried as commands, so this has to be restored before the
+            // first tick runs or that peer plays no part in the replay at all.
+            for (int peer = 0; peer < MatchScenario.Peers; peer++)
+            {
+                if (header.IsAi(peer)) world.SetPeerAi(peer, true);
+            }
+
+            Console.WriteLine("replaying " + args[1] + ": seed 0x" + header.Seed.ToString("X") +
+                              ", " + header.Peer0Faction + " vs " + header.Peer1Faction +
+                              ", " + log.Length + " ticks");
+
+            for (int t = 0; t < log.Length; t++) world.Step(log[t]);
+
             Console.WriteLine("OK: " + world.Tick + " ticks, final hash 0x" + world.Hash().ToString("X16"));
             return 0;
         }

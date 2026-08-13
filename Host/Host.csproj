@@ -23,4 +23,14 @@
     <Compile Include="../Client/Assets/Scripts/MatchScenario.cs" />
   </ItemGroup>
 
+  <!--
+    The replay file format, compiled here as well as by Replay, the same way
+    MatchScenario.cs is above. It stays a file include rather than a project
+    reference to Replay so this project never has to depend on Replay's own
+    determinism checks just to read and write a log.
+  -->
+  <ItemGroup>
+    <Compile Include="../Replay/ReplayLog.cs" />
+  </ItemGroup>
+
 </Project>
