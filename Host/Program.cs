@@ -14,8 +14,8 @@ namespace WordCraft.Host
     ///
     ///   dotnet run --project Host -- selfcheck
     ///   dotnet run --project Host -- solo [ticks] [-faction &lt;name&gt;] [-save &lt;path&gt;]
-    ///   dotnet run --project Host -- host [port] [ticks] [-faction &lt;name&gt;]
-    ///   dotnet run --project Host -- join &lt;ip&gt; [port] [ticks] [-faction &lt;name&gt;]
+    ///   dotnet run --project Host -- host [port] [ticks] [-faction &lt;name&gt;] [-save &lt;path&gt;]
+    ///   dotnet run --project Host -- join &lt;ip&gt; [port] [ticks] [-faction &lt;name&gt;] [-save &lt;path&gt;]
     ///   dotnet run --project Host -- replay &lt;path&gt;
     /// </summary>
     internal static class Program
@@ -36,27 +36,26 @@ namespace WordCraft.Host
             if (mode != "host" && mode != "solo" && (mode != "join" || args.Length < 2))
             {
                 Console.WriteLine("usage: selfcheck | solo [ticks] [-faction <name>] [-save <path>]" +
-                                  " | host [port] [ticks] [-faction <name>]" +
-                                  " | join <ip> [port] [ticks] [-faction <name>]" +
+                                  " | host [port] [ticks] [-faction <name>] [-opponent <name>] [-save <path>]" +
+                                  " | join <ip> [port] [ticks] [-faction <name>] [-opponent <name>] [-save <path>]" +
                                   " | replay <path>");
                 return 2;
             }
 
-            Faction faction = MatchConfig.DefaultFaction(peerId);
-            string picked = Flag(args, "-faction");
-            if (picked != null && (!Enum.TryParse(picked, true, out faction) ||
-                                   !Enum.IsDefined(typeof(Faction), faction)))
-            {
-                Console.WriteLine("unknown faction '" + picked + "'; one of: " +
-                                  string.Join(", ", Enum.GetNames(typeof(Faction))));
-                return 2;
-            }
+            Faction? faction = PickFaction(args, "-faction", MatchConfig.DefaultFaction(peerId));
+            if (faction == null) return 2;
 
-            if (mode == "solo") return RunSolo(Arg(args, 1, DefaultTicks), faction, Flag(args, "-save"));
+            if (mode == "solo") return RunSolo(Arg(args, 1, DefaultTicks), faction.Value, Flag(args, "-save"));
 
+            Faction? opponent = PickFaction(args, "-opponent", MatchConfig.DefaultFaction(1 - peerId));
+            if (opponent == null) return 2;
+
+            string savePath = Flag(args, "-save");
             return peerId == 0
-                ? RunUdp(0, null, Arg(args, 1, DefaultPort), Arg(args, 2, DefaultTicks), faction)
-                : RunUdp(1, args[1], Arg(args, 2, DefaultPort), Arg(args, 3, DefaultTicks), faction);
+                ? RunUdp(0, null, Arg(args, 1, DefaultPort), Arg(args, 2, DefaultTicks),
+                    faction.Value, opponent.Value, savePath)
+                : RunUdp(1, args[1], Arg(args, 2, DefaultPort), Arg(args, 3, DefaultTicks),
+                    faction.Value, opponent.Value, savePath);
         }
 
         /// <summary>
@@ -188,6 +187,20 @@ namespace WordCraft.Host
             if (world.MatchOver) Console.WriteLine("match over at tick " + world.Tick + ", winner " + world.Winner);
         }
 
+        /// <summary>The faction a flag names, the fallback when it is absent, or null when it is not a faction.</summary>
+        private static Faction? PickFaction(string[] args, string flag, Faction fallback)
+        {
+            string picked = Flag(args, flag);
+            if (picked == null) return fallback;
+            if (!Enum.TryParse(picked, true, out Faction faction) || !Enum.IsDefined(typeof(Faction), faction))
+            {
+                Console.WriteLine("unknown faction '" + picked + "'; one of: " +
+                                  string.Join(", ", Enum.GetNames(typeof(Faction))));
+                return null;
+            }
+            return faction;
+        }
+
         private static int Arg(string[] args, int index, int fallback) =>
             args.Length > index && int.TryParse(args[index], out int v) ? v : fallback;
 
@@ -201,17 +214,32 @@ namespace WordCraft.Host
             return null;
         }
 
-        private static int RunUdp(int peerId, string remoteIp, int port, int ticks, Faction faction)
+        /// <summary>
+        /// A match against a peer on a socket, on the client's own map — the same
+        /// map solo plays and the same one the replay harness rebuilds from a
+        /// header, which is what makes -save here worth saving.
+        ///
+        /// That map is why both factions have to be named before tick 0 rather
+        /// than waited for: units spawn with their faction's stats, so a peer
+        /// that guessed its opponent wrong would build a different world and
+        /// disagree on tick 1. Putting the guess in RemoteFaction turns being
+        /// wrong into a handshake rejection, which says what happened.
+        /// </summary>
+        private static int RunUdp(int peerId, string remoteIp, int port, int ticks, Faction faction,
+            Faction opponent, string savePath)
         {
-            var cfg = new MatchConfig { LocalFaction = faction };
+            var cfg = new MatchConfig { LocalFaction = faction, RemoteFaction = opponent };
             using var transport = peerId == 0
                 ? new UdpTransport(port, null) // listener; learns the peer from its first datagram
                 : new UdpTransport(0, new IPEndPoint(IPAddress.Parse(remoteIp), port));
 
-            var peer = new Peer(peerId, transport, cfg, -1, 0);
+            World world = MatchScenario.Build(cfg.Seed,
+                peerId == 0 ? faction : opponent,
+                peerId == 0 ? opponent : faction);
+            var peer = new Peer(peerId, transport, cfg, world);
             Console.WriteLine("peer " + peerId + " on udp " + transport.LocalPort +
                               ", seed 0x" + cfg.Seed.ToString("X") +
-                              ", faction " + cfg.LocalFaction +
+                              ", faction " + cfg.LocalFaction + " against " + opponent +
                               ", input delay " + cfg.InputDelay + ", target " + ticks + " ticks");
 
             long start = Environment.TickCount64;
@@ -236,6 +264,10 @@ namespace WordCraft.Host
                 Thread.Sleep(1);
             }
 
+            // Saved before the stop is reported, because a match that ended in a
+            // desync is the one most worth sending to somebody else.
+            if (savePath != null) SaveMatch(peer, cfg, savePath, ticks);
+
             if (peer.Session.State == SessionState.Stopped)
             {
                 Console.WriteLine("STOPPED at tick " + peer.World.Tick + ": " + peer.Session.StopReason);
@@ -244,6 +276,28 @@ namespace WordCraft.Host
 
             Console.WriteLine("OK: " + peer.World.Tick + " ticks, final hash 0x" + peer.World.Hash().ToString("X16"));
             return 0;
+        }
+
+        /// <summary>
+        /// Writes what this peer executed, which is what both peers executed.
+        /// Each side saves on its own with no coordination, and the two files
+        /// then answer whether they played the same match.
+        ///
+        /// The factions are read from the world rather than from the local
+        /// config because only one of the two was ever this peer's own choice;
+        /// the other arrived in the handshake. Neither peer is played by the
+        /// simulation, so the AI mask stays empty.
+        /// </summary>
+        private static void SaveMatch(Peer peer, MatchConfig cfg, string path, int ticks)
+        {
+            var header = new ReplayHeader(FactionData.ContentVersion, cfg.Seed,
+                peer.World.FactionOf(0), peer.World.FactionOf(1));
+
+            // The tick target, not the tick reached: a peer can notice the end of
+            // the match a tick or two later than the other one and that is not a
+            // disagreement about what happened.
+            peer.Recorder.Save(path, header, ticks);
+            Console.WriteLine("saved replay to " + path + " (" + Math.Min(ticks, peer.Recorder.TickCount) + " ticks)");
         }
     }
 }
