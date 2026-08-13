@@ -218,7 +218,7 @@ namespace WordCraft.View
                 Vector2 p = runner.DrawPosition(i);
                 sr.transform.position = new Vector3(p.x, p.y, 0f);
                 if (picked) Ring(rings[i], footprints[i], p);
-                Overlays(i, e, p, picked);
+                Overlays(world, i, e, p, picked);
 
                 // A site under construction reads as a ghost until it finishes.
                 if (e.Kind == EntityKind.Building)
@@ -406,7 +406,7 @@ namespace WordCraft.View
             queueFills[i].enabled = false;
         }
 
-        private void Overlays(int i, Entity e, Vector2 p, bool picked)
+        private void Overlays(World world, int i, Entity e, Vector2 p, bool picked)
         {
             bool node = e.Kind == EntityKind.ResourceNode;
             bool hurt = e.Hp < e.MaxHp;
@@ -431,9 +431,14 @@ namespace WordCraft.View
             queueFills[i].enabled = queue;
             if (queue)
             {
+                // The queue holds one role at a time (Economy.TryQueueUnit), and
+                // that role's clock since #93 priced it per faction and role — the
+                // shared default World.ProduceTicks reads a warlord's bar as full
+                // for its first 100 of 140 ticks.
+                int ticks = FactionData.Production(world.FactionOf(e.Owner), e.ProduceRole).Ticks;
                 float done = e.ProduceTicksLeft == 0
                     ? 0f
-                    : (World.ProduceTicks - e.ProduceTicksLeft) / (float)World.ProduceTicks;
+                    : (ticks - e.ProduceTicksLeft) / (float)ticks;
                 Place(queueFills[i], p.x, p.y + 1.45f, 2.2f, done);
             }
         }
