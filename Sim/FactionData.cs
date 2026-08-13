@@ -54,6 +54,28 @@ namespace WordCraft.Sim
     }
 
     /// <summary>
+    /// What producing one entry of a slot costs its owner. Resources and ticks
+    /// together rather than in two tables, because the two numbers are decided as
+    /// a pair and a role priced in one place and timed in another is a role
+    /// somebody retunes half of.
+    /// </summary>
+    public struct ProductionCost
+    {
+        /// <summary>Taken in full at queue time, refunded in full on cancel.</summary>
+        public int Resources;
+
+        /// <summary>Whole ticks the building spends on it. Never seconds.</summary>
+        public int Ticks;
+
+        /// <summary>
+        /// Whether a Produce command may name this slot at all. Default false on
+        /// the struct, so a row nobody wrote fails closed: a slot left out of the
+        /// table cannot be produced rather than being produced for nothing.
+        /// </summary>
+        public bool Produced;
+    }
+
+    /// <summary>
     /// The roster: stats per role, identity per faction and role. A role holds a
     /// list of entries rather than one, because the six factions do not field the
     /// same units. Plain constants on purpose. A parsed file or a ScriptableObject
@@ -69,10 +91,18 @@ namespace WordCraft.Sim
         /// a rejection before tick 0. Terrain counts: a peer generating a different
         /// map has to be turned away at the handshake rather than desync on tick 1.
         /// </summary>
-        public const uint ContentVersion = 15;
+        public const uint ContentVersion = 17;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
+
+        /// <summary>
+        /// The price and the clock every produced role starts from. Baseline, not
+        /// a rule: what a given faction's unit actually costs comes out of
+        /// <see cref="Production"/>, and 지옥불 군단장 already departs from it.
+        /// </summary>
+        public const int DefaultProduceCost = 20;
+        public const int DefaultProduceTicks = 40;
 
         /// <summary>
         /// Stats per faction and role, subscripted by <see cref="Index"/> exactly
@@ -140,9 +170,8 @@ namespace WordCraft.Sim
                 new UnitStats { Hp = 300, Speed = Fix.Ratio(3, 8), Air = true }),
 
             // 지옥불 군단장의 자손. Airborne, shorter reach and lighter hit than the
-            // shared ranged row. Free and spawned rather than produced is the other
-            // half of this unit and is not here yet; until it is, this is Hellfire's
-            // ordinary ranged unit at ordinary cost.
+            // shared ranged row. Free and spawned rather than produced, which is
+            // what productionOverrides below says and World.WarlordSpawnSystem does.
             (Faction.Hellfire, Role.Ranged,
                 new UnitStats
                 {
@@ -155,6 +184,57 @@ namespace WordCraft.Sim
                     HitsAir = true,
                 }),
         };
+
+        /// <summary>
+        /// What producing one of a role costs, per faction and role, subscripted
+        /// by <see cref="Index"/> like everything else. Filled from
+        /// <see cref="sharedProduction"/> and <see cref="productionOverrides"/>
+        /// for the same reason the stats table is.
+        /// </summary>
+        private static readonly ProductionCost[] production;
+
+        /// <summary>
+        /// The production row every faction starts from, indexed by Role.
+        ///
+        /// Buildings are marked not produced: a building is placed by a Build
+        /// command and paid for out of <see cref="buildCosts"/>, and a queue that
+        /// accepted one would hand the peer a base walking around as a unit.
+        /// </summary>
+        private static readonly ProductionCost[] sharedProduction =
+        {
+            /* None       */ new ProductionCost(),
+            /* Base       */ new ProductionCost(),
+            /* Worker     */ Produce(DefaultProduceCost, DefaultProduceTicks),
+            /* Production */ new ProductionCost(),
+            /* Defense    */ new ProductionCost(),
+            /* Melee      */ Produce(DefaultProduceCost, DefaultProduceTicks),
+            /* Ranged     */ Produce(DefaultProduceCost, DefaultProduceTicks),
+            /* Signature  */ Produce(DefaultProduceCost, DefaultProduceTicks),
+            /* Supply     */ new ProductionCost(),
+            /* Tech       */ new ProductionCost(),
+        };
+
+        /// <summary>
+        /// Where a faction departs from the shared production row. Balance past
+        /// "matches finish" is still a non-goal, so an entry arrives with the
+        /// mechanic that needs it: 지옥불 군단장 is the whole list today.
+        /// </summary>
+        private static readonly (Faction Faction, Role Role, ProductionCost Cost)[] productionOverrides =
+        {
+            // 지옥불 군단장. 220자원 140틱, per docs/FACTION-MECHANICS.md. The most
+            // expensive unit in the game, and it kills nothing itself: it pays for
+            // itself with what it spawns.
+            (Faction.Hellfire, Role.Signature, Produce(220, 140)),
+
+            // 지옥불 군단장의 자손. Free, and off the production list altogether: it
+            // comes out of a warlord every World.WarlordSpawnTicks and there is no
+            // other way to get one. A price on it would be a second way in, and
+            // then 무료 is only a discount on a unit you can also just buy.
+            (Faction.Hellfire, Role.Ranged, new ProductionCost()),
+        };
+
+        private static ProductionCost Produce(int resources, int ticks) =>
+            new ProductionCost { Resources = resources, Ticks = ticks, Produced = true };
 
         /// <summary>
         /// Fills the stats table. A static constructor rather than a field
@@ -178,6 +258,21 @@ namespace WordCraft.Sim
             {
                 var (faction, role, replacement) = statOverrides[i];
                 stats[Index(faction, role)] = replacement;
+            }
+
+            production = new ProductionCost[FactionCount * RoleCount];
+            for (int faction = 0; faction < FactionCount; faction++)
+            {
+                for (int role = 0; role < RoleCount; role++)
+                {
+                    production[Index((Faction)faction, (Role)role)] = sharedProduction[role];
+                }
+            }
+
+            for (int i = 0; i < productionOverrides.Length; i++)
+            {
+                var (faction, role, replacement) = productionOverrides[i];
+                production[Index(faction, role)] = replacement;
             }
         }
 
@@ -310,6 +405,14 @@ namespace WordCraft.Sim
         /// caller reading somebody else's unit.
         /// </summary>
         public static UnitStats Stats(Faction faction, Role role) => stats[Index(faction, role)];
+
+        /// <summary>
+        /// What producing this faction's take on this role costs and how long it
+        /// takes. Faction is required for the same reason <see cref="Stats"/>
+        /// requires it: 지옥불 군단장 is not priced like anyone else's signature.
+        /// </summary>
+        public static ProductionCost Production(Faction faction, Role role) =>
+            production[Index(faction, role)];
 
         /// <summary>What the owner's tier must reach before this role can be produced.</summary>
         public static int Tier(Role role) => tiers[(int)role];

@@ -108,6 +108,26 @@ namespace WordCraft.Sim
         // Cursor into this entity's path. At or past the path length means the
         // entity walks straight at Target instead.
         public int PathIndex;
+
+        // 지옥불 군단장 주기 소환. Zero on everything that is not a warlord or one
+        // of its offspring, which is every entity in five factions out of six.
+
+        /// <summary>Ticks left before this warlord emits its next offspring.</summary>
+        public int SpawnCooldown;
+
+        /// <summary>
+        /// How many of this warlord's offspring are still standing. Carried rather
+        /// than counted, because counting means a scan of every entity per warlord
+        /// per tick and a scan is a place iteration order can reach the result.
+        /// </summary>
+        public int OffspringCount;
+
+        /// <summary>
+        /// The warlord that emitted this body, or -1 for everything that was not
+        /// emitted by one. It is what lets a death give its slot back without
+        /// looking for the parent.
+        /// </summary>
+        public int ParentId;
     }
 
     /// <summary>
@@ -129,8 +149,11 @@ namespace WordCraft.Sim
         public const int NodeHp = 1;
         public const int GatherTicks = 20;
         public const int CarryCapacity = 10;
-        public const int ProduceCost = 20;
-        public const int ProduceTicks = 40;
+        // The baseline production row, and only that. What a given faction's unit
+        // costs comes from FactionData.Production; these two are what a roster row
+        // that says nothing else falls back to.
+        public const int ProduceCost = FactionData.DefaultProduceCost;
+        public const int ProduceTicks = FactionData.DefaultProduceTicks;
         public const int MaxQueue = 5;
 
         // Population, per docs/FACTIONS.md. The hard cap is an absolute ceiling,
@@ -147,6 +170,17 @@ namespace WordCraft.Sim
         /// ground, in whole ticks. Twenty seconds, per docs/FACTION-MECHANICS.md.
         /// </summary>
         public const int RemnantTicks = 400;
+
+        /// <summary>
+        /// 지옥불 군단장: whole ticks between one offspring and the next, per
+        /// docs/FACTION-MECHANICS.md. The clock runs whether or not there is room,
+        /// so killing an offspring buys the attacker up to this long before the
+        /// slot is filled again.
+        /// </summary>
+        public const int WarlordSpawnTicks = 100;
+
+        /// <summary>Most offspring one 지옥불 군단장 keeps alive at once.</summary>
+        public const int WarlordOffspring = 5;
 
         /// <summary>Where a finished unit appears, relative to its building. Fixed, so peers agree.</summary>
         public static readonly FixVec2 RallyOffset = new FixVec2(Fix.FromInt(2), Fix.Zero);
@@ -238,6 +272,7 @@ namespace WordCraft.Sim
             e.Hp = 0;
             e.Alive = false;
             ReleasePopulation(e);
+            ReleaseOffspringSlot(e);
             DropRemnant(e);
         }
 
@@ -320,7 +355,9 @@ namespace WordCraft.Sim
         public int SpawnUnit(int owner, Role role, FixVec2 position, int hpOverride = -1)
         {
             UnitStats s = FactionData.Stats(factions[owner], role);
-            return Add(EntityKind.Unit, owner, role, position, s.Speed, hpOverride < 0 ? s.Hp : hpOverride);
+            int id = Add(EntityKind.Unit, owner, role, position, s.Speed, hpOverride < 0 ? s.Hp : hpOverride);
+            ArmWarlord(id);
+            return id;
         }
 
         public int SpawnWorker(int owner, FixVec2 position)
@@ -367,6 +404,7 @@ namespace WordCraft.Sim
                 GatherNodeId = -1,
                 DropOffId = -1,
                 TargetId = -1,
+                ParentId = -1,
             };
             entities.Add(e);
             paths.Add(new List<int>());
@@ -402,6 +440,7 @@ namespace WordCraft.Sim
                 GatherSystem();
                 ConstructionSystem();
                 ProductionSystem();
+                WarlordSpawnSystem();
                 CombatSystem();
                 MoveSystem();
                 VictorySystem();
@@ -761,6 +800,9 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.OrderPoint.X.Raw);
                 Mix(ref h, (ulong)e.OrderPoint.Y.Raw);
                 Mix(ref h, (ulong)e.PathIndex);
+                Mix(ref h, (ulong)e.SpawnCooldown);
+                Mix(ref h, (ulong)e.OffspringCount);
+                Mix(ref h, (ulong)e.ParentId);
 
                 List<int> path = paths[i];
                 Mix(ref h, (ulong)path.Count);
