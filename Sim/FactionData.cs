@@ -108,7 +108,7 @@ namespace WordCraft.Sim
         /// a rejection before tick 0. Terrain counts: a peer generating a different
         /// map has to be turned away at the handshake rather than desync on tick 1.
         /// </summary>
-        public const uint ContentVersion = 17;
+        public const uint ContentVersion = 18;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -122,8 +122,9 @@ namespace WordCraft.Sim
         public const int DefaultProduceTicks = 40;
 
         /// <summary>
-        /// Stats per faction and role, subscripted by <see cref="Index"/> exactly
-        /// like names and sprites, so one index answers every roster question.
+        /// Stats for entry 0 of every slot, subscripted by <see cref="Index"/>
+        /// exactly like names and sprites, so one index answers every roster
+        /// question. Entries past the first live in <see cref="extraStats"/>.
         ///
         /// Filled from <see cref="sharedStats"/> and <see cref="statOverrides"/>
         /// rather than written out sixty times. Sixty rows that are meant to stay
@@ -138,6 +139,17 @@ namespace WordCraft.Sim
         /// neither.
         /// </summary>
         private static readonly UnitStats[] stats;
+
+        /// <summary>
+        /// Stats for the entries past the first, parallel to <see cref="extras"/>
+        /// and filled the same way <see cref="stats"/> is. Kept beside the extras
+        /// table rather than widening <see cref="stats"/> to a fixed number of
+        /// entries per slot, because a fixed number is a number somebody has to
+        /// guess: sixty slots hold one entry each and eight hold more, so a table
+        /// sized for the widest slot would be mostly rows nothing ever wrote, and
+        /// a row nothing wrote reads as zero hp rather than as an error.
+        /// </summary>
+        private static readonly UnitStats[] extraStats;
 
         /// <summary>
         /// The row every faction starts from, indexed by Role. Balance past
@@ -166,30 +178,35 @@ namespace WordCraft.Sim
         };
 
         /// <summary>
-        /// Where a faction departs from the shared row. Empty today: the six
-        /// factions still field identical numbers, and an entry arrives with the
-        /// mechanic that needs it rather than ahead of it. 지옥불 군단장 is the
-        /// first one due, per docs/FACTION-MECHANICS.md.
+        /// Where a faction departs from the shared row, per entry rather than per
+        /// role. Nearly empty today: the six factions still field identical
+        /// numbers, and an entry arrives with the mechanic that needs it rather
+        /// than ahead of it.
         ///
-        /// A slot's second entry cannot differ from its first here, because this
-        /// is keyed by role and a role holds a list. That waits on the Produce
-        /// command carrying a slot, which is a hashed field and belongs with that
-        /// change.
+        /// The key is Faction, Role and Slot together, and the slot is what makes
+        /// the table able to say what it means. 지옥불's ranged list holds two
+        /// units that are nothing alike — 자손 flies and is free, 균열 파수병 walks
+        /// and is bought — and while this was keyed by role alone the second one
+        /// could only ever inherit the first one's row. A slot that names no entry
+        /// is an index out of range at type load, which is loud, immediate, and
+        /// identical on every runtime; silently landing on entry 0 is none of those.
         /// </summary>
-        private static readonly (Faction Faction, Role Role, UnitStats Stats)[] statOverrides =
+        private static readonly (Faction Faction, Role Role, int Slot, UnitStats Stats)[] statOverrides =
         {
             // 지옥불 군단장. Flies, and carries no weapon at all: it kills nothing
             // itself and pays for itself by what it spawns. Numbers from
             // docs/FACTION-MECHANICS.md. Keeps the shared signature speed, because
             // a unit the player has to keep alive is a unit the player has to be
             // able to pull out.
-            (Faction.Hellfire, Role.Signature,
+            (Faction.Hellfire, Role.Signature, 0,
                 new UnitStats { Hp = 300, Speed = Fix.Ratio(3, 8), Air = true }),
 
             // 지옥불 군단장의 자손. Airborne, shorter reach and lighter hit than the
             // shared ranged row. Free and spawned rather than produced, which is
             // what productionOverrides below says and World.WarlordSpawnSystem does.
-            (Faction.Hellfire, Role.Ranged,
+            // Entry 0 only: 균열 파수병 is entry 1 and holds the ground on the
+            // shared ranged row, which is the whole reason this key names a slot.
+            (Faction.Hellfire, Role.Ranged, 0,
                 new UnitStats
                 {
                     Hp = 70,
@@ -203,12 +220,18 @@ namespace WordCraft.Sim
         };
 
         /// <summary>
-        /// What producing one of a role costs, per faction and role, subscripted
-        /// by <see cref="Index"/> like everything else. Filled from
+        /// What producing entry 0 of a slot costs, per faction and role,
+        /// subscripted by <see cref="Index"/> like everything else. Filled from
         /// <see cref="sharedProduction"/> and <see cref="productionOverrides"/>
         /// for the same reason the stats table is.
         /// </summary>
         private static readonly ProductionCost[] production;
+
+        /// <summary>
+        /// What producing the entries past the first costs, parallel to
+        /// <see cref="extras"/> exactly as <see cref="extraStats"/> is.
+        /// </summary>
+        private static readonly ProductionCost[] extraProduction;
 
         /// <summary>
         /// The production row every faction starts from, indexed by Role.
@@ -232,22 +255,29 @@ namespace WordCraft.Sim
         };
 
         /// <summary>
-        /// Where a faction departs from the shared production row. Balance past
-        /// "matches finish" is still a non-goal, so an entry arrives with the
-        /// mechanic that needs it: 지옥불 군단장 is the whole list today.
+        /// Where a faction departs from the shared production row, keyed by entry
+        /// rather than by role for the same reason <see cref="statOverrides"/> is.
+        /// Balance past "matches finish" is still a non-goal, so an entry arrives
+        /// with the mechanic that needs it: 지옥불 군단장 is the whole list today.
+        ///
+        /// Narrowing this key is what puts 균열 파수병 on the production list. The
+        /// row below closes 지옥불's ranged slot because 자손 is spawned rather
+        /// than bought; keyed by role it closed the second entry too, and a unit
+        /// nothing can produce is a unit that is not in the game.
         /// </summary>
-        private static readonly (Faction Faction, Role Role, ProductionCost Cost)[] productionOverrides =
+        private static readonly (Faction Faction, Role Role, int Slot, ProductionCost Cost)[] productionOverrides =
         {
             // 지옥불 군단장. 220자원 140틱, per docs/FACTION-MECHANICS.md. The most
             // expensive unit in the game, and it kills nothing itself: it pays for
             // itself with what it spawns.
-            (Faction.Hellfire, Role.Signature, Produce(220, 140)),
+            (Faction.Hellfire, Role.Signature, 0, Produce(220, 140)),
 
             // 지옥불 군단장의 자손. Free, and off the production list altogether: it
             // comes out of a warlord every World.WarlordSpawnTicks and there is no
             // other way to get one. A price on it would be a second way in, and
-            // then 무료 is only a discount on a unit you can also just buy.
-            (Faction.Hellfire, Role.Ranged, new ProductionCost()),
+            // then 무료 is only a discount on a unit you can also just buy. Entry 0
+            // only: 균열 파수병 behind it is bought at the shared ranged price.
+            (Faction.Hellfire, Role.Ranged, 0, new ProductionCost()),
         };
 
         private static ProductionCost Produce(int resources, int ticks) =>
@@ -263,33 +293,44 @@ namespace WordCraft.Sim
         static FactionData()
         {
             stats = new UnitStats[FactionCount * RoleCount];
-            for (int faction = 0; faction < FactionCount; faction++)
-            {
-                for (int role = 0; role < RoleCount; role++)
-                {
-                    stats[Index((Faction)faction, (Role)role)] = sharedStats[role];
-                }
-            }
-
-            for (int i = 0; i < statOverrides.Length; i++)
-            {
-                var (faction, role, replacement) = statOverrides[i];
-                stats[Index(faction, role)] = replacement;
-            }
-
             production = new ProductionCost[FactionCount * RoleCount];
             for (int faction = 0; faction < FactionCount; faction++)
             {
                 for (int role = 0; role < RoleCount; role++)
                 {
+                    stats[Index((Faction)faction, (Role)role)] = sharedStats[role];
                     production[Index((Faction)faction, (Role)role)] = sharedProduction[role];
                 }
             }
 
+            // An entry past the first starts from the same shared row its slot's
+            // entry 0 does, so adding a name to the extras table adds a unit that
+            // already fights and already has a price. Where it is meant to differ
+            // is an override row, which is the one place a difference is written.
+            extraStats = new UnitStats[extras.Length];
+            extraProduction = new ProductionCost[extras.Length];
+            for (int i = 0; i < extras.Length; i++)
+            {
+                extraStats[i] = sharedStats[(int)extras[i].Role];
+                extraProduction[i] = sharedProduction[(int)extras[i].Role];
+            }
+
+            // Entry 0 lands in the flat tables, everything else in the parallel
+            // ones. ExtraIndex is subscripted rather than tested, so an override
+            // naming an entry no faction fields is an index out of range at type
+            // load rather than a silent write onto entry 0.
+            for (int i = 0; i < statOverrides.Length; i++)
+            {
+                var (faction, role, slot, replacement) = statOverrides[i];
+                if (slot == 0) stats[Index(faction, role)] = replacement;
+                else extraStats[ExtraIndex(faction, role, slot)] = replacement;
+            }
+
             for (int i = 0; i < productionOverrides.Length; i++)
             {
-                var (faction, role, replacement) = productionOverrides[i];
-                production[Index(faction, role)] = replacement;
+                var (faction, role, slot, replacement) = productionOverrides[i];
+                if (slot == 0) production[Index(faction, role)] = replacement;
+                else extraProduction[ExtraIndex(faction, role, slot)] = replacement;
             }
         }
 
@@ -417,19 +458,53 @@ namespace WordCraft.Sim
         };
 
         /// <summary>
-        /// The roster numbers for one faction's take on a role. Faction is
-        /// required rather than defaulted: a caller that cannot name one is a
-        /// caller reading somebody else's unit.
+        /// The roster numbers for entry 0 of one faction's take on a role.
+        /// Faction is required rather than defaulted: a caller that cannot name
+        /// one is a caller reading somebody else's unit.
         /// </summary>
-        public static UnitStats Stats(Faction faction, Role role) => stats[Index(faction, role)];
+        public static UnitStats Stats(Faction faction, Role role) => Stats(faction, role, 0);
 
         /// <summary>
-        /// What producing this faction's take on this role costs and how long it
-        /// takes. Faction is required for the same reason <see cref="Stats"/>
-        /// requires it: 지옥불 군단장 is not priced like anyone else's signature.
+        /// The roster numbers one entry fights from. An entity carries its slot,
+        /// so this is what every combat and movement question resolves through:
+        /// 지옥불's ranged entry 0 flies and its entry 1 does not, and a system
+        /// that asked by role alone would fly both.
+        ///
+        /// A slot this faction does not field falls back to entry 0, which is a
+        /// real row rather than a zero-hp default struct. Nothing can reach that
+        /// path in play — <see cref="Production"/> refuses a slot that is not
+        /// there before an entity carrying one can exist — and a floor is what
+        /// keeps a mistake somewhere else from spawning a body that is already
+        /// dead.
+        /// </summary>
+        public static UnitStats Stats(Faction faction, Role role, int slot)
+        {
+            int extra = ExtraIndex(faction, role, slot);
+            return extra < 0 ? stats[Index(faction, role)] : extraStats[extra];
+        }
+
+        /// <summary>
+        /// What producing entry 0 of this faction's take on this role costs and
+        /// how long it takes. Faction is required for the same reason
+        /// <see cref="Stats(Faction, Role)"/> requires it: 지옥불 군단장 is not
+        /// priced like anyone else's signature.
         /// </summary>
         public static ProductionCost Production(Faction faction, Role role) =>
-            production[Index(faction, role)];
+            Production(faction, role, 0);
+
+        /// <summary>
+        /// What producing one entry costs and how long it takes. A slot this
+        /// faction does not field answers a default cost, which is not produced:
+        /// the table fails closed, so refusing a Produce that names an entry
+        /// nobody wrote is the same rule that refuses one naming a building, and
+        /// there is no second place for it to be got wrong.
+        /// </summary>
+        public static ProductionCost Production(Faction faction, Role role, int slot)
+        {
+            if (slot == 0) return production[Index(faction, role)];
+            int extra = ExtraIndex(faction, role, slot);
+            return extra < 0 ? new ProductionCost() : extraProduction[extra];
+        }
 
         /// <summary>What the owner's tier must reach before this role can be produced.</summary>
         public static int Tier(Role role) => tiers[(int)role];
@@ -450,21 +525,26 @@ namespace WordCraft.Sim
             role == Role.Supply || role == Role.Tech;
 
         /// <summary>
-        /// True when this faction fields this slot at all. An empty name is a slot
-        /// docs/FACTIONS.md leaves out on purpose, and a faction cannot build or
-        /// produce what its roster does not list.
+        /// True when this faction fields entry 0 of this slot at all. An empty
+        /// name is a slot docs/FACTIONS.md leaves out on purpose, and a faction
+        /// cannot build or produce what its roster does not list.
         /// </summary>
-        public static bool Has(Faction faction, Role role) => names[Index(faction, role)].Length > 0;
+        public static bool Has(Faction faction, Role role) => Has(faction, role, 0);
+
+        /// <summary>
+        /// True when this faction fields this entry. The name is the test, for
+        /// both entry 0 and the ones behind it: an entry with no name is one the
+        /// roster does not list, whether it was left blank on purpose like 인간's
+        /// melee row or asked for past the end of the list.
+        /// </summary>
+        public static bool Has(Faction faction, Role role, int slot) =>
+            Name(faction, role, slot).Length > 0;
 
         /// <summary>
         /// How many entries this slot holds. Always at least one, so a caller that
         /// wants the whole list loops 0 to this and a caller that wants the unit
         /// the view draws today asks for entry 0 and ignores it.
         /// </summary>
-        // ponytail: entries past 0 are content nothing can produce. An entity
-        // stores its role, so Produce names a role and always gets entry 0. Give
-        // the command a slot argument the day a faction needs to build its second
-        // ranged unit; that is a hashed field and belongs with that change.
         public static int SlotCount(Faction faction, Role role)
         {
             int count = 1;
@@ -481,27 +561,44 @@ namespace WordCraft.Sim
         /// <summary>Sprite file name under Resources/Art/Sprites, or "" when the slot has no art yet.</summary>
         public static string Sprite(Faction faction, Role role) => Sprite(faction, role, 0);
 
-        /// <summary>The name of one entry of a slot, where slot is 0 to SlotCount - 1.</summary>
-        public static string Name(Faction faction, Role role, int slot) =>
-            slot == 0 ? names[Index(faction, role)] : Extra(faction, role, slot).Name;
+        /// <summary>
+        /// The name of one entry of a slot, where slot is 0 to SlotCount - 1, and
+        /// "" for anything past the end. An entity carries its slot, so this is
+        /// what the view labels a body with.
+        /// </summary>
+        public static string Name(Faction faction, Role role, int slot)
+        {
+            if (slot == 0) return names[Index(faction, role)];
+            int extra = ExtraIndex(faction, role, slot);
+            return extra < 0 ? "" : extras[extra].Name;
+        }
 
         /// <summary>The sprite of one entry of a slot, where slot is 0 to SlotCount - 1.</summary>
-        public static string Sprite(Faction faction, Role role, int slot) =>
-            slot == 0 ? sprites[Index(faction, role)] : Extra(faction, role, slot).Sprite;
+        public static string Sprite(Faction faction, Role role, int slot)
+        {
+            if (slot == 0) return sprites[Index(faction, role)];
+            int extra = ExtraIndex(faction, role, slot);
+            return extra < 0 ? "" : extras[extra].Sprite;
+        }
 
         /// <summary>
-        /// The slot-th extra entry, or an empty one past the end. Empty reads as
-        /// "no art", which is what an entry that is not there has. A scan of a
-        /// table this size costs less than the jagged arrays that would make it a
-        /// subscript, and only entry 0 is on the view's per-entity path anyway.
+        /// Where this entry sits in <see cref="extras"/>, or -1 for entry 0 and
+        /// for anything past the end of the list. Callers that must fail closed
+        /// treat -1 as "not there"; callers that only need a row to read fall back
+        /// to entry 0.
+        ///
+        /// A scan of a table this size costs less than the jagged arrays that
+        /// would make it a subscript, and only entry 0 is on the view's
+        /// per-entity path anyway.
         /// </summary>
-        private static (Faction Faction, Role Role, string Name, string Sprite) Extra(Faction faction, Role role, int slot)
+        private static int ExtraIndex(Faction faction, Role role, int slot)
         {
+            if (slot <= 0) return -1;
             for (int i = 0; i < extras.Length; i++)
             {
-                if (extras[i].Faction == faction && extras[i].Role == role && --slot == 0) return extras[i];
+                if (extras[i].Faction == faction && extras[i].Role == role && --slot == 0) return i;
             }
-            return (faction, role, "", "");
+            return -1;
         }
 
         private static int Index(Faction faction, Role role) => (int)faction * RoleCount + (int)role;

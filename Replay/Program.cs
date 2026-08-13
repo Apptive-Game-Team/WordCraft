@@ -51,6 +51,10 @@ namespace WordCraft.Replay
                 ProducedWorkersCanGather();
                 RosterSlotsAreAddressable();
                 EveryRosterSlotHasStats();
+                SlotAddressedProductionMakesTheNamedEntry();
+                ProduceRefusesAnEntryTheFactionDoesNotField();
+                TheRosterEntryIsHashedState();
+                AQueueHoldsOneRosterEntryAtATime();
                 MeleeCannotReachAir();
                 RangedCanReachAir();
                 AirIgnoresTerrain();
@@ -951,9 +955,14 @@ namespace WordCraft.Replay
         }
 
         /// <summary>
-        /// Every slot on the production list has a price and a clock. A row left at
-        /// zero would be a free unit or one that finishes the tick it is ordered,
-        /// and neither is a thing anybody would notice from the table alone.
+        /// Every entry on the production list has a price and a clock. A row left
+        /// at zero would be a free unit or one that finishes the tick it is
+        /// ordered, and neither is a thing anybody would notice from the table
+        /// alone.
+        ///
+        /// Every entry, not every role. An entry past the first inherits its
+        /// slot's shared row and can be overridden away from it, so it is a row
+        /// that can be got wrong on its own.
         /// </summary>
         private static void EveryProducibleRoleIsPricedAndTimed()
         {
@@ -963,13 +972,31 @@ namespace WordCraft.Replay
                 {
                     var faction = (Faction)f;
                     var role = (Role)r;
-                    ProductionCost cost = FactionData.Production(faction, role);
-                    if (!cost.Produced) continue;
+                    for (int s = 0; s < FactionData.SlotCount(faction, role); s++)
+                    {
+                        ProductionCost cost = FactionData.Production(faction, role, s);
+                        if (!cost.Produced) continue;
 
-                    string where = faction + "." + role;
-                    Check(cost.Resources > 0, "free production slot at " + where);
-                    Check(cost.Ticks > 0, "instant production slot at " + where);
-                    Check(!FactionData.IsBuilding(role), "a building is on the production list at " + where);
+                        string where = faction + "." + role + "[" + s + "]";
+                        Check(cost.Resources > 0, "free production slot at " + where);
+                        Check(cost.Ticks > 0, "instant production slot at " + where);
+                        Check(!FactionData.IsBuilding(role), "a building is on the production list at " + where);
+                    }
+                }
+            }
+
+            // Past the end of a list the table has to fail closed, or "refuse an
+            // entry nobody wrote" is a rule the command handler keeps on its own
+            // and the table is free to disagree with it.
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                for (int r = 0; r < FactionData.RoleCount; r++)
+                {
+                    var faction = (Faction)f;
+                    var role = (Role)r;
+                    int past = FactionData.SlotCount(faction, role);
+                    Check(!FactionData.Production(faction, role, past).Produced,
+                        "an entry nobody wrote is on the production list at " + faction + "." + role);
                 }
             }
         }
@@ -1370,7 +1397,259 @@ namespace WordCraft.Replay
             new List<Command> { new Command(0, peer, seq, CommandType.CancelProduction, building, FixVec2.Zero) };
 
         private static List<Command> Produce(int building, int peer, int seq, Role role) =>
-            new List<Command> { new Command(0, peer, seq, CommandType.Produce, building, FixVec2.Zero, (int)role) };
+            Produce(building, peer, seq, role, 0);
+
+        private static List<Command> Produce(int building, int peer, int seq, Role role, int slot) =>
+            new List<Command>
+            {
+                new Command(0, peer, seq, CommandType.Produce, building, FixVec2.Zero,
+                    Command.RosterArg(role, slot))
+            };
+
+        // 슬롯 생산. 지옥불's ranged list is the pair the whole mechanic exists for:
+        // entry 0 is 자손, which flies and is spawned free, and entry 1 is 균열
+        // 파수병, which walks and is bought. One role, one price table, two units
+        // that agree about nothing.
+        private const int WardenBase = 0;
+        private const int WardenWorks = 1;
+        private const int Warden = 2;
+
+        /// <summary>
+        /// A Produce naming an entry past the first builds that entry, and builds
+        /// it as itself. Every clause here is one of the things the roster says
+        /// about 균열 파수병 and not about the 자손 sharing its role: it exists at
+        /// all, it walks, it carries a weapon, and it answers to its own name and
+        /// its own art.
+        ///
+        /// The refusal beside it is what makes the rest mean something. 지옥불's
+        /// ranged entry 0 is off the production list, so a check that only watched
+        /// a unit come out of a ranged order would pass on a handler that had
+        /// quietly ignored the entry number and built entry 0 — except that entry 0
+        /// cannot be built at all, which is exactly why this is the pair to use.
+        /// </summary>
+        private static void SlotAddressedProductionMakesTheNamedEntry()
+        {
+            // The premise, read off the table before any of it is played: the two
+            // entries of one role are priced apart and statted apart. Keyed by role
+            // alone the table could not say this, and every assertion below would
+            // be about a distinction that no longer exists.
+            Check(!FactionData.Production(Faction.Hellfire, Role.Ranged, 0).Produced,
+                "지옥불 ranged entry 0 is on the production list, so 자손 can be bought");
+            Check(FactionData.Production(Faction.Hellfire, Role.Ranged, 1).Produced,
+                "지옥불 ranged entry 1 is off the production list, so 균열 파수병 is still unreachable");
+            Check(FactionData.Stats(Faction.Hellfire, Role.Ranged, 0).Air,
+                "지옥불 자손 stopped flying");
+            Check(!FactionData.Stats(Faction.Hellfire, Role.Ranged, 1).Air,
+                "지옥불 균열 파수병 inherited 자손's wings, so the stat table is still keyed by role");
+
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Hellfire);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);       // WardenBase
+            world.SpawnBuilding(0, Role.Production, At(9, 5), complete: true); // WardenWorks, opens tier 2
+            world.GrantResources(0, 1000);
+
+            var idle = new List<Command>();
+
+            // Entry 0 first, so the refusal is measured against the same building
+            // and the same bank the acceptance is.
+            int banked = world.GetResources(0);
+            int standing = world.EntityCount;
+            world.Step(Produce(WardenBase, 0, 0, Role.Ranged, 0));
+            for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
+            Check(world.GetResources(0) == banked, "an order for 지옥불 ranged entry 0 spent resources");
+            Check(world.EntityCount == standing, "an order for 지옥불 ranged entry 0 made one");
+
+            banked = world.GetResources(0);
+            world.Step(Produce(WardenBase, 0, 1, Role.Ranged, 1));
+            Check(world.GetResources(0) == banked - World.ProduceCost,
+                "queueing 균열 파수병 spent " + (banked - world.GetResources(0)));
+            Check(world.GetEntity(WardenBase).ProduceSlot == 1,
+                "the queue is building entry " + world.GetEntity(WardenBase).ProduceSlot);
+
+            // One tick short of the roster time, then the tick itself, like every
+            // other production check here: a unit that arrived early would pass a
+            // check that only waited for it.
+            for (int t = 0; t < World.ProduceTicks - 2; t++) world.Step(idle);
+            Check(world.EntityCount == standing, "균열 파수병 arrived before its ticks were up");
+            world.Step(idle);
+            Check(world.EntityCount == standing + 1, "균열 파수병 never arrived");
+
+            Entity warden = world.GetEntity(Warden);
+            Check(warden.Role == Role.Ranged, "the queue finished a " + warden.Role);
+            Check(warden.Slot == 1, "the queue finished entry " + warden.Slot);
+            // Through the world, not the table: what the simulation does with this
+            // body is decided by the lookup Flies makes, and that is the lookup
+            // that used to take the role alone.
+            Check(!world.Flies(warden), "균열 파수병 came out airborne");
+            Check(world.Armed(warden), "균열 파수병 came out unarmed");
+            Check(warden.MaxHp == FactionData.Stats(Faction.Hellfire, Role.Ranged, 1).Hp,
+                "균열 파수병 came out with " + warden.MaxHp + " hp");
+
+            // Name and art, which is all the view ever asks the roster for. Read
+            // the way the view reads them, through the entity's own entry number.
+            Faction faction = world.FactionOf(warden.Owner);
+            Check(FactionData.Name(faction, warden.Role, warden.Slot) == "균열 파수병",
+                "the produced unit is called " + FactionData.Name(faction, warden.Role, warden.Slot));
+            Check(FactionData.Sprite(faction, warden.Role, warden.Slot) == "RiftWarden",
+                "the produced unit is drawn as " + FactionData.Sprite(faction, warden.Role, warden.Slot));
+        }
+
+        // A faction whose ranged list holds exactly one entry, so entry 1 of it is
+        // an entry nobody wrote rather than one that is merely off the list.
+        private const int ThinBase = 0;
+        private const int ThinWorks = 1;
+
+        /// <summary>
+        /// A Produce naming an entry the faction does not field is refused whole:
+        /// nothing spent, nothing queued, nothing born. Refused rather than clamped
+        /// onto entry 0, for the reason every other malformed command is: two peers
+        /// guessing what the player meant guess separately.
+        ///
+        /// The control is entry 0 of the same slot on the same building. Without it
+        /// a rule that closed the ranged slot for 세계수 정령 altogether would pass
+        /// every assertion above it.
+        /// </summary>
+        private static void ProduceRefusesAnEntryTheFactionDoesNotField()
+        {
+            Check(FactionData.SlotCount(Faction.TreeSpirits, Role.Ranged) == 1,
+                "세계수 정령 grew a second ranged entry, so this check no longer refuses anything");
+
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.TreeSpirits);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);       // ThinBase
+            world.SpawnBuilding(0, Role.Production, At(9, 5), complete: true); // ThinWorks, opens tier 2
+            world.GrantResources(0, 1000);
+
+            var idle = new List<Command>();
+            int seq = 0;
+
+            // One past the end, and one far past it. The far one is not the same
+            // test: an off-by-one that admitted entry 1 would still refuse entry 9,
+            // and a handler that read the entry number as part of the role would
+            // fold a large one back onto a legal role instead of refusing it.
+            foreach (int slot in new[] { 1, 9 })
+            {
+                int banked = world.GetResources(0);
+                int standing = world.EntityCount;
+                world.Step(Produce(ThinBase, 0, seq++, Role.Ranged, slot));
+                for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
+
+                string where = "세계수 정령 ranged entry " + slot;
+                Check(world.GetResources(0) == banked, "an order for " + where + " spent resources");
+                Check(world.GetEntity(ThinBase).QueueCount == 0, "an order for " + where + " queued one");
+                Check(world.EntityCount == standing, "an order for " + where + " made one");
+            }
+
+            int before = world.GetResources(0);
+            world.Step(Produce(ThinBase, 0, seq, Role.Ranged, 0));
+            Check(world.GetResources(0) < before,
+                "세계수 정령's ranged slot is shut for every entry, so the refusals prove nothing");
+        }
+
+        // 차원 유랑종's melee list holds three entries and no override row touches
+        // any of them, so all three carry the same stats and the same price. Two
+        // worlds that differ only in which one they name differ in nothing a peer
+        // can see except the entry number itself, which is what makes them the pair
+        // to hash.
+        private const int SlotHashBase = 0;
+
+        /// <summary>
+        /// The entry number is hashed state, on the body and on the queue that
+        /// built it. Proven by exclusion rather than by reading Hash(): two worlds
+        /// are built identically down to the seed, the faction, the position and
+        /// the price, and the only thing that differs between them is the entry
+        /// named. If the hashes match, the field is not in Hash(), and two peers
+        /// could run a match with one player's 멸종한 화염 슬라임 standing where the
+        /// other player's 폭풍편 is with nothing ever reporting it.
+        /// </summary>
+        private static void TheRosterEntryIsHashedState()
+        {
+            // The premise: these entries are indistinguishable except by number.
+            // Were they priced or statted apart, the hashes would differ for
+            // reasons that say nothing about whether the entry itself is hashed.
+            UnitStats first = FactionData.Stats(Faction.Driftworlds, Role.Melee, 0);
+            UnitStats second = FactionData.Stats(Faction.Driftworlds, Role.Melee, 1);
+            Check(first.Hp == second.Hp && first.Speed.Raw == second.Speed.Raw &&
+                  first.Damage == second.Damage && first.Range.Raw == second.Range.Raw &&
+                  first.AttackTicks == second.AttackTicks && first.Air == second.Air,
+                "차원 유랑종's first two melee entries are statted apart, so this check proves nothing");
+            Check(FactionData.Production(Faction.Driftworlds, Role.Melee, 0).Resources ==
+                  FactionData.Production(Faction.Driftworlds, Role.Melee, 1).Resources &&
+                  FactionData.Production(Faction.Driftworlds, Role.Melee, 0).Ticks ==
+                  FactionData.Production(Faction.Driftworlds, Role.Melee, 1).Ticks,
+                "차원 유랑종's first two melee entries are priced apart, so this check proves nothing");
+
+            // On the body. Spawned rather than produced, so nothing but the entry
+            // number has had a chance to move.
+            Check(SpawnedSlotHash(0) != SpawnedSlotHash(1),
+                "two worlds holding different roster entries hash the same: Entity.Slot is not in World.Hash()");
+
+            // On the queue. Stopped one tick after the order, while the entry is
+            // still only a number on the building: run to completion the two would
+            // differ by the spawned body's own entry as well, and this half is
+            // about the field the building carries in the meantime.
+            Check(QueuedSlotHash(0) != QueuedSlotHash(1),
+                "two worlds queueing different roster entries hash the same: Entity.ProduceSlot is not in World.Hash()");
+        }
+
+        private static ulong SpawnedSlotHash(int slot)
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Driftworlds);
+            world.SpawnUnit(0, Role.Melee, slot, At(30, 30));
+            world.Step(new List<Command>());
+            return world.Hash();
+        }
+
+        private static ulong QueuedSlotHash(int slot)
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Driftworlds);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // SlotHashBase
+            world.GrantResources(0, 1000);
+            world.Step(Produce(SlotHashBase, 0, 0, Role.Melee, slot));
+            Check(world.GetEntity(SlotHashBase).QueueCount == 1,
+                "차원 유랑종 refused melee entry " + slot + ", so the two worlds differ by more than the entry");
+            return world.Hash();
+        }
+
+        // The same three-entry melee list, used for the queue's own rule rather
+        // than for the hash.
+        private const int OneEntryBase = 0;
+
+        /// <summary>
+        /// A queue holds one roster entry, not one role. The existing rule refuses
+        /// a second role on a running queue because roles are priced apart; entries
+        /// of one role are priced apart by the same table, so a queue that accepted
+        /// a second entry would refund every order in it at whichever entry's price
+        /// happened to be written last.
+        /// </summary>
+        private static void AQueueHoldsOneRosterEntryAtATime()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Driftworlds);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // OneEntryBase
+            world.GrantResources(0, 1000);
+
+            world.Step(Produce(OneEntryBase, 0, 0, Role.Melee, 1));
+            int banked = world.GetResources(0);
+            world.Step(Produce(OneEntryBase, 0, 1, Role.Melee, 2));
+            Check(world.GetResources(0) == banked, "a second roster entry on a running queue spent resources");
+            Check(world.GetEntity(OneEntryBase).QueueCount == 1,
+                "a second roster entry on a running queue was accepted");
+            Check(world.GetEntity(OneEntryBase).ProduceSlot == 1,
+                "a second roster entry overwrote what the queue was building");
+
+            // Emptied, then the other entry: the rule is one at a time, not one
+            // forever.
+            world.Step(Cancel(OneEntryBase, 0, 2));
+            banked = world.GetResources(0);
+            world.Step(Produce(OneEntryBase, 0, 3, Role.Melee, 2));
+            Check(world.GetResources(0) == banked - World.ProduceCost,
+                "an emptied queue refused the other roster entry");
+            Check(world.GetEntity(OneEntryBase).ProduceSlot == 2,
+                "an emptied queue took the order as entry " + world.GetEntity(OneEntryBase).ProduceSlot);
+        }
 
         /// <summary>
         /// Every entry of every slot has to be reachable by its index, or an asset
@@ -1407,11 +1686,14 @@ namespace WordCraft.Replay
         }
 
         /// <summary>
-        /// Every faction and role has to land on a real stat row. The table is
+        /// Every entry of every slot has to land on a real stat row. The table is
         /// filled by a loop over a shared row plus an override list, so the way it
         /// breaks is not a wrong number: it is a row nothing wrote, which reads as
         /// a default struct with zero hp. A unit spawned on one of those is dead
         /// the tick it appears, and nothing else in this harness would say why.
+        ///
+        /// The entries past the first are filled from a second array, so they are
+        /// a second chance at exactly that mistake.
         /// </summary>
         private static void EveryRosterSlotHasStats()
         {
@@ -1421,8 +1703,11 @@ namespace WordCraft.Replay
                 {
                     var faction = (Faction)f;
                     var role = (Role)r;
-                    Check(FactionData.Stats(faction, role).Hp > 0,
-                        "no stats at " + faction + "." + role);
+                    for (int s = 0; s < FactionData.SlotCount(faction, role); s++)
+                    {
+                        Check(FactionData.Stats(faction, role, s).Hp > 0,
+                            "no stats at " + faction + "." + role + "[" + s + "]");
+                    }
                 }
             }
         }
