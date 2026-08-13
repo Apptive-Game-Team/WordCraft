@@ -146,10 +146,16 @@ namespace WordCraft.View
             for (int i = 0; i < producible.Length && cell < Cells; i++)
             {
                 Role role = producible[i];
-                if (!FactionData.Has(faction, role)) { cell++; continue; }
+                // Produced, not Has: 지옥불 Ranged has a name and art (균열 파수병
+                // shares the slot with the free 자손) but no price, because that
+                // slot's queue entry is turned off on purpose. Has would still
+                // offer the cell, the click would land, and the simulation would
+                // refuse it — the exact silent failure this card exists to avoid.
+                ProductionCost cost = FactionData.Production(faction, role);
+                if (!cost.Produced) { cell++; continue; }
                 building[cell++] = new CardSlot
                 {
-                    Label = FactionData.Name(faction, role) + "\n" + World.ProduceCost,
+                    Label = FactionData.Name(faction, role) + "\n" + cost.Resources,
                     Type = CommandType.Produce,
                     Produce = role,
                 };
