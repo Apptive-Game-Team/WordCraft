@@ -28,6 +28,15 @@ Run this after any change under `Sim/`.
 ## Layout
 
 - `Sim/` — pure C# simulation, `netstandard2.1`, no dependencies.
-- `Replay/` — headless determinism self-check and replay harness.
-- The Unity project does not exist yet. It arrives at Milestone 4, deliberately
-  late, so Unity types and floating point cannot leak into the simulation.
+- `Net/` — P2P lockstep session and UDP transport, `netstandard2.1`.
+- `Replay/` — headless determinism self-check, replay harness, replay file format.
+- `Host/` — console runner: `host`, `join`, `solo`, `selfcheck`, `replay`.
+- `Client/` — the Unity 2022 LTS view. Consumes `Sim` and `Net` as compiled
+  assemblies that `dotnet build` vendors into `Client/Assets/Plugins/`; they are
+  gitignored, so build once before opening the project.
+
+The Unity project was built late on purpose, so that Unity types and floating
+point could not leak into the simulation while the determinism core was being
+laid down. That direction is now a standing rule rather than a schedule: `Sim`
+and `Net` depend on nothing above them, and the view may read the simulation but
+never write to it.
