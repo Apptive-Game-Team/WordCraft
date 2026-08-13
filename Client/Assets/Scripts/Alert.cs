@@ -15,6 +15,11 @@ namespace WordCraft.View
     /// read off the entity rather than told by the simulation. View only:
     /// nothing here is asked of World but GetEntity and Hp, and nothing here
     /// is ever written back to it.
+    ///
+    /// The cooldown and expiry are AlertWindow, which takes "now" as a
+    /// parameter instead of reading Time.unscaledTime, so Replay can check
+    /// them headless (issue #96). This file is the only place still holding a
+    /// Camera, a KeyCode, or the clock itself.
     /// </summary>
     public static class Alert
     {
@@ -34,10 +39,7 @@ namespace WordCraft.View
 
         private static Vector2 point;
 
-        /// <summary>Unscaled time the sentence stops showing. Time.unscaledTime never reaches -1.</summary>
-        private static float until = -1f;
-
-        private static float cooldownUntil = -1f;
+        private static AlertWindow window = AlertWindow.None;
 
         /// <summary>The world the state above belongs to. A new one makes it a lie.</summary>
         private static World shown;
@@ -52,21 +54,20 @@ namespace WordCraft.View
             if (!ReferenceEquals(world, shown))
             {
                 shown = world;
-                until = -1f;
-                cooldownUntil = -1f;
+                window = AlertWindow.None;
             }
 
             var hits = Hits.OffScreen(world, localPeer, Camera.main);
-            if (hits.Count > 0 && Time.unscaledTime >= cooldownUntil)
+            float now = Time.unscaledTime;
+            window = window.Advance(hits.Count > 0, now, ShowSeconds, CooldownSeconds, out bool armed);
+            if (armed)
             {
                 // The latest hit rather than the first of the tick: a player
                 // who already missed several only cares where the fight is now.
                 point = hits[hits.Count - 1];
-                until = Time.unscaledTime + ShowSeconds;
-                cooldownUntil = Time.unscaledTime + CooldownSeconds;
             }
 
-            bool showing = Time.unscaledTime < until;
+            bool showing = window.Showing(now);
 
             // Gated on showing rather than always live: a key that jumps
             // somewhere with nothing on screen naming the spot would be a
