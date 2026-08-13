@@ -97,7 +97,12 @@ namespace WordCraft.Sim
                 if (b.Role != Role.Base && b.Role != Role.Production) continue;
 
                 Role want = workers < AiWorkerTarget ? Role.Worker : Role.Melee;
-                AiIssue(peer, CommandType.Produce, i, FixVec2.Zero, (int)want);
+                // ponytail: entry 0 of whatever it wants. It cannot see that
+                // 차원 유랑종 melee holds three entries or that 지옥불 fields a
+                // second ranged unit, so half the roster is invisible to it. Give
+                // it a choice of entry the day the ladder is meant to be a plan
+                // rather than a fallback.
+                AiIssue(peer, CommandType.Produce, i, FixVec2.Zero, Command.RosterArg(want, 0));
                 // Counted as made the moment it is queued, or two buildings both
                 // order the last worker and the economy overshoots by a building.
                 if (want == Role.Worker) workers++;

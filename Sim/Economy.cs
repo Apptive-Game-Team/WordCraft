@@ -222,24 +222,38 @@ namespace WordCraft.Sim
             return tier;
         }
 
-        private void TryQueueUnit(int peer, int buildingId, Role role)
+        private void TryQueueUnit(int peer, int buildingId, Role role, int slot)
         {
             if (!OwnedAndAlive(buildingId, peer)) return;
             Entity b = entities[buildingId];
             if (b.Kind != EntityKind.Building || b.BuildTicksLeft > 0) return;
-            // A slot the roster does not put on the production list cannot be
+            // An entry the roster does not put on the production list cannot be
             // queued at any price. That covers a building, which is placed rather
-            // than produced.
-            ProductionCost cost = FactionData.Production(factions[peer], role);
+            // than produced, and 지옥불 자손, which is spawned. An entry past the
+            // end of a faction's list answers a default cost here, which is not
+            // produced, so a Produce naming one is refused by the same line rather
+            // than by a range test of its own: the table is what knows how long
+            // each list is, and one gate cannot drift from the other.
+            //
+            // ponytail: entry 0 of a role the faction leaves blank is not refused
+            // here, only entries past the end of the list. 인간's melee row has no
+            // name and no art and a Produce naming it still queues one, which
+            // CanBuild's Has test would have refused for a placement. Closing it
+            // needs the AI to learn a fallback first: its ladder asks for Melee by
+            // name, so a 인간 opponent that could not produce one would produce
+            // nothing but workers.
+            ProductionCost cost = FactionData.Production(factions[peer], role, slot);
             if (!cost.Produced) return;
             if (FactionData.Tier(role) > TierOf(peer)) return;
             if (b.QueueCount >= MaxQueue) return;
-            // One role for the whole queue, so a second order naming a different
-            // one is refused rather than silently replacing what the first order
-            // paid for. Prices differ per role now: overwriting would refund the
-            // running queue at the new role's price, which is a free 200 mana on a
-            // 군단장 order placed behind a 잿불 악마.
-            if (b.QueueCount > 0 && b.ProduceRole != role) return;
+            // One roster entry for the whole queue, so a second order naming a
+            // different one is refused rather than silently replacing what the
+            // first order paid for. Prices differ per entry now: overwriting would
+            // refund the running queue at the new entry's price, which is a free
+            // 200 mana on a 군단장 order placed behind a 잿불 악마. The entry, not
+            // just the role: two entries of one role are priced apart the moment
+            // an override row says so.
+            if (b.QueueCount > 0 && (b.ProduceRole != role || b.ProduceSlot != slot)) return;
             // Refused before anything is spent: a rejected command must leave the
             // peer's resources and queue exactly as it found them.
             // ponytail: the queue does not reserve population, so a queue filled
@@ -251,11 +265,12 @@ namespace WordCraft.Sim
             // Cost is taken at queue time, so a peer cannot queue more than it can pay for.
             resources[peer] -= cost.Resources;
             b.QueueCount++;
-            // ponytail: one role for the whole queue, so mixing unit types means
-            // emptying it first. Give the queue a list of roles the day players
-            // expect one building to work on two things at once; that is also the
-            // day the refund needs the price each entry was bought at.
+            // ponytail: one roster entry for the whole queue, so mixing unit types
+            // means emptying it first. Give the queue a list the day players expect
+            // one building to work on two things at once; that is also the day the
+            // refund needs the price each entry was bought at.
             b.ProduceRole = role;
+            b.ProduceSlot = slot;
             entities[buildingId] = b;
         }
 
@@ -278,10 +293,11 @@ namespace WordCraft.Sim
             if (b.Kind != EntityKind.Building || b.QueueCount <= 0) return;
 
             b.QueueCount--;
-            // The queue holds one role, so the price the entry was bought at is
-            // the price that role costs now. Anything else would need the cost
-            // stored per entry, which is state the queue does not carry.
-            resources[peer] += FactionData.Production(factions[peer], b.ProduceRole).Resources;
+            // The queue holds one roster entry, so the price it was bought at is
+            // the price that entry costs now. Refunded at the entry rather than at
+            // the role: two entries of one role can be priced apart, and refunding
+            // at the role's would pay back entry 0's price for entry 1's order.
+            resources[peer] += FactionData.Production(factions[peer], b.ProduceRole, b.ProduceSlot).Resources;
             // The unit in progress is the last to go, so emptying the queue also
             // drops its timer. Left standing it would be hashed state that hands
             // the next order a head start it never paid for.
@@ -299,7 +315,8 @@ namespace WordCraft.Sim
 
                 if (b.ProduceTicksLeft == 0)
                 {
-                    b.ProduceTicksLeft = FactionData.Production(factions[b.Owner], b.ProduceRole).Ticks;
+                    b.ProduceTicksLeft =
+                        FactionData.Production(factions[b.Owner], b.ProduceRole, b.ProduceSlot).Ticks;
                 }
                 b.ProduceTicksLeft--;
                 // At or past zero rather than exactly zero: a role priced at no
@@ -319,7 +336,7 @@ namespace WordCraft.Sim
                     // way to ever gather anything.
                     int spawned = b.ProduceRole == Role.Worker
                         ? SpawnWorker(b.Owner, b.Position + RallyOffset)
-                        : SpawnUnit(b.Owner, b.ProduceRole, b.Position + RallyOffset);
+                        : SpawnUnit(b.Owner, b.ProduceRole, b.ProduceSlot, b.Position + RallyOffset);
                     // Walked, not teleported: a rally point costs what crossing the
                     // ground costs, and the unit is catchable on the way.
                     if (b.HasRallyPoint) SetDestination(spawned, b.RallyPoint);

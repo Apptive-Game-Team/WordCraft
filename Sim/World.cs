@@ -664,14 +664,22 @@ namespace WordCraft.Sim
                     break;
 
                 case CommandType.Produce:
-                    // Arg names the unit to build. Out of range is a malformed
-                    // command, not a clamp: guessing what the player meant would
-                    // have each peer guess for itself.
-                    if (c.Arg < 0 || c.Arg >= FactionData.RoleCount) return;
+                {
+                    // Arg names the unit to build: the role in the low bits, which
+                    // entry of that role's roster list in the high ones. Out of
+                    // range is a malformed command, not a clamp: guessing what the
+                    // player meant would have each peer guess for itself.
+                    if (c.Arg < 0) return;
+                    Role role = Command.RoleOf(c.Arg);
+                    if ((int)role >= FactionData.RoleCount) return;
                     // Role.None is what a Produce with no Arg carries, and the
                     // default fighter is what the client has always meant by it.
-                    TryQueueUnit(c.PeerId, c.EntityId, c.Arg == 0 ? Role.Melee : (Role)c.Arg);
+                    // An entry number rides along untouched, so an old client's
+                    // bare Produce still means entry 0 of the default fighter.
+                    TryQueueUnit(c.PeerId, c.EntityId, role == Role.None ? Role.Melee : role,
+                        Command.SlotOf(c.Arg));
                     break;
+                }
 
                 case CommandType.CancelProduction:
                     TryCancelQueuedUnit(c.PeerId, c.EntityId);
