@@ -160,6 +160,24 @@ namespace WordCraft.Net
         public int PeerId => localPeer;
         public int Tick => world.Tick;
 
+        /// <summary>The tick ConfirmedCommands belongs to, or -1 before the first step.</summary>
+        public int ConfirmedTick { get; private set; } = -1;
+
+        /// <summary>
+        /// Every peer's input for the tick TryStep just ran, merged and in the
+        /// canonical order the simulation applied it in. Empty until the first
+        /// successful TryStep, and overwritten by the next one, so a caller that
+        /// wants to keep it copies it now.
+        ///
+        /// This is the only honest recording of a networked match. One peer's own
+        /// commands are half the input that produced the hashes, and a file
+        /// holding only that half parses cleanly and replays a different match —
+        /// the failure the replay format exists to prevent. It is also what a
+        /// spectator would forward rather than write, which is why it is a
+        /// confirmed frame here and not a recording hook.
+        /// </summary>
+        public IReadOnlyList<Command> ConfirmedCommands => batch;
+
         public LockstepSession(World world, ITransport transport, MatchConfig cfg, int localPeerId)
         {
             this.world = world;
@@ -262,6 +280,13 @@ namespace WordCraft.Net
             batch.Clear();
             batch.AddRange(localCmds);
             batch.AddRange(remoteCmds);
+            // Sorted here, not left to Step: the two peers merge the same two
+            // blocks in opposite orders, so without this the batch a recorder or a
+            // spectator sees depends on which peer it runs on. PeerId and Seq
+            // identify a command uniquely, so this is the same total order Step
+            // would have imposed anyway and the simulation cannot tell.
+            batch.Sort(Command.CanonicalCompare);
+            ConfirmedTick = t;
             world.Step(batch); // the only line in this assembly that advances the simulation
 
             inputs[remotePeer].Remove(t);
