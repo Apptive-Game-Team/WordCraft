@@ -35,6 +35,17 @@ namespace WordCraft.View
         /// </summary>
         private const float RangeBandRatio = 0.08f;
 
+        /// <summary>
+        /// How long a hit's ring stays lit, in seconds. Short on purpose: a
+        /// body under sustained fire is hit every tick or two, and a flash
+        /// that outlived the next hit would never turn back off, reading as a
+        /// held tint rather than the pulse-per-hit the acceptance criteria ask
+        /// for ("피격 표시가 쌓이지 않는다. 사라진다"). A fresh hit only ever
+        /// pushes this entity's own expiry forward — see the LateUpdate stamp
+        /// below — so nothing here can accumulate a second ring on one body.
+        /// </summary>
+        private const float HitFlashSeconds = 0.35f;
+
         // Overlay geometry, in grid cells. A bar is the same size whatever the art
         // under it, so a row of damaged units reads as one row.
         private const float BarHeight = 0.16f;
@@ -95,6 +106,12 @@ namespace WordCraft.View
         /// <summary>A hairline circle at the selected entity's own weapon reach (issue #104). One per entity id, most of them always off.</summary>
         private readonly List<SpriteRenderer> rangeRings = new List<SpriteRenderer>();
         private Sprite rangeRingArt;
+
+        /// <summary>The fading ring a hit itself puts on a body (issue #104), sized like the selection ring and coloured like danger instead of chosen.</summary>
+        private readonly List<SpriteRenderer> hitFlashes = new List<SpriteRenderer>();
+
+        /// <summary>Unscaled time each entity's flash goes dark. -1 means never armed; parallel to views.</summary>
+        private readonly List<float> hitUntil = new List<float>();
 
         /// <summary>One highlight, moved to whatever the cursor is over.</summary>
         private SpriteRenderer hover;
@@ -182,11 +199,13 @@ namespace WordCraft.View
                 Drop(views);
                 Drop(rings);
                 Drop(rangeRings);
+                Drop(hitFlashes);
                 Drop(barBacks);
                 Drop(barFills);
                 Drop(queueFills);
                 Drop(rallyMarkers);
                 footprints.Clear(); // parallel to views, and Create refills it
+                hitUntil.Clear();   // same: a restart's ids owe nothing to the match before it
                 shown = world;
 
                 // Terrain is fixed for the whole match, so the map is baked here and
@@ -198,6 +217,13 @@ namespace WordCraft.View
             }
 
             for (int i = views.Count; i < world.EntityCount; i++) views.Add(Create(world, world.GetEntity(i)));
+
+            // Stamped once here rather than read again per entity below: this is
+            // the same list HitDetection hands the minimap and the alert, so a
+            // hit already lit up off-screen feedback does not walk World a second
+            // time to also light up on-screen feedback (issue #104).
+            IReadOnlyList<int> hits = HitDetection.HitIds(world, runner.LocalPeer);
+            for (int h = 0; h < hits.Count; h++) hitUntil[hits[h]] = Time.unscaledTime + HitFlashSeconds;
 
             Fog.Update(runner);
             fog.enabled = Fog.Active;
@@ -213,6 +239,7 @@ namespace WordCraft.View
                     sr.enabled = false;
                     rings[i].enabled = false;
                     rangeRings[i].enabled = false;
+                    hitFlashes[i].enabled = false;
                     Overlays(i);
                     continue;
                 }
@@ -226,6 +253,7 @@ namespace WordCraft.View
                 {
                     rings[i].enabled = false;
                     rangeRings[i].enabled = false;
+                    hitFlashes[i].enabled = false;
                     Overlays(i);
                     continue;
                 }
@@ -247,6 +275,16 @@ namespace WordCraft.View
                 else
                 {
                     rangeRings[i].enabled = false;
+                }
+
+                bool flashing = hitUntil[i] > Time.unscaledTime;
+                hitFlashes[i].enabled = flashing;
+                if (flashing)
+                {
+                    Ring(hitFlashes[i], footprints[i], p);
+                    Color flash = UiStyle.Danger;
+                    flash.a = Mathf.Clamp01((hitUntil[i] - Time.unscaledTime) / HitFlashSeconds);
+                    hitFlashes[i].color = flash;
                 }
 
                 Overlays(world, i, e, p, picked);
@@ -561,6 +599,11 @@ namespace WordCraft.View
             var rangeRing = NewRenderer("Range", rangeRingArt, UiStyle.RangeRing, AboveFogOrder);
             rangeRing.enabled = false;
             rangeRings.Add(rangeRing);
+
+            var flash = NewRenderer("HitFlash", shape, UiStyle.Danger, sr.sortingOrder - 1);
+            flash.enabled = false;
+            hitFlashes.Add(flash);
+            hitUntil.Add(-1f);
 
             barBacks.Add(Overlay("HpBack", UiStyle.MeterBack, OverlayOrder));
             barFills.Add(Overlay("HpFill", Color.white, OverlayOrder + 1));
