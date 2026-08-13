@@ -28,6 +28,8 @@ namespace WordCraft.Host
                 FactionMismatchIsRejectedBeforeTick0();
                 PeerTimeoutEndsTheMatch();
                 SoloRunsWithoutAPeer();
+                SpectatorWatchesWithoutHoldingTheBarrier();
+                SpectatorThatFallsTooFarBehindIsDropped();
             }
             catch (Exception ex)
             {
@@ -38,7 +40,8 @@ namespace WordCraft.Host
             Console.WriteLine("OK: lockstep self-check passed (" + Ticks +
                               " ticks over a lossy link, both peers saved the same match," +
                               " desync located, handshake rejected," +
-                              " timeout handled, solo barrier opens)");
+                              " timeout handled, solo barrier opens," +
+                              " spectator hashes match and never hold the barrier)");
             return 0;
         }
 
@@ -308,9 +311,180 @@ namespace WordCraft.Host
                 "a solo peer's own command never executed after " + cfg.InputDelay + " ticks of delay");
         }
 
+        /// <summary>
+        /// A third party watching the same lossy match, and the two things that
+        /// have to be true at once: it sees exactly what the players saw, and the
+        /// players never wait for it.
+        ///
+        /// It attaches late, on purpose, and it freezes for a stretch in the
+        /// middle. The freeze is the measurement: the ticks the players advanced
+        /// while the spectator advanced none are the number that says it is not
+        /// in the barrier. Nothing weaker would — a spectator kept in step by a
+        /// driver that pumps it every iteration passes an equality check whether
+        /// or not the players are waiting on it.
+        ///
+        /// Note also what the loop below waits for. Drive's condition names the
+        /// two peers and never the spectator, which is what a match on a real
+        /// link does; wire the spectator into that condition and this check stops
+        /// finishing rather than starts failing an assert.
+        /// </summary>
+        private static void SpectatorWatchesWithoutHoldingTheBarrier()
+        {
+            const int AttachAt = 60;    // player tick the spectator shows up at
+            const int StallFrom = 140;  // spectator tick it freezes at
+            const int StallPumps = 400; // how long it stays frozen, in driver iterations
+            const int PlayerTicksDuring = 60; // fewest player ticks that must fit in that freeze
+
+            var cfgA = new MatchConfig { LocalFaction = Faction.WaterSlimes };
+            var cfgB = new MatchConfig { LocalFaction = Faction.RockGolems };
+            var link = new FaultyLink(0x5EC7A, dropPercent: 20, duplicatePercent: 10, baseDelayMs: 30, jitterMs: 40);
+            var a = new Peer(0, link.A, cfgA, -1, 0);
+            var b = new Peer(1, link.B, cfgB, -1, 0);
+
+            // Published by one peer because both publish the same thing: the
+            // confirmed batch is the merged, canonically ordered input, which is
+            // exactly what BothPeersSaveTheSameMatch proves is peer independent.
+            var feed = new SpectatorFeed();
+            a.Feed = feed;
+
+            long now = Drive(link, a, b, 0, () => Stopped(a) || a.Session.Tick >= AttachAt, 120000);
+            Check(!Stopped(a) && !Stopped(b), "the match ended before the spectator attached");
+
+            World world = Peer.BuildWorld(cfgA.Seed, -1, 0);
+            world.SetPeerFaction(0, cfgA.LocalFaction);
+            world.SetPeerFaction(1, cfgB.LocalFaction);
+            var spectator = new Spectator(world, feed);
+            var hashes = new Dictionary<int, ulong>();
+
+            Check(feed.OldestTick == 0,
+                "the spectator attached to a feed that no longer starts at tick 0, so this is not a late join");
+
+            int playersAtStallStart = -1, playersAtStallEnd = -1;
+            int watchedAtStallStart = -1, watchedAtStallEnd = -1;
+            int frozenPumps = 0;
+
+            void Watch(long _)
+            {
+                // The freeze is counted in driver iterations, not in player
+                // ticks, so that it ends even if the players stopped advancing.
+                // Measured against player progress it would be self-fulfilling:
+                // a spectator that really did hold the barrier would freeze the
+                // players, the window would never close, and the failure would
+                // arrive as a stall with no explanation instead of as the assert
+                // below naming what happened.
+                if (spectator.Tick >= StallFrom && frozenPumps < StallPumps)
+                {
+                    if (frozenPumps++ == 0)
+                    {
+                        playersAtStallStart = a.Session.Tick;
+                        watchedAtStallStart = spectator.Tick;
+                    }
+                    return; // frozen: the whole point is that the match cannot tell
+                }
+                if (playersAtStallStart >= 0 && playersAtStallEnd < 0)
+                {
+                    playersAtStallEnd = a.Session.Tick;
+                    watchedAtStallEnd = spectator.Tick;
+                }
+                // Hashed one tick at a time. Add throws on a repeat, so this is
+                // also the check that no confirmed frame is replayed twice.
+                while (spectator.Follow(1) > 0) hashes.Add(spectator.Tick, world.Hash());
+            }
+
+            Drive(link, a, b, now,
+                () => Stopped(a) || Stopped(b) || (a.Session.Tick >= Ticks && b.Session.Tick >= Ticks),
+                600000, Watch);
+
+            Check(!Stopped(a), "peer 0 stopped: " + a.Session.StopReason);
+            Check(!Stopped(b), "peer 1 stopped: " + b.Session.StopReason);
+            Check(a.Session.Tick >= Ticks && b.Session.Tick >= Ticks,
+                "the players did not reach " + Ticks + " ticks while a spectator watched");
+
+            Check(playersAtStallEnd >= 0, "the spectator never stalled, so nothing was proved about the barrier");
+            Check(watchedAtStallEnd == watchedAtStallStart,
+                "the spectator advanced during its own stall, from tick " +
+                watchedAtStallStart + " to " + watchedAtStallEnd);
+            Check(playersAtStallEnd - playersAtStallStart >= PlayerTicksDuring,
+                "the players advanced only " + (playersAtStallEnd - playersAtStallStart) +
+                " ticks over " + StallPumps + " pumps while the spectator was frozen at tick " +
+                watchedAtStallStart + "; the spectator is holding the barrier");
+
+            while (spectator.Follow(1) > 0) hashes.Add(spectator.Tick, world.Hash());
+            Check(!spectator.Dropped, "the spectator was dropped: " + spectator.DropReason);
+            Check(spectator.Tick >= Ticks,
+                "the spectator caught up only to tick " + spectator.Tick + ", wanted " + Ticks);
+
+            for (int t = 1; t <= Ticks; t++)
+            {
+                Check(hashes.ContainsKey(t), "the spectator has no hash for tick " + t);
+                Check(hashes[t] == a.Hashes[t] && hashes[t] == b.Hashes[t],
+                    "the spectator diverged from the players at tick " + t);
+            }
+        }
+
+        /// <summary>
+        /// The cost of the bounded window, stated as a check. A spectator that
+        /// stops reading for longer than the feed is deep loses frames that
+        /// nothing can hand back, and drops itself saying so.
+        ///
+        /// What matters is the other half: the match runs to completion anyway,
+        /// on the same virtual budget, and the players never learn that anything
+        /// went wrong. An unbounded feed would avoid the drop by making the
+        /// players carry a vanished watcher's backlog instead.
+        /// </summary>
+        private static void SpectatorThatFallsTooFarBehindIsDropped()
+        {
+            const int WatchUntil = 40; // player tick the spectator stops reading at
+            const int FeedFrames = 16;
+
+            var cfgA = new MatchConfig { LocalFaction = Faction.WaterSlimes };
+            var cfgB = new MatchConfig { LocalFaction = Faction.RockGolems };
+            var link = new FaultyLink(0xC0FFEE5, dropPercent: 20, duplicatePercent: 10, baseDelayMs: 30, jitterMs: 40);
+            var a = new Peer(0, link.A, cfgA, -1, 0);
+            var b = new Peer(1, link.B, cfgB, -1, 0);
+
+            var feed = new SpectatorFeed(FeedFrames);
+            a.Feed = feed;
+
+            World world = Peer.BuildWorld(cfgA.Seed, -1, 0);
+            world.SetPeerFaction(0, cfgA.LocalFaction);
+            world.SetPeerFaction(1, cfgB.LocalFaction);
+            var spectator = new Spectator(world, feed);
+
+            void WatchThenLeave(long _)
+            {
+                if (a.Session.Tick > WatchUntil) return; // walked away without a goodbye
+                spectator.Follow(1);
+            }
+
+            Drive(link, a, b, 0,
+                () => Stopped(a) || Stopped(b) || (a.Session.Tick >= Ticks && b.Session.Tick >= Ticks),
+                600000, WatchThenLeave);
+
+            Check(!Stopped(a) && !Stopped(b), "a spectator that walked away ended the match");
+            Check(a.Session.Tick >= Ticks && b.Session.Tick >= Ticks,
+                "the players did not reach " + Ticks + " ticks after the spectator stopped reading");
+
+            int watched = spectator.Tick;
+            Check(spectator.Follow(1) == 0, "the spectator stepped a frame the feed had already overwritten");
+            Check(spectator.Dropped, "the spectator did not notice it had lost " +
+                                     (a.Session.Tick - watched) + " ticks of frames");
+            Check((spectator.DropReason ?? "").Contains("left the feed"),
+                "the spectator dropped for the wrong reason: " + spectator.DropReason);
+            Check(spectator.Tick == watched, "a dropped spectator kept stepping, to tick " + spectator.Tick);
+        }
+
         private static bool Stopped(Peer p) => p.Session.State == SessionState.Stopped;
 
-        private static long Drive(FaultyLink link, Peer a, Peer b, long now, Func<bool> until, long budgetMs)
+        /// <summary>
+        /// Advances the virtual clock until the condition holds. The optional
+        /// watcher runs after both peers have pumped and is never part of the
+        /// condition: it is for a party the match does not wait for, and putting
+        /// it in `until` would be exactly the mistake the spectator checks are
+        /// looking for.
+        /// </summary>
+        private static long Drive(FaultyLink link, Peer a, Peer b, long now, Func<bool> until, long budgetMs,
+            Action<long> watcher = null)
         {
             long deadline = now + budgetMs;
             while (now <= deadline)
@@ -318,6 +492,7 @@ namespace WordCraft.Host
                 link.Now = now;
                 a.Pump(now);
                 b.Pump(now);
+                watcher?.Invoke(now);
                 if (until()) return now;
                 now += StepMs;
             }
