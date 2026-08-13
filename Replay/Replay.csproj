@@ -22,6 +22,8 @@
   <ItemGroup>
     <Compile Include="../Client/Assets/Scripts/MatchScenario.cs" />
     <Compile Include="../Client/Assets/Editor/ScriptedLog.cs" />
+    <Compile Include="../Client/Assets/Scripts/HitDetection.cs" />
+    <Compile Include="../Client/Assets/Scripts/AlertWindow.cs" />
   </ItemGroup>
 
 </Project>
