@@ -9,8 +9,8 @@ Fill this document during project initialization. Agents must verify commands ag
 - Primary users: players on Windows and macOS, on a LAN in the first milestones.
 - Core domain: deterministic simulation, resource gathering, base building, unit
   production, pathfinding, combat, and peer input exchange.
-- Runtime environment: .NET 7 SDK for headless simulation work today; a Unity
-  2022 LTS desktop project from Milestone 4 onward.
+- Runtime environment: .NET 8 SDK for headless simulation work; Unity 2022 LTS
+  for the desktop client in `Client/`.
 
 ## Architecture
 
