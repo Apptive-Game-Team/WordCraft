@@ -14,15 +14,23 @@ namespace WordCraft.Host
     ///
     ///   dotnet run --project Host -- selfcheck
     ///   dotnet run --project Host -- solo [ticks] [-faction &lt;name&gt;] [-save &lt;path&gt;]
-    ///   dotnet run --project Host -- host [port] [ticks] [-faction &lt;name&gt;] [-save &lt;path&gt;]
-    ///   dotnet run --project Host -- join &lt;ip&gt; [port] [ticks] [-faction &lt;name&gt;] [-save &lt;path&gt;]
+    ///   dotnet run --project Host -- host [port] [ticks] [-faction &lt;name&gt;] [-save &lt;path&gt;] [-watch &lt;port&gt;]
+    ///   dotnet run --project Host -- join &lt;ip&gt; [port] [ticks] [-faction &lt;name&gt;] [-save &lt;path&gt;] [-watch &lt;port&gt;]
+    ///   dotnet run --project Host -- watch &lt;ip&gt; [port] [ticks]
     ///   dotnet run --project Host -- replay &lt;path&gt;
     ///   dotnet run --project Host -- compare &lt;path&gt; &lt;path&gt;
     /// </summary>
     internal static class Program
     {
         private const int DefaultPort = 45677;
+        private const int DefaultWatchPort = 45678;
         private const int DefaultTicks = 600;
+
+        /// <summary>How long a watcher waits in silence before deciding the match it was watching is over.</summary>
+        private const int WatchSilenceMs = 5000;
+
+        /// <summary>How long a peer keeps serving watchers after its own match has finished.</summary>
+        private const int WatchTailMs = 500;
 
         /// <summary>The peer the simulation plays in a solo match. The player is peer 0.</summary>
         private const int SoloOpponent = 1;
@@ -33,13 +41,15 @@ namespace WordCraft.Host
             if (mode == "selfcheck") return SelfCheck.Run();
             if (mode == "replay") return RunReplay(args);
             if (mode == "compare") return RunCompare(args);
+            if (mode == "watch") return RunWatch(args);
 
             int peerId = mode == "join" ? 1 : 0;
             if (mode != "host" && mode != "solo" && (mode != "join" || args.Length < 2))
             {
                 Console.WriteLine("usage: selfcheck | solo [ticks] [-faction <name>] [-save <path>]" +
-                                  " | host [port] [ticks] [-faction <name>] [-opponent <name>] [-save <path>]" +
-                                  " | join <ip> [port] [ticks] [-faction <name>] [-opponent <name>] [-save <path>]" +
+                                  " | host [port] [ticks] [-faction <name>] [-opponent <name>] [-save <path>] [-watch <port>]" +
+                                  " | join <ip> [port] [ticks] [-faction <name>] [-opponent <name>] [-save <path>] [-watch <port>]" +
+                                  " | watch <ip> [port] [ticks]" +
                                   " | replay <path> | compare <path> <path>");
                 return 2;
             }
@@ -53,11 +63,20 @@ namespace WordCraft.Host
             if (opponent == null) return 2;
 
             string savePath = Flag(args, "-save");
+            // Absent, not zero: a spectator port has to be asked for. A peer that
+            // opened one by default would be answering strangers in every match.
+            int watchPort = -1;
+            string watchArg = Flag(args, "-watch");
+            if (watchArg != null && !int.TryParse(watchArg, out watchPort))
+            {
+                Console.WriteLine("-watch wants a port number, got '" + watchArg + "'");
+                return 2;
+            }
             return peerId == 0
                 ? RunUdp(0, null, Arg(args, 1, DefaultPort), Arg(args, 2, DefaultTicks),
-                    faction.Value, opponent.Value, savePath)
+                    faction.Value, opponent.Value, savePath, watchPort)
                 : RunUdp(1, args[1], Arg(args, 2, DefaultPort), Arg(args, 3, DefaultTicks),
-                    faction.Value, opponent.Value, savePath);
+                    faction.Value, opponent.Value, savePath, watchPort);
         }
 
         /// <summary>
@@ -168,6 +187,91 @@ namespace WordCraft.Host
             return 0;
         }
 
+        /// <summary>
+        /// A third machine watching a match it is not in. It sends nothing the
+        /// players act on, so the two of them run at the same speed whether this
+        /// is here or not, and the only thing that can go wrong belongs to this
+        /// process: falling further behind than the peer's window is deep.
+        ///
+        /// Everything it needs to build a world arrives in the Welcome. The seed
+        /// and both factions are hashed state, so a watcher told to assume them
+        /// would report hashes that disagree for a reason that has nothing to do
+        /// with the match. Being told them is also why this can only join a match
+        /// whose window still reaches tick 0: there is no state transfer, so the
+        /// only world this can build is one that has not started.
+        /// </summary>
+        private static int RunWatch(string[] args)
+        {
+            if (args.Length < 2)
+            {
+                Console.WriteLine("usage: watch <ip> [port] [ticks]");
+                return 2;
+            }
+
+            int port = Arg(args, 2, DefaultWatchPort);
+            int ticks = Arg(args, 3, DefaultTicks);
+            var cfg = new MatchConfig();
+
+            using var transport = new UdpTransport(0, new IPEndPoint(IPAddress.Parse(args[1]), port));
+            var subscriber = new FeedSubscriber(transport, cfg);
+            Console.WriteLine("watching " + args[1] + ":" + port + " from udp " + transport.LocalPort +
+                              ", target " + ticks + " ticks");
+
+            Spectator spectator = null;
+            while (true)
+            {
+                long now = Environment.TickCount64;
+                subscriber.Update(now);
+
+                if (subscriber.Refusal != null)
+                {
+                    Console.WriteLine("REFUSED: " + subscriber.Refusal);
+                    return 1;
+                }
+
+                if (spectator == null && subscriber.Welcomed)
+                {
+                    // The players' map, which is the client's scenario. A watcher
+                    // on a different map steps the right commands into the wrong
+                    // world and disagrees from tick 1.
+                    World world = MatchScenario.Build(subscriber.Seed,
+                        subscriber.Peer0Faction, subscriber.Peer1Faction);
+                    spectator = new Spectator(world, subscriber.Feed);
+                    Console.WriteLine("watching a match on seed 0x" + subscriber.Seed.ToString("X") +
+                                      ", " + subscriber.Peer0Faction + " against " + subscriber.Peer1Faction);
+                }
+
+                if (spectator != null)
+                {
+                    spectator.Follow(WordCraft.Sim.World.TicksPerSecond);
+                    if (spectator.Dropped)
+                    {
+                        Console.WriteLine("DROPPED at tick " + spectator.Tick + ": " + spectator.DropReason);
+                        return 1;
+                    }
+                    if (spectator.Tick >= ticks) break;
+                }
+
+                if (now - subscriber.LastHeardMs > WatchSilenceMs)
+                {
+                    // Not an error the match would recognise. A peer that finished
+                    // or quit simply stops sending, and there is no goodbye on
+                    // this wire because a watcher is nobody's responsibility.
+                    Console.WriteLine("SILENT for " + WatchSilenceMs + " ms at tick " +
+                                      (spectator == null ? 0 : spectator.Tick) +
+                                      (spectator == null ? "; nobody is serving this port" : "; the match has ended"));
+                    return spectator == null ? 1 : 0;
+                }
+
+                Thread.Sleep(1);
+            }
+
+            Console.WriteLine("OK: " + spectator.Tick + " ticks, final hash 0x" +
+                              spectator.World.Hash().ToString("X16") +
+                              " (" + subscriber.FramesReceived + " frames off the wire)");
+            return 0;
+        }
+
         /// <summary>What the simulated peer did with its match, so a run is readable rather than merely green.</summary>
         private static void Report(World world, int peer)
         {
@@ -253,7 +357,7 @@ namespace WordCraft.Host
         /// wrong into a handshake rejection, which says what happened.
         /// </summary>
         private static int RunUdp(int peerId, string remoteIp, int port, int ticks, Faction faction,
-            Faction opponent, string savePath)
+            Faction opponent, string savePath, int watchPort)
         {
             var cfg = new MatchConfig { LocalFaction = faction, RemoteFaction = opponent };
             using var transport = peerId == 0
@@ -269,6 +373,19 @@ namespace WordCraft.Host
                               ", faction " + cfg.LocalFaction + " against " + opponent +
                               ", input delay " + cfg.InputDelay + ", target " + ticks + " ticks");
 
+            // A second socket, never the match one: the match link takes its peer
+            // from whoever speaks first, so a watcher arriving there would be
+            // taken for the opponent and the match would wait on it forever.
+            using UdpFanout fanout = watchPort >= 0 ? new UdpFanout(watchPort) : null;
+            FeedPublisher publisher = null;
+            if (fanout != null)
+            {
+                peer.Feed = new SpectatorFeed();
+                publisher = new FeedPublisher(world, cfg, peer.Feed, fanout);
+                Console.WriteLine("watchers welcome on udp " + fanout.LocalPort +
+                                  ", window " + peer.Feed.Capacity + " ticks");
+            }
+
             long start = Environment.TickCount64;
             while (peer.Session.Tick < ticks)
             {
@@ -280,7 +397,25 @@ namespace WordCraft.Host
                 // how many actually run. Never run ahead of 20 Hz.
                 long due = (now - start) / (1000 / WordCraft.Sim.World.TicksPerSecond);
                 while (peer.Session.Tick <= due && peer.Step(now)) { }
+
+                // After the ticks, and outside the condition that ran them. A
+                // watcher is served with whatever is left of this iteration and
+                // is never a reason for the next one to wait.
+                publisher?.Update(now);
                 Thread.Sleep(1);
+            }
+
+            // Serve the last frames before quitting. A watcher is a tick or two
+            // behind by construction, and the moment this loop ended there was
+            // nobody left who would ever send them.
+            if (publisher != null)
+            {
+                long tail = Environment.TickCount64 + WatchTailMs;
+                while (Environment.TickCount64 < tail)
+                {
+                    publisher.Update(Environment.TickCount64);
+                    Thread.Sleep(1);
+                }
             }
 
             // Keep pumping briefly so a desync report can collect the peer's dump.
