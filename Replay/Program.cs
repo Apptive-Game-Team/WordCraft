@@ -42,6 +42,15 @@ namespace WordCraft.Replay
                 TheWarlordNeverGoesLookingForAFight();
                 TheWarlordRefusesAttackOrders();
                 OnlyTheWarlordIsUnarmed();
+                EveryWeaponReachesSomething();
+                TheCannonRefusesAir();
+                CaptureTurnsANeutralIntoATowerback();
+                AnotherFactionCanOnlyKillTheNeutral();
+                AWorkerKilledMidCaptureLosesEverything();
+                ARockKilledMidCaptureLosesEverything();
+                AMoveOrderEndsACapture();
+                TheCapturedTowerbackRefusesGroundAndHitsAir();
+                TowerbackCannotBeProduced();
                 AttackOrderKillsWhatItNames();
                 AttackMoveStopsForWhatItMeets();
                 StopCancelsWhatIsRunning();
@@ -1363,6 +1372,433 @@ namespace WordCraft.Replay
             world.SetPeerFaction(1, Faction.TreeSpirits);
             world.SpawnUnit(0, World.WarlordRole, At(30, 30)); // WarlordId
             return world;
+        }
+
+        /// <summary>
+        /// Every weapon in the roster reaches at least one layer. The pair of
+        /// reach flags is two bools that could both be left off, and a row that
+        /// reached neither would be a unit that acquires nothing, chases nothing
+        /// and fires nothing — the exact defect HasWeapon was made to answer,
+        /// reintroduced one field over.
+        ///
+        /// The two named exceptions are pinned by name, and everything else is
+        /// pinned against them. Without that second half a rule written one row
+        /// too wide — every defense building ground-only, say — would pass, and so
+        /// would the two checks below it, because a world where nothing shoots air
+        /// is also a world where 대포 does not.
+        /// </summary>
+        private static void EveryWeaponReachesSomething()
+        {
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                foreach (Role role in FightingRoles)
+                {
+                    for (int s = 0; s < FactionData.SlotCount(faction, role); s++)
+                    {
+                        if (!FactionData.Has(faction, role, s)) continue;
+
+                        UnitStats stats = FactionData.Stats(faction, role, s);
+                        if (!stats.HasWeapon) continue; // 지옥불 군단장 carries none
+
+                        string where = faction + "." + role + "[" + s + "]";
+                        Check(stats.HitsAir || stats.HitsGround,
+                            "a weapon that reaches neither layer at " + where);
+
+                        // 대포 is the one armed row that gives up the air, and
+                        // Towerback the one that gives up the ground. Melee gives
+                        // up the air too, and always has.
+                        bool cannon = faction == Faction.Humans && role == Role.Defense && s == 0;
+                        bool towerback = faction == Faction.Humans &&
+                                         role == World.TowerbackRole && s == World.TowerbackSlot;
+
+                        Check(stats.HitsAir == !(cannon || role == Role.Melee),
+                            "wrong air reach at " + where);
+                        Check(stats.HitsGround == !towerback, "wrong ground reach at " + where);
+                    }
+                }
+            }
+        }
+
+        private const int CannonTicks = 300;
+        private const int CannonId = 0;
+        private const int CannonFlier = 1;
+        private const int CannonWalker = 2;
+
+        /// <summary>
+        /// 대포 is 지상 전용 per docs/FACTION-MECHANICS.md 공중. Both halves are
+        /// needed: a flier standing inside its reach the whole run has to come out
+        /// untouched, and a ground unit at the same distance has to come off worse,
+        /// or a 대포 that had simply stopped shooting would pass the first half.
+        ///
+        /// The flier is nearer than the walker by a tie the acquisition scan would
+        /// otherwise break toward the lower id, so nothing but the reach rule
+        /// explains which of the two it picks.
+        /// </summary>
+        private static void TheCannonRefusesAir()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Humans);
+            world.SetPeerFaction(1, Faction.Hellfire);
+
+            world.SpawnBuilding(0, Role.Defense, At(30, 30), complete: true); // CannonId, 대포
+            world.SpawnUnit(1, Role.Ranged, At(33, 30));                      // CannonFlier, 자손
+            world.SpawnUnit(1, Role.Melee, At(27, 30));                       // CannonWalker
+
+            var idle = new List<Command>();
+            for (int t = 0; t < CannonTicks; t++) world.Step(idle);
+
+            Entity flier = world.GetEntity(CannonFlier);
+            Check(world.Flies(flier), "the 지옥불 ranged unit is not airborne");
+            Check(flier.Alive && flier.Hp == flier.MaxHp,
+                "대포 reached the air: the flier is on " + flier.Hp + " of " + flier.MaxHp);
+            Check(world.GetEntity(CannonId).TargetId != CannonFlier, "대포 took an air target");
+
+            Entity walker = world.GetEntity(CannonWalker);
+            Check(!walker.Alive || walker.Hp < walker.MaxHp, "대포 never reached the ground either");
+        }
+
+        // 인간 마법 문명 징발. The rock is spawned first, so its id is 0 and the
+        // worker's is 1 in every fixture below.
+        private const int CaptureRockId = 0;
+        private const int CaptureWorkerId = 1;
+
+        /// <summary>
+        /// One neutral 꼬마돌 with one worker already standing inside InteractRange
+        /// of it, and nothing else. The worker is placed in reach rather than walked
+        /// there so the clock starts on the first tick and every count below is
+        /// about the capture rather than about the approach.
+        /// </summary>
+        private static World BuildCaptureWorld(Faction captor)
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, captor);
+            world.SetPeerFaction(1, Faction.Hellfire);
+
+            world.SpawnNeutralRock(At(30, 30)); // CaptureRockId
+            world.SpawnWorker(0, At(31, 30));   // CaptureWorkerId
+            return world;
+        }
+
+        private static List<Command> Capture(int worker, int peer, int seq, int rock) =>
+            new List<Command>
+            {
+                new Command(0, peer, seq, CommandType.Capture, worker, FixVec2.Zero, rock)
+            };
+
+        /// <summary>
+        /// The whole mechanic end to end: 60 ticks beside a neutral 꼬마돌 and the
+        /// body changes hands, coming back up a Towerback on its own roster row.
+        ///
+        /// The tick before completion is asserted as well as the tick itself, so a
+        /// capture that fired early or on every tick could not pass by eventually
+        /// producing the right answer. The worker's position is asserted too: 그동안
+        /// 일꾼은 이동하지 않는다, and the walk it was given to get there is exactly
+        /// what would have carried it onto the rock's own cell.
+        ///
+        /// Run twice, like every other mechanic here. A transfer rewrites owner,
+        /// role, slot, hp and speed on a live entity and moves a population count
+        /// nobody can see, which is precisely the kind of state that drifts unseen.
+        /// </summary>
+        private static void CaptureTurnsANeutralIntoATowerback()
+        {
+            // The document's numbers, written out rather than read back off the
+            // constants the mechanic uses. A check that compares a constant with
+            // itself pins nothing, and every one of these is a number
+            // docs/FACTION-MECHANICS.md chose.
+            Check(World.CaptureTicks == 60, "포획 takes " + World.CaptureTicks + " ticks, not 60");
+            Check(World.NeutralRockHp == 80,
+                "중립 꼬마돌 stands on " + World.NeutralRockHp + " hp, not 80");
+            UnitStats row = FactionData.Stats(Faction.Humans, World.TowerbackRole, World.TowerbackSlot);
+            Check(row.Hp == 200 && row.Damage == 8 && row.Range == Fix.FromInt(6),
+                "the Towerback row is not 체력 200 사거리 6 피해 8");
+
+            ulong[] first = RunCapture(out World world);
+            ulong[] second = RunCapture(out _);
+
+            Entity tower = world.GetEntity(CaptureRockId);
+            Check(!world.IsNeutralRock(tower), "the 꼬마돌 is still neutral after " + World.CaptureTicks);
+            Check(tower.Owner == 0, "the capture handed the 꼬마돌 to peer " + tower.Owner);
+            Check(tower.Role == World.TowerbackRole && tower.Slot == World.TowerbackSlot,
+                "the captured body came up a " + tower.Role + "[" + tower.Slot + "]");
+            Check(tower.Alive && tower.Hp == 200 && tower.MaxHp == 200,
+                "the Towerback stood up on " + tower.Hp + " of " + tower.MaxHp);
+            Check(world.Armed(tower), "the Towerback carries no weapon");
+            Check(!world.Flies(tower), "the Towerback flies");
+            // Nothing counted the rock while it was neutral, so the transfer is the
+            // only place it can ever start costing supply. Two: the worker and it.
+            Check(world.GetPopulation(0) == 2,
+                "the captured body is not counted against its new owner: " + world.GetPopulation(0));
+
+            Entity worker = world.GetEntity(CaptureWorkerId);
+            Check(worker.CaptureTargetId < 0 && worker.CaptureTicksLeft == 0,
+                "the finished capture left a clock running on the worker");
+            Check(worker.Position.Equals(At(31, 30)), "the worker moved during the capture");
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], "capture hash drift at tick " + t);
+            }
+        }
+
+        /// <summary>
+        /// Steps exactly to the tick the capture is due, asserting on the way that
+        /// nothing has changed hands yet.
+        /// </summary>
+        private static ulong[] RunCapture(out World world)
+        {
+            world = BuildCaptureWorld(Faction.Humans);
+
+            var idle = new List<Command>();
+            var hashes = new ulong[World.CaptureTicks];
+            for (int t = 0; t < World.CaptureTicks; t++)
+            {
+                world.Step(t == 0 ? Capture(CaptureWorkerId, 0, 0, CaptureRockId) : idle);
+                hashes[t] = world.Hash();
+
+                Entity rock = world.GetEntity(CaptureRockId);
+                if (t < World.CaptureTicks - 1)
+                {
+                    Check(world.IsNeutralRock(rock), "the capture landed early, on tick " + t);
+                    Check(world.GetEntity(CaptureWorkerId).CaptureTicksLeft ==
+                          World.CaptureTicks - 1 - t,
+                        "the capture clock is off at tick " + t);
+                }
+            }
+            return hashes;
+        }
+
+        /// <summary>
+        /// 인간 일꾼만 포획할 수 있다. Another faction's worker gets the same order
+        /// at the same distance and is refused whole — nothing spent, no clock
+        /// started, the rock still nobody's.
+        ///
+        /// And then the half that makes the refusal a rule rather than an
+        /// obstruction: the same faction kills it. A neutral nobody can capture and
+        /// nobody can kill would pass the first half on its own, and the mechanic
+        /// would have no competition in it at all.
+        /// </summary>
+        private static void AnotherFactionCanOnlyKillTheNeutral()
+        {
+            // 돌 골렘 부족, whose own roster the 꼬마돌 comes from, so the refusal is
+            // about the faction that captures and not about who the rock looks like.
+            var world = BuildCaptureWorld(Faction.RockGolems);
+            int fighter = world.SpawnUnit(0, Role.Melee, At(33, 30)); // 2
+
+            var idle = new List<Command>();
+            world.Step(Capture(CaptureWorkerId, 0, 0, CaptureRockId));
+            for (int t = 0; t < World.CaptureTicks * 2; t++) world.Step(idle);
+
+            Entity rock = world.GetEntity(CaptureRockId);
+            Check(world.IsNeutralRock(rock), "a 돌 골렘 worker captured a 꼬마돌");
+            Check(world.GetEntity(CaptureWorkerId).CaptureTargetId < 0,
+                "a refused capture still pointed the worker at the rock");
+            Check(world.GetEntity(CaptureWorkerId).CaptureTicksLeft == 0,
+                "a refused capture still started a clock");
+            Check(world.GetPopulation(0) == 2, "a refused capture moved the population count");
+            Check(rock.Hp == World.NeutralRockHp,
+                "something shot the 꼬마돌 without being told to: " + rock.Hp);
+
+            // Only on being told. Nothing acquires a neutral on its own, which is
+            // what makes killing one a decision rather than an accident.
+            world.Step(new List<Command>
+            {
+                new Command(0, 0, 1, CommandType.Attack, fighter, FixVec2.Zero, CaptureRockId)
+            });
+            for (int t = 0; t < 300; t++) world.Step(idle);
+            Check(!world.GetEntity(CaptureRockId).Alive, "an attack order never killed the 꼬마돌");
+        }
+
+        // Three finished enemy turrets inside reach of both the worker and the
+        // rock. Nine damage every twenty ticks each, so a volley lands on ticks 0,
+        // 20 and 40: enough to take a 60 hp worker or an 80 hp 꼬마돌 down on tick
+        // 40, two thirds of the way through a 60 tick capture.
+        private const int CaptureKillTick = 40;
+
+        private static World BuildInterruptedCaptureWorld()
+        {
+            World world = BuildCaptureWorld(Faction.Humans);
+            world.SpawnBuilding(1, Role.Defense, At(31, 35), complete: true); // 2
+            world.SpawnBuilding(1, Role.Defense, At(33, 34), complete: true); // 3
+            world.SpawnBuilding(1, Role.Defense, At(29, 34), complete: true); // 4
+            return world;
+        }
+
+        /// <summary>
+        /// The worker dies mid-capture and every tick of progress goes with it, per
+        /// docs/FACTION-MECHANICS.md: 둘 중 하나가 죽으면 진행도는 사라진다.
+        ///
+        /// Nothing is ordered. The turrets acquire the worker on their own and
+        /// never the 꼬마돌 beside it, which is the neutrality rule doing its own
+        /// half of the work: a body with no owner is not acquired by anybody.
+        /// </summary>
+        private static void AWorkerKilledMidCaptureLosesEverything()
+        {
+            World world = BuildInterruptedCaptureWorld();
+            var idle = new List<Command>();
+
+            world.Step(Capture(CaptureWorkerId, 0, 0, CaptureRockId));
+            for (int t = 1; t < CaptureKillTick; t++) world.Step(idle);
+
+            Entity dying = world.GetEntity(CaptureWorkerId);
+            Check(dying.Alive, "the worker died before the capture was under way");
+            Check(dying.CaptureTicksLeft > 0, "the capture had not started when the worker was killed");
+
+            world.Step(idle); // the tick the turrets finish it
+            Entity dead = world.GetEntity(CaptureWorkerId);
+            Check(!dead.Alive, "the turrets never killed the worker");
+            Check(dead.CaptureTargetId < 0 && dead.CaptureTicksLeft == 0,
+                "a dead worker kept " + dead.CaptureTicksLeft + " ticks of capture progress");
+
+            // Long past when the capture would have landed had anything survived it.
+            for (int t = 0; t < World.CaptureTicks * 3; t++) world.Step(idle);
+            Entity rock = world.GetEntity(CaptureRockId);
+            Check(world.IsNeutralRock(rock), "the 꼬마돌 changed hands after its captor died");
+            Check(rock.Hp == World.NeutralRockHp, "a turret shot the neutral 꼬마돌");
+            Check(world.GetPopulation(0) == 0, "the dead worker was not released");
+        }
+
+        /// <summary>
+        /// The other death, and the other half of the same rule. The 꼬마돌 dies
+        /// mid-capture and the worker is left holding nothing: no target, no clock,
+        /// and no head start on the next one.
+        ///
+        /// The turrets are ordered onto the rock here rather than left to acquire,
+        /// because acquisition will not touch a neutral. That is the same fact the
+        /// check above rests on, used from the other side.
+        /// </summary>
+        private static void ARockKilledMidCaptureLosesEverything()
+        {
+            World world = BuildInterruptedCaptureWorld();
+            var idle = new List<Command>();
+
+            var orders = Capture(CaptureWorkerId, 0, 0, CaptureRockId);
+            for (int turret = 2; turret <= 4; turret++)
+            {
+                orders.Add(new Command(0, 1, turret, CommandType.Attack, turret,
+                    FixVec2.Zero, CaptureRockId));
+            }
+            world.Step(orders);
+            for (int t = 1; t < CaptureKillTick; t++) world.Step(idle);
+
+            Check(world.IsNeutralRock(world.GetEntity(CaptureRockId)),
+                "the 꼬마돌 died before the capture was under way");
+            Check(world.GetEntity(CaptureWorkerId).CaptureTicksLeft > 0,
+                "the capture had not started when the 꼬마돌 was killed");
+
+            world.Step(idle); // the tick the turrets finish it
+            Check(!world.GetEntity(CaptureRockId).Alive, "the turrets never killed the 꼬마돌");
+
+            // One more, because the loss is noticed by the capture loop on the tick
+            // after the death: the systems run in a fixed order and combat is behind it.
+            world.Step(idle);
+            Entity worker = world.GetEntity(CaptureWorkerId);
+            Check(worker.Alive, "the worker died too, so the 꼬마돌 proves nothing");
+            Check(worker.CaptureTargetId < 0 && worker.CaptureTicksLeft == 0,
+                "the worker kept " + worker.CaptureTicksLeft + " ticks of progress on a dead 꼬마돌");
+
+            for (int t = 0; t < World.CaptureTicks * 3; t++) world.Step(idle);
+            Entity rock = world.GetEntity(CaptureRockId);
+            Check(rock.Owner < 0 && rock.Role == World.NeutralRockRole,
+                "a dead 꼬마돌 became a Towerback anyway");
+            Check(world.GetPopulation(0) <= 1, "a dead 꼬마돌 was counted against a peer");
+        }
+
+        /// <summary>
+        /// A capture is an order, so the next order ends it. The third way to lose
+        /// progress and the only one a player chooses: walk the worker off and the
+        /// clock is gone, not paused. Both halves are asserted, because a Halt that
+        /// outlived the order it belonged to would leave a worker no order could
+        /// ever move again.
+        /// </summary>
+        private static void AMoveOrderEndsACapture()
+        {
+            World world = BuildCaptureWorld(Faction.Humans);
+            var idle = new List<Command>();
+
+            world.Step(Capture(CaptureWorkerId, 0, 0, CaptureRockId));
+            for (int t = 1; t < World.CaptureTicks / 2; t++) world.Step(idle);
+            Check(world.GetEntity(CaptureWorkerId).CaptureTicksLeft > 0, "the capture never started");
+
+            world.Step(new List<Command>
+            {
+                new Command(0, 0, 1, CommandType.Move, CaptureWorkerId, At(40, 30))
+            });
+            Entity worker = world.GetEntity(CaptureWorkerId);
+            Check(worker.CaptureTargetId < 0 && worker.CaptureTicksLeft == 0,
+                "a Move order left " + worker.CaptureTicksLeft + " ticks of capture running");
+
+            for (int t = 0; t < World.CaptureTicks * 2; t++) world.Step(idle);
+            Check(world.GetEntity(CaptureWorkerId).Position.Equals(At(40, 30)),
+                "the worker never walked away from the capture it abandoned");
+            Check(world.IsNeutralRock(world.GetEntity(CaptureRockId)),
+                "the abandoned capture landed anyway");
+        }
+
+        private const int TowerbackTicks = 250;
+
+        /// <summary>
+        /// The finished tower is 공중 전용. A ground unit stands inside its reach
+        /// for the whole run and is never touched; a flier at the same distance
+        /// dies. Both halves, for the reason the melee-and-air pair needs both: a
+        /// Towerback that had simply never acquired anything would pass the first.
+        ///
+        /// The tower under test is a captured one rather than a spawned one, so
+        /// what is being checked is that the transfer produced a body on the real
+        /// roster row and not merely a rock with a new owner. The two enemies are
+        /// stood up after the capture lands, so nothing can shoot the worker while
+        /// it is standing still and the capture is never in doubt.
+        /// </summary>
+        private static void TheCapturedTowerbackRefusesGroundAndHitsAir()
+        {
+            RunCapture(out World world);
+            Check(!world.IsNeutralRock(world.GetEntity(CaptureRockId)), "the capture did not land");
+
+            int walker = world.SpawnUnit(1, Role.Melee, At(33, 30));  // 2, ground, inside reach 6
+            int flier = world.SpawnUnit(1, Role.Ranged, At(28, 30));  // 3, 자손, airborne
+
+            var idle = new List<Command>();
+            for (int t = 0; t < TowerbackTicks; t++) world.Step(idle);
+
+            Entity ground = world.GetEntity(walker);
+            Check(!world.Flies(ground), "the ground control unit flies");
+            Check(ground.Alive && ground.Hp == ground.MaxHp,
+                "the Towerback reached the ground: the walker is on " + ground.Hp);
+            Check(world.GetEntity(CaptureRockId).TargetId != walker, "the Towerback took a ground target");
+            Check(!world.GetEntity(flier).Alive, "the Towerback never killed the flier");
+        }
+
+        /// <summary>
+        /// 포획으로만 획득한다. A Produce naming the Towerback is refused whole, so
+        /// killing the neutral 꼬마돌 denies 인간 its anti-air for good rather than
+        /// costing it a detour to a production building.
+        ///
+        /// The entry behind it is the control: 마도 정찰기 shares the signature slot
+        /// and is bought normally, so a refusal that had ignored the entry number
+        /// and closed the whole slot would be caught here rather than by a player
+        /// who could not produce a unit that is supposed to exist.
+        /// </summary>
+        private static void TowerbackCannotBeProduced()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Humans);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);  // 0
+            world.SpawnBuilding(0, Role.Tech, At(9, 5), complete: true);  // 1, so tier 3 is open
+            world.GrantResources(0, 1000);
+
+            int banked = world.GetResources(0);
+            int standing = world.EntityCount;
+            var idle = new List<Command>();
+
+            world.Step(Produce(0, 0, 0, World.TowerbackRole, World.TowerbackSlot));
+            for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
+            Check(world.GetResources(0) == banked, "a produce order for a Towerback spent resources");
+            Check(world.GetEntity(0).QueueCount == 0, "a produce order for a Towerback queued one");
+            Check(world.EntityCount == standing, "a produce order for a Towerback made one");
+
+            world.Step(Produce(0, 0, 1, World.TowerbackRole, World.TowerbackSlot + 1));
+            Check(world.GetResources(0) < banked,
+                "the signature slot is closed behind the Towerback as well as on it");
         }
 
         private const int WorkerBase = 0;
