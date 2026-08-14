@@ -34,6 +34,12 @@ namespace WordCraft.Net
         /// One datagram and the endpoint it came from. Ids are handed out on
         /// first contact and never reused, so an id that has gone quiet is
         /// somebody who left rather than a slot the next arrival inherits.
+        ///
+        /// That is a contract and not a convenience. FeedPublisher decides
+        /// whether an address may be sent frames by deriving a token from its
+        /// id, so an implementation that let one id change hands would hand the
+        /// second address the first one's proof, and the forged Watch this
+        /// interface's users are guarded against would work again.
         /// </summary>
         bool TryReceive(out byte[] packet, out int from);
 
@@ -136,13 +142,27 @@ namespace WordCraft.Net
     /// spoken to it. A datagram teaches this socket a new endpoint the way the
     /// first one teaches UdpTransport its peer, but here learning one is cheap:
     /// an endpoint here receives frames and is never waited for, so the worst a
-    /// stranger achieves is a table row and a few datagrams it did not ask for.
+    /// stranger achieves is a table row.
+    ///
+    /// What that stranger is then sent is FeedPublisher's business, and it is
+    /// its business because the address on a datagram is a claim rather than a
+    /// fact: the datagrams a stranger "did not ask for" may be landing on
+    /// somebody else entirely.
     /// </summary>
     // ponytail: endpoints are learned and never retired, only capped. A watcher
     // that reconnects from a new source port takes a second row, and a port left
     // running for hours fills the table with the dead. FeedPublisher forgets a
     // watcher that stops speaking, which is what keeps sending bounded; reclaiming
     // the row itself needs ids that can be retired, and ids here are never reused.
+    // Two things have been added to that price since. A forged Watch is refused
+    // before it is fed, but it is refused a layer above this one, after IdOf has
+    // already given it a row — so thirty-two forged addresses still fill this table
+    // and shut real watchers out. That is a denial of spectating rather than an
+    // amplifier aimed at a stranger, and #121 was the second one, so it stands.
+    // And retiring an id is no longer merely awkward, it is load bearing:
+    // FeedPublisher derives a watcher's token from the id, so an id that outlived
+    // one address and was handed to the next would hand over the proof with it.
+    // Retire ids only together with a token that mixes in the address itself.
     public sealed class UdpFanout : IFanoutTransport, IDisposable
     {
         /// <summary>Enough for the watchers a LAN match will ever have, and small enough to scan.</summary>
