@@ -460,7 +460,7 @@ namespace WordCraft.View
 
             Entity e = world.GetEntity(lead);
             GUI.Label(new Rect(area.x, y, area.width, UiStyle.Line + UiStyle.S1),
-                FactionData.Name(world.FactionOf(e.Owner), e.Role), UiStyle.BigStyle);
+                FactionData.Name(world.FactionOf(e.Owner), e.Role, e.Slot), UiStyle.BigStyle);
             y += UiStyle.Line + UiStyle.S2;
 
             float ratio = e.MaxHp > 0 ? Mathf.Clamp01(e.Hp / (float)e.MaxHp) : 0f;
@@ -594,11 +594,11 @@ namespace WordCraft.View
             }
         }
 
-        /// <summary>Roster name if the slot has one, else the role, which every slot has.</summary>
+        /// <summary>Roster name if the entry has one, else the role, which every slot has.</summary>
         private static string Short(World world, Entity e)
         {
             if (e.Owner < 0) return e.Kind.ToString();
-            string name = FactionData.Name(world.FactionOf(e.Owner), e.Role);
+            string name = FactionData.Name(world.FactionOf(e.Owner), e.Role, e.Slot);
             return name.Length > 0 ? name : e.Role.ToString();
         }
 

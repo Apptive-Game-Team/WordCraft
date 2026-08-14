@@ -270,7 +270,7 @@ namespace WordCraft.View
                 // the ring can never say something FactionData does not (issue #104).
                 if (picked && world.Armed(e))
                 {
-                    RangeRing(rangeRings[i], FactionData.Stats(world.FactionOf(e.Owner), e.Role).Range, p);
+                    RangeRing(rangeRings[i], FactionData.Stats(world.FactionOf(e.Owner), e.Role, e.Slot).Range, p);
                 }
                 else
                 {
@@ -468,7 +468,9 @@ namespace WordCraft.View
             if (ghostRole != role)
             {
                 ghostRole = role;
-                Sprite drawn = ArtFor(world.FactionOf(runner.LocalPeer), role);
+                // Entry 0 only: Build still names a plain role (Sim/World.cs
+                // Apply), so nothing it places can be anything else yet (#111).
+                Sprite drawn = ArtFor(world.FactionOf(runner.LocalPeer), role, 0);
                 ghost.sprite = drawn != null ? drawn : square;
                 ghost.transform.localScale = drawn != null ? FitScale(drawn, role) : Vector3.one * 2f;
             }
@@ -519,11 +521,12 @@ namespace WordCraft.View
             queueFills[i].enabled = queue;
             if (queue)
             {
-                // The queue holds one role at a time (Economy.TryQueueUnit), and
-                // that role's clock since #93 priced it per faction and role — the
-                // shared default World.ProduceTicks reads a warlord's bar as full
-                // for its first 100 of 140 ticks.
-                int ticks = FactionData.Production(world.FactionOf(e.Owner), e.ProduceRole).Ticks;
+                // The queue holds one roster entry at a time (Economy.TryQueueUnit),
+                // and that entry's clock since #93 priced it per faction and role,
+                // and since #110 per entry too — the shared default
+                // World.ProduceTicks reads a warlord's bar as full for its first
+                // 100 of 140 ticks.
+                int ticks = FactionData.Production(world.FactionOf(e.Owner), e.ProduceRole, e.ProduceSlot).Ticks;
                 float done = e.ProduceTicksLeft == 0
                     ? 0f
                     : (ticks - e.ProduceTicksLeft) / (float)ticks;
@@ -582,7 +585,7 @@ namespace WordCraft.View
                     break;
             }
 
-            Sprite drawn = e.Owner < 0 ? null : ArtFor(world.FactionOf(e.Owner), e.Role);
+            Sprite drawn = e.Owner < 0 ? null : ArtFor(world.FactionOf(e.Owner), e.Role, e.Slot);
             var sr = NewRenderer(Label(world, e), drawn != null ? drawn : shape,
                 drawn != null ? Color.white : color, e.Kind == EntityKind.Building ? 5 : 10);
             sr.transform.localScale = drawn != null ? FitScale(drawn, e.Role) : new Vector3(scale, scale, 1f);
@@ -612,11 +615,11 @@ namespace WordCraft.View
             return sr;
         }
 
-        /// <summary>Roster art for this slot, or null when it has none yet.</summary>
-        private Sprite ArtFor(Faction faction, Role role)
+        /// <summary>Roster art for this entry, or null when it has none yet.</summary>
+        private Sprite ArtFor(Faction faction, Role role, int slot)
         {
             if (role == Role.None) return null;
-            string file = FactionData.Sprite(faction, role);
+            string file = FactionData.Sprite(faction, role, slot);
             if (file.Length == 0) return null;
 
             if (!art.TryGetValue(file, out Sprite sprite))
@@ -628,7 +631,7 @@ namespace WordCraft.View
         }
 
         private static string Label(World world, Entity e) =>
-            e.Owner < 0 ? e.Kind.ToString() : FactionData.Name(world.FactionOf(e.Owner), e.Role);
+            e.Owner < 0 ? e.Kind.ToString() : FactionData.Name(world.FactionOf(e.Owner), e.Role, e.Slot);
 
         /// <summary>
         /// Fits authored art to its role's footprint in cells. The source sprites
