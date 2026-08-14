@@ -25,6 +25,7 @@
     <Compile Include="../Client/Assets/Scripts/HitDetection.cs" />
     <Compile Include="../Client/Assets/Scripts/AlertWindow.cs" />
     <Compile Include="../Client/Assets/Scripts/ProductionMenu.cs" />
+    <Compile Include="../Client/Assets/Scripts/SelectionMatch.cs" />
   </ItemGroup>
 
 </Project>
