@@ -30,6 +30,8 @@ namespace WordCraft.Host
                 SoloRunsWithoutAPeer();
                 SpectatorWatchesWithoutHoldingTheBarrier();
                 SpectatorThatFallsTooFarBehindIsDropped();
+                SocketSpectatorWatchesWithoutHoldingTheBarrier();
+                SocketSpectatorThatVanishesIsForgotten();
             }
             catch (Exception ex)
             {
@@ -41,7 +43,8 @@ namespace WordCraft.Host
                               " ticks over a lossy link, both peers saved the same match," +
                               " desync located, handshake rejected," +
                               " timeout handled, solo barrier opens," +
-                              " spectator hashes match and never hold the barrier)");
+                              " spectator hashes match and never hold the barrier," +
+                              " in process and over a socket)");
             return 0;
         }
 
@@ -472,6 +475,207 @@ namespace WordCraft.Host
             Check((spectator.DropReason ?? "").Contains("left the feed"),
                 "the spectator dropped for the wrong reason: " + spectator.DropReason);
             Check(spectator.Tick == watched, "a dropped spectator kept stepping, to tick " + spectator.Tick);
+        }
+
+        /// <summary>
+        /// The same two things as the check above — it sees what the players saw,
+        /// and the players never wait for it — with a socket between them. The
+        /// spectator holds no reference to the match: it is handed a link, and
+        /// everything else it needs, the seed and both factions, arrives in the
+        /// Welcome. That is what makes the hash comparison at the end mean
+        /// something. Fed the config directly, it would agree with the players
+        /// because the harness told it to.
+        ///
+        /// The watch link is as lossy, duplicating and jittery as the match link,
+        /// and it is a second link rather than the same one: a watcher on the
+        /// match socket would be taken for the peer by the first-sender-wins rule
+        /// in UdpTransport, and the match would then wait on somebody who never
+        /// sends input.
+        ///
+        /// The freeze is the measurement, and it freezes the watcher only. The
+        /// publisher keeps running because it lives on the playing peer, which is
+        /// exactly the situation being tested: the machine watching stopped, and
+        /// the machine playing has no way to find out and no reason to care.
+        /// </summary>
+        private static void SocketSpectatorWatchesWithoutHoldingTheBarrier()
+        {
+            const int AttachAt = 60;    // player tick the watcher shows up at
+            const int StallFrom = 140;  // spectator tick it freezes at
+            const int StallPumps = 400; // how long it stays frozen, in driver iterations
+            const int PlayerTicksDuring = 60; // fewest player ticks that must fit in that freeze
+            const int DrainPumps = 20000; // pumps allowed for the last frames to cross after the match
+
+            var cfgA = new MatchConfig { LocalFaction = Faction.WaterSlimes };
+            var cfgB = new MatchConfig { LocalFaction = Faction.RockGolems };
+            var link = new FaultyLink(0x50C7E7, dropPercent: 20, duplicatePercent: 10, baseDelayMs: 30, jitterMs: 40);
+            var a = new Peer(0, link.A, cfgA, -1, 0);
+            var b = new Peer(1, link.B, cfgB, -1, 0);
+
+            var watchLink = new FaultyLink(0x7A7C4E, dropPercent: 20, duplicatePercent: 10, baseDelayMs: 30, jitterMs: 40);
+            var feed = new SpectatorFeed();
+            a.Feed = feed;
+            var publisher = new FeedPublisher(a.World, cfgA, feed, new FanoutLink(watchLink.A));
+
+            // The publisher is running well before anyone is watching, because on
+            // a real peer it is started with the match and not when a guest
+            // arrives. Serving nobody has to cost nothing.
+            long now = Drive(link, a, b, 0, () => Stopped(a) || a.Session.Tick >= AttachAt, 120000,
+                t => { watchLink.Now = t; publisher.Update(t); });
+            Check(!Stopped(a) && !Stopped(b), "the match ended before the spectator attached");
+            Check(publisher.WatcherCount == 0, "the publisher counted a watcher that had not arrived");
+            Check(feed.OldestTick == 0,
+                "the watcher arrived at a feed that no longer starts at tick 0, so this is not a late join");
+
+            var subscriber = new FeedSubscriber(watchLink.B);
+            Spectator spectator = null;
+            var hashes = new Dictionary<int, ulong>();
+
+            int playersAtStallStart = -1, playersAtStallEnd = -1;
+            int watchedAtStallStart = -1, watchedAtStallEnd = -1;
+            int frozenPumps = 0;
+
+            void Watch(long t)
+            {
+                watchLink.Now = t;
+                // The playing side, which does not stop when the watching one
+                // does. Everything below this line is the watcher's machine.
+                publisher.Update(t);
+
+                // Frozen in driver iterations rather than in player ticks, for
+                // the reason the in-process check spells out: measured against
+                // player progress, a spectator that really did hold the barrier
+                // would stop the players, the freeze would never end, and the
+                // failure would arrive as a stall instead of as the assert below.
+                if (spectator != null && spectator.Tick >= StallFrom && frozenPumps < StallPumps)
+                {
+                    if (frozenPumps++ == 0)
+                    {
+                        playersAtStallStart = a.Session.Tick;
+                        watchedAtStallStart = spectator.Tick;
+                    }
+                    return;
+                }
+                if (playersAtStallStart >= 0 && playersAtStallEnd < 0)
+                {
+                    playersAtStallEnd = a.Session.Tick;
+                    watchedAtStallEnd = spectator.Tick;
+                }
+
+                subscriber.Update(t);
+                if (!subscriber.Welcomed) return;
+
+                if (spectator == null)
+                {
+                    // Built from what crossed the wire, not from cfgA and cfgB.
+                    World watched = Peer.BuildWorld(subscriber.Seed, -1, 0);
+                    watched.SetPeerFaction(0, subscriber.Peer0Faction);
+                    watched.SetPeerFaction(1, subscriber.Peer1Faction);
+                    spectator = new Spectator(watched, subscriber.Feed);
+                }
+
+                while (spectator.Follow(1) > 0) hashes.Add(spectator.Tick, spectator.World.Hash());
+            }
+
+            now = Drive(link, a, b, now,
+                () => Stopped(a) || Stopped(b) || (a.Session.Tick >= Ticks && b.Session.Tick >= Ticks),
+                600000, Watch);
+
+            Check(!Stopped(a), "peer 0 stopped: " + a.Session.StopReason);
+            Check(!Stopped(b), "peer 1 stopped: " + b.Session.StopReason);
+            Check(a.Session.Tick >= Ticks && b.Session.Tick >= Ticks,
+                "the players did not reach " + Ticks + " ticks while a spectator watched over a socket");
+
+            Check(subscriber.Refusal == null, "the watcher was refused: " + subscriber.Refusal);
+            Check(spectator != null, "the watcher never got a Welcome, so it never built a world");
+            Check(subscriber.Seed == cfgA.Seed, "the Welcome carried seed 0x" + subscriber.Seed.ToString("X"));
+            Check(subscriber.Peer0Faction == cfgA.LocalFaction && subscriber.Peer1Faction == cfgB.LocalFaction,
+                "the Welcome carried " + subscriber.Peer0Faction + " and " + subscriber.Peer1Faction);
+
+            Check(playersAtStallEnd >= 0, "the spectator never stalled, so nothing was proved about the barrier");
+            Check(watchedAtStallEnd == watchedAtStallStart,
+                "the spectator advanced during its own stall, from tick " +
+                watchedAtStallStart + " to " + watchedAtStallEnd);
+            Check(playersAtStallEnd - playersAtStallStart >= PlayerTicksDuring,
+                "the players advanced only " + (playersAtStallEnd - playersAtStallStart) +
+                " ticks over " + StallPumps + " pumps while the socket spectator was frozen at tick " +
+                watchedAtStallStart + "; the spectator is holding the barrier");
+
+            // The players have finished and the last frames are still on the
+            // wire. This is the one loop that waits for the spectator, and it
+            // runs after the measurement rather than during it — put this
+            // condition in Drive above and the check stops finishing instead of
+            // starting to fail.
+            for (int i = 0; i < DrainPumps && spectator.Tick < Ticks && !spectator.Dropped; i++)
+            {
+                now += StepMs;
+                watchLink.Now = now;
+                publisher.Update(now);
+                subscriber.Update(now);
+                while (spectator.Follow(1) > 0) hashes.Add(spectator.Tick, spectator.World.Hash());
+            }
+
+            Check(!spectator.Dropped, "the spectator was dropped: " + spectator.DropReason);
+            Check(spectator.Tick >= Ticks,
+                "the spectator caught up only to tick " + spectator.Tick + ", wanted " + Ticks);
+            Check(subscriber.FramesReceived >= Ticks,
+                "only " + subscriber.FramesReceived + " frames came off the wire");
+
+            for (int t = 1; t <= Ticks; t++)
+            {
+                Check(hashes.ContainsKey(t), "the spectator has no hash for tick " + t);
+                Check(hashes[t] == a.Hashes[t] && hashes[t] == b.Hashes[t],
+                    "the socket spectator diverged from the players at tick " + t);
+            }
+        }
+
+        /// <summary>
+        /// A watcher that walks away, over a socket, where walking away is
+        /// silent. The publisher forgets it after its keepalives stop and the
+        /// match never learns anything happened.
+        ///
+        /// This is the socket half of the bounded ring's argument. In process the
+        /// cost of a vanished spectator is a ring being overwritten; here it is
+        /// also a table row and a datagram every twentieth millisecond, and both
+        /// have to stop on their own, because nothing will ever tell this peer
+        /// that the watcher is gone.
+        /// </summary>
+        private static void SocketSpectatorThatVanishesIsForgotten()
+        {
+            const int WatchUntil = 40; // player tick the watcher stops answering at
+
+            var cfgA = new MatchConfig { LocalFaction = Faction.WaterSlimes };
+            var cfgB = new MatchConfig { LocalFaction = Faction.RockGolems };
+            var link = new FaultyLink(0xC0FFEE7, dropPercent: 20, duplicatePercent: 10, baseDelayMs: 30, jitterMs: 40);
+            var a = new Peer(0, link.A, cfgA, -1, 0);
+            var b = new Peer(1, link.B, cfgB, -1, 0);
+
+            var watchLink = new FaultyLink(0x9A11ED, dropPercent: 20, duplicatePercent: 10, baseDelayMs: 30, jitterMs: 40);
+            var feed = new SpectatorFeed();
+            a.Feed = feed;
+            var publisher = new FeedPublisher(a.World, cfgA, feed, new FanoutLink(watchLink.A));
+            var subscriber = new FeedSubscriber(watchLink.B);
+
+            bool everSeen = false;
+
+            void WatchThenLeave(long t)
+            {
+                watchLink.Now = t;
+                publisher.Update(t);
+                if (publisher.WatcherCount > 0) everSeen = true;
+                if (a.Session.Tick > WatchUntil) return; // gone, without a goodbye
+                subscriber.Update(t);
+            }
+
+            Drive(link, a, b, 0,
+                () => Stopped(a) || Stopped(b) || (a.Session.Tick >= Ticks && b.Session.Tick >= Ticks),
+                600000, WatchThenLeave);
+
+            Check(everSeen, "the watcher never registered, so its leaving proves nothing");
+            Check(!Stopped(a) && !Stopped(b), "a watcher that walked away ended the match");
+            Check(a.Session.Tick >= Ticks && b.Session.Tick >= Ticks,
+                "the players did not reach " + Ticks + " ticks after the watcher stopped answering");
+            Check(publisher.WatcherCount == 0,
+                "the peer is still sending to a watcher that left " + (a.Session.Tick - WatchUntil) + " ticks ago");
         }
 
         private static bool Stopped(Peer p) => p.Session.State == SessionState.Stopped;
