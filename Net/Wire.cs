@@ -9,6 +9,14 @@ namespace WordCraft.Net
         Input = 3,
         Hash = 4,
         Dump = 5,
+
+        // The watch wire. It rides a different socket from the four above,
+        // never the match link, so these numbers only ever meet a spectator or
+        // the peer serving one. Reject is shared: a refusal reads the same
+        // whether it ended a handshake or a watcher's arrival.
+        Watch = 6,
+        Welcome = 7,
+        Frame = 8,
     }
 
     internal static class Wire
