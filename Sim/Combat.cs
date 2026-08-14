@@ -156,14 +156,24 @@ namespace WordCraft.Sim
 
         /// <summary>
         /// Whether this attacker's weapon reaches this target at all, before any
-        /// question of distance. Melee cannot touch what flies, per
-        /// docs/FACTION-MECHANICS.md 공중, and that is a property of the weapon
-        /// rather than of the order: an attack command on a flier is refused the
-        /// same way an acquisition is, or a melee squad would walk under one
-        /// forever waiting to swing.
+        /// question of distance. Melee cannot touch what flies, 대포 cannot touch
+        /// what flies, and Towerback cannot touch what walks, all per
+        /// docs/FACTION-MECHANICS.md 공중. Each is a property of the weapon rather
+        /// than of the order: an attack command naming something out of reach is
+        /// refused the same way an acquisition is, or a melee squad would walk
+        /// under a flier forever waiting to swing.
+        ///
+        /// Which half of the roster row is read is decided by the target and
+        /// nothing else, so there is one line in the simulation that says what a
+        /// weapon may point at. Both halves are asked here rather than only the
+        /// air one, because ground reach stopped being universal the moment 대포
+        /// arrived, and a rule that only knew about air would have let it fire.
         /// </summary>
-        private bool CanHit(Entity attacker, Entity target) =>
-            !Flies(target) || RosterStats(attacker).HitsAir;
+        private bool CanHit(Entity attacker, Entity target)
+        {
+            UnitStats s = RosterStats(attacker);
+            return Flies(target) ? s.HitsAir : s.HitsGround;
+        }
 
         /// <summary>
         /// An ordered target only has to exist, be hostile, and be reachable by
