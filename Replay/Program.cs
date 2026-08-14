@@ -60,6 +60,10 @@ namespace WordCraft.Replay
                 AirIgnoresTerrain();
                 EveryBuildingRoleCanBePlaced();
                 BuildRefusesWhatTheFactionDoesNotHave();
+                SlotAddressedBuildPlacesTheNamedEntry();
+                BuildRefusesABuildingEntryTheFactionDoesNotField();
+                ThePlacedBuildingEntryIsHashedState();
+                EveryBuildingEntryIsPricedAndTimed();
                 BuildIsGatedByTheTechTier();
                 BuildRefusesOccupiedAndOffMapCells();
                 GroundRoutesAroundImpassableTerrain();
@@ -1789,6 +1793,245 @@ namespace WordCraft.Replay
             Check(world.GetEntity(1).Role == Role.Supply, "the control build placed the wrong thing");
         }
 
+        // 슬롯 건설. 인간 마법 문명's defense slot is the pair the mechanic exists
+        // for: 대포 is entry 0, 전기 타워 and 돌 포탑 are the entries behind it, and
+        // until a Build could name one they were roster rows with no way to put one
+        // down at all. Ids are handed out in placement order behind the base.
+        private const int TowerBase = 0;
+        private const int PlacedCannon = 1;
+        private const int PlacedElectricTower = 2;
+        private const int PlacedRockTurret = 3;
+
+        /// <summary>
+        /// A Build naming an entry past the first places that entry, and the body it
+        /// leaves resolves its stats, its name and its art through the entry it
+        /// carries rather than through its role.
+        ///
+        /// Entry 0 is placed alongside them rather than assumed: it is the control
+        /// that says the world was capable of the two placements, and it is what a
+        /// handler that ignored the entry number would place three of.
+        /// </summary>
+        private static void SlotAddressedBuildPlacesTheNamedEntry()
+        {
+            // The premise, read off the roster before any of it is played. Were the
+            // defense slot one entry long, every assertion below would be about a
+            // distinction that does not exist.
+            Check(FactionData.SlotCount(Faction.Humans, Role.Defense) == 3,
+                "인간 no longer fields three defense buildings, so this check is about something else");
+            Check(FactionData.IsBuilding(Role.Defense), "the defense slot stopped being a building");
+
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Humans);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // TowerBase
+            world.GrantResources(0, 5000);
+
+            var wanted = new (int Slot, int Id, string Name, string Sprite)[]
+            {
+                (0, PlacedCannon, "대포", "Cannon"),
+                (1, PlacedElectricTower, "전기 타워", "ElectricTower"),
+                (2, PlacedRockTurret, "돌 포탑", "RockTurret"),
+            };
+
+            int seq = 0;
+            foreach (var want in wanted)
+            {
+                string where = "인간 defense entry " + want.Slot;
+                int banked = world.GetResources(0);
+                int standing = world.EntityCount;
+
+                world.Step(Build(0, seq++, Role.Defense, want.Slot, At(20 + want.Slot * 2, 20)));
+
+                Check(world.EntityCount == standing + 1, "a Build for " + where + " placed nothing");
+                Entity site = world.GetEntity(want.Id);
+                Check(site.Kind == EntityKind.Building, "a Build for " + where + " placed a " + site.Kind);
+                Check(site.Role == Role.Defense, "a Build for " + where + " placed a " + site.Role);
+                Check(site.Slot == want.Slot, "a Build for " + where + " placed entry " + site.Slot);
+
+                // Priced at the entry. The same number as the role's today, and this
+                // is the line that would say so were it not.
+                Check(world.GetResources(0) ==
+                      banked - FactionData.BuildCost(Faction.Humans, Role.Defense, want.Slot),
+                    "a Build for " + where + " charged " + (banked - world.GetResources(0)));
+                // Timed at the entry, less the tick construction already spent:
+                // ConstructionSystem runs inside the same Step the order landed in.
+                Check(site.BuildTicksLeft ==
+                      FactionData.BuildTicks(Faction.Humans, Role.Defense, want.Slot) - 1,
+                    "a Build for " + where + " stood up on a " + site.BuildTicksLeft + " tick clock");
+                Check(site.MaxHp == FactionData.Stats(Faction.Humans, Role.Defense, want.Slot).Hp,
+                    "a Build for " + where + " stood up with " + site.MaxHp + " hp");
+
+                // Name and art, read the way the view reads them: through the entry
+                // the body itself carries.
+                Faction faction = world.FactionOf(site.Owner);
+                Check(FactionData.Name(faction, site.Role, site.Slot) == want.Name,
+                    "the placed building is called " + FactionData.Name(faction, site.Role, site.Slot));
+                Check(FactionData.Sprite(faction, site.Role, site.Slot) == want.Sprite,
+                    "the placed building is drawn as " + FactionData.Sprite(faction, site.Role, site.Slot));
+            }
+
+            // Finished, then fought from. A defense building is the one kind that
+            // shoots, and Armed reads the roster through the entry: an entry that
+            // arrived carrying the wrong number would stand there firing nothing.
+            var idle = new List<Command>();
+            while (world.GetEntity(PlacedElectricTower).BuildTicksLeft > 0) world.Step(idle);
+            Entity tower = world.GetEntity(PlacedElectricTower);
+            Check(tower.Hp == tower.MaxHp, "전기 타워 finished on " + tower.Hp + " of " + tower.MaxHp + " hp");
+            Check(world.Armed(tower), "전기 타워 finished unarmed");
+        }
+
+        /// <summary>
+        /// A Build naming an entry the faction does not field is refused whole:
+        /// nothing spent, nothing placed. Refused rather than clamped onto entry 0,
+        /// for the reason every other malformed command is — two peers guessing what
+        /// the player meant guess separately.
+        ///
+        /// This is also what the old Arg range test used to do by accident. It
+        /// refused every packed argument outright, so an entry past the first was
+        /// unreachable rather than wrong; now that packed arguments are read, the
+        /// refusal has to be a rule of its own.
+        /// </summary>
+        private static void BuildRefusesABuildingEntryTheFactionDoesNotField()
+        {
+            Check(FactionData.SlotCount(Faction.TreeSpirits, Role.Defense) == 1,
+                "세계수 정령 grew a second defense building, so this check no longer refuses anything");
+
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.TreeSpirits);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.GrantResources(0, 5000);
+
+            int seq = 0;
+            // One past the end, and one far past it. The far one is not the same
+            // test: an off-by-one that admitted entry 1 would still refuse entry 9,
+            // and a handler that folded the entry number back into the role would
+            // land a large one on a legal role instead of refusing it.
+            foreach (int slot in new[] { 1, 9 })
+            {
+                int banked = world.GetResources(0);
+                int standing = world.EntityCount;
+                world.Step(Build(0, seq++, Role.Defense, slot, At(20, 20)));
+
+                string where = "세계수 정령 defense entry " + slot;
+                Check(world.GetResources(0) == banked, "a Build for " + where + " spent resources");
+                Check(world.EntityCount == standing, "a Build for " + where + " placed one");
+            }
+
+            // A role past the end of the enum. The old whole-Arg range test refused
+            // these along with every packed argument; now that packed arguments are
+            // read, a malformed role has to be refused on its own. Refused, never
+            // thrown: every table the build path subscripts by role is keyed by an
+            // int and a cast from an unchecked argument reads off the end of it.
+            // Both entries, because entry 0 and the entries behind it reach the
+            // roster by different routes and only one of them is a subscript.
+            foreach (int bad in new[] { FactionData.RoleCount, 200 })
+            {
+                foreach (int slot in new[] { 0, 1 })
+                {
+                    int banked = world.GetResources(0);
+                    int standing = world.EntityCount;
+                    world.Step(new List<Command>
+                    {
+                        new Command(0, 0, seq++, CommandType.Build, -1, At(20, 20),
+                            Command.RosterArg((Role)bad, slot))
+                    });
+
+                    string where = "role " + bad + " entry " + slot;
+                    Check(world.GetResources(0) == banked, "a Build naming " + where + " spent resources");
+                    Check(world.EntityCount == standing, "a Build naming " + where + " placed one");
+                }
+            }
+
+            // The control, on the same cell the refusals were aimed at: entry 0 of
+            // the same slot in the same world. Without it a rule that shut 세계수
+            // 정령's defense slot altogether would pass every assertion above.
+            int before = world.GetResources(0);
+            world.Step(Build(0, seq, Role.Defense, 0, At(20, 20)));
+            Check(world.EntityCount == 2, "the control build was refused too, so the refusals prove nothing");
+            Check(world.GetEntity(1).Slot == 0, "the control build placed entry " + world.GetEntity(1).Slot);
+            Check(world.GetResources(0) == before - FactionData.BuildCost(Role.Defense),
+                "the control build charged the wrong price");
+        }
+
+        /// <summary>
+        /// A placed building's entry is hashed state. Proven by exclusion, the way
+        /// the produced unit's is: two worlds are built identically down to the
+        /// seed, the faction, the cell and the price, and the only thing that
+        /// differs is which entry of 인간's defense slot was placed. Matching hashes
+        /// mean the field never reached Hash(), and two peers could run a match with
+        /// one player's 전기 타워 standing where the other's 돌 포탑 is.
+        ///
+        /// Entity.Slot is already hashed and already checked for a produced body.
+        /// This is the other way in: a building is placed rather than produced, so
+        /// it reaches the field through SpawnBuilding instead of through the queue,
+        /// and that path had the entry hard-wired to zero until now.
+        /// </summary>
+        private static void ThePlacedBuildingEntryIsHashedState()
+        {
+            // The premise: these two entries are indistinguishable except by number.
+            // Were they statted or priced apart, the hashes would differ for reasons
+            // that say nothing about whether the entry itself is hashed.
+            UnitStats first = FactionData.Stats(Faction.Humans, Role.Defense, 1);
+            UnitStats second = FactionData.Stats(Faction.Humans, Role.Defense, 2);
+            Check(first.Hp == second.Hp && first.Damage == second.Damage &&
+                  first.Range.Raw == second.Range.Raw && first.AttackTicks == second.AttackTicks,
+                "인간's second and third defense buildings are statted apart, so this check proves nothing");
+            Check(FactionData.BuildCost(Faction.Humans, Role.Defense, 1) ==
+                  FactionData.BuildCost(Faction.Humans, Role.Defense, 2) &&
+                  FactionData.BuildTicks(Faction.Humans, Role.Defense, 1) ==
+                  FactionData.BuildTicks(Faction.Humans, Role.Defense, 2),
+                "인간's second and third defense buildings are priced apart, so this check proves nothing");
+
+            Check(PlacedSlotHash(1) != PlacedSlotHash(2),
+                "two worlds holding different building entries hash the same: a placed entry is not in World.Hash()");
+        }
+
+        private static ulong PlacedSlotHash(int slot)
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Humans);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.GrantResources(0, 5000);
+            world.Step(Build(0, 0, Role.Defense, slot, At(20, 20)));
+            Check(world.EntityCount == 2,
+                "인간 refused defense entry " + slot + ", so the two worlds differ by more than the entry");
+            return world.Hash();
+        }
+
+        /// <summary>
+        /// Every entry of every building slot has a price and a clock, and every
+        /// entry nobody wrote has neither. The second half is the one worth having:
+        /// CanBuild refuses an entry past the end of a list, and the table has to
+        /// agree with it or "refuse what the roster does not list" is a rule the
+        /// command handler keeps alone and the table is free to contradict.
+        ///
+        /// A zero clock is also what keeps the construction ramp off a division by
+        /// zero: a site placed on one would carry no ticks to count down, and the
+        /// ramp is only reached by a site that has some.
+        /// </summary>
+        private static void EveryBuildingEntryIsPricedAndTimed()
+        {
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                foreach (Role role in Buildings)
+                {
+                    var faction = (Faction)f;
+                    for (int s = 0; s < FactionData.SlotCount(faction, role); s++)
+                    {
+                        string where = faction + "." + role + "[" + s + "]";
+                        Check(FactionData.BuildCost(faction, role, s) > 0, "free building entry at " + where);
+                        Check(FactionData.BuildTicks(faction, role, s) > 0, "instant building entry at " + where);
+                    }
+
+                    int past = FactionData.SlotCount(faction, role);
+                    string end = faction + "." + role + "[" + past + "]";
+                    Check(FactionData.BuildCost(faction, role, past) == 0,
+                        "an entry nobody wrote is priced at " + end);
+                    Check(FactionData.BuildTicks(faction, role, past) == 0,
+                        "an entry nobody wrote is timed at " + end);
+                }
+            }
+        }
+
         /// <summary>
         /// The tech building needs the production building standing, not merely
         /// paid for. The half-built middle step is the one worth asserting: a site
@@ -2492,7 +2735,20 @@ namespace WordCraft.Replay
         }
 
         private static List<Command> Build(int peer, int seq, Role role, FixVec2 where) =>
-            new List<Command> { new Command(0, peer, seq, CommandType.Build, -1, where, (int)role) };
+            Build(peer, seq, role, 0, where);
+
+        /// <summary>
+        /// A Build naming one entry of a building slot. Packed through the same
+        /// Command.RosterArg a Produce goes through, which is also what every
+        /// entry-0 Build above now travels as: entry 0 packs to the plain role
+        /// number, so the old encoding is a case of the new one rather than a
+        /// second path kept alive beside it.
+        /// </summary>
+        private static List<Command> Build(int peer, int seq, Role role, int slot, FixVec2 where) =>
+            new List<Command>
+            {
+                new Command(0, peer, seq, CommandType.Build, -1, where, Command.RosterArg(role, slot))
+            };
 
         /// <summary>
         /// The client's own input log, run under CoreCLR. Unity's Mono runtime

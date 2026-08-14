@@ -421,19 +421,27 @@ namespace WordCraft.Sim
         }
 
         /// <summary>
-        /// ponytail: entry 0 only. A Build names a role and nothing else, so 인간's
-        /// 전기 타워 and 돌 포탑 sit in the roster behind entry 0 of the defense
-        /// slot with no way to put one down. Give Build the same packed argument
-        /// Produce now takes; the entity field and the roster lookups are already
-        /// here, so that change is the command handler and nothing else.
+        /// Entry 0 of the building slot, which is what a scenario laying out a
+        /// starting base means and what five factions out of six have of every
+        /// building role.
         /// </summary>
-        public int SpawnBuilding(int owner, Role role, FixVec2 position, bool complete)
+        public int SpawnBuilding(int owner, Role role, FixVec2 position, bool complete) =>
+            SpawnBuilding(owner, role, 0, position, complete);
+
+        /// <summary>
+        /// One named entry of a building slot. The entry is written onto the body
+        /// exactly as it is for a unit, so the hp it stands up with, the clock it
+        /// stands up on, what it is called, and what is drawn for it all resolve
+        /// through it for the rest of its life. 인간's defense slot holds three
+        /// entries and this is what tells 전기 타워 from 대포 once both are down.
+        /// </summary>
+        public int SpawnBuilding(int owner, Role role, int slot, FixVec2 position, bool complete)
         {
-            int hp = FactionData.Stats(factions[owner], role).Hp;
-            int id = Add(EntityKind.Building, owner, role, 0, position, Fix.Zero, complete ? hp : 1);
+            int hp = FactionData.Stats(factions[owner], role, slot).Hp;
+            int id = Add(EntityKind.Building, owner, role, slot, position, Fix.Zero, complete ? hp : 1);
             Entity e = entities[id];
             e.MaxHp = hp;
-            e.BuildTicksLeft = complete ? 0 : FactionData.BuildTicks(role);
+            e.BuildTicksLeft = complete ? 0 : FactionData.BuildTicks(factions[owner], role, slot);
             entities[id] = e;
             return id;
         }
@@ -651,17 +659,43 @@ namespace WordCraft.Sim
                 }
 
                 case CommandType.Build:
-                    // Arg names the building by plain role, entry 0 only. Out of
-                    // range is malformed and refused rather than clamped, and that
-                    // one test is also what keeps a packed argument out: an entry
-                    // past the first sets bits far above RoleCount, so a Build
-                    // carrying one is refused whole rather than quietly placing
-                    // entry 0 of the role it names.
-                    if (c.Arg < 0 || c.Arg >= FactionData.RoleCount) return;
+                {
+                    // Arg names the building the way Produce names a unit: the role
+                    // in the low bits, which entry of that role's roster list in
+                    // the high ones. One packing for both, so a client that learned
+                    // to address an entry addresses it the same way everywhere.
+                    //
+                    // The role is range-tested after unpacking rather than before.
+                    // The old test was on the whole Arg, so it refused every packed
+                    // argument outright, and that failing-closed is what let #110
+                    // ship Produce alone; the same test moved behind the unpacking
+                    // is what replaces it.
+                    //
+                    // It is defence in depth here rather than the only gate. Every
+                    // table CanBuild subscripts by role sits behind IsBuilding,
+                    // which is a chain of equality comparisons and already refuses
+                    // anything outside the five building roles. That is a fact about
+                    // how IsBuilding happens to be written, not a contract, and the
+                    // day it becomes a table of its own this line is what stands
+                    // between a malformed argument and a read off the end of it. On
+                    // Produce the same test is load-bearing today: nothing there
+                    // filters the role before Production subscripts by it.
+                    //
+                    // Whether the faction fields the entry named is not tested here.
+                    // CanBuild asks the roster, which is the one place that knows how
+                    // long each list is, and a range test of its own here would be a
+                    // second opinion for the two to drift apart on.
+                    if (c.Arg < 0) return;
+                    Role role = Command.RoleOf(c.Arg);
+                    if ((int)role >= FactionData.RoleCount) return;
                     // Role.None is what a Build with no Arg carries, and the
                     // production building is what the client has always meant by it.
-                    TryPlaceBuilding(c.PeerId, c.Arg == 0 ? Role.Production : (Role)c.Arg, c.Target);
+                    // An entry number rides along untouched, so a log recorded before
+                    // this change still means entry 0 of the role it named.
+                    TryPlaceBuilding(c.PeerId, role == Role.None ? Role.Production : role,
+                        Command.SlotOf(c.Arg), c.Target);
                     break;
+                }
 
                 case CommandType.Produce:
                 {

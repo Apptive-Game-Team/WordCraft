@@ -256,7 +256,11 @@ namespace WordCraft.Sim
 
                         var at = new FixVec2(from.X + Fix.FromInt(dx), from.Y + Fix.FromInt(dy));
                         if (!CanBuild(peer, role, at)) continue;
-                        AiIssue(peer, CommandType.Build, -1, at, (int)role);
+                        // ponytail: entry 0 of whatever it wants, for the same reason
+                        // its production ladder is. It cannot see that 인간 fields
+                        // three defense buildings. Give it a choice of entry the day
+                        // the ladder is meant to be a plan rather than a fallback.
+                        AiIssue(peer, CommandType.Build, -1, at, Command.RosterArg(role, 0));
                         return;
                     }
                 }

@@ -139,15 +139,32 @@ namespace WordCraft.Sim
         // place anywhere on the map with nothing standing there. Read the builder
         // out of Command.EntityId and require it within InteractRange the day
         // placement is supposed to cost a walk.
-        public bool CanBuild(int peer, Role role, FixVec2 position)
+        public bool CanBuild(int peer, Role role, FixVec2 position) =>
+            CanBuild(peer, role, 0, position);
+
+        /// <summary>
+        /// The same rules for one named entry of a building slot. 인간 마법 문명
+        /// fields three defense buildings and two of them are entries past the
+        /// first, so the entry is what decides whether the answer is about 대포 or
+        /// about 전기 타워.
+        /// </summary>
+        public bool CanBuild(int peer, Role role, int slot, FixVec2 position)
         {
             if (peer < 0 || peer >= MaxPeers) return false;
             if (!FactionData.IsBuilding(role)) return false;
             // A faction cannot place what its roster does not list, or one peer
-            // fields a building the other has no name and no art for.
-            if (!FactionData.Has(factions[peer], role)) return false;
+            // fields a building the other has no name and no art for. Asked of the
+            // entry, so an entry past the end of the list is refused by the same
+            // line that refuses a slot left blank on purpose: the roster is what
+            // knows how long each list is, and one gate cannot drift from the other.
+            // A negative entry is refused here too, which is what a malformed Arg
+            // decodes to.
+            if (!FactionData.Has(factions[peer], role, slot)) return false;
+            // ponytail: the tier is still read off the role, so every entry of a
+            // building slot opens at once. Give it the entry the day a faction is
+            // meant to reach its second defense building later than its first.
             if (FactionData.Tier(role) > TierOf(peer)) return false;
-            if (resources[peer] < FactionData.BuildCost(role)) return false;
+            if (resources[peer] < FactionData.BuildCost(factions[peer], role, slot)) return false;
 
             // Reject an out-of-bounds request outright instead of silently clamping
             // it into the map, which would place a building the player never asked for.
@@ -174,12 +191,15 @@ namespace WordCraft.Sim
         /// Placement is validated inside the simulation, never by a client. Refused
         /// whole: a Build that fails any rule spends nothing and places nothing.
         /// </summary>
-        private void TryPlaceBuilding(int peer, Role role, FixVec2 position)
+        private void TryPlaceBuilding(int peer, Role role, int slot, FixVec2 position)
         {
-            if (!CanBuild(peer, role, position)) return;
+            if (!CanBuild(peer, role, slot, position)) return;
 
-            resources[peer] -= FactionData.BuildCost(role);
-            SpawnBuilding(peer, role, CellCenter(CellOf(position)), complete: false);
+            // Charged at the entry, not at the role. The two are the same number
+            // today, and the day they are not this is the line that would have paid
+            // 대포's price for a 전기 타워 with nothing to say it had.
+            resources[peer] -= FactionData.BuildCost(factions[peer], role, slot);
+            SpawnBuilding(peer, role, slot, CellCenter(CellOf(position)), complete: false);
         }
 
         /// <summary>
@@ -197,7 +217,12 @@ namespace WordCraft.Sim
                 // Integer ramp so hp never depends on a division that rounds
                 // differently anywhere. The divisor is this building's own total,
                 // or a cheap building would finish its hp on someone else's clock.
-                e.Hp = e.MaxHp - (e.MaxHp * e.BuildTicksLeft) / FactionData.BuildTicks(e.Role);
+                // Its own entry's total: two entries of one slot are timed apart the
+                // moment an override row says so, and a divisor taken at the role
+                // would ramp 전기 타워 against 대포's clock and land it on the wrong
+                // hp every tick of its construction.
+                e.Hp = e.MaxHp -
+                    (e.MaxHp * e.BuildTicksLeft) / FactionData.BuildTicks(factions[e.Owner], e.Role, e.Slot);
                 if (e.Hp < 1) e.Hp = 1;
                 entities[i] = e;
             }
