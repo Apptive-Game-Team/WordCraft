@@ -423,6 +423,17 @@ namespace WordCraft.Sim
         /// not a building; nothing may be placed on a zero, and IsBuilding is what
         /// says so. Data rather than a case in the command handler, so retuning a
         /// build order is one number here.
+        ///
+        /// The shared row every entry of the slot starts from, which is what keeps
+        /// it keyed by role rather than by entry. It is the counterpart of
+        /// <see cref="sharedProduction"/>, not of <see cref="productionOverrides"/>:
+        /// an override is a statement about one named unit and a role key would
+        /// spread it over the whole list, which is the defect #110 found, but a
+        /// baseline says nothing about any entry in particular and a role key is
+        /// exactly what it means. A faction or an entry that departs from it takes
+        /// an override row keyed by Faction, Role and Slot the way statOverrides is,
+        /// and <see cref="BuildCost(Faction, Role, int)"/> already takes the entry
+        /// so that adding one moves the table and not its callers.
         /// </summary>
         private static readonly int[] buildCosts =
         {
@@ -442,6 +453,10 @@ namespace WordCraft.Sim
         /// How long a building takes to stand up, in whole ticks at 20 Hz. Never
         /// seconds: a duration converted from wall-clock time is a duration two
         /// peers can round differently.
+        ///
+        /// The shared row, keyed by role for the reason <see cref="buildCosts"/> is,
+        /// and decided with it: the two numbers are a pair and a building priced in
+        /// one place and timed in another is a building somebody retunes half of.
         /// </summary>
         private static readonly int[] buildTicks =
         {
@@ -509,11 +524,39 @@ namespace WordCraft.Sim
         /// <summary>What the owner's tier must reach before this role can be produced.</summary>
         public static int Tier(Role role) => tiers[(int)role];
 
-        /// <summary>What placing this building costs. Zero on anything not a building.</summary>
+        /// <summary>
+        /// What placing entry 0 of this building costs. Zero on anything not a
+        /// building. Faction-free because entry 0 of every building slot is the
+        /// shared row today; the entry-addressed overload below is what a caller
+        /// holding a body asks, and what a departure would move.
+        /// </summary>
         public static int BuildCost(Role role) => buildCosts[(int)role];
 
-        /// <summary>How many whole ticks this building spends under construction.</summary>
+        /// <summary>
+        /// What placing one entry of a building slot costs. An entry this faction
+        /// does not field costs nothing, which is the table failing closed rather
+        /// than a free building: <see cref="Has(Faction, Role, int)"/> is the one
+        /// gate, CanBuild asks it before a price is ever taken, and answering the
+        /// shared row here would leave a second opinion for the two to drift apart on.
+        /// </summary>
+        public static int BuildCost(Faction faction, Role role, int slot) =>
+            Has(faction, role, slot) ? buildCosts[(int)role] : 0;
+
+        /// <summary>How many whole ticks entry 0 of this building spends under construction.</summary>
         public static int BuildTicks(Role role) => buildTicks[(int)role];
+
+        /// <summary>
+        /// How many whole ticks one entry spends under construction. Zero for an
+        /// entry the faction does not field, for the same reason
+        /// <see cref="BuildCost(Faction, Role, int)"/> is.
+        ///
+        /// Zero is also what keeps the construction ramp safe: the ramp divides by
+        /// this, and a site that answered zero here was placed with no ticks to
+        /// count down, so ConstructionSystem's own BuildTicksLeft test skips it
+        /// before the division is reached.
+        /// </summary>
+        public static int BuildTicks(Faction faction, Role role, int slot) =>
+            Has(faction, role, slot) ? buildTicks[(int)role] : 0;
 
         /// <summary>
         /// The roles a Build command may name. Listed here rather than derived from
