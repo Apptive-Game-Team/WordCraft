@@ -108,7 +108,7 @@ namespace WordCraft.Sim
         /// a rejection before tick 0. Terrain counts: a peer generating a different
         /// map has to be turned away at the handshake rather than desync on tick 1.
         /// </summary>
-        public const uint ContentVersion = 18;
+        public const uint ContentVersion = 19;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
