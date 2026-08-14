@@ -32,6 +32,7 @@ namespace WordCraft.Host
                 SpectatorThatFallsTooFarBehindIsDropped();
                 SocketSpectatorWatchesWithoutHoldingTheBarrier();
                 SocketSpectatorThatVanishesIsForgotten();
+                ForgedWatchIsAnsweredOnceAndNeverFed();
             }
             catch (Exception ex)
             {
@@ -44,7 +45,8 @@ namespace WordCraft.Host
                               " desync located, handshake rejected," +
                               " timeout handled, solo barrier opens," +
                               " spectator hashes match and never hold the barrier," +
-                              " in process and over a socket)");
+                              " in process and over a socket," +
+                              " a forged Watch is answered once and never fed)");
             return 0;
         }
 
@@ -676,6 +678,215 @@ namespace WordCraft.Host
                 "the players did not reach " + Ticks + " ticks after the watcher stopped answering");
             Check(publisher.WatcherCount == 0,
                 "the peer is still sending to a watcher that left " + (a.Session.Tick - WatchUntil) + " ticks ago");
+        }
+
+        /// <summary>
+        /// The attack this port was open to, and the number that says whether
+        /// it still is.
+        ///
+        /// A source address on a datagram is a claim, and the attacker below
+        /// never sends anything of its own: it copies the honest watcher's
+        /// keepalives, token and all, and re-sends them wearing a third
+        /// machine's address. Everything the publisher answers therefore lands
+        /// on a machine that is not playing this game and never asked to hear
+        /// from it. Copying rather than inventing is what makes this test the
+        /// binding of the token to an address rather than merely its presence —
+        /// a token that were a password would work from anywhere, and this
+        /// would notice.
+        ///
+        /// Two things are asserted about the victim's mailbox. Nothing that
+        /// arrived is a Welcome or a frame, which a real subscriber reading it
+        /// answers better than any inspection of bytes here could; and it holds
+        /// no more than the attacker spent to cause it, which is the whole of
+        /// the amplification question. At a ratio of one an attacker has gained
+        /// nothing it could not have done by sending to the victim itself.
+        ///
+        /// The honest watcher runs throughout, on a link as lossy as the
+        /// match's. Without it "no frames reached the victim" would also pass
+        /// on a spectator port that simply did not work.
+        /// </summary>
+        private static void ForgedWatchIsAnsweredOnceAndNeverFed()
+        {
+            const int AttachAt = 60;      // player tick the honest watcher shows up at
+            const int Recovered = 200;    // contiguous ticks the honest watcher must have pieced together
+            const int Amplification = 1;  // bytes allowed at the victim per byte the attacker spent
+
+            var cfgA = new MatchConfig { LocalFaction = Faction.WaterSlimes };
+            var cfgB = new MatchConfig { LocalFaction = Faction.RockGolems };
+            var link = new FaultyLink(0xF0F9ED, dropPercent: 20, duplicatePercent: 10, baseDelayMs: 30, jitterMs: 40);
+            var a = new Peer(0, link.A, cfgA, -1, 0);
+            var b = new Peer(1, link.B, cfgB, -1, 0);
+
+            var watchLink = new FaultyLink(0x5F00FED, dropPercent: 20, duplicatePercent: 10, baseDelayMs: 30, jitterMs: 40);
+            var feed = new SpectatorFeed();
+            a.Feed = feed;
+
+            // Endpoint 0 is the honest watcher, endpoint 1 the address the
+            // attacker writes on its datagrams. To the publisher they are two
+            // watchers; only one of them ever asked for anything.
+            var victim = new SpoofedSource();
+            var publisher = new FeedPublisher(a.World, cfgA, feed, new FanoutLink(watchLink.A, victim));
+
+            long now = Drive(link, a, b, 0, () => Stopped(a) || a.Session.Tick >= AttachAt, 120000,
+                t => { watchLink.Now = t; publisher.Update(t); });
+            Check(!Stopped(a) && !Stopped(b), "the match ended before the watchers attached");
+
+            // Every datagram the honest watcher sends is also sent by the
+            // attacker from the forged address, which is the cheapest possible
+            // attack: it costs one copy and needs no knowledge of this wire.
+            var subscriber = new FeedSubscriber(new TappedTransport(watchLink.B, victim.Forge));
+
+            // The same attacker saying the other thing a Watch can say: that it
+            // holds nothing at all. A watcher at tick -1 is sent as much of the
+            // window as fits in a datagram every time, so this is the greedy
+            // half of the attack, and the replayed keepalives above are the
+            // half that carries a token somebody really was issued. It hears
+            // nothing back, because the answers are going to the victim.
+            var greedy = new FeedSubscriber(new TappedTransport(NullTransport.It, victim.Forge));
+
+            var victimView = new FeedSubscriber(victim.Mailbox);
+            int forgedAtWelcome = -1;
+
+            now = Drive(link, a, b, now,
+                () => Stopped(a) || Stopped(b) || (a.Session.Tick >= Ticks && b.Session.Tick >= Ticks),
+                600000, t =>
+                {
+                    watchLink.Now = t;
+                    publisher.Update(t);
+                    subscriber.Update(t);
+                    greedy.Update(t);
+                    if (forgedAtWelcome < 0 && subscriber.Welcomed) forgedAtWelcome = victim.DatagramsForged;
+                    // The victim's machine, reading what was sent to it in its
+                    // name. It answers nothing, because a victim of this is not
+                    // playing this game and has nothing to say.
+                    victimView.Update(t);
+                });
+
+            Check(!Stopped(a) && !Stopped(b), "a forged Watch ended the match");
+            Check(a.Session.Tick >= Ticks && b.Session.Tick >= Ticks,
+                "the players did not reach " + Ticks + " ticks while a forged Watch was arriving");
+
+            Check(subscriber.Welcomed && subscriber.Refusal == null,
+                "the honest watcher was not served, so nothing is proved by the forged one: " + subscriber.Refusal);
+            Check(subscriber.Feed.ContiguousThrough >= Recovered,
+                "the honest watcher pieced together only " + subscriber.Feed.ContiguousThrough +
+                " contiguous ticks over the lossy link, wanted " + Recovered);
+
+            Check(victim.DatagramsForged > 0, "no forged datagram was ever sent, so this check tested nothing");
+            Check(forgedAtWelcome >= 0 && victim.DatagramsForged > forgedAtWelcome,
+                "the attacker never replayed a token the match had issued, so the token was tested for" +
+                " existing and not for being bound to an address");
+
+            Check(!victimView.Welcomed, "the forged address was welcomed into a match it never asked about");
+            Check(victimView.FramesReceived == 0,
+                victimView.FramesReceived + " confirmed frames were sent to a forged address");
+            Check(publisher.WatcherCount == 1,
+                "the publisher is serving " + publisher.WatcherCount +
+                " watchers; a forged address took a slot without ever answering");
+            Check(victim.BytesAtVictim <= victim.BytesForged * Amplification,
+                "amplification: " + victim.BytesForged + " forged bytes in " + victim.DatagramsForged +
+                " datagrams put " + victim.BytesAtVictim + " bytes in " + victim.DatagramsAtVictim +
+                " datagrams on the victim, a ratio of " +
+                (victim.BytesAtVictim * 100 / Math.Max(1, victim.BytesForged)) + "%");
+        }
+
+        /// <summary>
+        /// The publisher's view of an address that never asked for anything,
+        /// and the victim's view of what turned up because of it.
+        ///
+        /// What arrives at the publisher from here was written by somebody
+        /// else, which is the entire attack: a datagram's source address is
+        /// whatever its sender typed, so the answer goes to the machine named
+        /// rather than the machine asking. The victim never replies, and that
+        /// is what makes the counters mean something — every byte out of here
+        /// was paid for by a byte the attacker put in.
+        ///
+        /// A real victim's kernel would answer an unwanted datagram with an
+        /// ICMP port unreachable, which is smaller than what it received and
+        /// changes nothing about the ratio, so it is not modelled.
+        /// </summary>
+        private sealed class SpoofedSource : ITransport
+        {
+            private readonly Queue<byte[]> inbound = new Queue<byte[]>();   // attacker -> publisher
+            private readonly Queue<byte[]> delivered = new Queue<byte[]>(); // publisher -> victim
+
+            /// <summary>What the attack cost the attacker.</summary>
+            public int BytesForged { get; private set; }
+            public int DatagramsForged { get; private set; }
+
+            /// <summary>What it cost the victim. The ratio of the two is the whole issue.</summary>
+            public int BytesAtVictim { get; private set; }
+            public int DatagramsAtVictim { get; private set; }
+
+            /// <summary>A copy of somebody else's datagram, sent wearing this address.</summary>
+            public void Forge(byte[] data, int length)
+            {
+                inbound.Enqueue(Copy(data, length));
+                BytesForged += length;
+                DatagramsForged++;
+            }
+
+            /// <summary>The publisher answering the address it was handed.</summary>
+            public void Send(byte[] data, int length)
+            {
+                delivered.Enqueue(Copy(data, length));
+                BytesAtVictim += length;
+                DatagramsAtVictim++;
+            }
+
+            public bool TryReceive(out byte[] packet) => Take(inbound, out packet);
+
+            /// <summary>What landed on the victim, as a link, so a real watcher can say what it was.</summary>
+            public ITransport Mailbox => new VictimMailbox(this);
+
+            private static byte[] Copy(byte[] data, int length)
+            {
+                var copy = new byte[length];
+                Buffer.BlockCopy(data, 0, copy, 0, length);
+                return copy;
+            }
+
+            private static bool Take(Queue<byte[]> queue, out byte[] packet)
+            {
+                packet = queue.Count > 0 ? queue.Dequeue() : null;
+                return packet != null;
+            }
+
+            private sealed class VictimMailbox : ITransport
+            {
+                private readonly SpoofedSource source;
+                public VictimMailbox(SpoofedSource source) { this.source = source; }
+
+                /// <summary>The victim is not playing this game; whatever it might say goes nowhere.</summary>
+                public void Send(byte[] data, int length) { }
+
+                public bool TryReceive(out byte[] packet) => Take(source.delivered, out packet);
+            }
+        }
+
+        /// <summary>
+        /// A link that hands every datagram sent over it to somebody else as
+        /// well. That is all an attacker needs here: it never has to understand
+        /// the watch wire, only to repeat what a watcher already said.
+        /// </summary>
+        private sealed class TappedTransport : ITransport
+        {
+            private readonly ITransport inner;
+            private readonly Action<byte[], int> tap;
+
+            public TappedTransport(ITransport inner, Action<byte[], int> tap)
+            {
+                this.inner = inner;
+                this.tap = tap;
+            }
+
+            public void Send(byte[] data, int length)
+            {
+                inner.Send(data, length);
+                tap(data, length);
+            }
+
+            public bool TryReceive(out byte[] packet) => inner.TryReceive(out packet);
         }
 
         private static bool Stopped(Peer p) => p.Session.State == SessionState.Stopped;
