@@ -146,7 +146,14 @@ namespace WordCraft.View
                 Pending = slot.Type;
                 return;
             }
-            ToSelection(slot.Type, FixVec2.Zero, (int)slot.Produce);
+
+            // Produce packs role and entry together the way Command.RosterArg
+            // expects; every other command here (Stop, Hold, CancelProduction)
+            // never set Slot, so the cast alone still means what it always did.
+            int arg = slot.Type == CommandType.Produce
+                ? Command.RosterArg(slot.Produce, slot.Slot)
+                : (int)slot.Produce;
+            ToSelection(slot.Type, FixVec2.Zero, arg);
         }
 
         private void Fire(Vector2 point)

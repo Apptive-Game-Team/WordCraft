@@ -30,6 +30,14 @@ namespace WordCraft.View
         /// cell that opens the submenu rather than placing anything.
         /// </summary>
         public Role Produce;
+
+        /// <summary>
+        /// Which entry of <see cref="Produce"/>'s roster list this cell orders.
+        /// Only Produce reads it; Build still names entry 0 only (#111 opens that).
+        /// Zero on every cell that is not a Produce button, which packs to the same
+        /// argument a role-only command always sent.
+        /// </summary>
+        public int Slot;
     }
 
     /// <summary>
@@ -102,9 +110,6 @@ namespace WordCraft.View
         /// </summary>
         private static readonly CardSlot[] buildMenu = new CardSlot[Cells];
 
-        /// <summary>What a building may produce, in the order the bottom row lists them.</summary>
-        private static readonly Role[] producible = { Role.Melee, Role.Ranged, Role.Signature };
-
         /// <summary>
         /// Filled per faction, like the build submenu. A cell reading "Melee" says
         /// nothing about what walks out of the building; the roster name and the
@@ -132,9 +137,21 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// What this faction's buildings can produce, named and priced. Roles the
-        /// faction does not field are left blank rather than shown and refused —
-        /// the humans have no melee unit at all, by design.
+        /// What this faction's buildings can produce, named and priced, one cell
+        /// per roster entry rather than per role. Which entries that is comes
+        /// from <see cref="ProductionMenu"/>, kept Unity-free so its one
+        /// interesting question — does every faction's list still fit the card
+        /// — runs headless in Replay/ProductionMenuChecks.cs. This method only
+        /// turns that list into CardSlots and keys.
+        ///
+        /// Rows 1 and 2 (<see cref="ProductionMenu.Cells"/>, six) are the whole
+        /// budget, not the bottom row alone. 차원 유랑종 fills all six today: three
+        /// melee entries (its two temporary extinct-slime summons standing
+        /// beside 화산편), two ranged (틈새 사수 and 멸종한 번개 슬라임), one
+        /// signature — every other faction fits in three. A faction that grew a
+        /// seventh producible entry would overflow this card; nothing on the
+        /// roster does yet, and #114 leaves rebalancing or paging the card to
+        /// whoever adds one.
         /// </summary>
         public static CardSlot[] Building(Faction faction)
         {
@@ -142,22 +159,17 @@ namespace WordCraft.View
             building[0] = Cmd("Rally", CommandType.SetRallyPoint);
             building[1] = Cmd("Cancel", CommandType.CancelProduction);
 
-            int cell = Cols * 2; // bottom row: what this thing makes
-            for (int i = 0; i < producible.Length && cell < Cells; i++)
+            List<ProductionMenu.Entry> entries = ProductionMenu.For(faction);
+            int cell = Cols; // rows 1-2: one cell per producible roster entry
+            for (int i = 0; i < entries.Count && cell < Cells; i++)
             {
-                Role role = producible[i];
-                // Produced, not Has: 지옥불 Ranged has a name and art (균열 파수병
-                // shares the slot with the free 자손) but no price, because that
-                // slot's queue entry is turned off on purpose. Has would still
-                // offer the cell, the click would land, and the simulation would
-                // refuse it — the exact silent failure this card exists to avoid.
-                ProductionCost cost = FactionData.Production(faction, role);
-                if (!cost.Produced) { cell++; continue; }
+                ProductionMenu.Entry entry = entries[i];
                 building[cell++] = new CardSlot
                 {
-                    Label = FactionData.Name(faction, role) + "\n" + cost.Resources,
+                    Label = entry.Name + "\n" + entry.Resources,
                     Type = CommandType.Produce,
-                    Produce = role,
+                    Produce = entry.Role,
+                    Slot = entry.Slot,
                 };
             }
             return building;

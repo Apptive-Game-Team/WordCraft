@@ -78,6 +78,7 @@ namespace WordCraft.Replay
                 ReplayRoundTrip.Check();
                 AlertChecks.Check();
                 HitFeedbackChecks.Check();
+                ProductionMenuChecks.Check();
                 SimAssemblyIsClean();
             }
             catch (Exception ex)
