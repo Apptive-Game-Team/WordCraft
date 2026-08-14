@@ -14,7 +14,7 @@ RTS입니다. 게임 로직을 처리하는 서버가 없습니다. 각 피어�
 | [`Sim/`](Sim/) | 순수 C# 시뮬레이션. 고정소수점 연산, 결정론 RNG, 엔티티 상태, 상태 해시 | .NET Standard 2.1 |
 | [`Net/`](Net/) | P2P 락스텝 세션과 UDP 전송 | .NET Standard 2.1 |
 | [`Replay/`](Replay/) | 헤드리스 결정론 자체 검증과 리플레이 하네스 | .NET 7 |
-| [`Host/`](Host/) | 두 피어의 매치를 콘솔에서 돌리는 러너. `host`, `join`, `selfcheck` | .NET 7 |
+| [`Host/`](Host/) | 두 피어의 매치를 콘솔에서 돌리는 러너. `host`, `join`, `solo`, `selfcheck`, `watch`, `replay`, `compare` | .NET 7 |
 | [`Client/`](Client/) | Unity 뷰와 HUD. `Sim`과 `Net`을 컴파일된 어셈블리로 참조 | Unity 2022 LTS |
 
 `Sim`과 `Net`은 의도적으로 늦게 Unity와 만났습니다. 초기부터 Unity 프로젝트가
