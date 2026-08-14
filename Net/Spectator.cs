@@ -19,7 +19,10 @@ namespace WordCraft.Net
     /// the tick this world needs, the spectator drops itself and says by how
     /// much. Rejoining would need a state transfer that does not exist yet, so
     /// the honest end is a stated one rather than a silent gap in the match
-    /// being watched.
+    /// being watched. A tick still inside the window but not in it yet is a
+    /// wait, not a drop: a feed filled from a socket takes its frames out of
+    /// order, and the frame that is missing now usually arrives in the next
+    /// datagram. It becomes a drop when the window closes over it.
     /// </summary>
     public sealed class Spectator
     {
@@ -65,6 +68,13 @@ namespace WordCraft.Net
 
                 if (!feed.TryFrame(want, out IReadOnlyList<Command> commands))
                 {
+                    // Inside the window but not here yet is a datagram that has
+                    // not landed, not a frame that is gone: a feed filled from a
+                    // socket has holes that the next send fills. Waiting costs
+                    // the players nothing, and the window closing over the hole
+                    // is what eventually turns it into the drop below.
+                    if (want >= feed.OldestTick) return ran;
+
                     DropReason = "tick " + want + " has already left the feed, which holds " +
                                  feed.OldestTick + ".." + feed.LatestTick +
                                  " (" + feed.Capacity + " frames)";

@@ -18,6 +18,30 @@ namespace WordCraft.Net
     }
 
     /// <summary>
+    /// A datagram link with more than one party on the other side, where every
+    /// party is addressed on its own.
+    ///
+    /// This is not ITransport with a bigger number. ITransport is the match
+    /// link: two players, every byte meant for the other one, and a barrier that
+    /// waits for what comes back. Here nothing is waited for, so an endpoint
+    /// that stops answering costs a table row and nothing else. Spectators are
+    /// the only thing on the other side of this, and that is the point — the
+    /// fan-out exists because a read-only consumer can be fanned out to safely.
+    /// </summary>
+    public interface IFanoutTransport
+    {
+        /// <summary>
+        /// One datagram and the endpoint it came from. Ids are handed out on
+        /// first contact and never reused, so an id that has gone quiet is
+        /// somebody who left rather than a slot the next arrival inherits.
+        /// </summary>
+        bool TryReceive(out byte[] packet, out int from);
+
+        /// <summary>Sends to one endpoint. An unknown id is a no-op, never a fault.</summary>
+        void SendTo(int endpoint, byte[] data, int length);
+    }
+
+    /// <summary>
     /// A link with nothing on the other end, for a solo session. It never sends
     /// and never receives, but a session still holds an ITransport and a null
     /// there would be a crash rather than a quiet nothing.
@@ -39,8 +63,17 @@ namespace WordCraft.Net
     /// Direct IP UDP, no external service. The listening side learns the remote
     /// endpoint from the first datagram it receives.
     /// </summary>
-    // ponytail: one remote endpoint, first sender wins. 1v1 is the target; for
-    // N peers keep a list of endpoints and fan out the same bytes to each.
+    // ponytail: one remote endpoint, first sender wins. 1v1 is still the target
+    // and this class is still where that is nailed down. UdpFanout below now
+    // keeps a list of endpoints and sends to each, but those endpoints are
+    // spectators — nobody acks, nobody is waited for — so it is not the N-peer
+    // version of this class and does not make it one. N *players* needs what it
+    // always needed: several remotes here, a per-remote ack in LockstepSession,
+    // and a barrier that tests all of them.
+    // ponytail: and keep spectators off this socket. First sender wins means a
+    // watcher that speaks before the peer does is taken for the peer, and the
+    // match then waits forever on somebody who will never send input. That is
+    // why UdpFanout binds a port of its own instead of sharing this one.
     public sealed class UdpTransport : ITransport, IDisposable
     {
         private readonly Socket socket;
@@ -96,6 +129,123 @@ namespace WordCraft.Net
         }
 
         public void Dispose() => socket.Dispose();
+    }
+
+    /// <summary>
+    /// Direct IP UDP again, on its own port, with as many endpoints as have
+    /// spoken to it. A datagram teaches this socket a new endpoint the way the
+    /// first one teaches UdpTransport its peer, but here learning one is cheap:
+    /// an endpoint here receives frames and is never waited for, so the worst a
+    /// stranger achieves is a table row and a few datagrams it did not ask for.
+    /// </summary>
+    // ponytail: endpoints are learned and never retired, only capped. A watcher
+    // that reconnects from a new source port takes a second row, and a port left
+    // running for hours fills the table with the dead. FeedPublisher forgets a
+    // watcher that stops speaking, which is what keeps sending bounded; reclaiming
+    // the row itself needs ids that can be retired, and ids here are never reused.
+    public sealed class UdpFanout : IFanoutTransport, IDisposable
+    {
+        /// <summary>Enough for the watchers a LAN match will ever have, and small enough to scan.</summary>
+        private const int MaxEndpoints = 32;
+
+        private readonly Socket socket;
+        private readonly byte[] rx = new byte[Wire.MaxDatagram];
+        private readonly List<EndPoint> endpoints = new List<EndPoint>();
+
+        public UdpFanout(int localPort)
+        {
+            socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            socket.Bind(new IPEndPoint(IPAddress.Any, localPort));
+            socket.Blocking = false;
+        }
+
+        public int LocalPort => ((IPEndPoint)socket.LocalEndPoint).Port;
+
+        /// <summary>Endpoints this socket has ever heard from. Ids are indexes into that.</summary>
+        public int EndpointCount => endpoints.Count;
+
+        public bool TryReceive(out byte[] packet, out int from)
+        {
+            packet = null;
+            from = -1;
+            try
+            {
+                if (socket.Available <= 0) return false;
+                EndPoint sender = new IPEndPoint(IPAddress.Any, 0);
+                int n = socket.ReceiveFrom(rx, 0, rx.Length, SocketFlags.None, ref sender);
+
+                from = IdOf(sender);
+                if (from < 0) return false; // table full: a stranger is refused, never swapped in
+
+                packet = new byte[n];
+                Buffer.BlockCopy(rx, 0, packet, 0, n);
+                return true;
+            }
+            catch (SocketException)
+            {
+                // WouldBlock, or a Windows ICMP port-unreachable reset from a
+                // watcher that has gone. Neither is this socket's problem.
+                return false;
+            }
+        }
+
+        public void SendTo(int endpoint, byte[] data, int length)
+        {
+            if (endpoint < 0 || endpoint >= endpoints.Count) return;
+            try { socket.SendTo(data, 0, length, SocketFlags.None, endpoints[endpoint]); }
+            catch (SocketException) { /* a watcher's loss to bear; there is no resend request here */ }
+        }
+
+        private int IdOf(EndPoint sender)
+        {
+            for (int i = 0; i < endpoints.Count; i++)
+            {
+                if (endpoints[i].Equals(sender)) return i;
+            }
+            if (endpoints.Count >= MaxEndpoints) return -1;
+            endpoints.Add(sender);
+            return endpoints.Count - 1;
+        }
+
+        public void Dispose() => socket.Dispose();
+    }
+
+    /// <summary>
+    /// Fan-out over a fixed set of one to one links, so the harness can put a
+    /// spectator on the wire without a socket. Endpoint ids are indexes into the
+    /// links handed in, which is all the addressing a test needs, and each link
+    /// can be as lossy as the match link is.
+    /// </summary>
+    public sealed class FanoutLink : IFanoutTransport
+    {
+        private readonly ITransport[] links;
+        private int cursor;
+
+        public FanoutLink(params ITransport[] links)
+        {
+            this.links = links ?? Array.Empty<ITransport>();
+        }
+
+        /// <summary>Round-robin, so one chatty endpoint cannot starve the rest.</summary>
+        public bool TryReceive(out byte[] packet, out int from)
+        {
+            for (int i = 0; i < links.Length; i++)
+            {
+                cursor = (cursor + 1) % links.Length;
+                if (!links[cursor].TryReceive(out packet)) continue;
+                from = cursor;
+                return true;
+            }
+            packet = null;
+            from = -1;
+            return false;
+        }
+
+        public void SendTo(int endpoint, byte[] data, int length)
+        {
+            if (endpoint < 0 || endpoint >= links.Length) return;
+            links[endpoint].Send(data, length);
+        }
     }
 
     /// <summary>
