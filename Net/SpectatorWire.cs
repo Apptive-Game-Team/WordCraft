@@ -9,11 +9,12 @@ namespace WordCraft.Net
     /// drift apart. Big-endian, fixed width, explicitly signed, the same rules
     /// the match wire follows and for the same reason.
     ///
-    ///   Watch    watcher -> peer   u32 version, i32 have
-    ///   Welcome  peer -> watcher   u32 version, u32 sim, u32 content, u64 seed,
+    ///   Watch     watcher -> peer  u32 version, i32 have, u64 token
+    ///   Challenge peer -> watcher  u32 version, u64 token
+    ///   Welcome   peer -> watcher  u32 version, u32 sim, u32 content, u64 seed,
     ///                              u8 peer0Faction, u8 peer1Faction,
     ///                              i32 oldestTick, i32 latestTick
-    ///   Frame    peer -> watcher   u16 blockCount, then per block
+    ///   Frame     peer -> watcher  u16 blockCount, then per block
     ///                              i32 tick, u16 commandCount, then per command
     ///                              u8 type, u8 peerId, i32 entityId, i32 seq,
     ///                              i64 targetX, i64 targetY, i32 arg
@@ -23,18 +24,36 @@ namespace WordCraft.Net
     /// a confirmed frame is both peers' merged, and the peer id is what orders
     /// them. Dropping it would leave a watcher applying one peer's orders as the
     /// other's, which is a desync with every byte delivered.
+    ///
+    /// The token is what makes the source address of a Watch mean something.
+    /// Without it this port answered whoever claimed to be asking, and a claim
+    /// costs one small datagram while the answer is three seconds of frames — a
+    /// peer playing this game could be pointed at a stranger who is not. So the
+    /// first Watch from an address is answered with a Challenge and nothing
+    /// else, and only an address that sends the token back is sent anything
+    /// bigger. The one thing it is not is an acknowledgement: it proves an
+    /// address exists, it is checked once per datagram rather than waited for,
+    /// and no part of the match ever blocks on one arriving. See FeedPublisher.
     /// </summary>
     internal static class FeedWire
     {
         /// <summary>
-        /// Bump on any change to the three messages above. Deliberately not
+        /// Bump on any change to the messages above. Deliberately not
         /// LockstepSession.ProtocolVersion: the match wire has not changed here
         /// and bumping it would reject peers that are in fact compatible, and
         /// the two mismatches want opposite outcomes anyway — a peer that speaks
         /// the wrong match wire ends the match, a watcher that speaks the wrong
         /// watch wire is turned away and the match carries on.
+        ///
+        /// 2 added the token to Watch and the Challenge that hands it out. A
+        /// version 1 watcher is not turned away with a reason, it is met with
+        /// silence: its Watch is eight bytes short, and the reason it used to
+        /// get was forty-five bytes of text sent to an address that had proved
+        /// nothing, which is the amplifier this version exists to close. Every
+        /// version after this one can be told, because the Challenge carries
+        /// this number and is small enough to send to a stranger.
         /// </summary>
-        public const uint Version = 1;
+        public const uint Version = 2;
 
         public const int FrameHeaderBytes = 3;  // msgType, blockCount
         public const int BlockHeaderBytes = 6;  // tick, commandCount
@@ -45,18 +64,112 @@ namespace WordCraft.Net
     }
 
     /// <summary>
-    /// The watching side of a match, running on a peer that is playing. It
-    /// answers whoever shows up on its socket and sends them the confirmed
-    /// frames its own peer already ran, out of the bounded ring in
-    /// <see cref="SpectatorFeed"/>.
+    /// The value that proves an address can hear what it asks for.
     ///
+    /// Derived and never stored. A table of issued tokens would be state that a
+    /// forged Watch could fill from addresses that will never come back, which
+    /// is the shape of the problem rather than a fix for it. One secret drawn
+    /// per process answers every endpoint there will ever be, and an address
+    /// that never returns its token leaves nothing behind at all.
+    ///
+    /// This is not a MAC and is not offered as one. It has one thing to
+    /// survive: somebody who can see the token for its own address working out
+    /// the token for a different one. Two secret words go into a 128 bit mix
+    /// and 64 bits come out, so a known pair leaves the secret underdetermined
+    /// and a second address's token stays a 2^64 search — expensive against an
+    /// attack whose whole appeal was that it cost one datagram. Anything
+    /// stronger means a keyed hash, and this repository has no crypto
+    /// dependency and no confidentiality problem to spend one on: a watcher
+    /// sees both players' input by definition, and hiding that is a non-goal.
+    /// </summary>
+    internal sealed class WatchToken
+    {
+        private readonly ulong s0;
+        private readonly ulong s1;
+
+        /// <summary>
+        /// The one value in this layer that must not be reproducible, drawn
+        /// from the platform rather than from DetRandom. It decides which
+        /// addresses get an answer and never what any of them are told, so no
+        /// hash, log, or replay can depend on it — a match played twice with
+        /// two different secrets is the same match.
+        /// </summary>
+        public WatchToken()
+        {
+            byte[] bytes = Guid.NewGuid().ToByteArray();
+            ulong a = 0, b = 0;
+            for (int i = 0; i < 8; i++)
+            {
+                a = (a << 8) | bytes[i];
+                b = (b << 8) | bytes[i + 8];
+            }
+            s0 = Mix(a);
+            s1 = Mix(~b);
+        }
+
+        /// <summary>
+        /// The token this peer accepts from one endpoint and from no other.
+        /// Binding it to the endpoint is the whole defence: an attacker that
+        /// holds a valid token for itself, or copies one out of a watcher's
+        /// datagram, still cannot make it work from an address it forged.
+        /// </summary>
+        public ulong For(int endpoint)
+        {
+            unchecked
+            {
+                ulong h = Mix(s0 ^ (0x9E3779B97F4A7C15UL * (ulong)(uint)endpoint));
+                ulong token = Mix(h ^ s1);
+                // Zero is how a watcher says it has not been told one yet, so
+                // it can never be the answer to anything.
+                return token == 0 ? 1UL : token;
+            }
+        }
+
+        /// <summary>Whether a Watch carried the token this endpoint would have been handed.</summary>
+        public bool Accepts(int endpoint, ulong token) => token != 0 && token == For(endpoint);
+
+        /// <summary>SplitMix64's finaliser: every output bit depends on every input bit.</summary>
+        private static ulong Mix(ulong v)
+        {
+            unchecked
+            {
+                v ^= v >> 30;
+                v *= 0xBF58476D1CE4E5B9UL;
+                v ^= v >> 27;
+                v *= 0x94D049BB133111EBUL;
+                v ^= v >> 31;
+                return v;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The watching side of a match, running on a peer that is playing. It
+    /// sends the confirmed frames its own peer already ran, out of the bounded
+    /// ring in <see cref="SpectatorFeed"/>, to every address that has shown
+    /// this socket it can hear.
+    ///
+    /// That last part is the difference between a spectator port and a weapon
+    /// pointed at a stranger. A source address on a datagram is a claim, not a
+    /// fact, and the answer to a claim used to be up to three seconds of frames
+    /// — one forged Watch, and a peer playing this game floods somebody who has
+    /// never heard of it. So an address that has not returned a
+    /// <see cref="WatchToken"/> is sent one Challenge, which is smaller than
+    /// the Watch that asked for it, and nothing else: no slot, no Welcome, no
+    /// frames, no recorded reason. Everything with a size worth forging an
+    /// address for happens after that token comes back.
+    ///
+
     /// Nothing here can reach the barrier, and that is a property of the wire
-    /// rather than of care taken while writing this. A watcher says two things:
-    /// "I am here", which bounds how long this keeps sending to it, and "I hold
-    /// everything through tick N", which bounds which bytes are sent. There is
-    /// no third thing it can say, so there is nothing for a peer to wait on.
-    /// <see cref="Update"/> returns void for the same reason — a caller cannot
-    /// be told to try again later, because there is no later.
+    /// rather than of care taken while writing this. A watcher says three
+    /// things and not one of them is an acknowledgement: "I am here", which
+    /// bounds how long this keeps sending to it, "I hold everything through
+    /// tick N", which bounds which bytes are sent, and "here is the token you
+    /// sent me", which bounds where they are sent. Each one narrows what leaves
+    /// this peer and none of them is a thing to wait for — a watcher that never
+    /// says any of them is a watcher that gets nothing, which costs the players
+    /// no tick. <see cref="Update"/> returns void for the same reason: a caller
+    /// cannot be told to try again later, because there is no later.
     ///
     /// Work is bounded on every axis a vanished or hostile watcher could push:
     /// at most <see cref="MaxWatchers"/> of them, one datagram each per
@@ -69,7 +182,11 @@ namespace WordCraft.Net
     /// </summary>
     public sealed class FeedPublisher
     {
-        /// <summary>A LAN match's worth of onlookers. The cost of one is a table row and a datagram.</summary>
+        /// <summary>
+        /// A LAN match's worth of onlookers. The cost of one is a table row and
+        /// a datagram, and a row is only ever taken by an address that answered
+        /// a Challenge, so the eight are watchers rather than claims.
+        /// </summary>
         public const int MaxWatchers = 8;
 
         /// <summary>Silence this long and a watcher is forgotten. It cannot say goodbye reliably.</summary>
@@ -100,6 +217,7 @@ namespace WordCraft.Net
         private readonly IFanoutTransport transport;
         private readonly Watcher[] watchers = new Watcher[MaxWatchers];
         private readonly Writer w = new Writer();
+        private readonly WatchToken tokens = new WatchToken();
 
         /// <summary>
         /// The world is read for the two factions and never written. They are
@@ -162,13 +280,36 @@ namespace WordCraft.Net
 
                 uint version = r.U32();
                 int have = r.I32();
+                ulong token = r.U64();
                 if (!r.Ok) continue;
+
+                if (!tokens.Accepts(from, token))
+                {
+                    // Thirteen bytes back for the seventeen that arrived, and
+                    // that is the whole answer to an address nobody has checked.
+                    // A forged Watch now costs its victim one datagram smaller
+                    // than the one the attacker sent, so there is no ratio left
+                    // to exploit; the attack was never about the bytes reaching
+                    // the wrong place, only about how many of them there were.
+                    //
+                    // Sent every time rather than once, because remembering who
+                    // has been challenged is exactly the state a spoofer would
+                    // fill from addresses that never come back.
+                    SendChallenge(from);
+                    continue;
+                }
 
                 if (version != FeedWire.Version)
                 {
                     // Turned away rather than tolerated, and the match does not
                     // notice. A watcher on the wrong wire would misread frames
                     // and report hashes that disagree for no reason worth chasing.
+                    //
+                    // Below the token check, not above it: this answer is text,
+                    // it is five times the size of the question, and an address
+                    // that has proved nothing must never be sent five times
+                    // anything. A watcher that has answered a Challenge is a
+                    // real address and can be told what is wrong with it.
                     w.Reset(MsgType.Reject);
                     w.Text("watch wire version " + version + ", expected " + FeedWire.Version);
                     transport.SendTo(from, w.Buf, w.Length);
@@ -208,6 +349,20 @@ namespace WordCraft.Net
                 LastSentMs = long.MinValue / 2,
             };
             return free;
+        }
+
+        /// <summary>
+        /// "Say this back and I will believe you are where you say you are."
+        /// It carries this peer's wire version as well, so a watcher from a
+        /// later version learns what it is talking to even though it never gets
+        /// far enough to be told properly.
+        /// </summary>
+        private void SendChallenge(int endpoint)
+        {
+            w.Reset(MsgType.Challenge);
+            w.U32(FeedWire.Version);
+            w.U64(tokens.For(endpoint));
+            transport.SendTo(endpoint, w.Buf, w.Length);
         }
 
         private void SendWelcome(int endpoint)
@@ -295,6 +450,13 @@ namespace WordCraft.Net
     /// made this a third party to the barrier — the one thing a spectator must
     /// never be.
     ///
+    /// The keepalive carries the token from the publisher's Challenge, which is
+    /// the price of watching from an address anyone could have written on a
+    /// datagram: one round trip before the first frame, paid once. It is not an
+    /// acknowledgement either. The publisher checks it against the address that
+    /// sent it and moves on inside the same call; the only thing that happens
+    /// to a watcher which never answers is that nothing is sent to it.
+    ///
     /// A watcher cannot join a match that has already run past the publisher's
     /// window. There is no state transfer, so the only world it can build is one
     /// at tick 0, and the Welcome says whether tick 0 is still readable. Refused
@@ -305,6 +467,14 @@ namespace WordCraft.Net
         /// <summary>How often we say we are still here. Also how stale the publisher's idea of our progress gets.</summary>
         public int WatchIntervalMs = 100;
 
+        /// <summary>
+        /// How many different tokens are answered before this watcher decides
+        /// it is not the address the publisher is answering. Generously more
+        /// round trips than arriving takes, because on a healthy link arriving
+        /// takes one.
+        /// </summary>
+        private const int MaxChallenges = 32;
+
         private readonly ITransport transport;
         private readonly SpectatorFeed feed;
         private readonly MatchConfig expect;
@@ -313,6 +483,8 @@ namespace WordCraft.Net
 
         private long lastWatchMs = long.MinValue / 2;
         private bool started;
+        private ulong token;   // 0 until the publisher has handed one over
+        private int challenges;
 
         /// <summary>
         /// The ring this fills. Hand it to a Spectator; the two are the same
@@ -353,14 +525,7 @@ namespace WordCraft.Net
             if (!started) { started = true; LastHeardMs = nowMs; }
             if (Refusal != null) return;
 
-            if (nowMs - lastWatchMs >= WatchIntervalMs)
-            {
-                w.Reset(MsgType.Watch);
-                w.U32(FeedWire.Version);
-                w.I32(feed.ContiguousThrough);
-                transport.Send(w.Buf, w.Length);
-                lastWatchMs = nowMs;
-            }
+            if (nowMs - lastWatchMs >= WatchIntervalMs) SendWatch(nowMs);
 
             while (transport.TryReceive(out byte[] packet))
             {
@@ -370,6 +535,7 @@ namespace WordCraft.Net
 
                 switch (type)
                 {
+                    case MsgType.Challenge: OnChallenge(r, nowMs); break;
                     case MsgType.Welcome: OnWelcome(r); break;
                     case MsgType.Frame: OnFrame(r); break;
                     case MsgType.Reject: Refuse("turned away by the match: " + r.Text()); break;
@@ -378,6 +544,63 @@ namespace WordCraft.Net
 
                 if (r.Ok) LastHeardMs = nowMs;
                 if (Refusal != null) return;
+            }
+        }
+
+        /// <summary>
+        /// One keepalive: what wire this speaks, how far it has got, and the
+        /// token that says this address is where it claims to be.
+        /// </summary>
+        private void SendWatch(long nowMs)
+        {
+            w.Reset(MsgType.Watch);
+            w.U32(FeedWire.Version);
+            w.I32(feed.ContiguousThrough);
+            w.U64(token);
+            transport.Send(w.Buf, w.Length);
+            lastWatchMs = nowMs;
+        }
+
+        /// <summary>
+        /// The publisher asking this watcher to prove it is where its datagrams
+        /// say it is. Answered at once rather than at the next keepalive, so
+        /// arriving costs a round trip instead of a round trip and a wait.
+        ///
+        /// Only a token this watcher has not already sent back is answered. A
+        /// token being refused would otherwise go back as fast as the
+        /// challenges arrived, and two ends answering each other with no pause
+        /// between them is a flood neither of them ordered.
+        /// </summary>
+        private void OnChallenge(Reader r, long nowMs)
+        {
+            uint version = r.U32();
+            ulong offered = r.U64();
+            if (!r.Ok) return;
+
+            if (version != FeedWire.Version)
+            {
+                // The only diagnosis available before a Welcome, and the reason
+                // the Challenge carries a version at all: a watcher on the
+                // wrong wire is never validated, so it is never told properly.
+                Refuse("watch wire version " + version + ", expected " + FeedWire.Version);
+                return;
+            }
+
+            if (offered == token) return; // answered already; a lost reply is the keepalive's job
+
+            token = offered;
+            SendWatch(nowMs);
+
+            // A publisher that keeps handing out fresh tokens and never
+            // welcomes is not answering the address it is being reached from:
+            // something in between rewrites the source of every datagram, so
+            // each Watch arrives as a stranger and is challenged again. Nothing
+            // in that ends on its own, so it is named and ended here rather
+            // than left as a watcher that hangs with no output.
+            if (!Welcomed && ++challenges >= MaxChallenges)
+            {
+                Refuse("the match handed out " + challenges + " tokens and welcomed none of them;" +
+                       " the address it is answering is not this one");
             }
         }
 
