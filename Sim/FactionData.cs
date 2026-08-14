@@ -251,6 +251,24 @@ namespace WordCraft.Sim
                     AttackTicks = 20,
                     HitsGround = true,
                 }),
+
+            // 인간 Towerback. 공중 전용, and the only body in the game that arrives
+            // by 징발 rather than by production. Numbers from
+            // docs/FACTION-MECHANICS.md, which names hp, reach and damage and no
+            // speed at all: the shared signature speed is written out here rather
+            // than inherited, the way 지옥불 군단장's row writes out the same
+            // number, because what a captured body walks at is a decision and not
+            // a blank. Entry 0 of the slot; 마도 정찰기 sits behind it.
+            (Faction.Humans, Role.Signature, 0,
+                new UnitStats
+                {
+                    Hp = 200,
+                    Speed = Fix.Ratio(3, 8),
+                    Damage = 8,
+                    Range = Fix.FromInt(6),
+                    AttackTicks = 22,
+                    HitsAir = true,
+                }),
         };
 
         /// <summary>
@@ -312,6 +330,14 @@ namespace WordCraft.Sim
             // then 무료 is only a discount on a unit you can also just buy. Entry 0
             // only: 균열 파수병 behind it is bought at the shared ranged price.
             (Faction.Hellfire, Role.Ranged, 0, new ProductionCost()),
+
+            // 인간 Towerback. Off the production list for the same reason 자손 is,
+            // and it matters more here: 포획으로만 획득한다 is the mechanic, so a
+            // price on it would be a second way in and 징발 would be a discount on
+            // a unit 인간 could simply buy — and then killing the neutral 꼬마돌
+            // would cost the opponent nothing. Entry 0 only: 마도 정찰기 behind it
+            // is bought at the shared signature price.
+            (Faction.Humans, Role.Signature, 0, new ProductionCost()),
         };
 
         private static ProductionCost Produce(int resources, int ticks) =>

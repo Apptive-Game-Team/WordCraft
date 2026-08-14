@@ -14,6 +14,14 @@ namespace WordCraft.Sim
         HoldPosition = 9,
         SetRallyPoint = 10,
         CancelProduction = 11,
+
+        /// <summary>
+        /// 인간 마법 문명 징발. Names the worker in EntityId and the neutral
+        /// 꼬마돌 in Arg, exactly as Gather names a worker and a node: the two
+        /// orders are the same shape, and the client that learned to address one
+        /// addresses the other the same way.
+        /// </summary>
+        Capture = 12,
     }
 
     /// <summary>

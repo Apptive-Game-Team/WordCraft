@@ -148,6 +148,30 @@ namespace WordCraft.Sim
         /// looking for the parent.
         /// </summary>
         public int ParentId;
+
+        // 인간 마법 문명 징발. Both fields live on the worker doing the capturing
+        // and never on the 꼬마돌 being captured, which is the same shape the
+        // gather loop has: GatherNodeId and GatherTicksLeft are the worker's, and
+        // the node it is standing on carries nothing about who is at it.
+        //
+        // One-sided is what makes the interruption rule free. A worker that dies
+        // takes its own progress with it because the progress was never anywhere
+        // else, and a 꼬마돌 that dies is noticed by the one entity that was
+        // pointing at it. Progress kept on both would be two fields to clear on
+        // two deaths, and the tick one peer cleared only one of them is a desync.
+
+        /// <summary>
+        /// The neutral 꼬마돌 this worker is capturing, or -1 for everything that
+        /// is not capturing one, which is every worker in five factions out of six.
+        /// </summary>
+        public int CaptureTargetId;
+
+        /// <summary>
+        /// Ticks left before that capture completes. Zero means the clock has not
+        /// started, exactly as it does on GatherTicksLeft: nothing distinguishes
+        /// "not started" from "not capturing", because CaptureTargetId already does.
+        /// </summary>
+        public int CaptureTicksLeft;
     }
 
     /// <summary>
@@ -201,6 +225,21 @@ namespace WordCraft.Sim
 
         /// <summary>Most offspring one 지옥불 군단장 keeps alive at once.</summary>
         public const int WarlordOffspring = 5;
+
+        /// <summary>
+        /// 인간 마법 문명 징발: whole ticks an 인간 worker stands beside a neutral
+        /// 꼬마돌 before it is taken, per docs/FACTION-MECHANICS.md. Three seconds
+        /// of a worker standing still and not gathering, which is what the capture
+        /// costs on top of walking there.
+        /// </summary>
+        public const int CaptureTicks = 60;
+
+        /// <summary>
+        /// What a neutral 꼬마돌 stands on the map with, per
+        /// docs/FACTION-MECHANICS.md. A world constant rather than a roster row,
+        /// because a neutral has no faction to look a row up in.
+        /// </summary>
+        public const int NeutralRockHp = 80;
 
         /// <summary>Where a finished unit appears, relative to its building. Fixed, so peers agree.</summary>
         public static readonly FixVec2 RallyOffset = new FixVec2(Fix.FromInt(2), Fix.Zero);
@@ -294,6 +333,11 @@ namespace WordCraft.Sim
             ReleasePopulation(e);
             ReleaseOffspringSlot(e);
             DropRemnant(e);
+            // A capture this body was running dies with it, per
+            // docs/FACTION-MECHANICS.md: 둘 중 하나가 죽으면 진행도는 사라진다.
+            // Here rather than in the capture loop, so a corpse never carries a
+            // clock that a second way of killing something could forget to stop.
+            ClearCapture(ref e);
         }
 
         /// <summary>
@@ -466,6 +510,7 @@ namespace WordCraft.Sim
                 DropOffId = -1,
                 TargetId = -1,
                 ParentId = -1,
+                CaptureTargetId = -1,
             };
             entities.Add(e);
             paths.Add(new List<int>());
@@ -499,6 +544,7 @@ namespace WordCraft.Sim
                 for (int i = 0; i < tickCommands.Count; i++) Apply(tickCommands[i]);
 
                 GatherSystem();
+                CaptureSystem();
                 ConstructionSystem();
                 ProductionSystem();
                 WarlordSpawnSystem();
@@ -658,6 +704,31 @@ namespace WordCraft.Sim
                     break;
                 }
 
+                case CommandType.Capture:
+                {
+                    if (!OwnedAndAlive(c.EntityId, c.PeerId)) return;
+                    // 인간 일꾼만 포획할 수 있다. Every other faction can kill a
+                    // 꼬마돌 and do nothing else with it, and that asymmetry is the
+                    // whole of the competition the mechanic creates: the map holds
+                    // the only anti-air 인간 will ever have, and the opponent can
+                    // delete it rather than take it.
+                    if (factions[c.PeerId] != CaptureFaction) return;
+                    if (c.Arg < 0 || c.Arg >= entities.Count) return;
+                    Entity rock = entities[c.Arg];
+                    if (!IsNeutralRock(rock)) return;
+
+                    Entity w = entities[c.EntityId];
+                    // A worker, not an army. Refused whole rather than reinterpreted
+                    // as an attack: a fighter sent to capture would otherwise stand
+                    // there doing nothing anyone ordered.
+                    if (w.Kind != EntityKind.Worker) return;
+                    ClearOrders(ref w);
+                    w.CaptureTargetId = c.Arg;
+                    entities[c.EntityId] = w;
+                    SetDestination(c.EntityId, rock.Position);
+                    break;
+                }
+
                 case CommandType.Build:
                 {
                     // Arg names the building the way Produce names a unit: the role
@@ -734,6 +805,9 @@ namespace WordCraft.Sim
             e.GatherNodeId = -1;
             e.TargetId = -1;
             e.OrderPoint = FixVec2.Zero;
+            // A capture is an order like any other, so a Move taken mid-capture
+            // ends it and loses the progress rather than resuming it on arrival.
+            ClearCapture(ref e);
         }
 
         /// <summary>
@@ -904,6 +978,8 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.SpawnCooldown);
                 Mix(ref h, (ulong)e.OffspringCount);
                 Mix(ref h, (ulong)e.ParentId);
+                Mix(ref h, (ulong)e.CaptureTargetId);
+                Mix(ref h, (ulong)e.CaptureTicksLeft);
 
                 List<int> path = paths[i];
                 Mix(ref h, (ulong)path.Count);
