@@ -514,7 +514,8 @@ namespace WordCraft.View
 
         /// <summary>
         /// The selection as a grid of chips. A click keeps that one entity, a
-        /// ctrl-click keeps every entity of the same role already selected.
+        /// ctrl-click keeps every entity of the same kind already selected
+        /// (SelectionMatch.SameKind — role and roster slot both, since #114).
         /// </summary>
         private void List(Rect area, World world)
         {
@@ -548,7 +549,7 @@ namespace WordCraft.View
                 float ratio = e.MaxHp > 0 ? Mathf.Clamp01(e.Hp / (float)e.MaxHp) : 0f;
                 if (!UiStyle.Chip(cell, Short(world, e) + "  " + e.Hp, ratio)) continue;
 
-                if (ctrl) selection.KeepRole(e.Role);
+                if (ctrl) selection.KeepKind(e);
                 else selection.SelectOnly(id);
                 return; // the list just changed under the loop
             }
