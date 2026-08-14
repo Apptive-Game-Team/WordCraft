@@ -57,6 +57,21 @@ namespace WordCraft.Net
             LatestTick < 0 ? -1 : Math.Max(firstTick, LatestTick - Capacity + 1);
 
         /// <summary>
+        /// The highest tick with no gap behind it, counting from the first frame
+        /// this feed ever took. It never goes backwards, so it describes what
+        /// arrived rather than what is still readable: a frame the ring has since
+        /// overwritten was still delivered, and a frame that never came is a hole
+        /// this number stops at for good.
+        ///
+        /// A feed filled from a local session is always contiguous and this is
+        /// just LatestTick. A feed filled from a socket is not, which is what it
+        /// is for: it is the only thing a watcher tells the publisher, a hint
+        /// about what not to send again. Nothing may ever wait on it — see
+        /// FeedPublisher, where it chooses bytes and never whether to step.
+        /// </summary>
+        public int ContiguousThrough { get; private set; } = -1;
+
+        /// <summary>
         /// Copies the batch the session just executed, the same list and at the
         /// same moment MatchRecorder captures it. Call it after every successful
         /// TryStep; calling it twice for one tick, or not at all, costs nothing
@@ -75,11 +90,57 @@ namespace WordCraft.Net
             var block = new Command[confirmed.Count];
             for (int i = 0; i < block.Length; i++) block[i] = confirmed[i];
 
+            File(tick, block);
+        }
+
+        /// <summary>
+        /// Files a frame that came from somewhere other than a local session: a
+        /// datagram, which may arrive late, twice, or never. Returns false only
+        /// for a frame the window has already moved past, and that is a fact
+        /// about this reader alone — there is nobody to ask for it again, and
+        /// asking is what would put a watcher's problem on the players.
+        ///
+        /// Out of order is normal here and costs nothing, because a frame is
+        /// addressed by its own tick. That is the same property that makes an
+        /// overwritten slot a detectable miss rather than wrong commands on the
+        /// right tick, used from the other side.
+        /// </summary>
+        public bool Accept(int tick, IReadOnlyList<Command> commands)
+        {
+            if (tick < 0 || commands == null) return false;
+            // Only a frame the ring can still hold. Writing an older one would
+            // evict a newer frame from the slot they share.
+            if (LatestTick >= 0 && tick <= LatestTick - Capacity) return false;
+
+            int slot = tick % frames.Length;
+            if (ticks[slot] == tick) return true; // a duplicate is delivery working, not a fault
+
+            var block = new Command[commands.Count];
+            for (int i = 0; i < block.Length; i++) block[i] = commands[i];
+
+            File(tick, block);
+            return true;
+        }
+
+        private void File(int tick, Command[] block)
+        {
             int slot = tick % frames.Length;
             frames[slot] = block;
             ticks[slot] = tick;
-            if (firstTick < 0) firstTick = tick;
-            LatestTick = tick;
+
+            if (firstTick < 0 || tick < firstTick) firstTick = tick;
+            if (tick > LatestTick) LatestTick = tick;
+
+            // Advance over whatever the new frame completed. Held to what is
+            // still readable, so a hole that fell out of the window stops this
+            // permanently, which is exactly what it means.
+            while (Holds(ContiguousThrough + 1)) ContiguousThrough++;
+        }
+
+        private bool Holds(int tick)
+        {
+            if (tick < firstTick || tick > LatestTick) return false;
+            return ticks[tick % frames.Length] == tick;
         }
 
         /// <summary>
