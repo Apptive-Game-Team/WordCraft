@@ -24,6 +24,7 @@
     <Compile Include="../Client/Assets/Editor/ScriptedLog.cs" />
     <Compile Include="../Client/Assets/Scripts/HitDetection.cs" />
     <Compile Include="../Client/Assets/Scripts/AlertWindow.cs" />
+    <Compile Include="../Client/Assets/Scripts/ProductionMenu.cs" />
   </ItemGroup>
 
 </Project>
