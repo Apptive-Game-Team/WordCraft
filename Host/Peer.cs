@@ -23,6 +23,15 @@ namespace WordCraft.Host
         /// </summary>
         public readonly MatchRecorder Recorder = new MatchRecorder();
 
+        /// <summary>
+        /// Where this peer publishes confirmed frames for whoever is watching,
+        /// or null when nobody is. Assigning it changes nothing about how the
+        /// match runs: publishing is a copy into a ring buffer, so a spectator
+        /// that never reads it, or never existed, costs this peer one array per
+        /// tick and no waiting at all.
+        /// </summary>
+        public SpectatorFeed Feed;
+
         // What the script commands, read out of the world it was handed rather
         // than written down as constants: the harness map and the client's map
         // number their entities differently, and a script naming raw ids would
@@ -126,7 +135,11 @@ namespace WordCraft.Host
             }
 
             if (!Session.TryStep(nowMs)) return false;
+            // Both consumers read the one confirmed batch, at the one moment it
+            // is valid, before the next TryStep overwrites it. The recorder keeps
+            // all of it for a file; the feed keeps a window of it for a watcher.
             Recorder.Capture(Session);
+            Feed?.Publish(Session);
             Hashes.Add(World.Tick, World.Hash());
             return true;
         }
