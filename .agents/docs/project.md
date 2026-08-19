@@ -14,17 +14,40 @@ Fill this document during project initialization. Agents must verify commands ag
 
 ## Architecture
 
-- Entry points: `Replay/Program.cs` (headless determinism self-check) and
-  `Host/Program.cs` (`host`, `join`, `selfcheck`). The Unity player entry point
-  does not exist yet.
+- Entry points: `Replay/Program.cs` (headless determinism self-check),
+  `Host/Program.cs` (`host`, `join`, `solo`, `selfcheck`, `watch`, `replay`,
+  `compare`), and `Client/Assets/Scripts/MatchRunner.cs` (the Unity player
+  entry point; a bare launch opens the start screen, launch flags skip it to
+  host or join directly).
 - Main modules:
   - `Sim/` — pure C# simulation, `netstandard2.1`, `WordCraft.Sim` namespace.
-  - `Net/` — P2P lockstep session and UDP transport, `netstandard2.1`.
-  - `Replay/` — headless harness that runs input logs and compares state hashes.
+  - `Net/` — P2P lockstep session, UDP transport, and the spectator fan-out,
+    `netstandard2.1`.
+  - `Replay/` — headless harness that runs input logs and compares state hashes,
+    and the replay file format.
   - `Host/` — console runner for a match between two peers.
+  - `Client/` — the Unity 2022 LTS view. Consumes `Sim` and `Net` as compiled
+    assemblies that `dotnet build` vendors into `Client/Assets/Plugins/`; they
+    are gitignored, so build once before opening the project.
+- `Net/` carries two wires, and they run on two separate sockets:
+  - The match wire (`ITransport`/`UdpTransport`, driven by `LockstepSession`)
+    — exactly two peers. Every datagram piggybacks an ack, and a tick barrier
+    (`LockstepSession.TryStep`) holds until both sides have confirmed the
+    tick. `UdpTransport` learns its one remote endpoint from whoever sends to
+    it first.
+  - The watch wire (`IFanoutTransport`/`UdpFanout`, driven by
+    `FeedPublisher`/`FeedSubscriber`) — as many endpoints as have spoken to
+    it, up to `FeedPublisher.MaxWatchers`. Nothing on it is acknowledged and
+    nothing waits on it: a watcher that falls behind or goes silent is
+    forgotten, never chased.
+  - They must never share a socket. `UdpTransport` takes first-sender-wins as
+    its peer; a watcher that spoke before the real peer would be mistaken for
+    it, and the match would then wait forever on somebody who will never send
+    input. That is why the fan-out binds a port of its own — see the
+    `-watch <port>` flag on `Host/Program.cs`'s `host` and `join` modes.
 - Dependency direction: `Net` and `Replay` depend on `Sim`; `Host` depends on both.
-  `Sim` depends on nothing. The future Unity view layer will depend on `Sim` and
-  `Net`; neither may ever depend on it.
+  `Sim` depends on nothing. `Client` depends on `Sim` and `Net`; neither may ever
+  depend on it, and the view may read the simulation but never write to it.
 - External systems: none. No server, no database, no network service.
 - Persistent data: none yet. Input logs and replays are files, not a store.
 
