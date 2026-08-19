@@ -17,6 +17,11 @@ namespace WordCraft.Net
         Watch = 6,
         Welcome = 7,
         Frame = 8,
+
+        // The only thing an address that has not proved it can hear us is ever
+        // sent, and deliberately the smallest message on this wire: an answer
+        // no larger than the question is an answer with nothing to amplify.
+        Challenge = 9,
     }
 
     internal static class Wire
