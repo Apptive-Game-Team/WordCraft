@@ -53,6 +53,23 @@ namespace WordCraft.Sim
         public bool HitsAir;
 
         /// <summary>
+        /// Can shoot something that walks. The pair of <see cref="HitsAir"/>, and
+        /// the two together are what docs/FACTION-MECHANICS.md 공중 asks for once
+        /// 대포 is 지상 전용 and Towerback is 공중 전용: reach into the air and
+        /// reach along the ground are separate facts about a weapon, so a row can
+        /// say either, both, or — see the harness — neither by mistake.
+        ///
+        /// Two bools rather than one, and not a flag derived from something else,
+        /// because there is nothing else in the row that already says it. That is
+        /// the line <see cref="HasWeapon"/> draws: a fact the row states once is
+        /// read back, and a fact the row does not state gets a field. What keeps
+        /// the pair honest is not the encoding but the invariant beside it — an
+        /// armed row that reaches neither is a unit that acquires, closes, and
+        /// fires nothing, and EveryWeaponReachesSomething refuses one.
+        /// </summary>
+        public bool HitsGround;
+
+        /// <summary>
         /// Whether this row carries a weapon at all. 지옥불 군단장 is 비전투 per
         /// docs/FACTION-MECHANICS.md and its row is the only one that answers no.
         ///
@@ -108,7 +125,7 @@ namespace WordCraft.Sim
         /// a rejection before tick 0. Terrain counts: a peer generating a different
         /// map has to be turned away at the handshake rather than desync on tick 1.
         /// </summary>
-        public const uint ContentVersion = 19;
+        public const uint ContentVersion = 20;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -160,8 +177,9 @@ namespace WordCraft.Sim
         /// HitsAir is set on everything that shoots except melee, per
         /// docs/FACTION-MECHANICS.md 공중: a ranged weapon reaches air unless its
         /// row says otherwise, and reach is the one thing melee does not have.
-        /// The exceptions the document names on top of that — 대포 ground only,
-        /// Towerback air only — are the human faction's, and they arrive with it.
+        /// HitsGround is set on everything that shoots at all, melee included,
+        /// which is what makes the two exceptions the document names — 대포 지상
+        /// 전용, Towerback 공중 전용 — the only rows that turn one of them off.
         /// </summary>
         private static readonly UnitStats[] sharedStats =
         {
@@ -169,10 +187,10 @@ namespace WordCraft.Sim
             /* Base       */ new UnitStats { Hp = 400 },
             /* Worker     */ new UnitStats { Hp = 60, Speed = Fix.Ratio(1, 4) },
             /* Production */ new UnitStats { Hp = 400 },
-            /* Defense    */ new UnitStats { Hp = 300, Damage = 9, Range = Fix.FromInt(6), AttackTicks = 20, HitsAir = true },
-            /* Melee      */ new UnitStats { Hp = 100, Speed = Fix.Ratio(1, 4), Damage = 7, Range = Fix.FromInt(2), AttackTicks = 15 },
-            /* Ranged     */ new UnitStats { Hp = 70, Speed = Fix.Ratio(1, 4), Damage = 6, Range = Fix.FromInt(6), AttackTicks = 18, HitsAir = true },
-            /* Signature  */ new UnitStats { Hp = 130, Speed = Fix.Ratio(3, 8), Damage = 10, Range = Fix.FromInt(3), AttackTicks = 22, HitsAir = true },
+            /* Defense    */ new UnitStats { Hp = 300, Damage = 9, Range = Fix.FromInt(6), AttackTicks = 20, HitsAir = true, HitsGround = true },
+            /* Melee      */ new UnitStats { Hp = 100, Speed = Fix.Ratio(1, 4), Damage = 7, Range = Fix.FromInt(2), AttackTicks = 15, HitsGround = true },
+            /* Ranged     */ new UnitStats { Hp = 70, Speed = Fix.Ratio(1, 4), Damage = 6, Range = Fix.FromInt(6), AttackTicks = 18, HitsAir = true, HitsGround = true },
+            /* Signature  */ new UnitStats { Hp = 130, Speed = Fix.Ratio(3, 8), Damage = 10, Range = Fix.FromInt(3), AttackTicks = 22, HitsAir = true, HitsGround = true },
             /* Supply     */ new UnitStats { Hp = 200 },
             /* Tech       */ new UnitStats { Hp = 250 },
         };
@@ -215,6 +233,40 @@ namespace WordCraft.Sim
                     Range = Fix.FromInt(4),
                     AttackTicks = 18,
                     Air = true,
+                    HitsAir = true,
+                    HitsGround = true,
+                }),
+
+            // 인간 대포. 지상 전용, per docs/FACTION-MECHANICS.md 공중, which is
+            // the whole reason this row exists: everything else about it could
+            // have stayed on the shared defense row. Entry 0 of the defense slot;
+            // 전기 타워 and 돌 포탑 sit behind it and keep the shared row, which
+            // reaches both, until M4 gives the three of them numbers apart.
+            (Faction.Humans, Role.Defense, 0,
+                new UnitStats
+                {
+                    Hp = 180,
+                    Damage = 10,
+                    Range = Fix.FromInt(7),
+                    AttackTicks = 20,
+                    HitsGround = true,
+                }),
+
+            // 인간 Towerback. 공중 전용, and the only body in the game that arrives
+            // by 징발 rather than by production. Numbers from
+            // docs/FACTION-MECHANICS.md, which names hp, reach and damage and no
+            // speed at all: the shared signature speed is written out here rather
+            // than inherited, the way 지옥불 군단장's row writes out the same
+            // number, because what a captured body walks at is a decision and not
+            // a blank. Entry 0 of the slot; 마도 정찰기 sits behind it.
+            (Faction.Humans, Role.Signature, 0,
+                new UnitStats
+                {
+                    Hp = 200,
+                    Speed = Fix.Ratio(3, 8),
+                    Damage = 8,
+                    Range = Fix.FromInt(6),
+                    AttackTicks = 22,
                     HitsAir = true,
                 }),
         };
@@ -278,6 +330,14 @@ namespace WordCraft.Sim
             // then 무료 is only a discount on a unit you can also just buy. Entry 0
             // only: 균열 파수병 behind it is bought at the shared ranged price.
             (Faction.Hellfire, Role.Ranged, 0, new ProductionCost()),
+
+            // 인간 Towerback. Off the production list for the same reason 자손 is,
+            // and it matters more here: 포획으로만 획득한다 is the mechanic, so a
+            // price on it would be a second way in and 징발 would be a discount on
+            // a unit 인간 could simply buy — and then killing the neutral 꼬마돌
+            // would cost the opponent nothing. Entry 0 only: 마도 정찰기 behind it
+            // is bought at the shared signature price.
+            (Faction.Humans, Role.Signature, 0, new ProductionCost()),
         };
 
         private static ProductionCost Produce(int resources, int ticks) =>
