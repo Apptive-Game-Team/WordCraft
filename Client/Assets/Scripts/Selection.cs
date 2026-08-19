@@ -71,12 +71,18 @@ namespace WordCraft.View
             selected.Add(id);
         }
 
-        /// <summary>Narrows the selection to one role. What ctrl-clicking an entry means.</summary>
-        public void KeepRole(Role role)
+        /// <summary>
+        /// Narrows the selection to the same kind as <paramref name="like"/>
+        /// (SelectionMatch.SameKind — same Role and, within it, the same Slot).
+        /// Role alone used to be enough; #114 gave one role several roster
+        /// entries, so ctrl-clicking a 균열 파수병 chip must not also keep the
+        /// 자손 sharing its role. What ctrl-clicking an entry means.
+        /// </summary>
+        public void KeepKind(Entity like)
         {
             for (int i = selected.Count - 1; i >= 0; i--)
             {
-                if (runner.World.GetEntity(selected[i]).Role != role) selected.RemoveAt(i);
+                if (!SelectionMatch.SameKind(runner.World.GetEntity(selected[i]), like)) selected.RemoveAt(i);
             }
         }
 
@@ -175,7 +181,7 @@ namespace WordCraft.View
 
             if (doubleClick)
             {
-                SelectVisibleRole(runner.World.GetEntity(hit).Role, shift);
+                SelectVisibleKind(runner.World.GetEntity(hit), shift);
                 return;
             }
 
@@ -219,8 +225,15 @@ namespace WordCraft.View
             }
         }
 
-        /// <summary>Every one of that role the player can currently see. What a double click means.</summary>
-        private void SelectVisibleRole(Role role, bool shift)
+        /// <summary>
+        /// Every entity of the same kind as <paramref name="like"/>
+        /// (SelectionMatch.SameKind) the player can currently see. What a
+        /// double click means. Role alone used to be this test; after #114 a
+        /// role-only match on 균열 파수병 would grab the warlord's flying
+        /// 자손 with it, and an attack-move issued to that mixed pack would
+        /// move only part of it as intended.
+        /// </summary>
+        private void SelectVisibleKind(Entity like, bool shift)
         {
             if (!shift) selected.Clear();
             World world = runner.World;
@@ -228,7 +241,7 @@ namespace WordCraft.View
             for (int i = 0; i < world.EntityCount; i++)
             {
                 Entity e = world.GetEntity(i);
-                if (!e.Alive || e.Owner != runner.LocalPeer || e.Role != role) continue;
+                if (!e.Alive || e.Owner != runner.LocalPeer || !SelectionMatch.SameKind(e, like)) continue;
                 if (e.Kind != EntityKind.Unit && e.Kind != EntityKind.Worker) continue;
 
                 Vector3 v = cam.WorldToViewportPoint(runner.DrawPosition(i));
