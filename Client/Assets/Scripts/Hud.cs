@@ -577,7 +577,8 @@ namespace WordCraft.View
             if (orders == null) return;
 
             CardKind kind = orders.Kind();
-            CardSlot[] card = CommandCard.Of(kind, runner.World.FactionOf(runner.LocalPeer));
+            Faction faction = runner.World.FactionOf(runner.LocalPeer);
+            CardSlot[] card = CommandCard.Of(kind, faction);
 
             // The card changes under the same rectangle, so it says what it is.
             // Without this a build submenu and a produce row look alike.
@@ -599,8 +600,15 @@ namespace WordCraft.View
                     continue;
                 }
 
+                // 징발 belongs to one faction of six, and the other five have to be
+                // told so rather than pressing a cell that sends an order the
+                // simulation drops in silence. A dead face, not a missing cell:
+                // the card keeps one layout for every faction, so the position is
+                // worth learning, and what is greyed is a command that exists.
+                bool live = card[i].Type != CommandType.Capture || CaptureOrder.Available(faction);
+
                 if (UiStyle.CardCell(cell, CommandCard.Keys[i].ToString(), card[i].Label,
-                        orders.Pending == card[i].Type))
+                        orders.Pending == card[i].Type, live))
                 {
                     orders.Run(card[i]);
                 }

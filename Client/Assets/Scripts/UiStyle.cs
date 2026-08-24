@@ -619,17 +619,31 @@ namespace WordCraft.View
         /// learning; armed inverts the whole cell, keycap included, so the state is
         /// visible from the edge of vision.
         /// </summary>
-        public static bool CardCell(Rect area, string key, string label, bool armed)
+        public static bool CardCell(Rect area, string key, string label, bool armed, bool enabled = true)
         {
             Build();
-            bool clicked = GUI.Button(area, GUIContent.none, armed ? buttonArmed : button);
+            bool clicked = false;
+            if (enabled)
+            {
+                clicked = GUI.Button(area, GUIContent.none, armed ? buttonArmed : button);
+            }
+            else
+            {
+                // A face, not GUI.enabled, and not an EmptyCell either: this is a
+                // command that exists and this player cannot use, which is a
+                // different sentence from a card with nothing in that position.
+                GUI.Label(area, GUIContent.none, buttonOff);
+            }
 
             var cap = new Rect(area.x + S1, area.y + S1, KeyCap, KeyCap);
-            Fill(cap, armed ? OnAccent : Void);
-            keycap.normal.textColor = armed ? Accent : InkDim;
+            // The well needs a face under it to be a well. Void on a Void cell is
+            // nothing at all, so a dead cell borrows the same Raised the empty
+            // cell's frame does.
+            Fill(cap, armed ? OnAccent : enabled ? Void : Raised);
+            keycap.normal.textColor = armed ? Accent : enabled ? InkDim : InkMute;
             GUI.Label(cap, key, keycap);
 
-            cell.normal.textColor = armed ? OnAccent : Ink;
+            cell.normal.textColor = armed ? OnAccent : enabled ? Ink : InkMute;
             GUI.Label(new Rect(area.x + S1, area.y + KeyCap, area.width - S2, area.height - KeyCap - S1),
                 label, cell);
             return clicked;

@@ -126,6 +126,15 @@ namespace WordCraft.View
             if (runner == null || slot.Type == CommandType.None) return;
             if (runner.Session.State != SessionState.Running) return;
 
+            // The card draws this cell dead for the five factions that cannot
+            // capture, and the key has to mean the same thing the button does or
+            // the dead cell is only dead to the mouse.
+            if (slot.Type == CommandType.Capture &&
+                !CaptureOrder.Available(runner.World.FactionOf(runner.LocalPeer)))
+            {
+                return;
+            }
+
             if (slot.Type == CommandType.Build)
             {
                 // The cell that names no building is the one that opens the menu.
