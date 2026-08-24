@@ -145,13 +145,17 @@ namespace WordCraft.Sim
     public static class FactionData
     {
         /// <summary>
-        /// Bump on any change to the tables below, or to the map MatchScenario
-        /// paints. Two peers running different content produce different results
-        /// from the same input, so this travels in the handshake and a mismatch is
-        /// a rejection before tick 0. Terrain counts: a peer generating a different
-        /// map has to be turned away at the handshake rather than desync on tick 1.
+        /// Bump on any change to the tables below, to the map MatchScenario paints,
+        /// or to a rule a tick system applies. Two peers running different content
+        /// produce different results from the same input, so this travels in the
+        /// handshake and a mismatch is a rejection before tick 0. Terrain counts: a
+        /// peer generating a different map has to be turned away at the handshake
+        /// rather than desync on tick 1. So does a rule: 차원 유랑종 통로 moved this
+        /// to 23 without touching a table, because a peer that arrives a body at a
+        /// 굴절 기둥 and a peer that puts it down at the 통로 have diverged on tick 0
+        /// of the order with nothing in the roster to say why.
         /// </summary>
-        public const uint ContentVersion = 22;
+        public const uint ContentVersion = 23;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;

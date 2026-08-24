@@ -206,6 +206,31 @@ namespace WordCraft.Sim
         /// role alone would not say which of them a worker paid to become.
         /// </summary>
         public int MorphSlot;
+
+        // 차원 유랑종 통로. Both live on the 통로 running the queue and nowhere
+        // else, which is the one-sidedness the capture and the growth fields have.
+        // Here it buys something they did not need: the arrival point is a verdict
+        // about a moment, and a 굴절 기둥 that anchored it holds no copy, so a
+        // pillar falling is a body dying and nothing more. A pillar that carried a
+        // list of the orders leaning on it would be a list to clear inside Kill,
+        // and the tick one peer cleared it a step later than the other is a desync.
+
+        /// <summary>
+        /// Where the next body off this 통로's queue is to appear. Only read when
+        /// <see cref="HasArrivalPoint"/>, and only ever written by a Produce this
+        /// building accepted.
+        /// </summary>
+        public FixVec2 ArrivalPoint;
+
+        /// <summary>
+        /// Whether this building holds an arrival point at all, and — because it is
+        /// only ever set by a point that passed the check — whether that point was
+        /// valid on the tick it was named. Explicit rather than a sentinel
+        /// coordinate, for the reason <see cref="HasRallyPoint"/> is: every point on
+        /// the map is a point a player can legitimately aim at, and (0,0) is what
+        /// every client and every recorded log already sends on a Produce.
+        /// </summary>
+        public bool HasArrivalPoint;
     }
 
     /// <summary>
@@ -861,8 +886,22 @@ namespace WordCraft.Sim
                     // default fighter is what the client has always meant by it.
                     // An entry number rides along untouched, so an old client's
                     // bare Produce still means entry 0 of the default fighter.
+                    //
+                    // Target is the 차원 유랑종 arrival point, and it is the field
+                    // Move already uses rather than one of its own. Command is
+                    // serialized field by field in Net and in the replay file and
+                    // neither is this change's to edit: a new field would travel as
+                    // far as the sender's own Apply and read back as zero
+                    // everywhere else, which is not a dropped order but one peer
+                    // arriving a body at a 굴절 기둥 while every other peer arrives
+                    // it at the 통로 — a desync that surfaces ticks later with
+                    // nothing pointing back here. Target already crosses both
+                    // wires, and zero is what every recorded log carries on a
+                    // Produce: it is a point on the map like any other, refused by
+                    // the same check as any other point with no anchor near it, so
+                    // an old log means exactly what it meant.
                     TryQueueUnit(c.PeerId, c.EntityId, role == Role.None ? Role.Melee : role,
-                        Command.SlotOf(c.Arg));
+                        Command.SlotOf(c.Arg), c.Target);
                     break;
                 }
 
@@ -1063,6 +1102,9 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.MorphTicksLeft);
                 Mix(ref h, (ulong)e.MorphRole);
                 Mix(ref h, (ulong)e.MorphSlot);
+                Mix(ref h, (ulong)e.ArrivalPoint.X.Raw);
+                Mix(ref h, (ulong)e.ArrivalPoint.Y.Raw);
+                Mix(ref h, e.HasArrivalPoint ? 1UL : 0UL);
 
                 List<int> path = paths[i];
                 Mix(ref h, (ulong)path.Count);
