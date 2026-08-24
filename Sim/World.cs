@@ -172,6 +172,40 @@ namespace WordCraft.Sim
         /// "not started" from "not capturing", because CaptureTargetId already does.
         /// </summary>
         public int CaptureTicksLeft;
+
+        // 세계수 정령 성장. All three live on the body that is growing and nowhere
+        // else, which is the same one-sidedness the capture fields have and buys
+        // the same thing: a body that dies mid-growth takes the whole of the growth
+        // with it, because there was never a second copy to clear.
+        //
+        // Unlike a capture, there is no other entity involved at all. Growth is a
+        // body changing what it is under its own owner, so the only question the
+        // state has to answer is what it is becoming and how much longer.
+
+        /// <summary>
+        /// Ticks left before this body finishes growing, or 0 for everything that
+        /// is not growing, which is every entity in five factions out of six. Zero
+        /// is the whole test — there is no target id to be "none", the way a
+        /// capture has one, so nothing else distinguishes "not started" from "not
+        /// growing" and nothing needs to.
+        /// </summary>
+        public int MorphTicksLeft;
+
+        /// <summary>
+        /// The role this body is growing into. Read on the tick the growth lands
+        /// and never before, and hashed for the reason ProduceRole is: it decides
+        /// what comes out, and two peers that disagreed here would run one entity
+        /// id as two different units for the rest of the match.
+        /// </summary>
+        public Role MorphRole;
+
+        /// <summary>
+        /// Which entry of <see cref="MorphRole"/>. Beside it and hashed with it,
+        /// because the two numbers only mean anything together: 세계수 정령's
+        /// ranged list holds 번개 정령 at entry 0 and 덩쿨 정령 at entry 1, and the
+        /// role alone would not say which of them a worker paid to become.
+        /// </summary>
+        public int MorphSlot;
     }
 
     /// <summary>
@@ -338,6 +372,13 @@ namespace WordCraft.Sim
             // Here rather than in the capture loop, so a corpse never carries a
             // clock that a second way of killing something could forget to stop.
             ClearCapture(ref e);
+            // 성장 중 죽으면 그냥 죽는다. 환불 없다. There is no line here that
+            // pays anything back, and that absence is the rule: a refund would need
+            // to know how far along the growth was, which is the cancel judgement
+            // docs/FACTION-MECHANICS.md declines to make. The clock is dropped so a
+            // corpse never carries one a second way of killing something could
+            // forget to stop.
+            ClearGrowth(ref e);
         }
 
         /// <summary>
@@ -545,6 +586,7 @@ namespace WordCraft.Sim
 
                 GatherSystem();
                 CaptureSystem();
+                GrowthSystem();
                 ConstructionSystem();
                 ProductionSystem();
                 WarlordSpawnSystem();
@@ -596,6 +638,25 @@ namespace WordCraft.Sim
 
         private void Apply(Command c)
         {
+            // 성장 중에는 이동·공격·채집을 못 한다, and this is where the first and
+            // third of those live. A body mid-growth takes no order at all: not a
+            // move, not a gather, not another growth. One gate in front of the
+            // whole switch rather than a clause in each case, because the rule is
+            // about the body and not about any particular order, and a command
+            // added later would otherwise arrive with the hole already in it.
+            //
+            // Refusal rather than cancellation, and that is the rule 환불 없다
+            // needs. An order that ended the growth would be a cancel, and a cancel
+            // that paid nothing back is the refund question wearing another name —
+            // exactly the extra judgement docs/FACTION-MECHANICS.md declines to
+            // make. A player who wants the worker back does not get it.
+            //
+            // Commands that name a building rather than the body being ordered —
+            // Produce, CancelProduction, SetRallyPoint — pass through untouched: a
+            // building never grows, so the test can only ever answer false for them.
+            // Build names no entity at all and carries -1, which the range test drops.
+            if (c.EntityId >= 0 && c.EntityId < entities.Count && IsGrowing(entities[c.EntityId])) return;
+
             switch (c.Type)
             {
                 case CommandType.Move:
@@ -726,6 +787,25 @@ namespace WordCraft.Sim
                     w.CaptureTargetId = c.Arg;
                     entities[c.EntityId] = w;
                     SetDestination(c.EntityId, rock.Position);
+                    break;
+                }
+
+                case CommandType.Grow:
+                {
+                    if (!OwnedAndAlive(c.EntityId, c.PeerId)) return;
+                    // Arg names the roster entry to become, packed exactly as Build
+                    // and Produce pack theirs. Out of range is a malformed order
+                    // and is refused whole.
+                    if (c.Arg < 0) return;
+                    Role role = Command.RoleOf(c.Arg);
+                    if ((int)role >= FactionData.RoleCount) return;
+                    // No default target, unlike Build and Produce. Those two read
+                    // Role.None as "what the client has always meant", and there is
+                    // no such thing here: 성장 has two destinations and picking one
+                    // for a caller that named neither would have each peer pick for
+                    // itself. Role.None is simply not in the growth table, so the
+                    // same line that refuses a 지옥불 unit refuses a bare Grow.
+                    TryGrow(c.PeerId, c.EntityId, role, Command.SlotOf(c.Arg));
                     break;
                 }
 
@@ -980,6 +1060,9 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.ParentId);
                 Mix(ref h, (ulong)e.CaptureTargetId);
                 Mix(ref h, (ulong)e.CaptureTicksLeft);
+                Mix(ref h, (ulong)e.MorphTicksLeft);
+                Mix(ref h, (ulong)e.MorphRole);
+                Mix(ref h, (ulong)e.MorphSlot);
 
                 List<int> path = paths[i];
                 Mix(ref h, (ulong)path.Count);
