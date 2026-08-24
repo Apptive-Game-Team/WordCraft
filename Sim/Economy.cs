@@ -247,7 +247,15 @@ namespace WordCraft.Sim
             return tier;
         }
 
-        private void TryQueueUnit(int peer, int buildingId, Role role, int slot)
+        /// <summary>
+        /// arrival is the 차원 유랑종 arrival point the order named, and it is read
+        /// only after every other rule has passed: a refused Produce leaves the
+        /// building's arrival point exactly as it found it, which is the same
+        /// "refused whole" every rule here already keeps about resources and the
+        /// queue. Every other faction's Produce carries a point too and none of them
+        /// keeps one — see World.AimArrival.
+        /// </summary>
+        private void TryQueueUnit(int peer, int buildingId, Role role, int slot, FixVec2 arrival)
         {
             if (!OwnedAndAlive(buildingId, peer)) return;
             Entity b = entities[buildingId];
@@ -296,6 +304,9 @@ namespace WordCraft.Sim
             // refund needs the price each entry was bought at.
             b.ProduceRole = role;
             b.ProduceSlot = slot;
+            // 차원 유랑종 통로: the first of the mechanic's two checks, taken here
+            // because here is where the order is known to have been accepted.
+            AimArrival(ref b, peer, arrival);
             entities[buildingId] = b;
         }
 
@@ -352,16 +363,23 @@ namespace WordCraft.Sim
                     b.ProduceTicksLeft = 0;
                     b.QueueCount--;
                     entities[i] = b;
-                    // Fixed rally offset: the spawn point must not depend on how many
-                    // units already stand there.
+                    // Fixed rally offset for everyone but a 차원 유랑종 통로: the
+                    // spawn point must not depend on how many units already stand
+                    // there. ArrivalOf is the second of the 통로's two checks and
+                    // answers that same offset for every other building in the
+                    // game, so this is one line rather than a branch.
+                    //
+                    // Taken after the building has been written back, so the check
+                    // reads the world every other peer is reading on this tick.
                     //
                     // A worker has to come out a Worker. Kind is what GatherSystem
                     // and the Gather command both test, so a produced worker built
                     // as a plain Unit would carry worker stats, no weapon, and no
                     // way to ever gather anything.
+                    FixVec2 arrival = ArrivalOf(b);
                     int spawned = b.ProduceRole == Role.Worker
-                        ? SpawnWorker(b.Owner, b.Position + RallyOffset)
-                        : SpawnUnit(b.Owner, b.ProduceRole, b.ProduceSlot, b.Position + RallyOffset);
+                        ? SpawnWorker(b.Owner, arrival)
+                        : SpawnUnit(b.Owner, b.ProduceRole, b.ProduceSlot, arrival);
                     // Walked, not teleported: a rally point costs what crossing the
                     // ground costs, and the unit is catchable on the way.
                     if (b.HasRallyPoint) SetDestination(spawned, b.RallyPoint);
