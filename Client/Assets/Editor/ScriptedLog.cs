@@ -20,7 +20,7 @@ namespace WordCraft.View
         /// on. Update it only when the simulation intentionally changes, and only
         /// after both runtimes agree on the new value.
         /// </summary>
-        public const ulong GoldenHash = 0x03C5575F929D7A6EUL;
+        public const ulong GoldenHash = 0x567CF332B4792C2EUL;
 
         /// <summary>
         /// The factions the golden hash was taken over. Factions are hashed, so
