@@ -110,6 +110,32 @@ namespace WordCraft.Sim
     }
 
     /// <summary>
+    /// What growing one entry of a slot costs its owner, and how long the body
+    /// spends unable to do anything while it happens. The pair of
+    /// <see cref="ProductionCost"/>, and separate from it on purpose: production
+    /// makes a new body out of a building's queue, growth changes what an existing
+    /// body is. A slot can be on one list, the other, both, or neither, and the two
+    /// prices are decided apart — 세계수 정령's 고목 수호자 is 50 to grow into and
+    /// the shared 20 to produce, which is two numbers about two different acts.
+    /// </summary>
+    public struct GrowthCost
+    {
+        /// <summary>Taken in full when the growth starts. Never refunded: 환불 없다.</summary>
+        public int Resources;
+
+        /// <summary>Whole ticks the body spends growing. Never seconds.</summary>
+        public int Ticks;
+
+        /// <summary>
+        /// Whether a Grow command may name this entry at all. Default false on the
+        /// struct, so a slot nobody wrote fails closed: five factions out of six
+        /// have no growth at all and every one of them is refused by this field
+        /// rather than by a faction test written somewhere else.
+        /// </summary>
+        public bool Grown;
+    }
+
+    /// <summary>
     /// The roster: stats per role, identity per faction and role. A role holds a
     /// list of entries rather than one, because the six factions do not field the
     /// same units. Plain constants on purpose. A parsed file or a ScriptableObject
@@ -125,7 +151,7 @@ namespace WordCraft.Sim
         /// a rejection before tick 0. Terrain counts: a peer generating a different
         /// map has to be turned away at the handshake rather than desync on tick 1.
         /// </summary>
-        public const uint ContentVersion = 20;
+        public const uint ContentVersion = 21;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -211,6 +237,46 @@ namespace WordCraft.Sim
         /// </summary>
         private static readonly (Faction Faction, Role Role, int Slot, UnitStats Stats)[] statOverrides =
         {
+            // 세계수 정령 고목 수호자, the melee half of 성장. Numbers from
+            // docs/FACTION-MECHANICS.md, which names hp and damage and calls it
+            // 근접. The shared melee reach, rate and speed are written out here
+            // rather than inherited, for the reason the Towerback row writes out a
+            // speed: what a body a player spent a worker on walks and swings at is
+            // a decision, and this row is the one place a reader looks for it.
+            //
+            // Entry 1 of the slot. 잎날 정령 holds entry 0 and keeps the shared row,
+            // which is what 세계수 정령 produces from a building; entry 1 is what a
+            // 풀씨 정령 grows into and nothing can buy. That split is the same one
+            // 지옥불's ranged slot has between 자손 and 균열 파수병, and it is the
+            // reason both keys name a slot.
+            (Faction.TreeSpirits, Role.Melee, 1,
+                new UnitStats
+                {
+                    Hp = 220,
+                    Speed = Fix.Ratio(1, 4),
+                    Damage = 12,
+                    Range = Fix.FromInt(2),
+                    AttackTicks = 15,
+                    HitsGround = true,
+                }),
+
+            // 세계수 정령 덩쿨 정령, the ranged half, and entry 1 for the same
+            // reason 고목 수호자 is: 번개 정령 holds entry 0 and is what the faction
+            // buys. Reach 5 and damage 6, both from the document, which is a
+            // shorter reach than the shared ranged row for a unit that costs a
+            // worker rather than mana.
+            (Faction.TreeSpirits, Role.Ranged, 1,
+                new UnitStats
+                {
+                    Hp = 90,
+                    Speed = Fix.Ratio(1, 4),
+                    Damage = 6,
+                    Range = Fix.FromInt(5),
+                    AttackTicks = 18,
+                    HitsAir = true,
+                    HitsGround = true,
+                }),
+
             // 지옥불 군단장. Flies, and carries no weapon at all: it kills nothing
             // itself and pays for itself by what it spawns. Numbers from
             // docs/FACTION-MECHANICS.md. Keeps the shared signature speed, because
@@ -319,6 +385,17 @@ namespace WordCraft.Sim
         /// </summary>
         private static readonly (Faction Faction, Role Role, int Slot, ProductionCost Cost)[] productionOverrides =
         {
+            // 세계수 정령's two 성장 products. Off the production list altogether,
+            // for the reason 자손 and the Towerback are: 일꾼이 자란다 is the whole
+            // of the faction, and a price on either of these would be a second way
+            // in — one that costs no worker, which is the only thing growth
+            // actually spends. Entry 1 of each slot only: 잎날 정령 and 번개 정령
+            // hold entry 0 and are bought at the shared price, so the faction still
+            // has something a building can make and the opponent's AI ladder still
+            // has a unit to ask for.
+            (Faction.TreeSpirits, Role.Melee, 1, new ProductionCost()),
+            (Faction.TreeSpirits, Role.Ranged, 1, new ProductionCost()),
+
             // 지옥불 군단장. 220자원 140틱, per docs/FACTION-MECHANICS.md. The most
             // expensive unit in the game, and it kills nothing itself: it pays for
             // itself with what it spawns.
@@ -342,6 +419,60 @@ namespace WordCraft.Sim
 
         private static ProductionCost Produce(int resources, int ticks) =>
             new ProductionCost { Resources = resources, Ticks = ticks, Produced = true };
+
+        /// <summary>
+        /// 세계수 정령 성장: every roster entry a worker of some faction may grow
+        /// into, and what it costs. A whole table rather than a shared row and a
+        /// list of overrides, because growth is not a thing every faction does a
+        /// little differently — it is a thing one faction does at all. A shared row
+        /// would have to say "no" fifty-eight times to say "yes" twice.
+        ///
+        /// Keyed by Faction, Role and Slot, which is the same key
+        /// <see cref="statOverrides"/> uses and the same pair a Grow command names
+        /// through <see cref="Command.RosterArg"/>. Numbers from
+        /// docs/FACTION-MECHANICS.md.
+        /// </summary>
+        private static readonly (Faction Faction, Role Role, int Slot, GrowthCost Cost)[] growthTargets =
+        {
+            // 덩쿨 정령. 30자원, 40틱.
+            (Faction.TreeSpirits, Role.Ranged, 1, Grow(30, 40)),
+            // 고목 수호자. 50자원, 60틱.
+            (Faction.TreeSpirits, Role.Melee, 1, Grow(50, 60)),
+        };
+
+        private static GrowthCost Grow(int resources, int ticks) =>
+            new GrowthCost { Resources = resources, Ticks = ticks, Grown = true };
+
+        /// <summary>
+        /// What growing into one entry costs and how long it takes. An entry no
+        /// faction grows into answers a default cost, which is not grown: the table
+        /// fails closed, so refusing a Grow that names a 지옥불 unit is the same
+        /// line that refuses one naming a building, and there is no second place
+        /// for it to be got wrong.
+        ///
+        /// A linear scan of a two-row table, walked in declaration order. Never a
+        /// keyed collection: this answers a question a tick system asks, and the
+        /// order it is walked in has to be the same everywhere.
+        /// </summary>
+        public static GrowthCost Growth(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < growthTargets.Length; i++)
+            {
+                var row = growthTargets[i];
+                if (row.Faction == faction && row.Role == role && row.Slot == slot) return row.Cost;
+            }
+            return new GrowthCost();
+        }
+
+        /// <summary>
+        /// How many entries the growth table holds, so a harness can walk every one
+        /// of them without a copy of the list of its own.
+        /// </summary>
+        public static int GrowthTargetCount => growthTargets.Length;
+
+        /// <summary>One entry of the growth table, in declaration order.</summary>
+        public static (Faction Faction, Role Role, int Slot, GrowthCost Cost) GrowthTarget(int index) =>
+            growthTargets[index];
 
         /// <summary>
         /// Fills the stats table. A static constructor rather than a field
@@ -402,8 +533,9 @@ namespace WordCraft.Sim
         /// </summary>
         private static readonly string[] names =
         {
-            // 세계수 정령
-            "", "생명의 나무", "풀씨 정령", "풀씨 둥지", "정령 뇌우목", "고목 수호자", "번개 정령", "바람 정령", "묘목", "뿌리 회당",
+            // 세계수 정령. Entry 0 of each combat slot is what the faction buys;
+            // what a 풀씨 정령 grows into is entry 1 of the same slot, in extras.
+            "", "생명의 나무", "풀씨 정령", "풀씨 둥지", "정령 뇌우목", "잎날 정령", "번개 정령", "바람 정령", "묘목", "뿌리 회당",
             // 지옥불 군단
             "", "균열 제단", "잿불 악마", "악마 산란장", "용암 아가리", "용암 갑각 악마", "지옥불 군단장의 자손", "지옥불 군단장", "갈라진 틈", "용암 도가니",
             // 물 슬라임
@@ -420,7 +552,7 @@ namespace WordCraft.Sim
         private static readonly string[] sprites =
         {
             // 세계수 정령. Defense art cannot be ElectricTower: that is a human artifact.
-            "", "LifeTree", "SeedSpiritSwarm", "SeedNest", "SpiritStormtree", "TreeGolem", "ThunderSpirit", "WindSpirit", "Sapling", "RootHall",
+            "", "LifeTree", "SeedSpiritSwarm", "SeedNest", "SpiritStormtree", "Leafair", "ThunderSpirit", "WindSpirit", "Sapling", "RootHall",
             // 지옥불 군단
             "", "RiftAltar", "EmberSpiritSwarm", "SpawningPit", "LavaMaw", "MagmaSpirit", "FireChildSpirit", "FireLordSpirit", "WideningFissure", "LavaCrucible",
             // 물 슬라임
@@ -444,6 +576,13 @@ namespace WordCraft.Sim
         /// </summary>
         private static readonly (Faction Faction, Role Role, string Name, string Sprite)[] extras =
         {
+            // 세계수 정령. The two 성장 products, one per combat slot, each sitting
+            // behind the entry the faction buys. Both are listed in
+            // docs/FACTIONS.md as units of their own; what this table decides is
+            // that they are the entries a worker becomes rather than the entries a
+            // 풀씨 둥지 makes, which is what productionOverrides below says.
+            (Faction.TreeSpirits, Role.Melee, "고목 수호자", "TreeGolem"),
+            (Faction.TreeSpirits, Role.Ranged, "덩쿨 정령", "VineSpirit"),
             // 지옥불 군단. 균열 파수병 holds the ground; 군단장의 자손 is airborne and free.
             (Faction.Hellfire, Role.Ranged, "균열 파수병", "RiftWarden"),
             // 물 슬라임
