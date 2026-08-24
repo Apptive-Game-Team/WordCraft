@@ -2444,10 +2444,23 @@ namespace WordCraft.Replay
             Check(!world.ArrivalValid(0, pastIt), "a point past six cells off the 굴절 기둥 is accepted");
 
             // Off the map is refused rather than clamped onto the edge, which is
-            // what CellOf would otherwise do to it.
-            Check(!world.ArrivalValid(0, new FixVec2(Fix.FromInt(-1), pillar.Y)),
+            // what CellOf would otherwise do to it. Asked of a 굴절 기둥 standing
+            // against each edge, so the radius admits the point and the bounds test
+            // is the only thing left to refuse it: a pillar in the middle of the map
+            // would refuse both of these for being far away and this would pin
+            // nothing at all.
+            World west = BuildPassageWorld();
+            west.SpawnBuilding(0, World.PillarRole, World.PillarSlot, At(1, 30), true);
+            Check(west.ArrivalValid(0, At(2, 30)),
+                "the 굴절 기둥 against the west edge covers nothing, so the bounds test proves nothing");
+            Check(!west.ArrivalValid(0, new FixVec2(Fix.FromInt(-1), At(1, 30).Y)),
                 "a point off the west edge of the map is accepted");
-            Check(!world.ArrivalValid(0, new FixVec2(Fix.FromInt(World.GridSize), pillar.Y)),
+
+            World east = BuildPassageWorld();
+            east.SpawnBuilding(0, World.PillarRole, World.PillarSlot, At(World.GridSize - 2, 30), true);
+            Check(east.ArrivalValid(0, At(World.GridSize - 3, 30)),
+                "the 굴절 기둥 against the east edge covers nothing, so the bounds test proves nothing");
+            Check(!east.ArrivalValid(0, new FixVec2(Fix.FromInt(World.GridSize), At(1, 30).Y)),
                 "a point off the east edge of the map is accepted");
 
             // Somebody else's 굴절 기둥 anchors nothing: 아군 is half the rule.
@@ -2515,7 +2528,25 @@ namespace WordCraft.Replay
                 "the second body arrived at " + Show(secondBody.Position) + " and not at the 통로");
             Check(passage.HasArrivalPoint && passage.ArrivalPoint.Equals(aim),
                 "the arrival that fell back rewrote the point the order named");
+
+            // And a Produce that is refused leaves the point exactly as it found
+            // it, which is the same "refused whole" the price and the queue already
+            // keep. Role.Base is not on anyone's production list, so this order dies
+            // before the arrival rule is reached — and it names a different point,
+            // so an aim taken ahead of the rules would be visible here.
+            world.Step(ProduceRefused(Passage, 0, 2, At(20, 20)));
+            passage = world.GetEntity(Passage);
+            Check(passage.QueueCount == 0, "the refused order was queued, so this check proves nothing");
+            Check(passage.HasArrivalPoint && passage.ArrivalPoint.Equals(aim),
+                "a refused Produce re-aimed the 통로");
         }
+
+        private static List<Command> ProduceRefused(int building, int peer, int seq, FixVec2 arrival) =>
+            new List<Command>
+            {
+                new Command(0, peer, seq, CommandType.Produce, building, arrival,
+                    Command.RosterArg(Role.Base, 0))
+            };
 
         /// <summary>
         /// 이동식 반경 6칸. The same two-body run with nothing dying at all: the
