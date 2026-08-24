@@ -52,13 +52,19 @@ namespace WordCraft.Sim
     /// became a Signature this tick would be armed for this tick's spawn pass, and
     /// the faction test is what makes that a fact about 지옥불 rather than luck.
     ///
-    /// CombatSystem is where the swap is visible. CanAttack asks Kind == Unit and
-    /// Armed asks the roster row: a growing body is a Worker on the worker row,
-    /// which carries no weapon, so it acquires nothing and fires nothing for every
-    /// tick of the growth — 공격 불가, out of two facts already written rather than
-    /// a third. On the completion tick it is a Unit on its new row, and it fights
-    /// that tick, exactly as a 자손 emitted this tick fights this tick and a 징발
-    /// that lands this tick shoots this tick. VolleyBonus reads Kind and Role to
+    /// CombatSystem is where the swap is visible, and 공격 불가 rests on exactly
+    /// one clause of it: CanAttack admits Kind == Unit and a finished Defense
+    /// building, and a growing body is a Worker until the tick it lands. That is
+    /// the whole enforcement. Armed would also answer no, because the worker row
+    /// carries no weapon, but it is not what is holding the rule — arming that row
+    /// changes nothing about a growing body, which was checked rather than assumed.
+    /// The consequence is worth stating: there is no growth-specific line here to
+    /// delete, so the harness cannot make 공격 불가 fail on its own. What it can do
+    /// is refuse to let the assertion be vacuous, by standing the same enemy at the
+    /// same distance and requiring it to bleed one reload after the growth lands.
+    /// On the completion tick the body is a Unit on its new row, and it fights that
+    /// tick, exactly as a 자손 emitted this tick fights this tick and a 징발 that
+    /// lands this tick shoots this tick. VolleyBonus reads Kind and Role to
     /// count 물 슬라임 archers and answers zero here for the same faction reason
     /// IsWarlord does. AcquireTarget reads Kind only to skip resource nodes: a
     /// growing worker is a legal target throughout, which is the whole of 성장 중
