@@ -22,6 +22,27 @@ namespace WordCraft.Sim
         /// addresses the other the same way.
         /// </summary>
         Capture = 12,
+
+        /// <summary>
+        /// 세계수 정령 성장. Names the worker in EntityId and the roster entry it
+        /// is to grow into in Arg, packed through <see cref="Command.RosterArg"/>
+        /// exactly as Build and Produce name theirs.
+        ///
+        /// The target belongs in Arg and not in a field of its own, and that is the
+        /// whole of the decision. Command is serialized field by field in Net and
+        /// in the replay file, and neither is this change's to edit; a field added
+        /// here would travel as far as the sender's own Apply and read back as zero
+        /// everywhere else. Zero decodes to Role.None entry 0, which the growth
+        /// table refuses — so the sender would grow a 고목 수호자 and every other
+        /// peer would refuse the order outright, which is not a dropped order but
+        /// two worlds with different bodies in them under the same entity id.
+        ///
+        /// It fits Arg without stretching it. A growth target is a roster entry —
+        /// a role and which of that role's list — which is exactly the pair
+        /// RosterArg was written to carry, and 성장 is the third command to name
+        /// one rather than the first.
+        /// </summary>
+        Grow = 13,
     }
 
     /// <summary>

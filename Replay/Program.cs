@@ -51,6 +51,11 @@ namespace WordCraft.Replay
                 AMoveOrderEndsACapture();
                 TheCapturedTowerbackRefusesGroundAndHitsAir();
                 TowerbackCannotBeProduced();
+                GrowthTurnsAWorkerIntoWhatItPaidFor();
+                AGrowingSpiritCannotMoveGatherOrFight();
+                AGrowthKilledMidwayJustDies();
+                GrowRefusesWhatIsNotOnTheGrowthList();
+                GrowthTargetsCannotBeProduced();
                 AttackOrderKillsWhatItNames();
                 AttackMoveStopsForWhatItMeets();
                 StopCancelsWhatIsRunning();
@@ -1802,6 +1807,447 @@ namespace WordCraft.Replay
                 "the signature slot is closed behind the Towerback as well as on it");
         }
 
+        // 세계수 정령 성장. One 풀씨 정령 standing on an empty map with mana to
+        // spend, and nothing else: every count below is about the growth rather
+        // than about anything that happened to be standing near it.
+        private const int GrowWorkerId = 0;
+        private const int GrowthBank = 1000;
+
+        private static World BuildGrowthWorld()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.TreeSpirits);
+            world.SetPeerFaction(1, Faction.Hellfire);
+
+            world.SpawnWorker(0, At(30, 30)); // GrowWorkerId
+            world.GrantResources(0, GrowthBank);
+            return world;
+        }
+
+        private static List<Command> Grow(int worker, int peer, int seq, Role role, int slot) =>
+            new List<Command>
+            {
+                new Command(0, peer, seq, CommandType.Grow, worker, FixVec2.Zero,
+                    Command.RosterArg(role, slot))
+            };
+
+        /// <summary>
+        /// The whole mechanic end to end, once per target: a worker pays, spends
+        /// the document's number of ticks unable to do anything, and comes back up
+        /// the unit it paid for — on the same entity id, in the same place, under
+        /// the same owner, with no new body anywhere in the world.
+        ///
+        /// Both targets, because they are two rows and either could have been the
+        /// one wired wrong: 덩쿨 정령 is a ranged entry behind another entry of the
+        /// same slot, 고목 수호자 a melee one, and they differ in price, in clock
+        /// and in every stat.
+        ///
+        /// Run twice, like every other mechanic here. A growth rewrites kind, role,
+        /// entry, hp, ceiling and speed on a live entity over dozens of ticks,
+        /// which is precisely the kind of state that drifts unseen.
+        /// </summary>
+        private static void GrowthTurnsAWorkerIntoWhatItPaidFor()
+        {
+            // The document's numbers, written out rather than read back off the
+            // constants the mechanic uses. A check that compares a constant with
+            // itself pins nothing, and every one of these is a number
+            // docs/FACTION-MECHANICS.md chose.
+            GrowthCost vine = FactionData.Growth(Faction.TreeSpirits, World.VineRole, World.VineSlot);
+            Check(vine.Grown && vine.Resources == 30 && vine.Ticks == 40,
+                "덩쿨 정령 is not 30자원 40틱: " + vine.Resources + "자원 " + vine.Ticks + "틱");
+            GrowthCost guardian =
+                FactionData.Growth(Faction.TreeSpirits, World.GuardianRole, World.GuardianSlot);
+            Check(guardian.Grown && guardian.Resources == 50 && guardian.Ticks == 60,
+                "고목 수호자 is not 50자원 60틱: " + guardian.Resources + "자원 " + guardian.Ticks + "틱");
+
+            UnitStats vineRow = FactionData.Stats(Faction.TreeSpirits, World.VineRole, World.VineSlot);
+            Check(vineRow.Hp == 90 && vineRow.Range == Fix.FromInt(5) && vineRow.Damage == 6,
+                "the 덩쿨 정령 row is not 체력 90 사거리 5 피해 6");
+            UnitStats guardianRow =
+                FactionData.Stats(Faction.TreeSpirits, World.GuardianRole, World.GuardianSlot);
+            Check(guardianRow.Hp == 220 && guardianRow.Damage == 12 &&
+                  guardianRow.Range == FactionData.Stats(Faction.TreeSpirits, Role.Melee, 0).Range,
+                "the 고목 수호자 row is not 체력 220 근접 피해 12");
+
+            GrewInto(World.VineRole, World.VineSlot);
+            GrewInto(World.GuardianRole, World.GuardianSlot);
+        }
+
+        /// <summary>One target, start to finish, twice.</summary>
+        private static void GrewInto(Role role, int slot)
+        {
+            ulong[] first = RunGrowth(role, slot, out World world);
+            ulong[] second = RunGrowth(role, slot, out _);
+
+            string name = FactionData.Name(Faction.TreeSpirits, role, slot);
+            UnitStats row = FactionData.Stats(Faction.TreeSpirits, role, slot);
+            GrowthCost cost = FactionData.Growth(Faction.TreeSpirits, role, slot);
+
+            Entity grown = world.GetEntity(GrowWorkerId);
+            // 새 개체가 아니라 같은 엔티티의 종류가 바뀐다. The id is the check: the
+            // body under it is the one that started, and the world holds no second
+            // one. A growth implemented as a spawn and a kill would pass every stat
+            // assertion below and fail these two.
+            Check(world.EntityCount == 1, name + " arrived as a new body, not as the worker");
+            Check(grown.Id == GrowWorkerId, name + " came up under entity id " + grown.Id);
+            Check(grown.Alive, name + " is not alive");
+            Check(grown.Owner == 0, name + " changed hands as well as kind: owner " + grown.Owner);
+            Check(grown.Position.Equals(At(30, 30)), name + " finished somewhere else");
+
+            Check(grown.Kind == EntityKind.Unit, name + " came up a " + grown.Kind);
+            Check(grown.Role == role && grown.Slot == slot,
+                name + " came up a " + grown.Role + "[" + grown.Slot + "]");
+            Check(grown.Hp == row.Hp && grown.MaxHp == row.Hp,
+                name + " stood up on " + grown.Hp + " of " + grown.MaxHp + ", not " + row.Hp);
+            Check(grown.Speed.Raw == row.Speed.Raw, name + " kept the walk of what it used to be");
+            Check(world.Armed(grown), name + " carries no weapon");
+            Check(!World.IsGrowing(grown), name + " is still growing after its clock ran out");
+            Check(grown.MorphRole == Role.None && grown.MorphSlot == 0,
+                name + " kept what it grew into on the body it already is");
+            Check(grown.CarryAmount == 0 && grown.GatherNodeId < 0,
+                name + " came up still holding the worker's gather loop");
+
+            // Paid once, in full, at the start. Nothing about finishing pays
+            // anything more or gives anything back.
+            Check(world.GetResources(0) == GrowthBank - cost.Resources,
+                "growing into " + name + " left " + world.GetResources(0) + " of " + GrowthBank);
+            // 일꾼 한 기의 상실, and not a body more or less: the peer had one
+            // against its cap before and has one after.
+            Check(world.GetPopulation(0) == 1,
+                "the growth moved the population count to " + world.GetPopulation(0));
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], name + " growth hash drift at tick " + t);
+            }
+        }
+
+        /// <summary>
+        /// Steps exactly to the tick the growth is due, asserting on the way that
+        /// it has not landed early, that the body is still a worker, that it has
+        /// not moved, and that the hp ceiling is exactly where a straight line from
+        /// one roster row to the other puts it on this tick.
+        ///
+        /// The ramp is asserted against the closed form rather than against itself:
+        /// a ramp that merely rose would pass a monotonic check while arriving by
+        /// any curve it liked, and 선형 증가 is the rule the document wrote.
+        /// </summary>
+        private static ulong[] RunGrowth(Role role, int slot, out World world)
+        {
+            world = BuildGrowthWorld();
+            GrowthCost cost = FactionData.Growth(Faction.TreeSpirits, role, slot);
+            int from = world.GetEntity(GrowWorkerId).MaxHp;
+            int to = FactionData.Stats(Faction.TreeSpirits, role, slot).Hp;
+
+            var idle = new List<Command>();
+            var hashes = new ulong[cost.Ticks];
+            for (int t = 0; t < cost.Ticks; t++)
+            {
+                world.Step(t == 0 ? Grow(GrowWorkerId, 0, 0, role, slot) : idle);
+                hashes[t] = world.Hash();
+
+                Entity e = world.GetEntity(GrowWorkerId);
+                int left = cost.Ticks - 1 - t;
+                Check(e.MaxHp == to - ((to - from) * left) / cost.Ticks,
+                    "the hp ceiling is off the line at tick " + t + ": " + e.MaxHp);
+                Check(e.Hp == e.MaxHp,
+                    "the ceiling moved without the hp at tick " + t + ": " + e.Hp + " of " + e.MaxHp);
+                Check(e.Position.Equals(At(30, 30)), "the growing body moved on tick " + t);
+
+                if (t < cost.Ticks - 1)
+                {
+                    Check(World.IsGrowing(e), "the growth landed early, on tick " + t);
+                    Check(e.MorphTicksLeft == left, "the growth clock is off at tick " + t);
+                    Check(e.Kind == EntityKind.Worker && e.Role == Role.Worker,
+                        "the body stopped being a worker on tick " + t);
+                    Check(e.MorphRole == role && e.MorphSlot == slot,
+                        "the growing body forgot what it is becoming on tick " + t);
+                }
+            }
+            return hashes;
+        }
+
+        // The same world with something to gather and something to shoot at. The
+        // 지옥불 군단장 is the one enemy that can stand four cells away for a
+        // minute and neither shoot nor walk: it is 비전투, so what it does to this
+        // fixture is nothing, and the run finishes long before its first 자손 is
+        // due at WarlordSpawnTicks.
+        private const int GrowNodeId = 1;
+        private const int GrowWarlordId = 2;
+        private const int GrowNodeAmount = 500;
+
+        private static World BuildBusyGrowthWorld()
+        {
+            World world = BuildGrowthWorld();
+            world.SpawnResourceNode(At(32, 30), GrowNodeAmount); // GrowNodeId
+            world.SpawnUnit(1, World.WarlordRole, At(34, 30));   // GrowWarlordId
+            return world;
+        }
+
+        /// <summary>
+        /// 성장 중에는 이동·공격·채집을 못 한다, all three in one run, and each of
+        /// them with the thing it is refusing actually available.
+        ///
+        /// 채집: the worker is gathering when the growth starts, and the node is
+        /// still full at the end. 이동: a Move order lands mid-growth and the body
+        /// is standing on the same cell when the growth finishes and for a while
+        /// after, so the order was refused rather than deferred. 공격: an enemy
+        /// stands inside the reach of what the body is becoming and outside the
+        /// reach of what it is, and it is untouched for every tick of the growth
+        /// and bleeding a moment after it — the weapon arrives with the body and
+        /// not before it.
+        ///
+        /// The second Grow is the fourth refusal and the one 환불 없다 rests on: an
+        /// order that re-aimed a running growth would be a cancel that kept the
+        /// money, which is the extra judgement the document declines to make.
+        /// </summary>
+        private static void AGrowingSpiritCannotMoveGatherOrFight()
+        {
+            World world = BuildBusyGrowthWorld();
+            var idle = new List<Command>();
+            GrowthCost cost = FactionData.Growth(Faction.TreeSpirits, World.VineRole, World.VineSlot);
+
+            world.Step(new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.Gather, GrowWorkerId, FixVec2.Zero, GrowNodeId)
+            });
+            Check(world.GetEntity(GrowWorkerId).GatherNodeId == GrowNodeId,
+                "the worker never started gathering, so the interruption proves nothing");
+
+            world.Step(Grow(GrowWorkerId, 0, 1, World.VineRole, World.VineSlot));
+            Check(world.GetEntity(GrowWorkerId).GatherNodeId < 0,
+                "the growth left the gather loop running");
+            int banked = world.GetResources(0);
+            // Where it was standing when the growth started, which is not where it
+            // was spawned: it took two ticks of walking toward the node first, and
+            // that walk is the one thing about this fixture that is supposed to
+            // have happened. Everything below is measured against this cell.
+            FixVec2 rooted = world.GetEntity(GrowWorkerId).Position;
+            Check(!rooted.Equals(At(30, 30)),
+                "the worker never walked toward the node, so the halt proves nothing");
+
+            // Every order a player could give a body, on the tick after the growth
+            // is under way. Not one of them may be taken.
+            world.Step(new List<Command>
+            {
+                new Command(0, 0, 2, CommandType.Move, GrowWorkerId, At(40, 30)),
+                new Command(0, 0, 3, CommandType.Gather, GrowWorkerId, FixVec2.Zero, GrowNodeId),
+                new Command(0, 0, 4, CommandType.Attack, GrowWorkerId, FixVec2.Zero, GrowWarlordId),
+                new Command(0, 0, 5, CommandType.Stop, GrowWorkerId, FixVec2.Zero),
+                new Command(0, 0, 6, CommandType.Grow, GrowWorkerId, FixVec2.Zero,
+                    Command.RosterArg(World.GuardianRole, World.GuardianSlot))
+            });
+
+            Entity ordered = world.GetEntity(GrowWorkerId);
+            Check(ordered.GatherNodeId < 0, "a Gather reached a growing body");
+            Check(ordered.Mode == OrderMode.None && ordered.TargetId < 0,
+                "an Attack reached a growing body");
+            Check(ordered.MorphRole == World.VineRole && ordered.MorphSlot == World.VineSlot,
+                "a second Grow re-aimed a running growth");
+            Check(world.GetResources(0) == banked, "a refused order spent resources");
+
+            // Every tick the growth has left, and not one more. On the tick it
+            // lands the body is a 덩쿨 정령 and that tick's combat pass is already
+            // its own, which is the same boundary a 자손 emitted this tick and a
+            // 징발 that lands this tick sit on.
+            int guard = cost.Ticks * 2;
+            while (World.IsGrowing(world.GetEntity(GrowWorkerId)) && guard-- > 0)
+            {
+                int left = world.GetEntity(GrowWorkerId).MorphTicksLeft;
+                world.Step(idle);
+
+                Entity e = world.GetEntity(GrowWorkerId);
+                Check(e.Position.Equals(rooted), "the growing body walked, " + left + " ticks out");
+                Check(world.GetEntity(GrowNodeId).Resource == GrowNodeAmount,
+                    "the growing body gathered, " + left + " ticks out");
+                if (left == 1) break;
+
+                Check(e.TargetId < 0, "the growing body took a target, " + left + " ticks out");
+                Check(world.GetEntity(GrowWarlordId).Hp == world.GetEntity(GrowWarlordId).MaxHp,
+                    "the growing body shot something, " + left + " ticks out");
+            }
+
+            Entity vine = world.GetEntity(GrowWorkerId);
+            Check(!World.IsGrowing(vine) && vine.Role == World.VineRole,
+                "the growth never finished, so the refusals above prove nothing");
+            Check(vine.Position.Equals(rooted),
+                "the Move order was deferred rather than refused: it walked once it could");
+
+            // And the other half: the same enemy, the same distance, one tick of
+            // being a 덩쿨 정령. Without this the whole check would pass on a body
+            // that simply never had a weapon.
+            int reload = FactionData.Stats(Faction.TreeSpirits, World.VineRole, World.VineSlot).AttackTicks;
+            for (int t = 0; t < reload + 2; t++) world.Step(idle);
+
+            Check(world.GetEntity(GrowWarlordId).Hp < world.GetEntity(GrowWarlordId).MaxHp,
+                "the finished 덩쿨 정령 never reached the enemy it had been standing next to");
+            Check(world.GetEntity(GrowWorkerId).Position.Equals(rooted),
+                "the finished 덩쿨 정령 walked off after all");
+        }
+
+        // Five 지옥불 turrets inside reach of a growing 풀씨 정령. Nine damage every
+        // twenty ticks each, so a volley of 45 lands on ticks 0 and 20 while the hp
+        // ramp is adding thirty over forty ticks: the second volley takes the body
+        // halfway through a growth that was outrunning nothing.
+        private const int GrowthKillTick = 20;
+
+        private static World BuildDoomedGrowthWorld()
+        {
+            World world = BuildGrowthWorld();
+            world.SpawnBuilding(1, Role.Defense, At(30, 35), complete: true); // 1
+            world.SpawnBuilding(1, Role.Defense, At(32, 34), complete: true); // 2
+            world.SpawnBuilding(1, Role.Defense, At(28, 34), complete: true); // 3
+            world.SpawnBuilding(1, Role.Defense, At(34, 32), complete: true); // 4
+            world.SpawnBuilding(1, Role.Defense, At(26, 32), complete: true); // 5
+            return world;
+        }
+
+        /// <summary>
+        /// 성장 중 죽으면 그냥 죽는다. 환불 없다. The body dies halfway through and
+        /// the mana is gone with it: no refund, no body, no clock left on the
+        /// corpse, and nothing arrives later.
+        ///
+        /// It also proves the ramp is a ramp and not a recomputed hp. The body is
+        /// visibly below its own rising ceiling on the tick before it dies, which
+        /// an hp assigned from the formula each tick could never be — and a body
+        /// that could never be below its ceiling could never be killed while it
+        /// grew, so this rule would have nothing to say.
+        /// </summary>
+        private static void AGrowthKilledMidwayJustDies()
+        {
+            World world = BuildDoomedGrowthWorld();
+            var idle = new List<Command>();
+            GrowthCost cost = FactionData.Growth(Faction.TreeSpirits, World.VineRole, World.VineSlot);
+            int standing = world.EntityCount;
+
+            world.Step(Grow(GrowWorkerId, 0, 0, World.VineRole, World.VineSlot));
+            int banked = world.GetResources(0);
+            Check(banked == GrowthBank - cost.Resources, "the growth was never charged for");
+
+            for (int t = 1; t < GrowthKillTick; t++) world.Step(idle);
+
+            Entity dying = world.GetEntity(GrowWorkerId);
+            Check(dying.Alive, "the body died before the growth was under way");
+            Check(World.IsGrowing(dying) && dying.MorphTicksLeft > 0,
+                "the growth had already finished when the turrets caught it");
+            Check(dying.Hp < dying.MaxHp,
+                "the ramp put the body back on full hp, so nothing can ever kill it mid-growth");
+
+            world.Step(idle); // the tick the turrets finish it
+            Entity dead = world.GetEntity(GrowWorkerId);
+            Check(!dead.Alive, "the turrets never killed the growing body");
+            Check(!World.IsGrowing(dead) && dead.MorphRole == Role.None,
+                "a corpse kept " + dead.MorphTicksLeft + " ticks of growth running");
+            Check(world.GetPopulation(0) == 0, "the dead body was not released");
+
+            // Long past when the growth would have landed had anything survived it.
+            for (int t = 0; t < cost.Ticks * 3; t++) world.Step(idle);
+            Check(world.GetResources(0) == banked,
+                "a growth that died paid something back: " + world.GetResources(0));
+            Check(world.EntityCount == standing, "a dead growth produced a body anyway");
+            Check(!world.GetEntity(GrowWorkerId).Alive, "the dead body came back");
+        }
+
+        /// <summary>
+        /// Every rule a Grow has to pass, each broken on its own, and the same
+        /// order taken afterwards to prove the refusals were about the rule and not
+        /// about the fixture.
+        /// </summary>
+        private static void GrowRefusesWhatIsNotOnTheGrowthList()
+        {
+            // Another faction's worker, at the same order, with the same money.
+            // 세계수 정령만 자란다, and the growth table is the only place that says so.
+            var stranger = new World(Seed);
+            stranger.SetPeerFaction(0, Faction.Hellfire);
+            stranger.SpawnWorker(0, At(30, 30));
+            stranger.GrantResources(0, GrowthBank);
+            stranger.Step(Grow(GrowWorkerId, 0, 0, World.GuardianRole, World.GuardianSlot));
+            Check(stranger.GetResources(0) == GrowthBank, "a 지옥불 worker paid to grow");
+            Check(!World.IsGrowing(stranger.GetEntity(GrowWorkerId)), "a 지옥불 worker grew");
+
+            World world = BuildGrowthWorld();
+            int fighter = world.SpawnUnit(0, World.GuardianRole, World.GuardianSlot, At(20, 20)); // 1
+
+            // A fighter, an entry that is produced rather than grown, a bare Grow
+            // carrying no entry at all, and an entry past the end of the list.
+            // Each one is refused whole: nothing spent, no clock started.
+            var refusals = new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.Grow, fighter, FixVec2.Zero,
+                    Command.RosterArg(World.GuardianRole, World.GuardianSlot)),
+                new Command(0, 0, 1, CommandType.Grow, GrowWorkerId, FixVec2.Zero,
+                    Command.RosterArg(World.GuardianRole, 0)),
+                new Command(0, 0, 2, CommandType.Grow, GrowWorkerId, FixVec2.Zero, 0),
+                new Command(0, 0, 3, CommandType.Grow, GrowWorkerId, FixVec2.Zero,
+                    Command.RosterArg(World.VineRole, 9))
+            };
+            world.Step(refusals);
+            Check(world.GetResources(0) == GrowthBank, "a refused Grow spent resources");
+            Check(!World.IsGrowing(world.GetEntity(GrowWorkerId)), "a refused Grow started a clock");
+            Check(!World.IsGrowing(world.GetEntity(fighter)), "a 고목 수호자 was ordered to grow again");
+
+            // And with nothing in the bank.
+            var broke = new World(Seed);
+            broke.SetPeerFaction(0, Faction.TreeSpirits);
+            broke.SpawnWorker(0, At(30, 30));
+            broke.GrantResources(0,
+                FactionData.Growth(Faction.TreeSpirits, World.GuardianRole, World.GuardianSlot)
+                    .Resources - 1);
+            broke.Step(Grow(GrowWorkerId, 0, 0, World.GuardianRole, World.GuardianSlot));
+            Check(!World.IsGrowing(broke.GetEntity(GrowWorkerId)), "a growth ran on credit");
+
+            // The control. Without it every refusal above would pass on a mechanic
+            // that simply does not work.
+            world.Step(Grow(GrowWorkerId, 0, 4, World.GuardianRole, World.GuardianSlot));
+            Check(World.IsGrowing(world.GetEntity(GrowWorkerId)),
+                "the growth is shut for every entry, so the refusals prove nothing");
+        }
+
+        private const int GrownOnlyBase = 0;
+
+        /// <summary>
+        /// 성장으로만 획득한다. A Produce naming either growth target is refused
+        /// whole, so a 세계수 정령 player who wants a fighter spends a worker for
+        /// it — which is the whole of what the faction is.
+        ///
+        /// Entry 0 of each of the same two slots is the control: 잎날 정령 and
+        /// 번개 정령 are bought normally, so a refusal that had ignored the entry
+        /// number and closed the whole slot would be caught here rather than by a
+        /// player who could not produce a unit that is supposed to exist.
+        /// </summary>
+        private static void GrowthTargetsCannotBeProduced()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.TreeSpirits);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);        // GrownOnlyBase
+            world.SpawnBuilding(0, Role.Production, At(9, 5), complete: true);  // opens tier 2
+            world.SpawnBuilding(0, Role.Tech, At(5, 9), complete: true);        // opens tier 3
+            world.GrantResources(0, GrowthBank);
+
+            var idle = new List<Command>();
+            int seq = 0;
+            foreach (Role role in new[] { World.GuardianRole, World.VineRole })
+            {
+                int slot = role == World.GuardianRole ? World.GuardianSlot : World.VineSlot;
+                string name = FactionData.Name(Faction.TreeSpirits, role, slot);
+                int banked = world.GetResources(0);
+                int standing = world.EntityCount;
+
+                world.Step(Produce(GrownOnlyBase, 0, seq++, role, slot));
+                for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
+                Check(world.GetResources(0) == banked, "a produce order for " + name + " spent resources");
+                Check(world.GetEntity(GrownOnlyBase).QueueCount == 0,
+                    "a produce order for " + name + " queued one");
+                Check(world.EntityCount == standing, "a produce order for " + name + " made one");
+
+                int before = world.GetResources(0);
+                world.Step(Produce(GrownOnlyBase, 0, seq++, role, 0));
+                Check(world.GetResources(0) < before,
+                    "세계수 정령's " + role + " slot is shut behind the growth target as well as on it");
+                for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
+            }
+        }
+
         private const int WorkerBase = 0;
         private const int WorkerNode = 1;
         private const int MadeWorker = 2;
@@ -1939,6 +2385,11 @@ namespace WordCraft.Replay
 
         // A faction whose ranged list holds exactly one entry, so entry 1 of it is
         // an entry nobody wrote rather than one that is merely off the list.
+        //
+        // 돌 골렘 부족 rather than 세계수 정령, which held the part until 성장 gave
+        // it a second ranged entry. The guard below is what said so, and moving the
+        // fixture is the answer it was asking for: an entry nobody wrote has to be
+        // an entry nobody wrote, and 덩쿨 정령 is now somebody's.
         private const int ThinBase = 0;
         private const int ThinWorks = 1;
 
@@ -1954,11 +2405,11 @@ namespace WordCraft.Replay
         /// </summary>
         private static void ProduceRefusesAnEntryTheFactionDoesNotField()
         {
-            Check(FactionData.SlotCount(Faction.TreeSpirits, Role.Ranged) == 1,
-                "세계수 정령 grew a second ranged entry, so this check no longer refuses anything");
+            Check(FactionData.SlotCount(Faction.RockGolems, Role.Ranged) == 1,
+                "돌 골렘 부족 grew a second ranged entry, so this check no longer refuses anything");
 
             var world = new World(Seed);
-            world.SetPeerFaction(0, Faction.TreeSpirits);
+            world.SetPeerFaction(0, Faction.RockGolems);
             world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);       // ThinBase
             world.SpawnBuilding(0, Role.Production, At(9, 5), complete: true); // ThinWorks, opens tier 2
             world.GrantResources(0, 1000);
@@ -1977,7 +2428,7 @@ namespace WordCraft.Replay
                 world.Step(Produce(ThinBase, 0, seq++, Role.Ranged, slot));
                 for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
 
-                string where = "세계수 정령 ranged entry " + slot;
+                string where = "돌 골렘 부족 ranged entry " + slot;
                 Check(world.GetResources(0) == banked, "an order for " + where + " spent resources");
                 Check(world.GetEntity(ThinBase).QueueCount == 0, "an order for " + where + " queued one");
                 Check(world.EntityCount == standing, "an order for " + where + " made one");
@@ -1986,7 +2437,7 @@ namespace WordCraft.Replay
             int before = world.GetResources(0);
             world.Step(Produce(ThinBase, 0, seq, Role.Ranged, 0));
             Check(world.GetResources(0) < before,
-                "세계수 정령's ranged slot is shut for every entry, so the refusals prove nothing");
+                "돌 골렘 부족's ranged slot is shut for every entry, so the refusals prove nothing");
         }
 
         // 차원 유랑종's melee list holds three entries and no override row touches
