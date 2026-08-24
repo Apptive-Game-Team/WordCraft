@@ -56,6 +56,13 @@ namespace WordCraft.Replay
                 AGrowthKilledMidwayJustDies();
                 GrowRefusesWhatIsNotOnTheGrowthList();
                 GrowthTargetsCannotBeProduced();
+                ThePassageArrivesAtWhatItAimedAt();
+                TheArrivalRadiusIsSixCells();
+                AKilledPillarSendsTheNextBodyToThePassage();
+                ACarrierThatWalksOffSendsTheNextBodyToThePassage();
+                AnUnanchoredArrivalComesOutAtThePassage();
+                OnlyAPassageArrivesItsUnits();
+                TheArrivalPointIsHashedState();
                 AttackOrderKillsWhatItNames();
                 AttackMoveStopsForWhatItMeets();
                 StopCancelsWhatIsRunning();
@@ -2248,6 +2255,448 @@ namespace WordCraft.Replay
                 for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
             }
         }
+
+        // 차원 유랑종 통로. A 통로 to order from and a 정박한 세계 behind it,
+        // because a 통로 supports no population of its own and a queue over the cap
+        // is refused before any of the arrival rule is reached. The anchor, when
+        // there is one, always lands on entity 2 so every fixture below can name it.
+        private const int PassageBase = 0;
+        private const int Passage = 1;
+        private const int PassageAnchor = 2;
+        private const int PassageBank = 1000;
+
+        /// <summary>The point every arrival fixture aims at: three cells off the anchor at (30, 30).</summary>
+        private static FixVec2 Aim() => At(33, 30);
+
+        private static World BuildPassageWorld()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Driftworlds);
+            world.SetPeerFaction(1, Faction.Hellfire);
+
+            world.SpawnBuilding(0, Role.Base, At(10, 10), complete: true);                   // PassageBase
+            world.SpawnBuilding(0, World.PassageRole, World.PassageSlot, At(14, 10), true);  // Passage
+            world.GrantResources(0, PassageBank);
+            return world;
+        }
+
+        /// <summary>
+        /// The same world with one of the two anchors standing on (30, 30). Both are
+        /// run through every rule below rather than only the 굴절 기둥, because the
+        /// document gives them one radius and one of them walks: a rule written
+        /// against the building alone would answer nothing about the 경계 운반자.
+        /// </summary>
+        private static World BuildAnchoredPassageWorld(bool carrier)
+        {
+            World world = BuildPassageWorld();
+            if (carrier) world.SpawnUnit(0, World.CarrierRole, World.CarrierSlot, At(30, 30));
+            else world.SpawnBuilding(0, World.PillarRole, World.PillarSlot, At(30, 30), true);
+            return world;
+        }
+
+        private static List<Command> ProduceAt(int building, int peer, int seq, FixVec2 arrival) =>
+            new List<Command>
+            {
+                new Command(0, peer, seq, CommandType.Produce, building, arrival,
+                    Command.RosterArg(Role.Melee, 0))
+            };
+
+        /// <summary>Two of them in one tick, so a second body is still due when the world moves.</summary>
+        private static List<Command> ProduceTwoAt(int building, int peer, FixVec2 arrival)
+        {
+            var commands = ProduceAt(building, peer, 0, arrival);
+            commands.Add(new Command(0, peer, 1, CommandType.Produce, building, arrival,
+                Command.RosterArg(Role.Melee, 0)));
+            return commands;
+        }
+
+        /// <summary>
+        /// Steps idle until the queue puts one body down, and answers the body. The
+        /// id is the count before the step, because ids are handed out in order and
+        /// never reused.
+        /// </summary>
+        private static Entity StepToArrival(World world, string what)
+        {
+            var idle = new List<Command>();
+            int standing = world.EntityCount;
+            for (int t = 0; t < World.ProduceTicks + 5 && world.EntityCount == standing; t++)
+            {
+                world.Step(idle);
+            }
+            Check(world.EntityCount == standing + 1,
+                what + " never arrived, or arrived more than once: " + world.EntityCount +
+                " bodies where " + (standing + 1) + " were due");
+            return world.GetEntity(standing);
+        }
+
+        /// <summary>
+        /// The whole mechanic in its ordinary shape: a Produce names a point, the
+        /// point is covered by a friendly anchor at both ends of the wait, and the
+        /// body stands up there rather than at the building that made it.
+        ///
+        /// Run over both anchors and twice each. An arrival is a position written
+        /// from a decision taken sixty ticks apart from the order, which is exactly
+        /// the kind of state that drifts unseen.
+        /// </summary>
+        private static void ThePassageArrivesAtWhatItAimedAt()
+        {
+            // The three roster slots the mechanic is made of, pinned by the names
+            // the document gives them. Every assertion below reads through these
+            // constants, so a constant aimed at the wrong slot would be invisible in
+            // all of them — and 차원 유랑종's production slot holding the 통로 rather
+            // than a barracks is the whole reason this rule is about one building.
+            Check(FactionData.Name(Faction.Driftworlds, World.PassageRole, World.PassageSlot) == "통로",
+                "World.PassageRole does not name the 통로");
+            Check(FactionData.Name(Faction.Driftworlds, World.PillarRole, World.PillarSlot) == "굴절 기둥",
+                "World.PillarRole does not name the 굴절 기둥");
+            Check(FactionData.Name(Faction.Driftworlds, World.CarrierRole, World.CarrierSlot) == "경계 운반자",
+                "World.CarrierRole does not name the 경계 운반자");
+
+            ArrivedAt(carrier: false);
+            ArrivedAt(carrier: true);
+        }
+
+        /// <summary>One anchor, start to finish, twice.</summary>
+        private static void ArrivedAt(bool carrier)
+        {
+            string anchor = carrier ? "경계 운반자" : "굴절 기둥";
+            ulong[] first = RunArrival(carrier, out World world);
+            ulong[] second = RunArrival(carrier, out _);
+
+            for (int t = 0; t < first.Length; t++)
+            {
+                Check(first[t] == second[t], anchor + " arrival hash drift at tick " + t);
+            }
+
+            // Nothing about arriving elsewhere costs anything else: one body, one
+            // price, one head against the cap. A 통로 that spawned rather than moved
+            // the arrival would pass every position assertion and fail these.
+            Check(world.EntityCount == PassageAnchor + 2,
+                "arriving through a " + anchor + " left " + world.EntityCount + " bodies standing");
+            Check(world.GetResources(0) == PassageBank - World.ProduceCost,
+                "arriving through a " + anchor + " cost " + (PassageBank - world.GetResources(0)));
+            Check(world.GetPopulation(0) == (carrier ? 2 : 1),
+                "arriving through a " + anchor + " moved the population count to " +
+                world.GetPopulation(0));
+        }
+
+        private static ulong[] RunArrival(bool carrier, out World world)
+        {
+            world = BuildAnchoredPassageWorld(carrier);
+            string anchor = carrier ? "경계 운반자" : "굴절 기둥";
+            FixVec2 aim = Aim();
+
+            Check(world.ArrivalValid(0, aim),
+                "the " + anchor + " does not cover the point, so this check proves nothing");
+
+            var hashes = new List<ulong>();
+            world.Step(ProduceAt(Passage, 0, 0, aim));
+            hashes.Add(world.Hash());
+
+            Entity passage = world.GetEntity(Passage);
+            Check(passage.HasArrivalPoint && passage.ArrivalPoint.Equals(aim),
+                "the 통로 did not keep the point the order named");
+            Check(passage.QueueCount == 1, "the order was refused, so the arrival proves nothing");
+
+            int standing = world.EntityCount;
+            var idle = new List<Command>();
+            for (int t = 0; t < World.ProduceTicks + 5 && world.EntityCount == standing; t++)
+            {
+                world.Step(idle);
+                hashes.Add(world.Hash());
+            }
+            Check(world.EntityCount == standing + 1, "nothing arrived through the " + anchor);
+
+            Entity arrived = world.GetEntity(standing);
+            Check(arrived.Position.Equals(aim),
+                "the body arrived at " + Show(arrived.Position) + " and not at " + Show(aim));
+            Check(!arrived.Position.Equals(world.GetEntity(Passage).Position + World.RallyOffset),
+                "the aimed point is the 통로 자리, so this check proves nothing");
+            Check(arrived.Alive && arrived.Owner == 0 && arrived.Role == Role.Melee,
+                "what arrived is not this peer's 폭풍편");
+            // The walk goal comes up on the arrival cell rather than back at the
+            // building: Target is hashed, and a body that arrived somewhere while
+            // still aimed at the 통로 would walk home on the next tick.
+            Check(arrived.Target.Equals(aim), "the arrived body is still headed for the 통로");
+
+            return hashes.ToArray();
+        }
+
+        /// <summary>
+        /// 반경 6칸, and exactly six. The boundary is the check: a rule written with
+        /// the wrong radius passes every fixture above, which aims three cells off
+        /// its anchor, and fails only here.
+        ///
+        /// Six is inside, because WithinRange compares SqrMagnitude against the
+        /// square of the reach and admits equality — the same comparison every other
+        /// range in the simulation is decided by. A sixteenth of a cell past it is
+        /// outside, and that pair is what pins the number rather than a comparison
+        /// of the constant with itself.
+        /// </summary>
+        private static void TheArrivalRadiusIsSixCells()
+        {
+            World world = BuildAnchoredPassageWorld(carrier: false);
+            FixVec2 pillar = world.GetEntity(PassageAnchor).Position;
+
+            var onIt = new FixVec2(pillar.X + Fix.FromInt(6), pillar.Y);
+            var pastIt = new FixVec2(pillar.X + Fix.FromInt(6) + Fix.Ratio(1, 16), pillar.Y);
+            Check(world.ArrivalValid(0, onIt), "a point exactly six cells off the 굴절 기둥 is refused");
+            Check(!world.ArrivalValid(0, pastIt), "a point past six cells off the 굴절 기둥 is accepted");
+
+            // Off the map is refused rather than clamped onto the edge, which is
+            // what CellOf would otherwise do to it.
+            Check(!world.ArrivalValid(0, new FixVec2(Fix.FromInt(-1), pillar.Y)),
+                "a point off the west edge of the map is accepted");
+            Check(!world.ArrivalValid(0, new FixVec2(Fix.FromInt(World.GridSize), pillar.Y)),
+                "a point off the east edge of the map is accepted");
+
+            // Somebody else's 굴절 기둥 anchors nothing: 아군 is half the rule.
+            Check(!world.ArrivalValid(1, Aim()), "the enemy may arrive at this peer's 굴절 기둥");
+        }
+
+        // Nine 지옥불 turrets standing around the 굴절 기둥, none of them on the cell
+        // the arrival is aimed at. Nine damage every twenty ticks each, so 81 lands
+        // on ticks 0, 20, 40 and 60 and a 300 hp pillar is down on tick 60: after
+        // the first body off the queue has arrived on tick 39 and before the second
+        // is due on tick 79. Each turret holds the pillar until it dies rather than
+        // trading it for the nearer body that arrives — an acquired target is only
+        // re-acquired once it stops being valid — so the clock above is the clock.
+        private static readonly int[][] PillarSiege =
+        {
+            new[] { 30, 26 }, new[] { 31, 26 }, new[] { 29, 26 },
+            new[] { 28, 27 }, new[] { 32, 27 }, new[] { 27, 28 },
+            new[] { 33, 28 }, new[] { 26, 29 }, new[] { 34, 29 },
+        };
+
+        private static World BuildDoomedPillarWorld()
+        {
+            World world = BuildAnchoredPassageWorld(carrier: false);
+            for (int i = 0; i < PillarSiege.Length; i++)
+            {
+                world.SpawnBuilding(1, Role.Defense, At(PillarSiege[i][0], PillarSiege[i][1]), true);
+            }
+            return world;
+        }
+
+        /// <summary>
+        /// 기둥이 부서지면 그 지역에 대한 접근이 통째로 끊긴다, and the two bodies in
+        /// this run are the whole of it: one order, one point, two identical members
+        /// of one queue, and the answer changes under them because the world did.
+        ///
+        /// The first arrives on the point while the pillar still stands. The pillar
+        /// falls. The second comes out at the 통로 — not at the nearest valid point,
+        /// of which there is none, and not refused: it was paid for and it arrives.
+        ///
+        /// The point on the building is asserted unchanged across the whole run.
+        /// A re-check that wrote its verdict back would pass every position
+        /// assertion here and quietly turn the second check into the only one.
+        /// </summary>
+        private static void AKilledPillarSendsTheNextBodyToThePassage()
+        {
+            World world = BuildDoomedPillarWorld();
+            FixVec2 aim = Aim();
+            world.Step(ProduceTwoAt(Passage, 0, aim));
+            Check(world.GetEntity(Passage).QueueCount == 2,
+                "the 통로 is not holding two orders, so the second arrival proves nothing");
+
+            Entity firstBody = StepToArrival(world, "the first body");
+            Check(world.GetEntity(PassageAnchor).Alive,
+                "the 굴절 기둥 was already down when the first body arrived");
+            Check(firstBody.Position.Equals(aim),
+                "the first body arrived at " + Show(firstBody.Position) + " and not at " + Show(aim));
+
+            Entity secondBody = StepToArrival(world, "the second body");
+            Check(!world.GetEntity(PassageAnchor).Alive,
+                "the 굴절 기둥 outlived the second body, so this check proves nothing");
+            Check(!world.ArrivalValid(0, aim), "the point is still anchored with the 굴절 기둥 down");
+
+            Entity passage = world.GetEntity(Passage);
+            Check(secondBody.Position.Equals(passage.Position + World.RallyOffset),
+                "the second body arrived at " + Show(secondBody.Position) + " and not at the 통로");
+            Check(passage.HasArrivalPoint && passage.ArrivalPoint.Equals(aim),
+                "the arrival that fell back rewrote the point the order named");
+        }
+
+        /// <summary>
+        /// 이동식 반경 6칸. The same two-body run with nothing dying at all: the
+        /// 경계 운반자 walks four cells and takes the region with it, and the body
+        /// still on the queue comes out at the 통로.
+        ///
+        /// This is the case the two checks were written for. Nothing was destroyed,
+        /// nothing was cancelled and no order was given to the 통로 — the world
+        /// simply moved, and a rule that had only asked at order time would have put
+        /// a body somewhere no anchor covers.
+        /// </summary>
+        private static void ACarrierThatWalksOffSendsTheNextBodyToThePassage()
+        {
+            World world = BuildAnchoredPassageWorld(carrier: true);
+            FixVec2 aim = Aim();
+            world.Step(ProduceTwoAt(Passage, 0, aim));
+
+            Entity firstBody = StepToArrival(world, "the first body");
+            Check(firstBody.Position.Equals(aim),
+                "the first body arrived at " + Show(firstBody.Position) + " and not at " + Show(aim));
+
+            FixVec2 stood = world.GetEntity(PassageAnchor).Position;
+            world.Step(new List<Command>
+            {
+                new Command(0, 0, 2, CommandType.Move, PassageAnchor, At(24, 30))
+            });
+
+            Entity secondBody = StepToArrival(world, "the second body");
+            Entity carrier = world.GetEntity(PassageAnchor);
+            Check(carrier.Alive, "the 경계 운반자 died, so the walk is not what invalidated the point");
+            Check(!carrier.Position.Equals(stood), "the 경계 운반자 never walked");
+            Check(!world.ArrivalValid(0, aim), "the point is still inside the 경계 운반자's radius");
+
+            Entity passage = world.GetEntity(Passage);
+            Check(secondBody.Position.Equals(passage.Position + World.RallyOffset),
+                "the second body arrived at " + Show(secondBody.Position) + " and not at the 통로");
+        }
+
+        /// <summary>
+        /// The other half of 무효면 통로 자리에 출현한다: a point nothing covered when
+        /// the order was given. It comes out at the 통로, and it comes out there even
+        /// though a 경계 운반자 walks over the point while the body is crossing.
+        ///
+        /// That second half is what keeps the first check load-bearing. Validity is
+        /// required at both ends, so a verdict taken at order time cannot be rescued
+        /// by the world changing its mind — and the run asserts the world has
+        /// changed its mind, or the assertion would be about nothing.
+        ///
+        /// The unfinished 굴절 기둥 at the end is the same rule from the other side:
+        /// a site that is not standing yet anchors nothing, exactly as it supports
+        /// no population and takes no deliveries, and the point it refuses is the
+        /// point it accepts once it is up.
+        /// </summary>
+        private static void AnUnanchoredArrivalComesOutAtThePassage()
+        {
+            World world = BuildPassageWorld();
+            world.SpawnUnit(0, World.CarrierRole, World.CarrierSlot, At(45, 30)); // PassageAnchor
+            FixVec2 aim = Aim();
+            Check(!world.ArrivalValid(0, aim),
+                "the 경계 운반자 already covers the point, so this check proves nothing");
+
+            world.Step(ProduceAt(Passage, 0, 0, aim));
+            Entity passage = world.GetEntity(Passage);
+            Check(passage.QueueCount == 1, "the unanchored order was refused rather than accepted");
+            Check(world.GetResources(0) == PassageBank - World.ProduceCost,
+                "the unanchored order was not paid for in full");
+            Check(!passage.HasArrivalPoint && passage.ArrivalPoint.Equals(FixVec2.Zero),
+                "a point nothing covered was kept on the 통로");
+
+            // Walked over the point while the body is crossing, so the world says
+            // yes by the time it lands.
+            world.Step(new List<Command>
+            {
+                new Command(0, 0, 1, CommandType.Move, PassageAnchor, aim)
+            });
+
+            Entity body = StepToArrival(world, "the unanchored body");
+            Check(world.ArrivalValid(0, aim),
+                "the 경계 운반자 never reached the point, so the frozen verdict proves nothing");
+            Check(body.Position.Equals(world.GetEntity(Passage).Position + World.RallyOffset),
+                "a point that was invalid when ordered was rescued by an anchor that arrived later");
+
+            // And the same refusal for a 굴절 기둥 that is not standing yet.
+            World rising = BuildPassageWorld();
+            rising.SpawnBuilding(0, World.PillarRole, World.PillarSlot, At(30, 30), complete: false);
+            Check(!rising.ArrivalValid(0, aim), "an unfinished 굴절 기둥 anchors a point");
+
+            var idle = new List<Command>();
+            int guard = FactionData.BuildTicks(Faction.Driftworlds, World.PillarRole, World.PillarSlot) + 5;
+            for (int t = 0; t < guard && rising.GetEntity(PassageAnchor).BuildTicksLeft > 0; t++)
+            {
+                rising.Step(idle);
+            }
+            Check(rising.GetEntity(PassageAnchor).BuildTicksLeft == 0,
+                "the 굴절 기둥 never finished, so the refusal above proves nothing");
+            Check(rising.ArrivalValid(0, aim), "a finished 굴절 기둥 still anchors nothing");
+        }
+
+        /// <summary>
+        /// Only a 통로 arrives its units. 차원 유랑종's own 정박한 세계 can produce
+        /// and does not, because 통로는 유닛을 만들지 않는다 is a rule about one
+        /// building; and a 지옥불 production building carrying the same point in the
+        /// same command keeps nothing at all, because a 지옥불 defense building is a
+        /// turret and not a 굴절 기둥.
+        /// </summary>
+        private static void OnlyAPassageArrivesItsUnits()
+        {
+            World world = BuildAnchoredPassageWorld(carrier: false);
+            FixVec2 aim = Aim();
+            Check(world.ArrivalValid(0, aim), "the point is unanchored, so this check proves nothing");
+
+            world.Step(ProduceAt(PassageBase, 0, 0, aim));
+            Check(!world.GetEntity(PassageBase).HasArrivalPoint,
+                "a 정박한 세계 kept an arrival point");
+            Entity fromBase = StepToArrival(world, "the 정박한 세계's unit");
+            Check(fromBase.Position.Equals(world.GetEntity(PassageBase).Position + World.RallyOffset),
+                "a 정박한 세계 arrived its unit at the point the order named");
+
+            var other = new World(Seed);
+            other.SetPeerFaction(0, Faction.Hellfire);
+            other.SpawnBuilding(0, Role.Base, At(10, 10), complete: true);        // 0
+            other.SpawnBuilding(0, Role.Production, At(14, 10), complete: true);  // 1
+            other.SpawnBuilding(0, Role.Defense, At(30, 30), complete: true);     // 2
+            other.GrantResources(0, PassageBank);
+
+            Check(!other.ArrivalValid(0, aim), "a 지옥불 defense building answered as a 굴절 기둥");
+            other.Step(ProduceAt(1, 0, 0, aim));
+            Check(!other.GetEntity(1).HasArrivalPoint,
+                "a 지옥불 production building kept an arrival point");
+            Entity fromOther = StepToArrival(other, "the 지옥불 unit");
+            Check(fromOther.Position.Equals(other.GetEntity(1).Position + World.RallyOffset),
+                "a 지옥불 production building arrived its unit at the point the order named");
+        }
+
+        /// <summary>
+        /// Both arrival fields are hashed state, proven by exclusion the way the
+        /// roster entry is: worlds built identically down to the seed, the map, the
+        /// bodies standing on it and the price paid, differing only in the field
+        /// under test.
+        ///
+        /// The point itself is the easy half. The flag needs a pair that leaves the
+        /// point alone, and 굴절 기둥 near the origin is what gives one: a valid aim
+        /// at (0, 0) and a refused aim far away both leave ArrivalPoint at zero, so
+        /// the only state between the two worlds is whether the 통로 is holding a
+        /// point at all. Two peers that disagreed there would put one player's body
+        /// at a 굴절 기둥 and the other's at the 통로 with nothing ever reporting it.
+        /// </summary>
+        private static void TheArrivalPointIsHashedState()
+        {
+            Check(AimedHash(At(33, 30), At(30, 30)) != AimedHash(At(28, 30), At(30, 30)),
+                "two worlds aimed at different points hash the same: " +
+                "Entity.ArrivalPoint is not in World.Hash()");
+
+            ulong kept = AimedHash(FixVec2.Zero, At(2, 2));
+            ulong refused = AimedHash(At(40, 40), At(2, 2));
+            Check(kept != refused,
+                "a kept arrival point and a refused one hash the same: " +
+                "Entity.HasArrivalPoint is not in World.Hash()");
+        }
+
+        /// <summary>
+        /// One tick of a world whose 통로 has just taken an order aimed at a point,
+        /// with a 굴절 기둥 standing wherever the caller put it. Stopped one tick in,
+        /// while the point is still only a field on the building: run to completion
+        /// the two worlds would differ by where the body stands as well, and this is
+        /// about the field the 통로 carries in the meantime.
+        /// </summary>
+        private static ulong AimedHash(FixVec2 aim, FixVec2 pillar)
+        {
+            World world = BuildPassageWorld();
+            world.SpawnBuilding(0, World.PillarRole, World.PillarSlot, pillar, true); // PassageAnchor
+            world.Step(ProduceAt(Passage, 0, 0, aim));
+            Check(world.GetEntity(Passage).QueueCount == 1,
+                "the 통로 refused the order, so the two worlds differ by more than the point");
+            Check(world.GetEntity(Passage).ArrivalPoint.Equals(aim) ||
+                  !world.GetEntity(Passage).HasArrivalPoint,
+                "the 통로 kept a point nobody named");
+            return world.Hash();
+        }
+
+        private static string Show(FixVec2 p) => "(" + p.X.ToInt() + ", " + p.Y.ToInt() + ")";
 
         private const int WorkerBase = 0;
         private const int WorkerNode = 1;
