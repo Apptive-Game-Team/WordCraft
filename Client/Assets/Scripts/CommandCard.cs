@@ -86,10 +86,24 @@ namespace WordCraft.View
             Empty, Empty, Empty,
         };
 
+        /// <summary>
+        /// 징발 goes in cell 3 because cell 3 is where naming a body lives — it is
+        /// Attack on the fighter card, and a Capture is the same gesture at the
+        /// same key on the one card that has no Attack. The worker card had six
+        /// free cells before this and has five after, so nothing was displaced and
+        /// nothing had to be paged; the 3x3 is only tight on the produce card,
+        /// where 차원 유랑종 already fills all six of ProductionMenu.Cells.
+        ///
+        /// The cell is here for every faction and drawn dead for five of them
+        /// (Hud.Card asks CaptureOrder.Available). One layout per selection kind is
+        /// what makes the position worth learning, and a cell that appears only
+        /// when 인간 is picked would move Build under a different key depending on
+        /// who the player chose.
+        /// </summary>
         private static readonly CardSlot[] worker =
         {
             Cmd("Move", CommandType.Move), Cmd("Stop", CommandType.Stop), Empty,
-            Empty, Empty, Empty,
+            Cmd("Capture", CommandType.Capture), Empty, Empty,
             Cmd("Build", CommandType.Build), Empty, Empty,
         };
 
@@ -252,7 +266,7 @@ namespace WordCraft.View
         public static bool NeedsTarget(CommandType type) =>
             type == CommandType.Move || type == CommandType.Attack ||
             type == CommandType.AttackMove || type == CommandType.Build ||
-            type == CommandType.SetRallyPoint;
+            type == CommandType.SetRallyPoint || type == CommandType.Capture;
 
         private static CardSlot Cmd(string label, CommandType type) =>
             new CardSlot { Label = label, Type = type };

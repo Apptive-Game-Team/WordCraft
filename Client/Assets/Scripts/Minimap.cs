@@ -253,8 +253,8 @@ namespace WordCraft.View
                 // Remembered things are dimmed the same amount the ground under
                 // them is, so one square reads as one picture of one moment.
                 Color32 tint = show == Fog.Memory
-                    ? Color32.Lerp(Tint(e), UiStyle.FogUnseen, UiStyle.FogSeen.a)
-                    : Tint(e);
+                    ? Color32.Lerp(Tint(world, e), UiStyle.FogUnseen, UiStyle.FogSeen.a)
+                    : Tint(world, e);
                 Blob(e.Position, tint, e.Kind == EntityKind.Building ? BuildingRadius : UnitRadius);
             }
 
@@ -356,8 +356,15 @@ namespace WordCraft.View
         /// here is the blue army there. Size is what tells a building from a unit;
         /// hue is only ever whose it is.
         /// </summary>
-        private static Color32 Tint(Entity e) =>
-            e.Kind == EntityKind.ResourceNode || e.Owner < 0 ? UiStyle.Node : UiStyle.Owner(e.Owner);
+        private static Color32 Tint(World world, Entity e)
+        {
+            // Before the Owner test below, which would otherwise hand a 꼬마돌 the
+            // resource node's yellow: both are ownerless and only one of them is
+            // something to mine. Telling those two apart is the whole reason this
+            // dot has a colour of its own (issue #130).
+            if (world.IsNeutralRock(e)) return UiStyle.MinimapNeutral;
+            return e.Kind == EntityKind.ResourceNode || e.Owner < 0 ? UiStyle.Node : UiStyle.Owner(e.Owner);
+        }
 
         /// <summary>
         /// A filled square of pixels at a world point, clipped: a building's block

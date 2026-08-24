@@ -175,6 +175,41 @@ namespace WordCraft.View
         /// <summary>Debris on the minimap. Over the ground so it blocks, under the rock so it is not permanent.</summary>
         public static readonly Color MinimapRemnant = Rgb(0x3A3844);
 
+        // ---- field: 인간 마법 문명 징발 ----
+        //
+        // A neutral 꼬마돌 is a body, not terrain, so it does not answer to the
+        // rule above — it blocks nothing and a player must never read it as a
+        // wall. What it has to say instead is that it is nobody's, and the only
+        // vocabulary this client has for whose a thing is is hue: two owner hues
+        // and no third. So the absence of an owner is the absence of a hue.
+
+        /// <summary>
+        /// What the 꼬마돌 art is multiplied by on the field. It is 돌 골렘 부족's
+        /// own worker sprite, which is what a 꼬마돌 is, and untinted it is that
+        /// faction's worker standing in the open — an 인간 player would try to
+        /// capture the enemy's miners with it.
+        ///
+        /// Chosen by measuring the sprite, the way Remnant was. MiniRockSwarm has
+        /// a median luminance of 161.1 and almost no colour in it already (mean
+        /// chroma 8.4), so this multiply is doing two things at once: it drops the
+        /// midtone to 125.7, which is clear of every blocked-terrain tone the tile
+        /// layer uses (RockLit is the brightest at 96.0) and clear of the 161.1 an
+        /// owned body wears, and it collapses the chroma to 1.6 — no hue at all,
+        /// which is the whole of what "no owner" looks like here.
+        /// </summary>
+        public static readonly Color Neutral = Rgb(0xC4C7CE);
+
+        /// <summary>
+        /// A 꼬마돌 on the minimap. Not <see cref="Node"/>: the square already
+        /// spends yellow on resource nodes, and the one thing a player has to be
+        /// able to do at a glance is tell the thing 인간 captures from the thing
+        /// everybody mines. Grey rather than a third hue, for the reason above —
+        /// hue is ownership on this square, and this has no owner. Its value sits
+        /// just under both owner dots, so it is found without being louder than an
+        /// army.
+        /// </summary>
+        public static readonly Color MinimapNeutral = Rgb(0x8B8794);
+
         /// <summary>Texels a cell is baked at. One cell is a flat colour plus an edge, not a picture.</summary>
         public const int TileTexels = 8;
 
@@ -584,17 +619,31 @@ namespace WordCraft.View
         /// learning; armed inverts the whole cell, keycap included, so the state is
         /// visible from the edge of vision.
         /// </summary>
-        public static bool CardCell(Rect area, string key, string label, bool armed)
+        public static bool CardCell(Rect area, string key, string label, bool armed, bool enabled = true)
         {
             Build();
-            bool clicked = GUI.Button(area, GUIContent.none, armed ? buttonArmed : button);
+            bool clicked = false;
+            if (enabled)
+            {
+                clicked = GUI.Button(area, GUIContent.none, armed ? buttonArmed : button);
+            }
+            else
+            {
+                // A face, not GUI.enabled, and not an EmptyCell either: this is a
+                // command that exists and this player cannot use, which is a
+                // different sentence from a card with nothing in that position.
+                GUI.Label(area, GUIContent.none, buttonOff);
+            }
 
             var cap = new Rect(area.x + S1, area.y + S1, KeyCap, KeyCap);
-            Fill(cap, armed ? OnAccent : Void);
-            keycap.normal.textColor = armed ? Accent : InkDim;
+            // The well needs a face under it to be a well. Void on a Void cell is
+            // nothing at all, so a dead cell borrows the same Raised the empty
+            // cell's frame does.
+            Fill(cap, armed ? OnAccent : enabled ? Void : Raised);
+            keycap.normal.textColor = armed ? Accent : enabled ? InkDim : InkMute;
             GUI.Label(cap, key, keycap);
 
-            cell.normal.textColor = armed ? OnAccent : Ink;
+            cell.normal.textColor = armed ? OnAccent : enabled ? Ink : InkMute;
             GUI.Label(new Rect(area.x + S1, area.y + KeyCap, area.width - S2, area.height - KeyCap - S1),
                 label, cell);
             return clicked;

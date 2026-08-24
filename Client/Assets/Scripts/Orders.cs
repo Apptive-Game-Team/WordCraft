@@ -11,7 +11,7 @@ namespace WordCraft.View
     /// dropped order is a missing command and never a simulation that disagrees
     /// with the peer's.
     ///
-    ///   right click        move, gather a node, or attack an enemy
+    ///   right click        move, gather a node, take a 꼬마돌, or attack an enemy
     ///   card key or button the command in that cell, see CommandCard
     ///   left click         completes an armed command, Esc cancels it
     ///   build key          opens the submenu; a second key picks the building
@@ -126,6 +126,15 @@ namespace WordCraft.View
             if (runner == null || slot.Type == CommandType.None) return;
             if (runner.Session.State != SessionState.Running) return;
 
+            // The card draws this cell dead for the five factions that cannot
+            // capture, and the key has to mean the same thing the button does or
+            // the dead cell is only dead to the mouse.
+            if (slot.Type == CommandType.Capture &&
+                !CaptureOrder.Available(runner.World.FactionOf(runner.LocalPeer)))
+            {
+                return;
+            }
+
             if (slot.Type == CommandType.Build)
             {
                 // The cell that names no building is the one that opens the menu.
@@ -177,6 +186,14 @@ namespace WordCraft.View
                 return;
             }
 
+            if (type == CommandType.Capture)
+            {
+                int rock = runner.EntityAt(point, PickRadius, mineOnly: false);
+                if (rock < 0) return;
+                Capture(rock);
+                return;
+            }
+
             if (type == CommandType.Attack)
             {
                 int hit = runner.EntityAt(point, PickRadius, mineOnly: false);
@@ -189,6 +206,49 @@ namespace WordCraft.View
             }
 
             ToSelection(type, MatchRunner.ToSim(point), 0);
+        }
+
+        /// <summary>
+        /// 징발, to exactly one body. Not to the selection the way Move and Gather
+        /// go, because a 꼬마돌 takes one worker: the simulation hands the rock to
+        /// whoever finishes first and drops everyone else's clock on the next
+        /// tick, so five workers sent at one rock is four workers standing still
+        /// for sixty ticks and then standing still for good.
+        ///
+        /// The nearest one, measured off drawn positions. The measurement is local
+        /// and the command that leaves here names an entity id, so both peers run
+        /// the same order however each of them drew the frame.
+        /// </summary>
+        private void Capture(int rockId)
+        {
+            int worker = NearestCapturer(rockId);
+            if (worker < 0) return;
+            Issue(CommandType.Capture, worker, FixVec2.Zero, rockId);
+        }
+
+        /// <summary>
+        /// The selected body this capture would go to, or -1 when the selection
+        /// holds none that could take it. CaptureOrder is the test, so the client
+        /// asks the same question here that the card asks when it draws the cell.
+        /// </summary>
+        private int NearestCapturer(int rockId)
+        {
+            World world = runner.World;
+            Vector2 rock = runner.DrawPosition(rockId);
+            int best = -1;
+            float bestDistance = 0f;
+
+            for (int i = 0; i < selection.Selected.Count; i++)
+            {
+                int id = selection.Selected[i];
+                if (!CaptureOrder.Allows(world, runner.LocalPeer, id, rockId)) continue;
+
+                float d = Vector2.Distance(rock, runner.DrawPosition(id));
+                if (best >= 0 && d >= bestDistance) continue;
+                best = id;
+                bestDistance = d;
+            }
+            return best;
         }
 
         /// <summary>
@@ -224,6 +284,18 @@ namespace WordCraft.View
             bool node = hit >= 0 && aimed.Kind == EntityKind.ResourceNode;
             bool enemy = hit >= 0 && aimed.Owner >= 0 && aimed.Owner != runner.LocalPeer;
 
+            // 징발 on the right button for the same reason Gather is: it is the
+            // worker's other loop, the same shape of order, and a player who
+            // learned to point at a node points at a rock the same way. One body
+            // takes it and the rest of the selection walks there, which is what
+            // pointing at something already means everywhere else on this button.
+            //
+            // Killing a 꼬마돌 stays on the Attack cell. A right click has to mean
+            // one thing per target, and for the faction that can take this one it
+            // means take it; every other faction gets the walk, which is what the
+            // button did here yesterday.
+            int capturing = hit >= 0 && world.IsNeutralRock(aimed) ? NearestCapturer(hit) : -1;
+
             FixVec2 target = hit >= 0 ? aimed.Position : MatchRunner.ToSim(point);
 
             for (int i = 0; i < selection.Selected.Count; i++)
@@ -235,6 +307,10 @@ namespace WordCraft.View
                 if (node && e.Kind == EntityKind.Worker)
                 {
                     Issue(CommandType.Gather, id, FixVec2.Zero, hit);
+                }
+                else if (id == capturing)
+                {
+                    Issue(CommandType.Capture, id, FixVec2.Zero, hit);
                 }
                 else if (enemy)
                 {

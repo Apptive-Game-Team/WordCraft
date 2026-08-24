@@ -192,9 +192,18 @@ namespace WordCraft.View
         /// Things that cannot move, and so are the only things worth remembering.
         /// Resource nodes are in: a node the scout found is a place, and a place
         /// does not walk away while nobody is looking at it.
+        ///
+        /// A neutral 꼬마돌 is in for the same reason and drops out of it by
+        /// itself: it has no walk at all while it is neutral, and the moment it is
+        /// captured this stops being true of it, which is exactly the moment it
+        /// becomes a Towerback that walks. Read through World rather than off the
+        /// Kind, because a 꼬마돌 is deliberately an ordinary Unit — the transfer
+        /// this remembers across is the one World.SpawnNeutralRock gave up a Kind
+        /// of its own to avoid having to repath.
         /// </summary>
         private static bool Static(Entity e) =>
-            e.Kind == EntityKind.Building || e.Kind == EntityKind.ResourceNode;
+            e.Kind == EntityKind.Building || e.Kind == EntityKind.ResourceNode ||
+            (shown != null && shown.IsNeutralRock(e));
 
         /// <summary>
         /// Sight, in cells, taken from numbers that already exist rather than a

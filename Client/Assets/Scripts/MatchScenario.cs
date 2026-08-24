@@ -52,7 +52,47 @@ namespace WordCraft.View
             // the same distance from both starts. That is the reason to fight over them.
             world.SpawnResourceNode(At(0, 24, 39), NodeAmount);
             world.SpawnResourceNode(At(0, 39, 24), NodeAmount);
+
+            // Spawned last, so the ids above keep the numbers ScriptedLog names.
+            SpawnNeutralRocks(world);
             return world;
+        }
+
+        /// <summary>
+        /// 인간 마법 문명 징발: the four neutral 꼬마돌 the map holds, laid out on
+        /// the same two-part structure the resource nodes use — one per half, plus
+        /// one pair that maps onto itself.
+        ///
+        /// Placement is the mechanic. docs/FACTION-MECHANICS.md makes the map the
+        /// second contested point of the match, and it can only be that if both
+        /// halves of the sentence are true: the 인간 player has to walk out for
+        /// these, and the opponent has to be able to reach them and delete them.
+        /// A 꼬마돌 in the base fails the second half — 인간 would get its only
+        /// anti-air for free and nobody could contest it — and one in the middle
+        /// of the barrier fails the first, because two units sent out at minute
+        /// one would settle 인간's whole air matchup before a decision exists.
+        ///
+        /// So: one on each player's outer flank, past the lake that already
+        /// narrows it, roughly forty-six cells from that player's own base and
+        /// nearer fifty-seven from the other one by the only route there is. It is
+        /// yours, but only if you go and take it and then keep it, and the raid
+        /// that denies it never has to touch your base.
+        ///
+        /// And one in the mouth of each lane, on the anti-diagonal itself, which
+        /// is where the map's only two crossings already decide who holds what.
+        /// They sit at the inner shoulder with the contested node at the outer,
+        /// so one corridor now holds a reason for both players to be in it and
+        /// 인간's reason costs sixty ticks of a worker standing still in it.
+        /// </summary>
+        private static void SpawnNeutralRocks(World world)
+        {
+            for (int peer = 0; peer < Peers; peer++) world.SpawnNeutralRock(At(peer, 54, 6));
+
+            // Named as peer 0's twice for the same reason the node pair above is:
+            // the second call is the first one rotated, so the two are each other's
+            // mirror rather than one per half.
+            world.SpawnNeutralRock(At(0, 37, 26));
+            world.SpawnNeutralRock(At(0, 26, 37));
         }
 
         // The barrier is three cells thick along the anti-diagonal, which is the
