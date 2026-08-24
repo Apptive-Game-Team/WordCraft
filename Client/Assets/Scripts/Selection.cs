@@ -317,11 +317,19 @@ namespace WordCraft.View
 
         /// <summary>
         /// Idle is read out of simulation state, never marked on it: no gather node,
-        /// nothing carried, and standing where it was last told to stand.
+        /// no capture, nothing carried, and standing where it was last told to stand.
+        ///
+        /// The capture clause is not redundant with the standing-still one. 징발
+        /// halts the worker on the tick the clock starts (World.CaptureStep), which
+        /// is the whole of "그동안 일꾼은 이동하지 않는다" — so for its last sixty
+        /// ticks a capturing worker matches every other test here exactly, and the
+        /// idle-worker button would hand the player a body already doing the most
+        /// deliberate thing 인간 does.
         /// </summary>
         private bool IsIdleWorker(Entity e) =>
             e.Alive && e.Kind == EntityKind.Worker && e.Owner == runner.LocalPeer &&
-            e.GatherNodeId < 0 && e.CarryAmount == 0 && e.Target.Equals(e.Position);
+            e.GatherNodeId < 0 && e.CaptureTargetId < 0 && e.CarryAmount == 0 &&
+            e.Target.Equals(e.Position);
 
         public int IdleWorkerCount()
         {

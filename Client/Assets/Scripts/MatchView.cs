@@ -86,6 +86,17 @@ namespace WordCraft.View
         /// </summary>
         private const string RemnantArt = "RockRemnant";
 
+        /// <summary>
+        /// 인간 마법 문명 징발: what a neutral 꼬마돌 on the map is drawn as. Named
+        /// here for the reason RemnantArt is, and the reason World.SpawnNeutralRock
+        /// gives for the body carrying Role.None — with no owner there is no
+        /// faction to look a roster row up in, so there is no row this could be the
+        /// sprite of. It is 돌 골렘 부족's own 꼬마돌 sprite, because that is what
+        /// this is; docs/UI-STYLE.md 징발 has why it is the one piece of authored
+        /// art on the field that is tinted.
+        /// </summary>
+        private const string NeutralRockArt = "MiniRockSwarm";
+
         public Camera Cam { get; private set; }
 
         private MatchRunner runner;
@@ -102,6 +113,13 @@ namespace WordCraft.View
         // ring whose thickness has to answer to the zoom instead must not do.
         private readonly List<SpriteRenderer> rings = new List<SpriteRenderer>();
         private readonly List<float> footprints = new List<float>();
+
+        /// <summary>
+        /// What each renderer was dressed for (<see cref="SkinOf"/>), parallel to
+        /// views. 징발 is the one rule that changes a live body's owner and roster
+        /// entry, so this is the only reason a renderer is ever built twice.
+        /// </summary>
+        private readonly List<int> skins = new List<int>();
 
         /// <summary>A hairline circle at the selected entity's own weapon reach (issue #104). One per entity id, most of them always off.</summary>
         private readonly List<SpriteRenderer> rangeRings = new List<SpriteRenderer>();
@@ -141,6 +159,9 @@ namespace WordCraft.View
         private readonly List<SpriteRenderer> remnants = new List<SpriteRenderer>();
         private Sprite remnantArt;
 
+        /// <summary>The map's own 꼬마돌 art, loaded once. Null if the file is gone, and the primitive takes over.</summary>
+        private Sprite neutralRockArt;
+
         /// <summary>The building under the cursor during placement. One, made once.</summary>
         private SpriteRenderer ghost;
         private Role ghostRole;
@@ -157,6 +178,7 @@ namespace WordCraft.View
             square = MakeSprite(round: false);
             rangeRingArt = MakeRingSprite();
             remnantArt = Resources.Load<Sprite>(SpriteFolder + RemnantArt);
+            neutralRockArt = Resources.Load<Sprite>(SpriteFolder + NeutralRockArt);
 
             float mid = MatchScenario.MapSize / 2f;
             Cam = new GameObject("Camera").AddComponent<Camera>();
@@ -205,6 +227,7 @@ namespace WordCraft.View
                 Drop(queueFills);
                 Drop(rallyMarkers);
                 footprints.Clear(); // parallel to views, and Create refills it
+                skins.Clear();      // same
                 hitUntil.Clear();   // same: a restart's ids owe nothing to the match before it
                 shown = world;
 
@@ -233,6 +256,15 @@ namespace WordCraft.View
             {
                 Entity e = world.GetEntity(i);
                 SpriteRenderer sr = views[i];
+
+                // Before the fog tests below, so a 꼬마돌 taken out of sight is
+                // already a Towerback the first frame it is seen again.
+                if (skins[i] != SkinOf(e))
+                {
+                    footprints[i] = Dress(world, e, sr);
+                    skins[i] = SkinOf(e);
+                }
+
                 byte show = Fog.Show(i, e);
                 if (show == Fog.Hidden)
                 {
@@ -517,9 +549,27 @@ namespace WordCraft.View
 
             // ProduceTicksLeft counts down and is zero in the tick before a queued
             // unit starts, so an empty bar means queued-not-started, not finished.
+            // 징발 진행도, on the worker, because that is the only body the
+            // progress is on: World.SpawnNeutralRock deliberately hangs no state
+            // on the rock. The same bar as the production queue's and in the same
+            // colour, because it is the same question — what is this body making —
+            // and a capture is a worker making a Towerback.
+            //
+            // Drawn whether or not it is selected, unlike the queue. Sixty ticks
+            // is three seconds a player chose to spend standing still, and the
+            // opponent being able to see them spent is the competition this
+            // mechanic exists to create.
+            float capture = e.Alive && e.Kind == EntityKind.Worker
+                ? CaptureOrder.Progress(e)
+                : -1f;
+
             bool queue = e.Alive && picked && e.Kind == EntityKind.Building && e.QueueCount > 0;
-            queueFills[i].enabled = queue;
-            if (queue)
+            queueFills[i].enabled = queue || capture >= 0f;
+            if (capture >= 0f)
+            {
+                Place(queueFills[i], p.x, p.y + 0.55f, 1.1f, capture);
+            }
+            else if (queue)
             {
                 // The queue holds one roster entry at a time (Economy.TryQueueUnit),
                 // and that entry's clock since #93 priced it per faction and role,
@@ -557,11 +607,68 @@ namespace WordCraft.View
 
         private SpriteRenderer Create(World world, Entity e)
         {
-            Color owner = UiStyle.Owner(e.Owner);
             Sprite shape = Shape(e.Kind);
-            Color color;
-            float scale;
-            float spin = 0f;
+            var sr = NewRenderer("", shape, Color.white, e.Kind == EntityKind.Building ? 5 : 10);
+            footprints.Add(Dress(world, e, sr));
+            skins.Add(SkinOf(e));
+
+            var ring = NewRenderer("Ring", shape, UiStyle.Ring, sr.sortingOrder - 1);
+            ring.enabled = false;
+            rings.Add(ring);
+
+            // Above the fog like the rally marker and the build ghost: both are
+            // information about what the local peer itself is doing right now,
+            // and fog never hides that (docs/UI-STYLE.md 안개).
+            var rangeRing = NewRenderer("Range", rangeRingArt, UiStyle.RangeRing, AboveFogOrder);
+            rangeRing.enabled = false;
+            rangeRings.Add(rangeRing);
+
+            var flash = NewRenderer("HitFlash", shape, UiStyle.Danger, sr.sortingOrder - 1);
+            flash.enabled = false;
+            hitFlashes.Add(flash);
+            hitUntil.Add(-1f);
+
+            barBacks.Add(Overlay("HpBack", UiStyle.MeterBack, OverlayOrder));
+            barFills.Add(Overlay("HpFill", Color.white, OverlayOrder + 1));
+            queueFills.Add(Overlay("Queue", UiStyle.Queue, OverlayOrder + 1));
+
+            return sr;
+        }
+
+        /// <summary>
+        /// Puts a body's art, colour, size, spin and name on its renderer, and
+        /// answers with the footprint a ring around it has to clear.
+        ///
+        /// One method because it runs twice. A renderer is built once per entity
+        /// id, which held for every rule the simulation had until 징발: everything
+        /// else makes a body or ends one, and this is the first thing that leaves
+        /// a body standing and changes what it is. Without the second call a
+        /// captured 꼬마돌 goes on being drawn as a 꼬마돌 for the rest of the
+        /// match, with the enemy's Towerback shooting out of it.
+        /// </summary>
+        private float Dress(World world, Entity e, SpriteRenderer sr)
+        {
+            Primitive(e, out Color color, out float scale, out float spin);
+            Sprite drawn = ArtFor(world, e);
+
+            sr.name = Label(world, e);
+            sr.sprite = drawn != null ? drawn : Shape(e.Kind);
+            sr.color = drawn != null ? Tint(world, e) : color;
+            sr.transform.localScale = drawn != null ? FitScale(drawn, e.Role) : new Vector3(scale, scale, 1f);
+            sr.transform.rotation = Quaternion.Euler(0f, 0f, drawn != null ? 0f : spin);
+            return drawn != null ? Cells(e.Role) : scale;
+        }
+
+        /// <summary>
+        /// What a body is drawn as when its roster entry has no art: hue for owner,
+        /// a disc for the things that move and a square for the things that do not.
+        /// docs/FACTIONS.md still lists several slots as concepts, so this is
+        /// permanent furniture rather than a stopgap.
+        /// </summary>
+        private static void Primitive(Entity e, out Color color, out float scale, out float spin)
+        {
+            Color owner = UiStyle.Owner(e.Owner);
+            spin = 0f;
 
             switch (e.Kind)
             {
@@ -584,36 +691,39 @@ namespace WordCraft.View
                     spin = 45f;
                     break;
             }
-
-            Sprite drawn = e.Owner < 0 ? null : ArtFor(world.FactionOf(e.Owner), e.Role, e.Slot);
-            var sr = NewRenderer(Label(world, e), drawn != null ? drawn : shape,
-                drawn != null ? Color.white : color, e.Kind == EntityKind.Building ? 5 : 10);
-            sr.transform.localScale = drawn != null ? FitScale(drawn, e.Role) : new Vector3(scale, scale, 1f);
-            sr.transform.rotation = Quaternion.Euler(0f, 0f, drawn != null ? 0f : spin);
-
-            var ring = NewRenderer("Ring", shape, UiStyle.Ring, sr.sortingOrder - 1);
-            ring.enabled = false;
-            rings.Add(ring);
-            footprints.Add(drawn != null ? Cells(e.Role) : scale);
-
-            // Above the fog like the rally marker and the build ghost: both are
-            // information about what the local peer itself is doing right now,
-            // and fog never hides that (docs/UI-STYLE.md 안개).
-            var rangeRing = NewRenderer("Range", rangeRingArt, UiStyle.RangeRing, AboveFogOrder);
-            rangeRing.enabled = false;
-            rangeRings.Add(rangeRing);
-
-            var flash = NewRenderer("HitFlash", shape, UiStyle.Danger, sr.sortingOrder - 1);
-            flash.enabled = false;
-            hitFlashes.Add(flash);
-            hitUntil.Add(-1f);
-
-            barBacks.Add(Overlay("HpBack", UiStyle.MeterBack, OverlayOrder));
-            barFills.Add(Overlay("HpFill", Color.white, OverlayOrder + 1));
-            queueFills.Add(Overlay("Queue", UiStyle.Queue, OverlayOrder + 1));
-
-            return sr;
         }
+
+        /// <summary>
+        /// Everything about a body that decides how it is drawn, in one number, so
+        /// the frame can ask whether it changed without asking the roster again.
+        /// Owner is offset by one because a neutral's is -1.
+        /// </summary>
+        private static int SkinOf(Entity e) => ((e.Owner + 1) * 64 + (int)e.Role) * 64 + e.Slot;
+
+        /// <summary>
+        /// The art a body is drawn with, or null when it has none and the
+        /// primitive stands in. A neutral 꼬마돌 has no owner and so no roster row
+        /// to ask, and the map's own sprite answers for it instead.
+        /// </summary>
+        private Sprite ArtFor(World world, Entity e)
+        {
+            if (world.IsNeutralRock(e)) return neutralRockArt;
+            return e.Owner < 0 ? null : ArtFor(world.FactionOf(e.Owner), e.Role, e.Slot);
+        }
+
+        /// <summary>
+        /// What that art is multiplied by. White for everything on a roster,
+        /// because .art/STYLE.md makes the palette the thing that says which
+        /// faction a body belongs to and a tint over it would be a second answer
+        /// to that question.
+        ///
+        /// The neutral 꼬마돌 is the one exception and it is the same rule read
+        /// the other way: it belongs to no faction, it is drawn with a faction's
+        /// worker sprite, and untinted it would claim to be that faction's worker.
+        /// docs/UI-STYLE.md 징발 has the measurements.
+        /// </summary>
+        private static Color Tint(World world, Entity e) =>
+            world.IsNeutralRock(e) ? UiStyle.Neutral : Color.white;
 
         /// <summary>Roster art for this entry, or null when it has none yet.</summary>
         private Sprite ArtFor(Faction faction, Role role, int slot)
@@ -630,8 +740,11 @@ namespace WordCraft.View
             return sprite;
         }
 
-        private static string Label(World world, Entity e) =>
-            e.Owner < 0 ? e.Kind.ToString() : FactionData.Name(world.FactionOf(e.Owner), e.Role, e.Slot);
+        private static string Label(World world, Entity e)
+        {
+            if (world.IsNeutralRock(e)) return "꼬마돌";
+            return e.Owner < 0 ? e.Kind.ToString() : FactionData.Name(world.FactionOf(e.Owner), e.Role, e.Slot);
+        }
 
         /// <summary>
         /// Fits authored art to its role's footprint in cells. The source sprites

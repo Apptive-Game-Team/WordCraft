@@ -509,7 +509,19 @@ namespace WordCraft.View
                     ? "under construction, " + e.BuildTicksLeft + "t left"
                     : "queue " + e.QueueCount + "  ·  next in " + e.ProduceTicksLeft + "t";
             }
-            return e.Kind == EntityKind.Worker ? "carrying " + e.CarryAmount : null;
+            if (e.Kind != EntityKind.Worker) return null;
+
+            // 징발 before the load, because a capturing worker is carrying nothing
+            // and "carrying 0" is what a worker doing nothing at all says. The two
+            // loops are mutually exclusive in the simulation, so this is not a
+            // choice about which to show.
+            if (e.CaptureTargetId >= 0)
+            {
+                return e.CaptureTicksLeft > 0
+                    ? "taking a 꼬마돌, " + e.CaptureTicksLeft + "t left"
+                    : "walking to a 꼬마돌";
+            }
+            return "carrying " + e.CarryAmount;
         }
 
         /// <summary>
