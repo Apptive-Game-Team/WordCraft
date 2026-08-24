@@ -1939,6 +1939,11 @@ namespace WordCraft.Replay
 
         // A faction whose ranged list holds exactly one entry, so entry 1 of it is
         // an entry nobody wrote rather than one that is merely off the list.
+        //
+        // 돌 골렘 부족 rather than 세계수 정령, which held the part until 성장 gave
+        // it a second ranged entry. The guard below is what said so, and moving the
+        // fixture is the answer it was asking for: an entry nobody wrote has to be
+        // an entry nobody wrote, and 덩쿨 정령 is now somebody's.
         private const int ThinBase = 0;
         private const int ThinWorks = 1;
 
@@ -1954,11 +1959,11 @@ namespace WordCraft.Replay
         /// </summary>
         private static void ProduceRefusesAnEntryTheFactionDoesNotField()
         {
-            Check(FactionData.SlotCount(Faction.TreeSpirits, Role.Ranged) == 1,
-                "세계수 정령 grew a second ranged entry, so this check no longer refuses anything");
+            Check(FactionData.SlotCount(Faction.RockGolems, Role.Ranged) == 1,
+                "돌 골렘 부족 grew a second ranged entry, so this check no longer refuses anything");
 
             var world = new World(Seed);
-            world.SetPeerFaction(0, Faction.TreeSpirits);
+            world.SetPeerFaction(0, Faction.RockGolems);
             world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);       // ThinBase
             world.SpawnBuilding(0, Role.Production, At(9, 5), complete: true); // ThinWorks, opens tier 2
             world.GrantResources(0, 1000);
@@ -1977,7 +1982,7 @@ namespace WordCraft.Replay
                 world.Step(Produce(ThinBase, 0, seq++, Role.Ranged, slot));
                 for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
 
-                string where = "세계수 정령 ranged entry " + slot;
+                string where = "돌 골렘 부족 ranged entry " + slot;
                 Check(world.GetResources(0) == banked, "an order for " + where + " spent resources");
                 Check(world.GetEntity(ThinBase).QueueCount == 0, "an order for " + where + " queued one");
                 Check(world.EntityCount == standing, "an order for " + where + " made one");
@@ -1986,7 +1991,7 @@ namespace WordCraft.Replay
             int before = world.GetResources(0);
             world.Step(Produce(ThinBase, 0, seq, Role.Ranged, 0));
             Check(world.GetResources(0) < before,
-                "세계수 정령's ranged slot is shut for every entry, so the refusals prove nothing");
+                "돌 골렘 부족's ranged slot is shut for every entry, so the refusals prove nothing");
         }
 
         // 차원 유랑종's melee list holds three entries and no override row touches
