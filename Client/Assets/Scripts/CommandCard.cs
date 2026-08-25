@@ -38,6 +38,20 @@ namespace WordCraft.View
         /// argument a role-only command always sent.
         /// </summary>
         public int Slot;
+
+        /// <summary>
+        /// True on the one cell that names a point for the view instead of sending
+        /// a command: 차원 유랑종's 도착 지점. Beside <see cref="Type"/> rather than
+        /// a member of it, because CommandType is Sim's enum and this cell puts
+        /// nothing on the wire — the point it names rides the next Produce's
+        /// Target, which is the field Sim/World.cs already reads it out of.
+        ///
+        /// The build submenu is the precedent for a cell that does something the
+        /// simulation never hears about (Orders.BuildMenuOpen). That one could
+        /// borrow a Build with no role to say so; this one has no argument spare,
+        /// so it says so in a field of its own.
+        /// </summary>
+        public bool Aim;
     }
 
     /// <summary>
@@ -71,7 +85,7 @@ namespace WordCraft.View
         // thing whatever is selected:
         //   cell 0  point at the ground   Move, or where produced units walk to
         //   cell 1  cancel                Stop, or take one off the queue
-        //   cell 2  stand and shoot
+        //   cell 2  stand and shoot       Hold; on a building, the rest of row 0
         //   cell 3  name a victim
         //   cell 4  walk and shoot
         //   cells 6-8 (bottom row)        what this thing makes
@@ -166,12 +180,26 @@ namespace WordCraft.View
         /// seventh producible entry would overflow this card; nothing on the
         /// roster does yet, and #114 leaves rebalancing or paging the card to
         /// whoever adds one.
+        ///
+        /// 도착 goes in cell 2 because it is the last free cell of row 0, and row 0
+        /// is where a building's own settings live rather than what it makes. It
+        /// sits beside Rally on purpose: the two are the same gesture — press,
+        /// then point at the ground — and they name the two halves of the same
+        /// journey, where a body appears and where it then walks to.
+        ///
+        /// Here for every faction and drawn dead for five, exactly as the 징발 cell
+        /// is on the worker card (Hud.Card asks ArrivalOrder.Aims). One layout per
+        /// selection kind is what makes a position worth learning, and a cell that
+        /// appeared only for 차원 유랑종 would move nothing today and everything the
+        /// day row 0 grows a fourth entry.
         /// </summary>
         public static CardSlot[] Building(Faction faction)
         {
             for (int i = 0; i < Cells; i++) building[i] = Empty;
             building[0] = Cmd("Rally", CommandType.SetRallyPoint);
             building[1] = Cmd("Cancel", CommandType.CancelProduction);
+            // Type stays None: nothing leaves the client when this cell is pressed.
+            building[2] = new CardSlot { Label = "Arrive", Aim = true };
 
             List<ProductionMenu.Entry> entries = ProductionMenu.For(faction);
             int cell = Cols; // rows 1-2: one cell per producible roster entry
