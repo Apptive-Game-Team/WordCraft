@@ -15,6 +15,7 @@ namespace WordCraft.View
     ///   card key or button the command in that cell, see CommandCard
     ///   left click         completes an armed command, Esc cancels it
     ///   build key          opens the submenu; a second key picks the building
+    ///   arrive key         names 차원 유랑종's 도착 지점; sends nothing by itself
     /// </summary>
     public sealed class Orders : MonoBehaviour
     {
@@ -31,9 +32,46 @@ namespace WordCraft.View
         /// <summary>True while the worker's build submenu is showing instead of its card.</summary>
         public bool BuildMenuOpen { get; private set; }
 
+        /// <summary>
+        /// True while the 도착 지점 cell is armed and the next left click on the map
+        /// names a point instead of firing a command. Separate from
+        /// <see cref="Pending"/> because nothing is pending: the click puts a point
+        /// in this component and no command on the wire.
+        /// </summary>
+        public bool Aiming { get; private set; }
+
+        /// <summary>
+        /// The 도착 지점 the player has named, in simulation coordinates. Read only
+        /// when <see cref="HasArrivalPoint"/>, and carried on the Target of every
+        /// Produce this client sends from here on.
+        ///
+        /// One per client rather than one per 통로. The simulation keeps its copy on
+        /// the building that accepted the Produce and overwrites it with each new
+        /// one, which is exactly what one point sent with every Produce comes to;
+        /// a second point kept per building here would be a second answer to a
+        /// question the simulation already answers.
+        /// </summary>
+        public FixVec2 ArrivalPoint { get; private set; }
+
+        /// <summary>
+        /// Whether a point has been named at all. Explicit rather than testing
+        /// ArrivalPoint against zero, for the reason Entity.HasArrivalPoint is
+        /// explicit: (0,0) is a point on the map like any other, and it is also
+        /// exactly what an unaimed Produce has always carried.
+        /// </summary>
+        public bool HasArrivalPoint { get; private set; }
+
         private MatchRunner runner;
         private Selection selection;
         private Camera cam;
+
+        /// <summary>
+        /// The world the arrival point was named in. A point is about one match's
+        /// map and one match's anchors, and this component outlives a match: without
+        /// this, a restart would open with the previous game's point already aimed
+        /// and riding the first Produce of the new one.
+        /// </summary>
+        private World aimedWorld;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot() => new GameObject("WordCraft Orders").AddComponent<Orders>();
@@ -74,6 +112,10 @@ namespace WordCraft.View
                 if (cam == null) return;
             }
 
+            // A new match is a new map, so whatever was aimed at the last one is
+            // dropped before anything can send it.
+            if (HasArrivalPoint && !ReferenceEquals(runner.World, aimedWorld)) ClearAim();
+
             if (runner.Session.State != SessionState.Running)
             {
                 Cancel();
@@ -86,6 +128,12 @@ namespace WordCraft.View
             // no selected worker could place.
             if (BuildMenuOpen && SelectionKind() != CardKind.Worker) BuildMenuOpen = false;
 
+            // The armed aim belongs to the 통로's card for the same reason, and it
+            // is the 통로 dying rather than the selection changing that matters
+            // most: an aim left armed over a building that is gone is a click that
+            // names a point nothing will ever read.
+            if (Aiming && !Aims()) Aiming = false;
+
             CardSlot[] card = CommandCard.Of(Kind(), runner.World.FactionOf(runner.LocalPeer));
             for (int i = 0; i < CommandCard.Cells; i++)
             {
@@ -96,16 +144,19 @@ namespace WordCraft.View
 
             // The left button belongs to an armed command while it is armed, so the
             // click that completes it does not also redo the selection underneath.
-            selection.Blocked = Pending != CommandType.None;
+            // An armed aim owns it for the same reason.
+            selection.Blocked = Pending != CommandType.None || Aiming;
 
-            if (Pending != CommandType.None && Input.GetMouseButtonDown(0))
+            if ((Pending != CommandType.None || Aiming) && Input.GetMouseButtonDown(0))
             {
-                if (!Hud.OverUi(Input.mousePosition)) Fire(MouseWorld());
+                if (Hud.OverUi(Input.mousePosition)) return;
+                if (Aiming) Aim(MouseWorld());
+                else Fire(MouseWorld());
                 return;
             }
 
             if (!Input.GetMouseButtonDown(1) || Hud.OverUi(Input.mousePosition)) return;
-            if (Pending != CommandType.None || BuildMenuOpen) Cancel();
+            if (Pending != CommandType.None || BuildMenuOpen || Aiming) Cancel();
             else RightClick(MouseWorld());
         }
 
@@ -115,6 +166,48 @@ namespace WordCraft.View
             Pending = CommandType.None;
             Placing = Role.None;
             BuildMenuOpen = false;
+            // The arm, not the point. Esc out of an aim and the point named before
+            // it still stands, the way Esc out of a Move leaves the last one walked.
+            Aiming = false;
+        }
+
+        /// <summary>
+        /// Forgets the point itself. Only a new match calls this: a named point is
+        /// as durable as a rally point, and the simulation has no way to unset one
+        /// either (Sim/World.cs never clears HasRallyPoint).
+        ///
+        /// The player unaims by aiming somewhere no anchor covers, which is the
+        /// simulation's own rule rather than a second one invented here —
+        /// AimArrival clears HasArrivalPoint on a point it refuses, so a click on
+        /// open ground puts production back at the 통로.
+        /// </summary>
+        private void ClearAim()
+        {
+            HasArrivalPoint = false;
+            ArrivalPoint = FixVec2.Zero;
+            aimedWorld = null;
+        }
+
+        /// <summary>
+        /// Names 도착 지점. Nothing goes on the wire here — the point waits for the
+        /// next Produce, whose Target is where the simulation reads it (Sim/World.cs
+        /// Apply, Sim/Driftworlds.cs AimArrival).
+        ///
+        /// Taken wherever the player clicked, whatever the cursor's tint said. The
+        /// tint is a guess made a tick early and the simulation is what decides,
+        /// which is the rule the build ghost already plays by. Refusing the click
+        /// here would also take the player's only way back to unaimed production.
+        ///
+        /// No sound: this press is answered by the cell releasing and the mark
+        /// appearing on the map, the way the mixer button's is answered by the
+        /// panel. Sound.Command means a command went out, and none did.
+        /// </summary>
+        private void Aim(Vector2 point)
+        {
+            Aiming = false;
+            ArrivalPoint = MatchRunner.ToSim(point);
+            HasArrivalPoint = true;
+            aimedWorld = runner.World;
         }
 
         /// <summary>
@@ -123,8 +216,26 @@ namespace WordCraft.View
         /// </summary>
         public void Run(CardSlot slot)
         {
-            if (runner == null || slot.Type == CommandType.None) return;
+            if (runner == null) return;
             if (runner.Session.State != SessionState.Running) return;
+
+            if (slot.Aim)
+            {
+                // The card draws this cell dead for the five factions that never
+                // arrive and for a 차원 유랑종 building that is not a 통로, and the
+                // key has to mean what the button does or the dead cell is only
+                // dead to the mouse. Same guard, same reason, as 징발's below.
+                if (!Aims()) return;
+
+                // A press while it is armed is the way back out, so the one cell
+                // both arms and disarms and the player never has to find Esc.
+                bool was = Aiming;
+                Cancel();
+                Aiming = !was;
+                return;
+            }
+
+            if (slot.Type == CommandType.None) return;
 
             // The card draws this cell dead for the five factions that cannot
             // capture, and the key has to mean the same thing the button does or
@@ -162,7 +273,32 @@ namespace WordCraft.View
             int arg = slot.Type == CommandType.Produce
                 ? Command.RosterArg(slot.Produce, slot.Slot)
                 : (int)slot.Produce;
-            ToSelection(slot.Type, FixVec2.Zero, arg);
+
+            // The point rides Produce's Target, and it is zero until the player
+            // names one — which is what every client and every recorded log has
+            // always sent, and what every other faction sends forever. Aiming is
+            // an extra the player may take, never a step between the button and
+            // the unit: this cell produces on the first press whether or not
+            // anything has been aimed.
+            FixVec2 target = slot.Type == CommandType.Produce && HasArrivalPoint
+                ? ArrivalPoint
+                : FixVec2.Zero;
+            ToSelection(slot.Type, target, arg);
+        }
+
+        /// <summary>
+        /// Whether the current selection is something that keeps an arrival point,
+        /// which is what makes the Arrive cell live. The representative is the same
+        /// body the card is drawn for (Hud.Card), so the key and the button ask
+        /// about the same building.
+        /// </summary>
+        public bool Aims()
+        {
+            if (runner == null || selection == null) return false;
+            World world = runner.World;
+            return ArrivalOrder.Aims(world,
+                runner.LocalPeer,
+                CommandCard.Representative(world, selection.Selected, runner.LocalPeer));
         }
 
         private void Fire(Vector2 point)

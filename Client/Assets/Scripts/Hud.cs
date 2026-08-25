@@ -492,14 +492,58 @@ namespace WordCraft.View
                 y += UiStyle.Line;
             }
 
-            // The pending order is the only thing on this panel the player is in the
-            // middle of, so it is the only thing wearing the accent.
-            if (Orders.Instance != null && Orders.Instance.Pending != CommandType.None)
-            {
-                UiStyle.Label(new Rect(area.x, y, area.width, UiStyle.Line),
-                    Orders.Instance.Pending + ": click a target, Esc cancels", UiStyle.Accent);
-            }
+            Arrival(area, world, y, e);
         }
+
+        /// <summary>
+        /// The bottom line of the panel: what the player is in the middle of, or —
+        /// for a 통로 — where the next body will stand up.
+        ///
+        /// The accent is for the first of those and nothing else, because it means
+        /// "you are halfway through this" everywhere on this HUD. A named 도착 지점
+        /// is a setting rather than a step, so it goes out at Note's weight with
+        /// the verdict in the semantic colours: Good while an anchor still covers
+        /// it, Danger the moment none does. That second reading is the whole point
+        /// of putting it in words as well as on the map — a 경계 운반자 walks, and a
+        /// point can stop being valid with nobody attacking anything.
+        /// </summary>
+        private static void Arrival(Rect area, World world, float y, Entity e)
+        {
+            Orders orders = Orders.Instance;
+            if (orders == null) return;
+            var line = new Rect(area.x, y, area.width, UiStyle.Line);
+
+            if (orders.Aiming)
+            {
+                UiStyle.Label(line, "arrive: click a point, Esc cancels", UiStyle.Accent);
+                return;
+            }
+
+            if (orders.Pending != CommandType.None)
+            {
+                UiStyle.Label(line, orders.Pending + ": click a target, Esc cancels", UiStyle.Accent);
+                return;
+            }
+
+            // Only on the building that reads the point. Every other selection has
+            // nothing to do with it, and a line that never goes away is a line the
+            // player stops seeing.
+            if (!orders.HasArrivalPoint || !world.IsPassage(e)) return;
+
+            bool valid = ArrivalOrder.Valid(world, e.Owner, orders.ArrivalPoint);
+            UiStyle.Label(line,
+                valid
+                    ? "arrive " + Cell(orders.ArrivalPoint)
+                    : "arrive " + Cell(orders.ArrivalPoint) + " — no anchor, comes out here",
+                valid ? UiStyle.Good : UiStyle.Danger);
+        }
+
+        /// <summary>
+        /// A point as the player reads the map: the cell it falls in, whole
+        /// numbers. The fraction is the simulation's business and 32.5, 17.5 is
+        /// two more digits to skip past mid-fight.
+        /// </summary>
+        private static string Cell(FixVec2 p) => p.X.ToInt() + ", " + p.Y.ToInt();
 
         private static string StateOf(Entity e)
         {
@@ -594,7 +638,7 @@ namespace WordCraft.View
                     top + i / CommandCard.Cols * step,
                     UiStyle.CardCellSize, UiStyle.CardCellSize);
 
-                if (card[i].Type == CommandType.None)
+                if (card[i].Type == CommandType.None && !card[i].Aim)
                 {
                     UiStyle.EmptyCell(cell);
                     continue;
@@ -605,10 +649,20 @@ namespace WordCraft.View
                 // simulation drops in silence. A dead face, not a missing cell:
                 // the card keeps one layout for every faction, so the position is
                 // worth learning, and what is greyed is a command that exists.
-                bool live = card[i].Type != CommandType.Capture || CaptureOrder.Available(faction);
+                //
+                // 도착 is the same shape of answer one cell over, and it is dead in
+                // one more case than 징발 is: 차원 유랑종's Base produces too, and
+                // only its 통로 keeps a point (Sim/Driftworlds.cs AimArrival).
+                bool live = card[i].Aim
+                    ? orders.Aims()
+                    : card[i].Type != CommandType.Capture || CaptureOrder.Available(faction);
 
-                if (UiStyle.CardCell(cell, CommandCard.Keys[i].ToString(), card[i].Label,
-                        orders.Pending == card[i].Type, live))
+                // Armed is the cell inverting, and the aim cell is armed by its own
+                // state rather than by Pending: nothing is pending, because pressing
+                // it puts no command on the wire.
+                bool armed = card[i].Aim ? orders.Aiming : orders.Pending == card[i].Type;
+
+                if (UiStyle.CardCell(cell, CommandCard.Keys[i].ToString(), card[i].Label, armed, live))
                 {
                     orders.Run(card[i]);
                 }
