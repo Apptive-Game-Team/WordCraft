@@ -61,7 +61,8 @@ editor; that order is on you.
 - `Sim/` — pure C# simulation, `netstandard2.1`, no dependencies.
 - `Net/` — P2P lockstep session and UDP transport, `netstandard2.1`.
 - `Replay/` — headless determinism self-check, replay harness, replay file format.
-- `Host/` — console runner: `host`, `join`, `solo`, `selfcheck`, `replay`.
+- `Host/` — console runner: `host`, `join`, `solo`, `selfcheck`, `watch`,
+  `replay`, `compare`.
 - `Client/` — the Unity 2022 LTS view. Consumes `Sim` and `Net` as compiled
   assemblies that `dotnet build` vendors into `Client/Assets/Plugins/`; they are
   gitignored, so build once before opening the project.
