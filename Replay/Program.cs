@@ -45,6 +45,7 @@ namespace WordCraft.Replay
                 EveryUnarmedSlotIsWorthSomethingElse();
                 TheCarrierRefusesToFight();
                 TheCarrierFleesWhatCanKillIt();
+                AFleeingCarrierGoesAroundTerrain();
                 TheCarrierStopsWhenNothingIsHunting();
                 AnOrderOutranksFleeing();
                 FleeingIsHashedState();
@@ -1704,6 +1705,51 @@ namespace WordCraft.Replay
         }
 
         /// <summary>
+        /// A flight is pathfound, and this is the difference between a mechanic and
+        /// a body pressed against a lake. A pursuit may walk straight at its quarry
+        /// and stop dead on the first impassable cell, because a pursuit that loses
+        /// its quarry to the terrain has lost nothing; a flight that does it has
+        /// died. This is the one automatic walk in the simulation whose whole
+        /// purpose is to arrive somewhere.
+        ///
+        /// A wall of water across the line the carrier would run down, open at both
+        /// ends. A straight-line flight parks against it and stays east of it for
+        /// as long as the run lasts; a routed one is past it, and past it is the
+        /// only thing asserted, because which way round it went is the
+        /// pathfinder's tie-breaking and not this mechanic's business.
+        ///
+        /// The hunter walks rather than stands, or the carrier would put
+        /// AcquireRange between them and halt short of the wall with nothing tested.
+        /// </summary>
+        private static void AFleeingCarrierGoesAroundTerrain()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, World.PassageFaction);
+            world.SetPeerFaction(1, Faction.Hellfire);
+            for (int y = 27; y <= 34; y++) world.SetTerrain(FleeWallX, y, TileKind.Water);
+
+            world.SpawnUnit(0, World.CarrierRole, World.CarrierSlot, At(50, 30)); // the carrier
+            world.SpawnUnit(1, Role.Melee, At(55, 30));                           // the hunter
+
+            var idle = new List<Command>();
+            for (int t = 0; t < FleeTicks; t++) world.Step(idle);
+
+            Entity carrier = world.GetEntity(0);
+            Check(carrier.Position.X <= Fix.FromInt(FleeWallX + 2),
+                "경계 운반자 never reached the water, so the wall was never in the way");
+            Check(carrier.Alive && carrier.Hp == carrier.MaxHp,
+                "경계 운반자 was caught against the water at x=" + FleeWallX + " and hit for " +
+                (carrier.MaxHp - carrier.Hp) + ": the flight walked into the terrain and stopped " +
+                "there instead of routing around it");
+            Check((carrier.Position - world.GetEntity(1).Position).SqrMagnitude >
+                  World.InteractRange * World.InteractRange,
+                "경계 운반자 ended inside its hunter's reach");
+        }
+
+        /// <summary>The impassable column the flight has to get past.</summary>
+        private const int FleeWallX = 45;
+
+        /// <summary>
         /// The other end of the one radius. Nothing but AcquireRange decides when
         /// the flight starts, how far it aims and when it stops, so a carrier that
         /// has put that radius between itself and the threat halts — and stays
@@ -1766,6 +1812,17 @@ namespace WordCraft.Replay
         /// body — a point the flight would never have chosen. It is inside
         /// AcquireRange, so the flight resumes there, and outside the turret's reach
         /// the whole way, so what the run measures is the walk and not the damage.
+        ///
+        /// A quarter cell past the centre of the cell it lands in, and that quarter
+        /// cell is load bearing. A route ends on a cell centre, so an order aimed at
+        /// one is finished on the tick its last waypoint is reached and the loose
+        /// PathDone test CombatSystem uses would be indistinguishable from the exact
+        /// one FleeSystem needs. Past the centre there is a last straight step after
+        /// the route runs out, and a flight resuming on PathDone alone would take
+        /// the body away during it — which is a player's click landing short every
+        /// time something armed is on screen. Short of the centre proves nothing
+        /// either way, because the walk stands on such a point on its way to the
+        /// waypoint behind it.
         /// </summary>
         private static void AnOrderOutranksFleeing()
         {
@@ -1775,7 +1832,8 @@ namespace WordCraft.Replay
             Check(world.GetEntity(StalkedCarrier).Fleeing,
                 "경계 운반자 never started fleeing, so there is no flight for an order to outrank");
 
-            FixVec2 back = At(StalkedX + 1, StalkedY);
+            FixVec2 back = At(StalkedX + 1, StalkedY) +
+                new FixVec2(Fix.Ratio(1, 4), Fix.Zero);
             world.Step(new List<Command>
             {
                 new Command(0, 0, 0, CommandType.Move, StalkedCarrier, back)
