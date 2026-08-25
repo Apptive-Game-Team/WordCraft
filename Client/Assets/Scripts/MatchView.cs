@@ -64,9 +64,9 @@ namespace WordCraft.View
         private const int FogOrder = 60;
 
         /// <summary>
-        /// The local peer's own marks: a rally point and a placement ghost may both
-        /// be put down in ground this peer cannot see, and fog never hides what the
-        /// player is doing right now.
+        /// The local peer's own marks: a rally point, a placement ghost and a
+        /// 도착 지점 may all be put down in ground this peer cannot see, and fog
+        /// never hides what the player is doing right now.
         /// </summary>
         private const int AboveFogOrder = FogOrder + 1;
 
@@ -75,6 +75,16 @@ namespace WordCraft.View
         /// body, so a worker is told from a fighter without a second colour.
         /// </summary>
         private const float WorkerLift = 0.45f;
+
+        /// <summary>
+        /// How wide 차원 유랑종's 도착 지점 is drawn, in cells. The unit primitive's
+        /// own size (see <see cref="Primitive"/>), because that is what the mark
+        /// means: a body stands up here. It is a disc rather than the rally
+        /// marker's diamond for the same reason — the two sit on the same map and
+        /// name the two halves of one journey, and UiStyle.Rally and GhostOk are
+        /// near enough in hue that shape has to be what tells them apart.
+        /// </summary>
+        private const float ArrivalMarkCells = 0.9f;
 
         /// <summary>Where the imported WordOnline sprites live, relative to a Resources folder.</summary>
         public const string SpriteFolder = "Art/Sprites/";
@@ -165,6 +175,17 @@ namespace WordCraft.View
         /// <summary>The building under the cursor during placement. One, made once.</summary>
         private SpriteRenderer ghost;
         private Role ghostRole;
+
+        // 차원 유랑종 통로 조준 (#139). Three marks, all of them the local peer's own
+        // and so all of them above the fog: the point the player has named, the
+        // point under the cursor while they are naming one, and a hairline circle
+        // on every body lending them a radius.
+        private SpriteRenderer arrivalMark;
+        private SpriteRenderer arrivalCursor;
+        private readonly List<SpriteRenderer> arrivalRings = new List<SpriteRenderer>();
+
+        /// <summary>Refilled every frame the aim is armed, so nothing here allocates per frame.</summary>
+        private readonly List<int> anchors = new List<int>();
 
         private readonly Dictionary<string, Sprite> art = new Dictionary<string, Sprite>();
 
@@ -339,6 +360,118 @@ namespace WordCraft.View
             Remnants(world);
             Hover(world);
             Ghost(world);
+            Arrival(world);
+        }
+
+        /// <summary>
+        /// 차원 유랑종 통로 조준: where the next body will stand up, whether it still
+        /// may, and the circles that decide it.
+        ///
+        /// Three things are drawn and all three are guesses, in the sense the build
+        /// ghost's tint is a guess. The verdict is asked of the world this frame is
+        /// drawing, which is a tick behind the one a Produce would meet and however
+        /// many ticks behind the one the body arrives in. Nothing here gates a
+        /// click; Orders sends the point whatever the colour says, and the
+        /// simulation decides. That is the caveat Sim/Driftworlds.cs hands the view
+        /// along with the public ArrivalValid, and it is handled the way CanBuild's
+        /// is: by drawing the answer and never acting on it.
+        ///
+        /// The standing mark is re-asked every frame rather than kept from the
+        /// click, and that is this feature's answer to the mechanic judging twice.
+        /// The player should see the second verdict, because the second verdict can
+        /// change for a reason nothing else on screen reports: a 굴절 기둥 falls, or
+        /// a 경계 운반자 simply walks away and takes its radius with it, and from
+        /// then on the queue comes out at the 통로. Without this the player learns
+        /// it by watching bodies appear in the wrong place. It costs one call to
+        /// the simulation's own rule per frame, so the mark is never a claim about
+        /// a moment that has passed.
+        ///
+        /// The mark stands whether or not the 통로 is selected, unlike a rally
+        /// marker. There is one of these for the whole client rather than one per
+        /// building, and it is the thing that turns red while the player is looking
+        /// somewhere else entirely — which is exactly when they need to be told.
+        /// </summary>
+        private void Arrival(World world)
+        {
+            Orders orders = Orders.Instance;
+            int peer = runner.LocalPeer;
+            bool aims = orders != null && ArrivalOrder.Available(world.FactionOf(peer));
+
+            if (aims && orders.HasArrivalPoint)
+            {
+                Mark(ref arrivalMark, "ArrivalPoint");
+                Verdict(arrivalMark, MatchRunner.ToView(orders.ArrivalPoint),
+                    ArrivalOrder.Valid(world, peer, orders.ArrivalPoint));
+            }
+            else if (arrivalMark != null)
+            {
+                arrivalMark.enabled = false;
+            }
+
+            bool aiming = aims && orders.Aiming && Cam != null && !Hud.OverUi(Input.mousePosition);
+            if (!aiming)
+            {
+                if (arrivalCursor != null) arrivalCursor.enabled = false;
+                for (int i = 0; i < arrivalRings.Count; i++) arrivalRings[i].enabled = false;
+                return;
+            }
+
+            // Drawn where the pointer is and not on a cell centre, unlike the build
+            // ghost: a building takes a whole cell and a body stands on a point, so
+            // the simulation keeps the point as it was named (Sim/Driftworlds.cs
+            // AimArrival) and never runs it through CellOf.
+            FixVec2 aimed = MatchRunner.ToSim(Cam.ScreenToWorldPoint(Input.mousePosition));
+            Mark(ref arrivalCursor, "ArrivalCursor");
+            Verdict(arrivalCursor, MatchRunner.ToView(aimed), ArrivalOrder.Valid(world, peer, aimed));
+
+            // The radius on the bodies that lend it, so the region is something the
+            // player can see instead of something they sweep the cursor for. Only
+            // while the aim is armed: this is the one moment the boundary is the
+            // question, and a map wearing every anchor's circle for a whole match
+            // is a map with a pattern on it.
+            ArrivalOrder.Anchors(world, peer, anchors);
+            for (int i = 0; i < anchors.Count; i++)
+            {
+                RangeRing(AnchorRing(i), ArrivalOrder.Radius, runner.DrawPosition(anchors[i]));
+            }
+            for (int i = anchors.Count; i < arrivalRings.Count; i++) arrivalRings[i].enabled = false;
+        }
+
+        /// <summary>
+        /// One of the two arrival marks, made the first time it is wanted. Ghost
+        /// colours rather than the semantic pair, for the reason docs/UI-STYLE.md
+        /// gives the build ghost: this is not a status, it is a preview of whether
+        /// the simulation will take this point.
+        /// </summary>
+        private void Mark(ref SpriteRenderer sr, string name)
+        {
+            if (sr != null) return;
+            sr = NewRenderer(name, disc, UiStyle.GhostOk, AboveFogOrder);
+            sr.transform.localScale = new Vector3(ArrivalMarkCells, ArrivalMarkCells, 1f);
+        }
+
+        /// <summary>Puts a mark on a point and dresses it with the answer.</summary>
+        private static void Verdict(SpriteRenderer sr, Vector2 p, bool valid)
+        {
+            sr.transform.position = new Vector3(p.x, p.y, 0f);
+            sr.color = valid ? UiStyle.GhostOk : UiStyle.GhostBad;
+            sr.enabled = true;
+        }
+
+        /// <summary>
+        /// A pooled radius circle, the same hairline art the weapon rings use. Not
+        /// indexed by anything the simulation owns — the tail is switched off every
+        /// frame — so a restart needs no reset, exactly like the debris pool.
+        /// </summary>
+        private SpriteRenderer AnchorRing(int index)
+        {
+            while (arrivalRings.Count <= index)
+            {
+                SpriteRenderer made = NewRenderer("ArrivalRing", rangeRingArt, UiStyle.RangeRing, AboveFogOrder);
+                made.enabled = false;
+                arrivalRings.Add(made);
+            }
+            return arrivalRings[index];
         }
 
         /// <summary>
