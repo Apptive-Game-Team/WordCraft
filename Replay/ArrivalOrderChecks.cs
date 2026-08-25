@@ -55,6 +55,7 @@ namespace WordCraft.Replay
             TheAnchorsAreTheBodiesThatCoverTheGroundUnderThem();
             TheAnchorListIsBuiltFreshAndInIdOrder();
             ADeadPassageAimsAtNothingAndADeadPillarAnchorsNothing();
+            APassageStillGoingUpHoldsNoAim();
         }
 
         /// <summary>
@@ -434,6 +435,90 @@ namespace WordCraft.Replay
             passageWorld.Step(ProduceAt(Passage, 0, At(33, 40)));
             Check(passageWorld.GetEntity(Passage).QueueCount == 0 && passageWorld.GetResources(0) == before,
                 "the destroyed 통로 took an order, so the client agreeing it holds no aim proves nothing");
+        }
+
+        /// <summary>
+        /// A 통로 that is still going up holds no aim, which is the one answer of the
+        /// five that used to be the view's alone. World.IsPassage carried no build
+        /// clock while Economy's TryQueueUnit refused BuildTicksLeft &gt; 0 before
+        /// AimArrival was ever reached, so the card offered the aim over a building
+        /// the simulation would freeze no point on.
+        ///
+        /// Harmless in the sense that the Produce was refused at both ends, and a
+        /// real gap all the same: it is the client promising a setting that the
+        /// building it is drawn on cannot hold. Sim/Driftworlds.cs answers it now
+        /// rather than this file — a site that is not standing yet keeps no arrival
+        /// point for the same reason it supports no population and opens no tier.
+        ///
+        /// Both halves, before the site stands and after. A check that asked only
+        /// the unfinished one would pass by having two answers of no, and would go
+        /// on passing if IsPassage were narrowed to nothing at all.
+        ///
+        /// The second half is a guard rather than a rule of its own, and says so:
+        /// TheViewAgreesAboutWhichBodyHoldsTheAim already asserts that a standing
+        /// 통로 holds the aim, so nothing breaks this line without breaking that one
+        /// first. What it is here for is the fixture — the 통로 above is refused
+        /// because the build clock has not run out, and this is where that is
+        /// distinguished from being refused for any of the other reasons a fixture
+        /// can be wrong.
+        /// </summary>
+        private static void APassageStillGoingUpHoldsNoAim()
+        {
+            World world = Rising();
+            Check(world.GetEntity(Passage).BuildTicksLeft > 0,
+                "the 통로 in this fixture is already standing, so nothing below is about a site going up");
+            Check(world.ArrivalValid(0, Aim(0)),
+                "no anchor covers the aim, so a refused point would prove nothing about the 통로");
+
+            bool drawnRising = ArrivalOrder.Aims(world, 0, Passage);
+            int before = world.GetResources(0);
+            world.Step(ProduceAt(Passage, 0, Aim(0)));
+            Entity rising = world.GetEntity(Passage);
+            Check(rising.QueueCount == 0 && world.GetResources(0) == before,
+                "the 통로 still going up took the order, so the aim it does not hold proves nothing");
+            Check(drawnRising == rising.HasArrivalPoint,
+                "a 통로 still going up: the client says " + drawnRising +
+                " and the simulation says " + rising.HasArrivalPoint +
+                " about whether it holds the arrival point");
+
+            // The same building once ConstructionSystem has put it down, so the no
+            // above is about the build clock and not about the fixture.
+            World standing = Rising();
+            var idle = new List<Command>();
+            int guard = FactionData.BuildTicks(Faction.Driftworlds, World.PassageRole, World.PassageSlot) + 5;
+            for (int t = 0; t < guard && standing.GetEntity(Passage).BuildTicksLeft > 0; t++) standing.Step(idle);
+            Check(standing.GetEntity(Passage).BuildTicksLeft == 0,
+                "the 통로 never finished, so the refusal above proves nothing");
+
+            bool drawnStanding = ArrivalOrder.Aims(standing, 0, Passage);
+            standing.Step(ProduceAt(Passage, 0, Aim(0)));
+            Entity done = standing.GetEntity(Passage);
+            Check(done.QueueCount == 1,
+                "the finished 통로 refused the order, so the aim it holds proves nothing");
+            Check(drawnStanding && done.HasArrivalPoint,
+                "the same 통로 once it has finished is offered no aim — the client says " +
+                drawnStanding + " and the simulation says " + done.HasArrivalPoint +
+                " — so the two noes above are IsPassage refusing everything rather than " +
+                "the build clock");
+        }
+
+        /// <summary>
+        /// A 정박한 세계 and a 굴절 기둥 standing, and the 통로 still going up.
+        /// The ids are the ones Sweep() hands out for the first three bodies,
+        /// because the 통로 is spawned in the same order — unfinished rather than
+        /// absent.
+        /// </summary>
+        private static World Rising()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Driftworlds);
+            world.SetPeerFaction(1, Faction.Hellfire);
+
+            world.SpawnBuilding(0, Role.Base, At(10, 10), complete: true);                    // Base
+            world.SpawnBuilding(0, World.PassageRole, World.PassageSlot, At(14, 10), false);  // Passage
+            world.SpawnBuilding(0, World.PillarRole, World.PillarSlot, At(30, 30), true);     // Pillar
+            world.GrantResources(0, Bank);
+            return world;
         }
 
         /// <summary>

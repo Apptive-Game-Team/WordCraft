@@ -101,13 +101,31 @@ namespace WordCraft.Sim
         public static readonly Fix ArrivalRadius = Fix.FromInt(6);
 
         /// <summary>
-        /// True for a 통로 and nothing else. Read off faction, kind, role and entry
-        /// rather than carried on the entity, for the reason IsWarlord is: none of
-        /// the four ever changes for a given body, so making it state would add a
-        /// hashed field that can only ever hold one value.
+        /// True for a standing 통로 and nothing else. Faction, kind, role and entry
+        /// are read off the body rather than carried on it, for the reason IsWarlord
+        /// is: none of the four ever changes for a given body, so making any of them
+        /// state would add a hashed field that can only ever hold one value.
+        ///
+        /// The build clock is the fifth clause and the one that does change, which
+        /// is why it is read here rather than stored: BuildTicksLeft is already
+        /// hashed, so asking it costs nothing and answers about the world as it
+        /// stands on this tick, exactly as ProvidesArrival's own build clause does.
+        ///
+        /// A site that is not standing yet keeps no arrival point. ProvidesArrival
+        /// writes the list — no population, no tier, no deliveries, no radius — and
+        /// an arrival point is the fifth thing on it rather than a rule of its own.
+        /// The point exists to say where a body this building makes will stand up,
+        /// and an unfinished building makes none: TryQueueUnit refuses
+        /// BuildTicksLeft &gt; 0 before AimArrival is reached, so a point frozen onto
+        /// a site still going up would be a setting about production that cannot
+        /// happen. Writing it here rather than at that one caller is the same
+        /// lesson ProvidesArrival's faction clause is: a rule kept by the order its
+        /// callers happen to test things in is not a rule the method has, and the
+        /// view calls this one with no TryQueueUnit anywhere above it.
         /// </summary>
         public bool IsPassage(Entity b) =>
             b.Kind == EntityKind.Building && b.Role == PassageRole && b.Slot == PassageSlot &&
+            b.BuildTicksLeft <= 0 &&
             b.Owner >= 0 && b.Owner < MaxPeers && factions[b.Owner] == PassageFaction;
 
         /// <summary>

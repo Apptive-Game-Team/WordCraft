@@ -48,9 +48,13 @@ namespace WordCraft.View
 
         /// <summary>
         /// Whether this selected body is one that keeps an arrival point: a live
-        /// 통로 belonging to this peer. World.IsPassage is the test itself, exactly
-        /// as CaptureOrder leans on World.IsNeutralRock rather than reading Role
-        /// and Slot a second time.
+        /// 통로 belonging to this peer and standing. World.IsPassage is the test
+        /// itself, exactly as CaptureOrder leans on World.IsNeutralRock rather than
+        /// reading Role and Slot a second time — the build clock included, which is
+        /// why a 통로 still going up is offered no aim here without this file ever
+        /// naming BuildTicksLeft. It could hold no point if it were offered one:
+        /// the Produce that would freeze the point is refused while the site is
+        /// still going up.
         ///
         /// The building matters as well as the faction, because the simulation says
         /// so: "Nothing but a 통로 keeps an arrival point. A Base can produce and
