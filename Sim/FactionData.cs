@@ -156,9 +156,13 @@ namespace WordCraft.Sim
         /// of the order with nothing in the roster to say why. 24 is the plainer
         /// case: 차원 유랑종's own numbers landed in the tables, and a 경계 운반자
         /// that carries a weapon on one peer and none on the other is a body that
-        /// kills something on one screen and nothing on the other.
+        /// kills something on one screen and nothing on the other. 25 is a rule
+        /// again: 경계 운반자 도주 touches no table at all, and a peer that walks
+        /// the body out of a fight while the other leaves it standing has diverged
+        /// on the tick something came into range, with nothing in the roster to
+        /// say why.
         /// </summary>
-        public const uint ContentVersion = 24;
+        public const uint ContentVersion = 25;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -360,10 +364,12 @@ namespace WordCraft.Sim
             // player has to keep alive is a body the player has to be able to pull
             // out, and how fast it walks is the whole of that.
             //
-            // 도주 is not here. The document asks for it and the simulation has no
-            // flee behaviour to give it, so this row disarms the body and leaves it
-            // standing; see the note on OnlyNonCombatantsAreUnarmed in
-            // Replay/Program.cs for why that is a separate thing from 비전투.
+            // 도주 is not here either, and this time because there is nothing to
+            // put here. It is a rule rather than a number: Sim/Fleeing.cs holds the
+            // whole of it, and the only number it reads is World.AcquireRange,
+            // which already exists and belongs to nobody's roster row. A speed or a
+            // radius of its own written into this row would be a second number
+            // meaning what that one already means.
             (Faction.Driftworlds, Role.Signature, 0,
                 new UnitStats { Hp = 240, Speed = Fix.Ratio(3, 8) }),
 

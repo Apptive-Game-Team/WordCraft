@@ -231,6 +231,28 @@ namespace WordCraft.Sim
         /// every client and every recorded log already sends on a Produce.
         /// </summary>
         public bool HasArrivalPoint;
+
+        // 차원 유랑종 경계 운반자 도주. One flag on the body that is running, and
+        // nothing on whatever it is running from, which is the one-sidedness the
+        // capture, the growth and the arrival fields all have. The threat holds no
+        // copy, so a threat that dies is a body dying and nothing more.
+
+        /// <summary>
+        /// Whether this body is in flight right now, or false for everything that
+        /// is not a 경계 운반자, which is every entity in six factions but one.
+        ///
+        /// State rather than a question asked fresh each tick, and that is the
+        /// whole reason the field exists. Whether a body starts fleeing depends on
+        /// the world; whether it keeps fleeing depends on whether it already was,
+        /// because a flight under way is allowed to overwrite its own walk and a
+        /// body standing under its owner's order is not. Two peers that disagreed
+        /// here would run one 경계 운반자 walking away and the other holding its
+        /// ground, and every tick after that is a different match.
+        ///
+        /// Cleared by <see cref="ClearOrders"/>, so any order at all ends the
+        /// flight — see FleeSystem for what that buys and what it costs.
+        /// </summary>
+        public bool Fleeing;
     }
 
     /// <summary>
@@ -616,6 +638,7 @@ namespace WordCraft.Sim
                 ProductionSystem();
                 WarlordSpawnSystem();
                 CombatSystem();
+                FleeSystem();
                 MoveSystem();
                 VictorySystem();
             }
@@ -927,6 +950,16 @@ namespace WordCraft.Sim
             // A capture is an order like any other, so a Move taken mid-capture
             // ends it and loses the progress rather than resuming it on arrival.
             ClearCapture(ref e);
+            // 도주 is not an order, but it is the thing an order replaces: the
+            // player has said where this body goes, so it is no longer running.
+            // Here rather than in FleeSystem, because "an order arrived" is what
+            // this method means and there is no order that does not end a flight.
+            //
+            // Not the same as ending the flight for good. FleeSystem asks again on
+            // the tick the ordered walk finishes, so a Stop in front of an enemy
+            // buys the player one order and not a body that stands and dies; Hold
+            // is what says stand there, and it says it every tick.
+            e.Fleeing = false;
         }
 
         /// <summary>
@@ -1105,6 +1138,7 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.ArrivalPoint.X.Raw);
                 Mix(ref h, (ulong)e.ArrivalPoint.Y.Raw);
                 Mix(ref h, e.HasArrivalPoint ? 1UL : 0UL);
+                Mix(ref h, e.Fleeing ? 1UL : 0UL);
 
                 List<int> path = paths[i];
                 Mix(ref h, (ulong)path.Count);
