@@ -44,6 +44,10 @@ namespace WordCraft.Replay
                 OnlyNonCombatantsAreUnarmed();
                 EveryUnarmedSlotIsWorthSomethingElse();
                 TheCarrierRefusesToFight();
+                TheCarrierFleesWhatCanKillIt();
+                TheCarrierStopsWhenNothingIsHunting();
+                AnOrderOutranksFleeing();
+                FleeingIsHashedState();
                 EveryWeaponReachesSomething();
                 TheCannonRefusesAir();
                 CaptureTurnsANeutralIntoATowerback();
@@ -1390,13 +1394,13 @@ namespace WordCraft.Replay
         /// Everywhere else they are not the same, and the difference is not about
         /// the weapon. 군단장 is finished when the weapon is gone — 소환만 하고
         /// 싸우지 않는다 describes a body that stands where it is put, and
-        /// WarlordSpawnSystem is the rest of it. 경계 운반자 is not finished: the
-        /// document says 비전투 and 도주, and disarming it produces a body that
-        /// stands still and is killed, which is the opposite of fleeing. So the
-        /// second half of the exception is not a wider version of this rule at all;
-        /// it is EveryUnarmedSlotIsWorthSomethingElse below, which asks what each
-        /// unarmed body has instead — and 도주 is an issue of its own, because
-        /// nothing in the simulation flees from anything.
+        /// WarlordSpawnSystem is the rest of it. 경계 운반자 was not finished by the
+        /// disarm: the document says 비전투 and 도주, and disarming it alone left a
+        /// body that stood still and was killed, which is the opposite of fleeing.
+        /// So the second half of the exception is not a wider version of this rule
+        /// at all; it is EveryUnarmedSlotIsWorthSomethingElse below, which asks
+        /// what each unarmed body has instead and whether it lives long enough to
+        /// use it. 도주 came in as an issue of its own and lives in Sim/Fleeing.cs.
         /// </summary>
         private static void OnlyNonCombatantsAreUnarmed()
         {
@@ -1490,6 +1494,24 @@ namespace WordCraft.Replay
                         Check(world.IsWarlord(body) || world.ProvidesArrival(body, 0),
                             name + " carries no weapon and has no mechanic either, so it is " +
                             "worth nothing at all");
+                        // Being worth something is not the same as surviving long
+                        // enough to be worth it, and that is the second question a
+                        // disarmed body raises. 지옥불 군단장 answers it by never
+                        // being where a fight is — 소환만 하고 싸우지 않는다
+                        // describes a body that stands where it is put, and
+                        // WarlordSpawnSystem is the whole of what it does there.
+                        // 경계 운반자 has the opposite job: 이동식 반경 is a radius
+                        // a player walks into the map, so the body carrying it has
+                        // to be able to walk back out, and 도주 is that. Its
+                        // justification is two, and this is the second one.
+                        //
+                        // Closed on purpose, exactly as the disjunction above is. A
+                        // third unarmed name arrives here needing to say how it
+                        // lives through meeting something armed, and standing still
+                        // is not an answer somebody gets to give by silence.
+                        Check(world.IsWarlord(body) || world.CanFlee(body),
+                            name + " carries no weapon and cannot leave a fight either, so " +
+                            "the first thing that walks up to it kills it");
                     }
                 }
             }
@@ -1623,6 +1645,274 @@ namespace WordCraft.Replay
             world.SpawnWorker(1, At(35, 30));                                     // CarrierPrey, 5 out
             world.SpawnUnit(0, Role.Melee, At(30, 50));                           // CarrierControl, 폭풍편
             world.SpawnWorker(1, At(35, 50));                                     // CarrierControlPrey
+            return world;
+        }
+
+        // 차원 유랑종 경계 운반자 도주. The carrier and its hunter start in the far
+        // east so the flight has the width of the map to run in: a carrier backed
+        // against the west edge is a carrier that has stopped moving, and the run
+        // would then be measuring the edge rather than the mechanic.
+        private const int FleeTicks = 120;
+        private const int FleeingCarrier = 0;
+        private const int FleeChaser = 1;
+        private const int FleeControl = 2;
+        private const int FleeControlChaser = 3;
+
+        /// <summary>
+        /// 도주. An armed enemy walks at a 경계 운반자 and the carrier leaves,
+        /// outruns it, and is untouched at the end — which is the whole of what
+        /// this issue is about, because a 130자원 90틱 body that stands still and
+        /// is killed is not an expensive unit, it is a unit that does not work.
+        ///
+        /// The control pair is what makes the untouched carrier mean something. The
+        /// same 지옥불 근접 unit, the same five cells away, walking at a 폭풍편 that
+        /// does not flee: it closes and it draws blood, so a carrier at full hp
+        /// after FleeTicks is a carrier that left rather than a hunter that never
+        /// arrived. Twenty cells south, so neither pair can acquire into the other.
+        /// </summary>
+        private static void TheCarrierFleesWhatCanKillIt()
+        {
+            World world = BuildFleeWorld();
+            var idle = new List<Command>();
+
+            FixVec2 stood = world.GetEntity(FleeingCarrier).Position;
+            FixVec2 hunted = world.GetEntity(FleeChaser).Position;
+            Fix startGap = (stood - hunted).SqrMagnitude;
+
+            world.Step(idle);
+            Check(world.GetEntity(FleeingCarrier).Fleeing,
+                "an armed enemy stands inside AcquireRange and 경계 운반자 is not fleeing");
+
+            for (int t = 1; t < FleeTicks; t++) world.Step(idle);
+
+            Entity carrier = world.GetEntity(FleeingCarrier);
+            Entity chaser = world.GetEntity(FleeChaser);
+            Check(carrier.Alive, "경계 운반자 was run down and killed");
+            Check(carrier.Hp == carrier.MaxHp, "경계 운반자 was caught and hit for " +
+                (carrier.MaxHp - carrier.Hp) + ", so 도주 outran nothing");
+            Check(carrier.Position.X < stood.X, "경계 운반자 never left the cell it was hunted in");
+            Check((carrier.Position - chaser.Position).SqrMagnitude > startGap,
+                "경계 운반자 ended no further from its hunter than it started");
+
+            // And the hunter really hunted, or the carrier outran a body that was
+            // standing still and the run proves nothing.
+            Check(chaser.Position.X < hunted.X, "the 지옥불 근접 unit never gave chase");
+
+            Entity control = world.GetEntity(FleeControl);
+            Check(!control.Alive || control.Hp < control.MaxHp,
+                "the 폭풍편 that stayed put was never touched either, so the check proves nothing");
+        }
+
+        /// <summary>
+        /// The other end of the one radius. Nothing but AcquireRange decides when
+        /// the flight starts, how far it aims and when it stops, so a carrier that
+        /// has put that radius between itself and the threat halts — and stays
+        /// halted, which is what the second run of idle ticks is for.
+        ///
+        /// The threat is a turret rather than a walker, and that is the whole
+        /// fixture: a body that chases would follow the carrier out and there would
+        /// never be a tick with nothing in range. A building that cannot follow is
+        /// what lets the stopping rule be asked at all.
+        ///
+        /// Eight cells out, which is inside AcquireRange and outside the turret's
+        /// own reach of six. The carrier is meant to leave before the first shot,
+        /// not after it, and the full hp at the end is that claim.
+        /// </summary>
+        private static void TheCarrierStopsWhenNothingIsHunting()
+        {
+            World world = BuildStalkedCarrierWorld();
+            var idle = new List<Command>();
+
+            world.Step(idle);
+            Check(world.GetEntity(StalkedCarrier).Fleeing,
+                "the turret is inside AcquireRange and 경계 운반자 is not fleeing");
+
+            int t = 1;
+            while (t < FleeTicks && world.GetEntity(StalkedCarrier).Fleeing) { world.Step(idle); t++; }
+
+            Entity carrier = world.GetEntity(StalkedCarrier);
+            Entity turret = world.GetEntity(StalkerTurret);
+            Check(!carrier.Fleeing, "경계 운반자 was still fleeing a turret it had left behind " +
+                "after " + FleeTicks + " ticks");
+            Check((carrier.Position - turret.Position).SqrMagnitude >
+                  World.AcquireRange * World.AcquireRange,
+                "경계 운반자 stopped fleeing while the turret was still inside AcquireRange");
+            Check(carrier.Hp == carrier.MaxHp, "경계 운반자 was shot on its way out");
+            Check(carrier.Position.Equals(carrier.Target),
+                "경계 운반자 stopped fleeing and kept the flight's destination, so it is " +
+                "still walking to a point nobody chose");
+
+            // Halted, not merely between destinations.
+            FixVec2 rest = carrier.Position;
+            for (int i = 0; i < FleeTicks; i++) world.Step(idle);
+            Check(world.GetEntity(StalkedCarrier).Position.Equals(rest),
+                "경계 운반자 kept walking after the flight ended");
+            Check(!world.GetEntity(StalkedCarrier).Fleeing, "경계 운반자 started fleeing nothing");
+        }
+
+        /// <summary>
+        /// 명령이 도주를 이긴다, and exactly how far. Any order at all ends the
+        /// flight, the ordered walk is never overwritten while it runs, and 도주
+        /// takes the body back the moment that walk is finished. So a player can
+        /// pull a 경계 운반자 anywhere, including straight back toward the thing it
+        /// was running from, and cannot accidentally park it in front of one.
+        ///
+        /// Hold is the exception, and it is the whole reason the exception exists:
+        /// 어떤 이유로도 움직이지 않는다 has to outrank 도주 permanently, or there is
+        /// no way for a player to say stand there and mean it.
+        ///
+        /// The ordered point is east of where the flight had got to, which is back
+        /// toward the turret and the exact opposite of where 도주 was taking the
+        /// body — a point the flight would never have chosen. It is inside
+        /// AcquireRange, so the flight resumes there, and outside the turret's reach
+        /// the whole way, so what the run measures is the walk and not the damage.
+        /// </summary>
+        private static void AnOrderOutranksFleeing()
+        {
+            World world = BuildStalkedCarrierWorld();
+            var idle = new List<Command>();
+            for (int t = 0; t < 3; t++) world.Step(idle);
+            Check(world.GetEntity(StalkedCarrier).Fleeing,
+                "경계 운반자 never started fleeing, so there is no flight for an order to outrank");
+
+            FixVec2 back = At(StalkedX + 1, StalkedY);
+            world.Step(new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.Move, StalkedCarrier, back)
+            });
+            Check(!world.GetEntity(StalkedCarrier).Fleeing,
+                "a Move order left 경계 운반자 fleeing, so the order is the thing being overwritten");
+
+            int t2 = 0;
+            while (t2 < FleeTicks && !world.GetEntity(StalkedCarrier).Position.Equals(back))
+            {
+                world.Step(idle);
+                t2++;
+            }
+            Entity arrived = world.GetEntity(StalkedCarrier);
+            Check(arrived.Position.Equals(back),
+                "경계 운반자 never reached the point it was ordered to: 도주 overwrote the order");
+            Check(!arrived.Fleeing, "경계 운반자 was fleeing on the tick it arrived");
+            Check(arrived.Hp == arrived.MaxHp, "경계 운반자 was shot at the ordered point, so the " +
+                "walk is not what this check measured");
+            Check((arrived.Position - world.GetEntity(StalkerTurret).Position).SqrMagnitude <=
+                  World.AcquireRange * World.AcquireRange,
+                "the ordered point is outside AcquireRange, so nothing was there to resume for");
+
+            world.Step(idle);
+            Check(world.GetEntity(StalkedCarrier).Fleeing,
+                "the ordered walk finished with the turret still in range and 도주 never resumed");
+
+            // Hold, which outranks it for good rather than for the length of a walk.
+            World held = BuildStalkedCarrierWorld();
+            for (int t = 0; t < 3; t++) held.Step(idle);
+            Check(held.GetEntity(StalkedCarrier).Fleeing,
+                "경계 운반자 never started fleeing, so Hold has nothing to outrank");
+
+            held.Step(new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.HoldPosition, StalkedCarrier, FixVec2.Zero)
+            });
+            FixVec2 planted = held.GetEntity(StalkedCarrier).Position;
+            Check(!held.GetEntity(StalkedCarrier).Fleeing, "HoldPosition left 경계 운반자 fleeing");
+
+            for (int i = 0; i < FleeTicks; i++) held.Step(idle);
+            Entity standing = held.GetEntity(StalkedCarrier);
+            Check(standing.Position.Equals(planted), "경계 운반자 fled out from under a Hold order");
+            Check(!standing.Fleeing, "경계 운반자 on Hold is carrying a flight it is not walking");
+            Check((standing.Position - held.GetEntity(StalkerTurret).Position).SqrMagnitude <=
+                  World.AcquireRange * World.AcquireRange,
+                "the held 경계 운반자 is out of AcquireRange, so it had nothing to flee and the " +
+                "check proves nothing");
+        }
+
+        /// <summary>
+        /// Entity.Fleeing is hashed state, proven by exclusion the way the arrival
+        /// point and the roster entry are: two worlds identical in every field the
+        /// hash reads, differing only in the one under test.
+        ///
+        /// The pair is what makes it exact. A flight is a walk to a cell centre
+        /// pathfound like any other walk, so a Move order aimed at the very cell the
+        /// flight would have chosen produces the same destination, the same route,
+        /// the same cursor and the same step — and leaves Fleeing false, because an
+        /// order is not a flight. One tick in, the two worlds differ by one bool and
+        /// by nothing else, and the assertions below say so field by field before
+        /// the hashes are compared.
+        ///
+        /// It is real state and not a question that could be asked fresh each tick,
+        /// which is the reason it has to be hashed at all: whether a body starts
+        /// fleeing is a fact about the world, but whether it keeps fleeing is a fact
+        /// about whether it already was. These two worlds are that difference, and
+        /// on the next tick they part company — the fleeing one turns further west
+        /// and the ordered one keeps walking where it was sent.
+        /// </summary>
+        private static void FleeingIsHashedState()
+        {
+            World fleeing = BuildStalkedCarrierWorld();
+            fleeing.Step(new List<Command>());
+
+            // Where the flight aims on its first tick: AcquireRange due west of the
+            // carrier, snapped to that cell's centre.
+            FixVec2 aim = World.CellCenter(World.CellOf(
+                At(StalkedX, StalkedY) - new FixVec2(World.AcquireRange, Fix.Zero)));
+
+            World ordered = BuildStalkedCarrierWorld();
+            ordered.Step(new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.Move, StalkedCarrier, aim)
+            });
+
+            Entity ran = fleeing.GetEntity(StalkedCarrier);
+            Entity sent = ordered.GetEntity(StalkedCarrier);
+            Check(ran.Fleeing && !sent.Fleeing,
+                "the pair does not differ in Fleeing, so this check is about nothing");
+            Check(ran.Position.Equals(sent.Position) && ran.Target.Equals(sent.Target),
+                "the ordered walk is not the flight's walk, so the two worlds differ by " +
+                "more than Fleeing and the comparison below would pass either way");
+            Check(ran.Mode == sent.Mode && ran.Hp == sent.Hp && ran.PathIndex == sent.PathIndex,
+                "the two worlds differ by more than Fleeing");
+
+            Check(fleeing.Hash() != ordered.Hash(),
+                "a fleeing 경계 운반자 and one walking the same route under orders hash the " +
+                "same: Entity.Fleeing is not in World.Hash()");
+        }
+
+        /// <summary>
+        /// A 경계 운반자 five cells from a 지옥불 근접 unit, and twenty cells south
+        /// the same pairing with an armed 폭풍편 standing in for the carrier.
+        /// </summary>
+        private static World BuildFleeWorld()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, World.PassageFaction);
+            world.SetPeerFaction(1, Faction.Hellfire);
+
+            world.SpawnUnit(0, World.CarrierRole, World.CarrierSlot, At(58, 30)); // FleeingCarrier
+            world.SpawnUnit(1, Role.Melee, At(63, 30));                           // FleeChaser
+            world.SpawnUnit(0, Role.Melee, At(58, 50));                           // FleeControl, 폭풍편
+            world.SpawnUnit(1, Role.Melee, At(63, 50));                           // FleeControlChaser
+            return world;
+        }
+
+        private const int StalkedCarrier = 0;
+        private const int StalkerTurret = 1;
+        private const int StalkedX = 48;
+        private const int StalkedY = 30;
+
+        /// <summary>
+        /// A 경계 운반자 eight cells from an enemy turret: inside the radius that
+        /// makes something a threat, outside the one its weapon reaches. A turret
+        /// cannot follow, which is what lets the flight end.
+        /// </summary>
+        private static World BuildStalkedCarrierWorld()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, World.PassageFaction);
+            world.SetPeerFaction(1, Faction.Hellfire);
+
+            world.SpawnUnit(0, World.CarrierRole, World.CarrierSlot,
+                At(StalkedX, StalkedY));                                  // StalkedCarrier
+            world.SpawnBuilding(1, Role.Defense, At(StalkedX + 8, StalkedY), true); // StalkerTurret
             return world;
         }
 
