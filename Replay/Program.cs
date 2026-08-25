@@ -71,6 +71,7 @@ namespace WordCraft.Replay
                 AnUnanchoredArrivalComesOutAtThePassage();
                 OnlyAPassageArrivesItsUnits();
                 TheArrivalPointIsHashedState();
+                OnlyTheArrivingFactionLendsAnArrivalRadius();
                 AttackOrderKillsWhatItNames();
                 AttackMoveStopsForWhatItMeets();
                 StopCancelsWhatIsRunning();
@@ -1553,9 +1554,24 @@ namespace WordCraft.Replay
 
                         Check(!world.Armed(body),
                             name + " is armed in the world the table disarmed it in");
-                        Check(world.IsWarlord(body) || world.ProvidesArrival(body, 0),
+                        bool warlord = world.IsWarlord(body);
+                        bool anchor = world.ProvidesArrival(body, 0);
+                        Check(warlord || anchor,
                             name + " carries no weapon and has no mechanic either, so it is " +
                             "worth nothing at all");
+                        // And exactly one of them, which is the difference between
+                        // a disjunction and a list of two names. Both arms answered
+                        // 지옥불 군단장 until ProvidesArrival was taught the
+                        // faction, because WarlordRole and CarrierRole are one
+                        // Role.Signature at entry 0 — so the line above was
+                        // satisfied twice over for the 군단장, and any faction that
+                        // inherited that coordinate would have been justified by
+                        // the 군단장's mechanic rather than by one of its own. A
+                        // closed disjunction that cannot tell its own arms apart
+                        // forces nobody to write anything.
+                        Check(warlord != anchor,
+                            name + " answers both arms of this disjunction, so the arm that " +
+                            "names its mechanic is not the arm that let it through");
                         // Being worth something is not the same as surviving long
                         // enough to be worth it, and that is the second question a
                         // disarmed body raises. 지옥불 군단장 answers it by never
@@ -3473,6 +3489,63 @@ namespace WordCraft.Replay
             Entity fromOther = StepToArrival(other, "the 지옥불 unit");
             Check(fromOther.Position.Equals(other.GetEntity(1).Position + World.RallyOffset),
                 "a 지옥불 production building arrived its unit at the point the order named");
+        }
+
+        /// <summary>
+        /// A body lends an arrival radius only if its owner is the faction that
+        /// arrives, and that is asked of World.ProvidesArrival straight rather than
+        /// through World.ArrivalValid. ArrivalValid refuses every non-arriving peer
+        /// before its scan begins, so a ProvidesArrival that read Kind, Role and
+        /// Slot alone would answer wrongly for the whole life of the mechanic and
+        /// nothing would ever say so. That filter is one caller's accident, not a
+        /// property of the method, and the method is public: ArrivalOrder.Anchors
+        /// calls it with no ArrivalValid anywhere above it.
+        ///
+        /// 지옥불 군단장 is why this is a real question rather than a careful
+        /// one. WarlordRole and CarrierRole are both Role.Signature at entry 0, so
+        /// the 군단장 stands on the 경계 운반자's exact coordinate and answers to
+        /// every test the 운반자 does that is not about the faction. 인간's 대포
+        /// sits the same way on the 굴절 기둥's Defense[0].
+        ///
+        /// Every faction rather than those two, because the roster grows and
+        /// Signature[0] and Defense[0] are where a new faction's signature body and
+        /// first turret land by default.
+        /// </summary>
+        private static void OnlyTheArrivingFactionLendsAnArrivalRadius()
+        {
+            // The 군단장 by name and by IsWarlord, so this says something even if
+            // Signature[0] stops being where 지옥불 keeps it.
+            var hellfire = new World(Seed);
+            hellfire.SetPeerFaction(0, Faction.Hellfire);
+            hellfire.SpawnUnit(0, World.WarlordRole, 0, At(30, 30));
+            Entity warlord = hellfire.GetEntity(0);
+            Check(hellfire.IsWarlord(warlord),
+                "지옥불 Signature[0] is not the 군단장, so this check is aimed at nothing");
+            Check(!hellfire.ProvidesArrival(warlord, 0),
+                "지옥불 군단장 lends its owner an arrival radius: ProvidesArrival reads Role " +
+                "and Slot without the faction, and the 군단장 stands on the 경계 운반자's coordinate");
+
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                bool arrives = faction == World.PassageFaction;
+
+                var carrier = new World(Seed);
+                carrier.SetPeerFaction(0, faction);
+                carrier.SpawnUnit(0, World.CarrierRole, World.CarrierSlot, At(30, 30));
+                bool lends = carrier.ProvidesArrival(carrier.GetEntity(0), 0);
+                Check(lends == arrives,
+                    faction + " on the 경계 운반자's role and entry lends an arrival radius = " +
+                    lends + " where only " + World.PassageFaction + " may");
+
+                var pillar = new World(Seed);
+                pillar.SetPeerFaction(0, faction);
+                pillar.SpawnBuilding(0, World.PillarRole, World.PillarSlot, At(30, 30), true);
+                bool anchors = pillar.ProvidesArrival(pillar.GetEntity(0), 0);
+                Check(anchors == arrives,
+                    faction + " on the 굴절 기둥's role and entry lends an arrival radius = " +
+                    anchors + " where only " + World.PassageFaction + " may");
+            }
         }
 
         /// <summary>

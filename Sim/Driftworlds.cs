@@ -119,10 +119,22 @@ namespace WordCraft.Sim
         /// An unfinished 굴절 기둥 anchors nothing. A site that is not standing yet
         /// supports no population, opens no tier and takes no deliveries, and a
         /// radius is the fourth thing on that list rather than a rule of its own.
+        ///
+        /// The faction is asked first, exactly as IsPassage and CanFlee ask it, and
+        /// asking it here rather than leaving it to the caller is the whole of what
+        /// makes the rest of this method mean anything. Role and Slot alone do not
+        /// name a 경계 운반자: CarrierRole is Role.Signature at entry 0 and so is
+        /// 지옥불's WarlordRole, so a 군단장 stands on this body's exact
+        /// coordinate, and PillarRole is Role.Defense at entry 0 where 인간 keeps a
+        /// 대포. ArrivalValid refuses a non-arriving peer before its scan and hid
+        /// both of those, but that is one caller's ordering rather than a property
+        /// of this answer — and this method is public, so ArrivalOrder.Anchors asks
+        /// it with nothing above it.
         /// </summary>
         public bool ProvidesArrival(Entity e, int peer)
         {
             if (!e.Alive || e.Owner != peer) return false;
+            if (e.Owner < 0 || e.Owner >= MaxPeers || factions[e.Owner] != PassageFaction) return false;
             if (e.Kind == EntityKind.Building)
             {
                 return e.Role == PillarRole && e.Slot == PillarSlot && e.BuildTicksLeft <= 0;
