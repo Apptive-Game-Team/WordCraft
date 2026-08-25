@@ -164,9 +164,13 @@ namespace WordCraft.Sim
         /// stopped being one shared row. A peer charged 70 for a 굴절 기둥 and a
         /// peer charged 100 for the same cell have disagreed about a banked total
         /// on the tick it was placed, and every later purchase is decided off that
-        /// number.
+        /// number. 27 is a rule once more: Produce began refusing a slot the roster
+        /// leaves blank. A peer that puts 인간's nameless melee body on the field
+        /// and a peer that spends nothing have diverged on the tick the order was
+        /// given, and the roster is the same on both — what differs is whether it
+        /// is consulted.
         /// </summary>
-        public const uint ContentVersion = 26;
+        public const uint ContentVersion = 27;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
