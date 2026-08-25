@@ -109,6 +109,7 @@ namespace WordCraft.Replay
                 ProductionMenuChecks.Check();
                 SelectionMatchChecks.Check();
                 CaptureOrderChecks.Check();
+                ArrivalOrderChecks.Check();
                 SimAssemblyIsClean();
             }
             catch (Exception ex)
@@ -277,6 +278,44 @@ namespace WordCraft.Replay
             }
             Check(impassable > 0, "the map has no terrain, so the symmetry check proves nothing");
 
+            EveryBodyHasAMirrorAndStandsAtFullHp(world, ScriptedLog.Peer0Faction, ScriptedLog.Peer1Faction);
+
+            // Again over a pair whose roster rows are not the same row. The layout
+            // is a function of the grid and the peer, so this is the same map with
+            // different numbers standing on it — and it is the case that used to
+            // break the check: 세계수 정령's 잎날 정령 is written 100 hp and
+            // 차원 유랑종's 폭풍편 110, so a rule that compared the two bodies'
+            // hp reported an asymmetric map about a map nobody had touched.
+            EveryBodyHasAMirrorAndStandsAtFullHp(
+                MatchScenario.Build(Seed, Faction.TreeSpirits, Faction.Driftworlds),
+                Faction.TreeSpirits, Faction.Driftworlds);
+
+            Check(world.GetResources(0) == world.GetResources(1), "peers start with different resources");
+        }
+
+        /// <summary>
+        /// The bodies half of the symmetry, and the half #132 is about. What a
+        /// mirrored pair has to share is what the map decides — the same kind, the
+        /// same role, the same roster entry of that role, and the rotated position —
+        /// and not what the roster decides, which is how much hp that entry has.
+        ///
+        /// The old rule asked the pair to stand on equal hp, and that was only ever
+        /// true while every faction shared one stat row. It is not a looser question
+        /// now that it is two: each body is required to be at full hp for its own
+        /// roster row, which pins both an entry that starts damaged and an entry
+        /// carrying a MaxHp nobody wrote — neither of which equal hp could see, and
+        /// both of which are a map that starts one player behind.
+        ///
+        /// The Slot comparison is what carries the weight the hp comparison used to.
+        /// Two entries of one role are two different units — 지옥불's ranged slot
+        /// holds 자손 and 균열 파수병, written 70 hp each — so a pair alike in kind,
+        /// role, position and hp and apart in entry is exactly the asymmetry that
+        /// would have walked past the old rule.
+        /// </summary>
+        private static void EveryBodyHasAMirrorAndStandsAtFullHp(World world, Faction peer0, Faction peer1)
+        {
+            string pair = peer0 + " against " + peer1;
+
             // Cell x sits at x + 1/2, its mirror at (GridSize - 1 - x) + 1/2, so a
             // mirrored pair's coordinates always sum to exactly GridSize.
             Fix span = Fix.FromInt(World.GridSize);
@@ -292,13 +331,35 @@ namespace WordCraft.Replay
                 {
                     Entity b = world.GetEntity(j);
                     found = b.Owner == wantOwner && b.Kind == a.Kind && b.Role == a.Role &&
-                            b.Hp == a.Hp && b.Resource == a.Resource && b.Position.Equals(mirrored);
+                            b.Slot == a.Slot && b.Resource == a.Resource && b.Position.Equals(mirrored);
                 }
-                Check(found, "entity " + i + " (" + a.Kind + " " + a.Role + ") has no mirror");
-            }
+                Check(found, pair + ": " + Body(a) + " at " + Show(a.Position) + " has no mirror — " +
+                    "nothing of owner " + wantOwner + " stands at " + Show(mirrored) +
+                    " with the same kind, role and roster entry");
 
-            Check(world.GetResources(0) == world.GetResources(1), "peers start with different resources");
+                // Full strength, read off the body rather than compared with the
+                // other half of the pair.
+                Check(a.Hp == a.MaxHp, pair + ": " + Body(a) + " at " + Show(a.Position) +
+                    " starts the match at " + a.Hp + " of " + a.MaxHp +
+                    " hp, so one player begins with a body already hurt");
+
+                // And the number it is full of is the one the roster wrote for that
+                // entry, so a body spawned with an hp override nobody meant is not
+                // full strength merely by being undamaged. Only for a body with an
+                // owner: a 꼬마돌 and a resource node are the map's, not a faction's,
+                // and their hp is World's constant rather than a roster row.
+                if (a.Owner < 0) continue;
+                Faction faction = world.FactionOf(a.Owner);
+                int roster = FactionData.Stats(faction, a.Role, a.Slot).Hp;
+                Check(a.MaxHp == roster, pair + ": " + Body(a) + " at " + Show(a.Position) +
+                    " carries " + a.MaxHp + " max hp where the roster writes " + roster +
+                    " for " + faction + " " + a.Role + " entry " + a.Slot);
+            }
         }
+
+        /// <summary>What a body is, in the three fields a mirrored pair must share.</summary>
+        private static string Body(Entity e) =>
+            e.Kind + " " + e.Role + " entry " + e.Slot + " of owner " + e.Owner;
 
         /// <summary>
         /// A match that actually ends. Run twice: a win condition that resolved on
