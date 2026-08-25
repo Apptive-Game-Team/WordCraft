@@ -160,9 +160,13 @@ namespace WordCraft.Sim
         /// again: 경계 운반자 도주 touches no table at all, and a peer that walks
         /// the body out of a fight while the other leaves it standing has diverged
         /// on the tick something came into range, with nothing in the roster to
-        /// say why.
+        /// say why. 26 is a table again, and the plainest kind: building prices
+        /// stopped being one shared row. A peer charged 70 for a 굴절 기둥 and a
+        /// peer charged 100 for the same cell have disagreed about a banked total
+        /// on the tick it was placed, and every later purchase is decided off that
+        /// number.
         /// </summary>
-        public const uint ContentVersion = 25;
+        public const uint ContentVersion = 26;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -422,6 +426,38 @@ namespace WordCraft.Sim
         private static readonly ProductionCost[] extraProduction;
 
         /// <summary>
+        /// What placing entry 0 of a building slot costs, per faction and role,
+        /// subscripted by <see cref="Index"/> like everything else. Filled from
+        /// <see cref="sharedBuildCosts"/> and <see cref="buildOverrides"/> for the
+        /// same reason the stats and production tables are: five factions pay the
+        /// shared price for most of what they place, and where one does not should
+        /// read as a short list rather than as a difference found by diffing six
+        /// blocks.
+        /// </summary>
+        private static readonly int[] buildCosts;
+
+        /// <summary>
+        /// How long entry 0 of a building slot takes to stand up, resolved the same
+        /// way <see cref="buildCosts"/> is and filled in the same loop. The two are
+        /// a pair: a building priced in one place and timed in another is a building
+        /// somebody retunes half of.
+        /// </summary>
+        private static readonly int[] buildTicks;
+
+        /// <summary>
+        /// The price of the building entries past the first, parallel to
+        /// <see cref="extras"/> exactly as <see cref="extraProduction"/> is. 인간's
+        /// defense slot is the only one that has any today — 전기 타워 and 돌 포탑
+        /// behind 대포 — and this array is why pricing 대포 apart leaves the two of
+        /// them where they were. An override keyed by role alone would have moved
+        /// all three, which is the defect #110 found in the production table.
+        /// </summary>
+        private static readonly int[] extraBuildCosts;
+
+        /// <summary>The clock half of <see cref="extraBuildCosts"/>.</summary>
+        private static readonly int[] extraBuildTicks;
+
+        /// <summary>
         /// The production row every faction starts from, indexed by Role.
         ///
         /// Buildings are marked not produced: a building is placed by a Build
@@ -579,12 +615,16 @@ namespace WordCraft.Sim
         {
             stats = new UnitStats[FactionCount * RoleCount];
             production = new ProductionCost[FactionCount * RoleCount];
+            buildCosts = new int[FactionCount * RoleCount];
+            buildTicks = new int[FactionCount * RoleCount];
             for (int faction = 0; faction < FactionCount; faction++)
             {
                 for (int role = 0; role < RoleCount; role++)
                 {
                     stats[Index((Faction)faction, (Role)role)] = sharedStats[role];
                     production[Index((Faction)faction, (Role)role)] = sharedProduction[role];
+                    buildCosts[Index((Faction)faction, (Role)role)] = sharedBuildCosts[role];
+                    buildTicks[Index((Faction)faction, (Role)role)] = sharedBuildTicks[role];
                 }
             }
 
@@ -594,10 +634,14 @@ namespace WordCraft.Sim
             // is an override row, which is the one place a difference is written.
             extraStats = new UnitStats[extras.Length];
             extraProduction = new ProductionCost[extras.Length];
+            extraBuildCosts = new int[extras.Length];
+            extraBuildTicks = new int[extras.Length];
             for (int i = 0; i < extras.Length; i++)
             {
                 extraStats[i] = sharedStats[(int)extras[i].Role];
                 extraProduction[i] = sharedProduction[(int)extras[i].Role];
+                extraBuildCosts[i] = sharedBuildCosts[(int)extras[i].Role];
+                extraBuildTicks[i] = sharedBuildTicks[(int)extras[i].Role];
             }
 
             // Entry 0 lands in the flat tables, everything else in the parallel
@@ -616,6 +660,25 @@ namespace WordCraft.Sim
                 var (faction, role, slot, replacement) = productionOverrides[i];
                 if (slot == 0) production[Index(faction, role)] = replacement;
                 else extraProduction[ExtraIndex(faction, role, slot)] = replacement;
+            }
+
+            // Same split, same reason: an override naming an entry no faction
+            // fields subscripts extraBuildCosts with -1 and fails at type load,
+            // rather than silently writing onto entry 0 of the slot.
+            for (int i = 0; i < buildOverrides.Length; i++)
+            {
+                var (faction, role, slot, resources, ticks) = buildOverrides[i];
+                if (slot == 0)
+                {
+                    buildCosts[Index(faction, role)] = resources;
+                    buildTicks[Index(faction, role)] = ticks;
+                }
+                else
+                {
+                    int extra = ExtraIndex(faction, role, slot);
+                    extraBuildCosts[extra] = resources;
+                    extraBuildTicks[extra] = ticks;
+                }
             }
         }
 
@@ -719,7 +782,7 @@ namespace WordCraft.Sim
         ///
         /// The shared row every entry of the slot starts from, which is what keeps
         /// it keyed by role rather than by entry. It is the counterpart of
-        /// <see cref="sharedProduction"/>, not of <see cref="productionOverrides"/>:
+        /// <see cref="sharedProduction"/>, not of <see cref="buildOverrides"/>:
         /// an override is a statement about one named unit and a role key would
         /// spread it over the whole list, which is the defect #110 found, but a
         /// baseline says nothing about any entry in particular and a role key is
@@ -727,18 +790,8 @@ namespace WordCraft.Sim
         /// an override row keyed by Faction, Role and Slot the way statOverrides is,
         /// and <see cref="BuildCost(Faction, Role, int)"/> already takes the entry
         /// so that adding one moves the table and not its callers.
-        ///
-        /// ponytail: three buildings in docs/FACTION-MECHANICS.md are priced apart
-        /// from this row and none of them is here — 차원 유랑종 굴절 기둥 70자원
-        /// 50틱, 인간 대포 55자원 50틱, 인간 마법 탑 60자원 80틱. Their hp landed in
-        /// statOverrides because that table exists; their price and clock need the
-        /// override table above, which is a table plus a fill loop plus a decision
-        /// about <see cref="BuildCost(Role)"/>. That faction-free overload is what
-        /// the Unity command card labels the build menu with, and the day one
-        /// faction is charged a different price it starts lying to exactly the
-        /// player who is charged it.
         /// </summary>
-        private static readonly int[] buildCosts =
+        private static readonly int[] sharedBuildCosts =
         {
             /* None       */ 0,
             /* Base       */ 400,
@@ -757,11 +810,11 @@ namespace WordCraft.Sim
         /// seconds: a duration converted from wall-clock time is a duration two
         /// peers can round differently.
         ///
-        /// The shared row, keyed by role for the reason <see cref="buildCosts"/> is,
-        /// and decided with it: the two numbers are a pair and a building priced in
-        /// one place and timed in another is a building somebody retunes half of.
+        /// The shared row, keyed by role for the reason <see cref="sharedBuildCosts"/>
+        /// is, and decided with it: the two numbers are a pair and a building priced
+        /// in one place and timed in another is a building somebody retunes half of.
         /// </summary>
-        private static readonly int[] buildTicks =
+        private static readonly int[] sharedBuildTicks =
         {
             /* None       */ 0,
             /* Base       */ 200,
@@ -773,6 +826,50 @@ namespace WordCraft.Sim
             /* Signature  */ 0,
             /* Supply     */ 50,
             /* Tech       */ 120,
+        };
+
+        /// <summary>
+        /// Where one faction's building departs from the shared row, keyed by
+        /// Faction, Role and Slot for the reason <see cref="statOverrides"/> and
+        /// <see cref="productionOverrides"/> are: an override is a statement about
+        /// one named building, and a role key would spread it over every entry of
+        /// the slot — 인간's 전기 타워 and 돌 포탑 sit behind 대포 and are not what
+        /// the document prices.
+        ///
+        /// Price and clock travel in one row on purpose. They are the pair the
+        /// shared tables are decided as, and two override tables would be two
+        /// places to retune half a building.
+        ///
+        /// Numbers from docs/FACTION-MECHANICS.md, which is the only place any of
+        /// them is written down. Balance past "matches finish" is still a non-goal,
+        /// so nothing is here that the document does not name.
+        /// </summary>
+        private static readonly (Faction Faction, Role Role, int Slot, int Resources, int Ticks)[] buildOverrides =
+        {
+            // 차원 유랑종 굴절 기둥. 70자원 50틱, docs/FACTION-MECHANICS.md 통로 표.
+            // The one building in the game that is not really a building: what it
+            // is bought for is the 반경 6칸 of arrival ground it lends, so it is
+            // priced above the shared defense row and stands up slower than one.
+            // Its 체력 200 already sits in statOverrides; this is the other half of
+            // the same document row, and the half that had nowhere to go until now.
+            (Faction.Driftworlds, Role.Defense, 0, 70, 50),
+
+            // 인간 마법 탑, the 생산 one. 60자원 80틱, docs/FACTION-MECHANICS.md 인간
+            // 표. Cheaper than the shared 150 and slower than the shared 100, which
+            // is the trade the faction is written around: it opens tier 2 early and
+            // pays for it in the eighty ticks it is not yet standing.
+            //
+            // The 생산 one only. 인간's supply slot carries the same name — the
+            // document's roster calls the 마법 탑 생산·인구 both — but the mechanics
+            // table prices exactly one row and marks it (생산), so the supply entry
+            // stays on the shared 75자원 50틱. A number the document does not give
+            // is not a number this table may invent.
+            (Faction.Humans, Role.Production, 0, 60, 80),
+
+            // 인간 대포. 55자원 50틱, docs/FACTION-MECHANICS.md 인간 표. Entry 0 of
+            // the defense slot; 전기 타워 and 돌 포탑 behind it keep the shared row,
+            // which is the whole reason this table is keyed by entry.
+            (Faction.Humans, Role.Defense, 0, 55, 50),
         };
 
         /// <summary>
@@ -828,12 +925,11 @@ namespace WordCraft.Sim
         public static int Tier(Role role) => tiers[(int)role];
 
         /// <summary>
-        /// What placing entry 0 of this building costs. Zero on anything not a
-        /// building. Faction-free because entry 0 of every building slot is the
-        /// shared row today; the entry-addressed overload below is what a caller
-        /// holding a body asks, and what a departure would move.
+        /// What placing entry 0 of this faction's take on this building costs.
+        /// Faction is required for the same reason <see cref="Stats(Faction, Role)"/>
+        /// requires it: 굴절 기둥 is not priced like anyone else's 방어 building.
         /// </summary>
-        public static int BuildCost(Role role) => buildCosts[(int)role];
+        public static int BuildCost(Faction faction, Role role) => BuildCost(faction, role, 0);
 
         /// <summary>
         /// What placing one entry of a building slot costs. An entry this faction
@@ -841,25 +937,49 @@ namespace WordCraft.Sim
         /// than a free building: <see cref="Has(Faction, Role, int)"/> is the one
         /// gate, CanBuild asks it before a price is ever taken, and answering the
         /// shared row here would leave a second opinion for the two to drift apart on.
+        ///
+        /// There is deliberately no faction-free overload of this, and #147 deleted
+        /// the one there was. It answered the shared row, which was harmless only
+        /// for as long as every faction paid it; the day <see cref="buildOverrides"/>
+        /// got its first row it became a function that returns a price nobody is
+        /// charged. Its one remaining caller was the Unity build menu's label, so
+        /// the shared row was what the card printed on the button — which is to say
+        /// it would have lied to exactly the player being charged the other number.
+        /// Deleting it rather than documenting it is the choice that makes the
+        /// compiler ask the next caller for the faction it has to have anyway; the
+        /// four callers there were all held one and passed it in one line each.
         /// </summary>
-        public static int BuildCost(Faction faction, Role role, int slot) =>
-            Has(faction, role, slot) ? buildCosts[(int)role] : 0;
+        public static int BuildCost(Faction faction, Role role, int slot)
+        {
+            if (!Has(faction, role, slot)) return 0;
+            int extra = ExtraIndex(faction, role, slot);
+            return extra < 0 ? buildCosts[Index(faction, role)] : extraBuildCosts[extra];
+        }
 
-        /// <summary>How many whole ticks entry 0 of this building spends under construction.</summary>
-        public static int BuildTicks(Role role) => buildTicks[(int)role];
+        /// <summary>
+        /// How many whole ticks entry 0 of this faction's take on this building
+        /// spends under construction.
+        /// </summary>
+        public static int BuildTicks(Faction faction, Role role) => BuildTicks(faction, role, 0);
 
         /// <summary>
         /// How many whole ticks one entry spends under construction. Zero for an
         /// entry the faction does not field, for the same reason
-        /// <see cref="BuildCost(Faction, Role, int)"/> is.
+        /// <see cref="BuildCost(Faction, Role, int)"/> is, and faction-keyed for
+        /// the same reason too — 굴절 기둥 stands up in 50 ticks and the shared
+        /// 방어 row takes 60.
         ///
         /// Zero is also what keeps the construction ramp safe: the ramp divides by
         /// this, and a site that answered zero here was placed with no ticks to
         /// count down, so ConstructionSystem's own BuildTicksLeft test skips it
         /// before the division is reached.
         /// </summary>
-        public static int BuildTicks(Faction faction, Role role, int slot) =>
-            Has(faction, role, slot) ? buildTicks[(int)role] : 0;
+        public static int BuildTicks(Faction faction, Role role, int slot)
+        {
+            if (!Has(faction, role, slot)) return 0;
+            int extra = ExtraIndex(faction, role, slot);
+            return extra < 0 ? buildTicks[Index(faction, role)] : extraBuildTicks[extra];
+        }
 
         /// <summary>
         /// The roles a Build command may name. Listed here rather than derived from

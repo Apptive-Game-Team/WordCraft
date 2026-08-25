@@ -3933,7 +3933,7 @@ namespace WordCraft.Replay
                 Check(site.Kind == EntityKind.Building, "a Build for " + role + " placed a " + site.Kind);
                 Check(site.Role == role, "a Build for " + role + " placed a " + site.Role);
                 Check(site.BuildTicksLeft > 0, "a Build for " + role + " finished instantly");
-                Check(world.GetResources(0) == banked - FactionData.BuildCost(role),
+                Check(world.GetResources(0) == banked - FactionData.BuildCost(Faction.TreeSpirits, role),
                     "a Build for " + role + " charged the wrong price");
             }
         }
@@ -3960,7 +3960,7 @@ namespace WordCraft.Replay
             Check(world.EntityCount == 1, "a Build the roster does not list placed something");
 
             world.Step(Build(0, 1, Role.Supply, At(20, 20)));
-            Check(world.GetResources(0) == banked - FactionData.BuildCost(Role.Supply),
+            Check(world.GetResources(0) == banked - FactionData.BuildCost(Faction.Humans, Role.Supply),
                 "the control build was refused too, so the check proves nothing");
             Check(world.GetEntity(1).Role == Role.Supply, "the control build placed the wrong thing");
         }
@@ -4120,7 +4120,7 @@ namespace WordCraft.Replay
             world.Step(Build(0, seq, Role.Defense, 0, At(20, 20)));
             Check(world.EntityCount == 2, "the control build was refused too, so the refusals prove nothing");
             Check(world.GetEntity(1).Slot == 0, "the control build placed entry " + world.GetEntity(1).Slot);
-            Check(world.GetResources(0) == before - FactionData.BuildCost(Role.Defense),
+            Check(world.GetResources(0) == before - FactionData.BuildCost(Faction.TreeSpirits, Role.Defense),
                 "the control build charged the wrong price");
         }
 
@@ -4237,7 +4237,7 @@ namespace WordCraft.Replay
             world.Step(Build(0, 3, Role.Tech, At(20, 20)));
             Check(world.EntityCount == 3, "the finished production building did not open tier 2");
             Check(world.GetEntity(2).Role == Role.Tech, "the prerequisite opened the wrong role");
-            Check(world.GetResources(0) == banked - FactionData.BuildCost(Role.Tech),
+            Check(world.GetResources(0) == banked - FactionData.BuildCost(Faction.TreeSpirits, Role.Tech),
                 "the tech building charged the wrong price");
         }
 
