@@ -94,6 +94,8 @@ namespace WordCraft.Replay
                 BuildRefusesABuildingEntryTheFactionDoesNotField();
                 ThePlacedBuildingEntryIsHashedState();
                 EveryBuildingEntryIsPricedAndTimed();
+                TheDocumentPricesThreeBuildingsApart();
+                ABuildPriceMovesOnlyTheEntryItNames();
                 BuildIsGatedByTheTechTier();
                 BuildRefusesOccupiedAndOffMapCells();
                 GroundRoutesAroundImpassableTerrain();
@@ -3996,7 +3998,7 @@ namespace WordCraft.Replay
                 Check(site.Kind == EntityKind.Building, "a Build for " + role + " placed a " + site.Kind);
                 Check(site.Role == role, "a Build for " + role + " placed a " + site.Role);
                 Check(site.BuildTicksLeft > 0, "a Build for " + role + " finished instantly");
-                Check(world.GetResources(0) == banked - FactionData.BuildCost(role),
+                Check(world.GetResources(0) == banked - FactionData.BuildCost(Faction.TreeSpirits, role),
                     "a Build for " + role + " charged the wrong price");
             }
         }
@@ -4023,7 +4025,7 @@ namespace WordCraft.Replay
             Check(world.EntityCount == 1, "a Build the roster does not list placed something");
 
             world.Step(Build(0, 1, Role.Supply, At(20, 20)));
-            Check(world.GetResources(0) == banked - FactionData.BuildCost(Role.Supply),
+            Check(world.GetResources(0) == banked - FactionData.BuildCost(Faction.Humans, Role.Supply),
                 "the control build was refused too, so the check proves nothing");
             Check(world.GetEntity(1).Role == Role.Supply, "the control build placed the wrong thing");
         }
@@ -4183,7 +4185,7 @@ namespace WordCraft.Replay
             world.Step(Build(0, seq, Role.Defense, 0, At(20, 20)));
             Check(world.EntityCount == 2, "the control build was refused too, so the refusals prove nothing");
             Check(world.GetEntity(1).Slot == 0, "the control build placed entry " + world.GetEntity(1).Slot);
-            Check(world.GetResources(0) == before - FactionData.BuildCost(Role.Defense),
+            Check(world.GetResources(0) == before - FactionData.BuildCost(Faction.TreeSpirits, Role.Defense),
                 "the control build charged the wrong price");
         }
 
@@ -4268,6 +4270,109 @@ namespace WordCraft.Replay
         }
 
         /// <summary>
+        /// The three buildings docs/FACTION-MECHANICS.md prices apart from the
+        /// shared row, pinned to the numbers the document gives. Literal numbers
+        /// rather than a comparison against the table, because the table is the
+        /// thing under test: asking FactionData whether it agrees with FactionData
+        /// is a check that passes whatever the row says.
+        ///
+        /// The document is the source of truth and this is where it is transcribed
+        /// into something that fails on a commit. Retuning any of these three is a
+        /// document edit and then this line, in that order.
+        /// </summary>
+        private static void TheDocumentPricesThreeBuildingsApart()
+        {
+            // docs/FACTION-MECHANICS.md, 차원 유랑종 통로 표: 굴절 기둥 70자원, 50틱.
+            DocumentedBuildPrice(Faction.Driftworlds, Role.Defense, 70, 50, "굴절 기둥");
+
+            // docs/FACTION-MECHANICS.md, 인간 표: 마법 탑 (생산) 60자원, 80틱. The
+            // 생산 one only — the supply slot carries the same name and the
+            // document prices only the row it marks 생산.
+            DocumentedBuildPrice(Faction.Humans, Role.Production, 60, 80, "마법 탑");
+
+            // docs/FACTION-MECHANICS.md, 인간 표: 대포 (방어) 55자원, 50틱.
+            DocumentedBuildPrice(Faction.Humans, Role.Defense, 55, 50, "대포");
+        }
+
+        private static void DocumentedBuildPrice(Faction faction, Role role, int resources, int ticks, string name)
+        {
+            Check(FactionData.BuildCost(faction, role) == resources,
+                name + " costs " + FactionData.BuildCost(faction, role) +
+                ", the document says " + resources);
+            Check(FactionData.BuildTicks(faction, role) == ticks,
+                name + " stands up in " + FactionData.BuildTicks(faction, role) +
+                " ticks, the document says " + ticks);
+        }
+
+        /// <summary>
+        /// An override moves the one entry it names and nothing else. The defect
+        /// #110 found in the production table is the one this exists to keep out of
+        /// the build table: a row keyed by role alone spreads over every entry of
+        /// the slot, and 인간's defense slot is where that would show — 전기 타워
+        /// and 돌 포탑 sit behind 대포 and the document prices none of them.
+        ///
+        /// 세계수 정령 is the control because it takes no override row. Every other
+        /// faction is compared against it rather than against a copy of the shared
+        /// numbers, so retuning the shared row is one edit in FactionData and none
+        /// here; only a new departure has to be declared, which is the list below.
+        /// A fourth override row that forgets to add itself here fails this check.
+        /// </summary>
+        private static void ABuildPriceMovesOnlyTheEntryItNames()
+        {
+            // Every entry the document prices apart. Entry 0 in all three cases.
+            var apart = new[]
+            {
+                (Faction: Faction.Driftworlds, Role: Role.Defense),
+                (Faction: Faction.Humans, Role: Role.Production),
+                (Faction: Faction.Humans, Role: Role.Defense),
+            };
+
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                foreach (Role role in Buildings)
+                {
+                    bool declared = false;
+                    for (int i = 0; i < apart.Length; i++)
+                    {
+                        if (apart[i].Faction == faction && apart[i].Role == role) declared = true;
+                    }
+                    if (declared) continue;
+
+                    string where = faction + "." + role + "[0]";
+                    Check(FactionData.BuildCost(faction, role) ==
+                          FactionData.BuildCost(Faction.TreeSpirits, role),
+                        where + " is priced at " + FactionData.BuildCost(faction, role) +
+                        " against the shared " + FactionData.BuildCost(Faction.TreeSpirits, role) +
+                        ", and no document row says so");
+                    Check(FactionData.BuildTicks(faction, role) ==
+                          FactionData.BuildTicks(Faction.TreeSpirits, role),
+                        where + " is timed at " + FactionData.BuildTicks(faction, role) +
+                        " against the shared " + FactionData.BuildTicks(Faction.TreeSpirits, role) +
+                        ", and no document row says so");
+                }
+            }
+
+            // The entries behind 대포, which is the half a role key would break and
+            // the loop above cannot see: it walks entry 0 only, and 인간's defense
+            // slot is the only building slot in the game with anything behind it.
+            foreach (int slot in new[] { 1, 2 })
+            {
+                string where = "인간's defense entry " + slot;
+                Check(FactionData.BuildCost(Faction.Humans, Role.Defense, slot) ==
+                      FactionData.BuildCost(Faction.TreeSpirits, Role.Defense),
+                    where + " costs " + FactionData.BuildCost(Faction.Humans, Role.Defense, slot) +
+                    ", the shared row is " + FactionData.BuildCost(Faction.TreeSpirits, Role.Defense) +
+                    ": 대포's override reached an entry it does not name");
+                Check(FactionData.BuildTicks(Faction.Humans, Role.Defense, slot) ==
+                      FactionData.BuildTicks(Faction.TreeSpirits, Role.Defense),
+                    where + " stands up in " + FactionData.BuildTicks(Faction.Humans, Role.Defense, slot) +
+                    " ticks, the shared row is " + FactionData.BuildTicks(Faction.TreeSpirits, Role.Defense) +
+                    ": 대포's override reached an entry it does not name");
+            }
+        }
+
+        /// <summary>
         /// The tech building needs the production building standing, not merely
         /// paid for. The half-built middle step is the one worth asserting: a site
         /// under construction opens nothing.
@@ -4300,7 +4405,7 @@ namespace WordCraft.Replay
             world.Step(Build(0, 3, Role.Tech, At(20, 20)));
             Check(world.EntityCount == 3, "the finished production building did not open tier 2");
             Check(world.GetEntity(2).Role == Role.Tech, "the prerequisite opened the wrong role");
-            Check(world.GetResources(0) == banked - FactionData.BuildCost(Role.Tech),
+            Check(world.GetResources(0) == banked - FactionData.BuildCost(Faction.TreeSpirits, Role.Tech),
                 "the tech building charged the wrong price");
         }
 
