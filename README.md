@@ -52,6 +52,39 @@ dotnet build
 복사하는 이유는 클라이언트가 헤드리스 검사와 다른 규칙으로 시뮬레이션하는 드리프트를
 막기 위해서입니다.
 
+**잊으면 실패하지 않는다는 것이 함정입니다.** Unity는 벤더된 어셈블리가 소스에서
+왔다는 사실을 모릅니다. `dotnet build`를 잊으면 에러가 나는 것이 아니라 **지난주
+규칙으로 완벽하게 정상 동작하는 플레이어**가 나오고, 어디에도 그렇다고 말하는 것이
+없습니다. 실제로 이 함정으로 통로 없는 빌드가 하나 만들어졌습니다.
+
+`Client/Assets/Editor/BuildPlayer.cs`의 `Fresh()`가 이제 그 빌드를 거부합니다.
+`Assets/Plugins/`의 `WordCraft.Sim.dll`·`WordCraft.Net.dll`이 `Sim/`·`Net/`의 소스
+파일보다 오래됐으면 빌드를 시작하지 않고 어느 파일이 더 새로운지 이름으로 말합니다.
+해시가 아니라 타임스탬프인 이유는 `dotnet build` 자신이 무엇을 다시 컴파일할지
+타임스탬프로 정하기 때문입니다 — 빌드 시스템이 스스로 묻는 것과 같은 질문이라
+다르게 답할 수 없습니다. 다만 이 검사는 플레이어를 빌드할 때만 돕습니다. 에디터를
+그냥 여는 것은 아무것도 막지 않으므로, 그 순서는 사람이 기억해야 합니다.
+
+## 플레이어 빌드
+
+에디터를 열거나 태그를 밀지 않고 변경이 실제로 도는 것을 보려면:
+
+```bash
+dotnet build
+Unity -batchmode -nographics -quit -projectPath Client \
+      -executeMethod WordCraft.View.BuildPlayer.Run \
+      -buildOutput play -buildTarget Win64
+```
+
+`-buildOutput`이 가리키는 폴더에 `WordCraft` 바이너리가 놓입니다. 없으면 만듭니다.
+`-buildTarget`은 `Win64`·`OSXUniversal`·`Linux64`를 받고, 주지 않으면 에디터가 이미
+맞춰둔 플랫폼으로 빌드합니다.
+
+개발 빌드 전용입니다. 릴리스 워크플로(`.github/workflows/release.yml`)는 이 진입점을
+부르지 않고 game-ci의 `unity-builder`가 자기 빌드 단계를 들고 옵니다. 서로 맞아야
+하는 진입점이 둘이면 맞춰야 할 것이 하나 더 늘기 때문이고, 둘이 공유하는 것은 이름
+뿐입니다 — 어느 쪽이든 바이너리는 `WordCraft`입니다.
+
 ## 결정론 자체 검증
 
 `Replay`는 테스트 프레임워크 없이 assert 기반으로 다음을 검증합니다.
@@ -89,8 +122,9 @@ CI(`.github/workflows/ci.yml`)가 모든 push와 PR에서 이 검사를 CoreCLR�
 2. 자원 채집, 건설, 유닛 생산, 패스파인딩 — 완료
 3. P2P 락스텝 네트워크 (LAN 직접 IP) — 완료
 4. Unity 뷰와 HUD — 대부분 완료. 전투 가독성 일부와 경보가 남았다
-5. 진영 메커니즘과 밸런스 — 진행 중. 여섯 중 셋(물 슬라임 일제 사격, 돌 골렘
-   잔해, 지옥불 군단장)이 들어갔다. 나머지 셋과 진영별 밸런스는 남았다
+5. 진영 메커니즘과 밸런스 — 진행 중. 여섯 메커니즘이 전부 들어갔다(물 슬라임 일제
+   사격, 돌 골렘 잔해, 지옥불 군단장, 인간 징발, 세계수 정령 성장, 차원 유랑종
+   통로). 진영별 밸런스가 남았다
 
 이 목록은 큰 상태만 남깁니다. 남은 일의 세부 순서와 트랙(쓰기 범위)별 동시
 진행 방식은 [`.plan/general/2026-08-11-parallel-milestones.md`](.plan/general/2026-08-11-parallel-milestones.md)가,
