@@ -83,6 +83,7 @@ namespace WordCraft.Replay
                 EveryRosterSlotHasStats();
                 SlotAddressedProductionMakesTheNamedEntry();
                 ProduceRefusesAnEntryTheFactionDoesNotField();
+                ProduceRefusesASlotTheRosterLeavesBlank();
                 TheRosterEntryIsHashedState();
                 AQueueHoldsOneRosterEntryAtATime();
                 MeleeCannotReachAir();
@@ -94,6 +95,8 @@ namespace WordCraft.Replay
                 BuildRefusesABuildingEntryTheFactionDoesNotField();
                 ThePlacedBuildingEntryIsHashedState();
                 EveryBuildingEntryIsPricedAndTimed();
+                TheDocumentPricesThreeBuildingsApart();
+                ABuildPriceMovesOnlyTheEntryItNames();
                 BuildIsGatedByTheTechTier();
                 BuildRefusesOccupiedAndOffMapCells();
                 GroundRoutesAroundImpassableTerrain();
@@ -107,6 +110,7 @@ namespace WordCraft.Replay
                 ScriptedLogPlacesEveryBuilding();
                 SoloMatchIsReproducible();
                 TheAiPlaysARealGame();
+                TheAiAsksOnlyForRolesItsFactionFields();
                 SoloMatchReachesTheWinCondition();
                 ClientLogMatchesGoldenHash();
                 ReplayRoundTrip.Check();
@@ -3788,6 +3792,67 @@ namespace WordCraft.Replay
                 "돌 골렘 부족's ranged slot is shut for every entry, so the refusals prove nothing");
         }
 
+        // 인간 마법 문명's melee row: on the production list like everyone else's,
+        // and left blank on purpose because the faction holds the line with 대포 and
+        // 공수 특공대. Ids are handed out in spawn order behind the base.
+        private const int BlankBase = 0;
+        private const int BlankWorks = 1;
+
+        /// <summary>
+        /// A Produce naming a slot the roster leaves blank is refused whole:
+        /// nothing spent, nothing queued, nothing born. This is the test CanBuild
+        /// has always made about a placement — see BuildRefusesWhatTheFactionDoesNotHave,
+        /// which is this check's opposite number — and Produce never made about a
+        /// body, so 인간 could buy a unit with no name and no art and the view drew
+        /// it as a raw shape.
+        ///
+        /// The premise at the top is what keeps it from proving something else. The
+        /// blank row is priced and timed by the shared production line, so the
+        /// refusal here cannot be the production list talking: entries past the end
+        /// of a list are already refused by that line, and this one is about an
+        /// entry 0 that is squarely on it.
+        ///
+        /// The control at the bottom is the same slot's neighbour on the same
+        /// building out of the same bank. Without it a rule that shut 인간's whole
+        /// production out would pass every assertion above.
+        /// </summary>
+        private static void ProduceRefusesASlotTheRosterLeavesBlank()
+        {
+            Check(!FactionData.Has(Faction.Humans, Role.Melee),
+                "인간 마법 문명 grew a melee unit, so this check no longer refuses anything");
+            Check(FactionData.Production(Faction.Humans, Role.Melee, 0).Produced,
+                "인간's melee row came off the production list, so the refusal below is that line's " +
+                "and not the roster's");
+
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Humans);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);       // BlankBase
+            world.SpawnBuilding(0, Role.Production, At(9, 5), complete: true); // BlankWorks, opens tier 2
+            world.GrantResources(0, 1000);
+
+            var idle = new List<Command>();
+            int banked = world.GetResources(0);
+            int standing = world.EntityCount;
+
+            world.Step(Produce(BlankBase, 0, 0, Role.Melee, 0));
+            // Stepped past the roster clock as well as read on the spot: a slot that
+            // got through the gate would come out a body a while later, and an
+            // assertion taken on the tick of the order alone would not have seen it.
+            for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
+            Check(world.GetResources(0) == banked, "an order for 인간's blank melee row spent resources");
+            Check(world.GetEntity(BlankBase).QueueCount == 0, "an order for 인간's blank melee row queued one");
+            Check(world.EntityCount == standing, "an order for 인간's blank melee row made one");
+
+            // 공수 특공대, which is what the faction fields instead. Tier 2, which
+            // BlankWorks is standing for.
+            banked = world.GetResources(0);
+            world.Step(Produce(BlankBase, 0, 1, Role.Ranged, 0));
+            Check(world.GetResources(0) < banked,
+                "인간's production is shut for every slot, so the refusal above proves nothing");
+            Check(world.GetEntity(BlankBase).ProduceRole == Role.Ranged,
+                "the control order queued a " + world.GetEntity(BlankBase).ProduceRole);
+        }
+
         // 차원 유랑종's melee list holds three entries: 폭풍편 with its own row, and
         // the two 멸종 슬라임 behind it that no override touches. The pair to hash
         // with is the second and the third — entries 1 and 2 — because two worlds
@@ -4006,7 +4071,7 @@ namespace WordCraft.Replay
                 Check(site.Kind == EntityKind.Building, "a Build for " + role + " placed a " + site.Kind);
                 Check(site.Role == role, "a Build for " + role + " placed a " + site.Role);
                 Check(site.BuildTicksLeft > 0, "a Build for " + role + " finished instantly");
-                Check(world.GetResources(0) == banked - FactionData.BuildCost(role),
+                Check(world.GetResources(0) == banked - FactionData.BuildCost(Faction.TreeSpirits, role),
                     "a Build for " + role + " charged the wrong price");
             }
         }
@@ -4033,7 +4098,7 @@ namespace WordCraft.Replay
             Check(world.EntityCount == 1, "a Build the roster does not list placed something");
 
             world.Step(Build(0, 1, Role.Supply, At(20, 20)));
-            Check(world.GetResources(0) == banked - FactionData.BuildCost(Role.Supply),
+            Check(world.GetResources(0) == banked - FactionData.BuildCost(Faction.Humans, Role.Supply),
                 "the control build was refused too, so the check proves nothing");
             Check(world.GetEntity(1).Role == Role.Supply, "the control build placed the wrong thing");
         }
@@ -4193,7 +4258,7 @@ namespace WordCraft.Replay
             world.Step(Build(0, seq, Role.Defense, 0, At(20, 20)));
             Check(world.EntityCount == 2, "the control build was refused too, so the refusals prove nothing");
             Check(world.GetEntity(1).Slot == 0, "the control build placed entry " + world.GetEntity(1).Slot);
-            Check(world.GetResources(0) == before - FactionData.BuildCost(Role.Defense),
+            Check(world.GetResources(0) == before - FactionData.BuildCost(Faction.TreeSpirits, Role.Defense),
                 "the control build charged the wrong price");
         }
 
@@ -4278,6 +4343,109 @@ namespace WordCraft.Replay
         }
 
         /// <summary>
+        /// The three buildings docs/FACTION-MECHANICS.md prices apart from the
+        /// shared row, pinned to the numbers the document gives. Literal numbers
+        /// rather than a comparison against the table, because the table is the
+        /// thing under test: asking FactionData whether it agrees with FactionData
+        /// is a check that passes whatever the row says.
+        ///
+        /// The document is the source of truth and this is where it is transcribed
+        /// into something that fails on a commit. Retuning any of these three is a
+        /// document edit and then this line, in that order.
+        /// </summary>
+        private static void TheDocumentPricesThreeBuildingsApart()
+        {
+            // docs/FACTION-MECHANICS.md, 차원 유랑종 통로 표: 굴절 기둥 70자원, 50틱.
+            DocumentedBuildPrice(Faction.Driftworlds, Role.Defense, 70, 50, "굴절 기둥");
+
+            // docs/FACTION-MECHANICS.md, 인간 표: 마법 탑 (생산) 60자원, 80틱. The
+            // 생산 one only — the supply slot carries the same name and the
+            // document prices only the row it marks 생산.
+            DocumentedBuildPrice(Faction.Humans, Role.Production, 60, 80, "마법 탑");
+
+            // docs/FACTION-MECHANICS.md, 인간 표: 대포 (방어) 55자원, 50틱.
+            DocumentedBuildPrice(Faction.Humans, Role.Defense, 55, 50, "대포");
+        }
+
+        private static void DocumentedBuildPrice(Faction faction, Role role, int resources, int ticks, string name)
+        {
+            Check(FactionData.BuildCost(faction, role) == resources,
+                name + " costs " + FactionData.BuildCost(faction, role) +
+                ", the document says " + resources);
+            Check(FactionData.BuildTicks(faction, role) == ticks,
+                name + " stands up in " + FactionData.BuildTicks(faction, role) +
+                " ticks, the document says " + ticks);
+        }
+
+        /// <summary>
+        /// An override moves the one entry it names and nothing else. The defect
+        /// #110 found in the production table is the one this exists to keep out of
+        /// the build table: a row keyed by role alone spreads over every entry of
+        /// the slot, and 인간's defense slot is where that would show — 전기 타워
+        /// and 돌 포탑 sit behind 대포 and the document prices none of them.
+        ///
+        /// 세계수 정령 is the control because it takes no override row. Every other
+        /// faction is compared against it rather than against a copy of the shared
+        /// numbers, so retuning the shared row is one edit in FactionData and none
+        /// here; only a new departure has to be declared, which is the list below.
+        /// A fourth override row that forgets to add itself here fails this check.
+        /// </summary>
+        private static void ABuildPriceMovesOnlyTheEntryItNames()
+        {
+            // Every entry the document prices apart. Entry 0 in all three cases.
+            var apart = new[]
+            {
+                (Faction: Faction.Driftworlds, Role: Role.Defense),
+                (Faction: Faction.Humans, Role: Role.Production),
+                (Faction: Faction.Humans, Role: Role.Defense),
+            };
+
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                foreach (Role role in Buildings)
+                {
+                    bool declared = false;
+                    for (int i = 0; i < apart.Length; i++)
+                    {
+                        if (apart[i].Faction == faction && apart[i].Role == role) declared = true;
+                    }
+                    if (declared) continue;
+
+                    string where = faction + "." + role + "[0]";
+                    Check(FactionData.BuildCost(faction, role) ==
+                          FactionData.BuildCost(Faction.TreeSpirits, role),
+                        where + " is priced at " + FactionData.BuildCost(faction, role) +
+                        " against the shared " + FactionData.BuildCost(Faction.TreeSpirits, role) +
+                        ", and no document row says so");
+                    Check(FactionData.BuildTicks(faction, role) ==
+                          FactionData.BuildTicks(Faction.TreeSpirits, role),
+                        where + " is timed at " + FactionData.BuildTicks(faction, role) +
+                        " against the shared " + FactionData.BuildTicks(Faction.TreeSpirits, role) +
+                        ", and no document row says so");
+                }
+            }
+
+            // The entries behind 대포, which is the half a role key would break and
+            // the loop above cannot see: it walks entry 0 only, and 인간's defense
+            // slot is the only building slot in the game with anything behind it.
+            foreach (int slot in new[] { 1, 2 })
+            {
+                string where = "인간's defense entry " + slot;
+                Check(FactionData.BuildCost(Faction.Humans, Role.Defense, slot) ==
+                      FactionData.BuildCost(Faction.TreeSpirits, Role.Defense),
+                    where + " costs " + FactionData.BuildCost(Faction.Humans, Role.Defense, slot) +
+                    ", the shared row is " + FactionData.BuildCost(Faction.TreeSpirits, Role.Defense) +
+                    ": 대포's override reached an entry it does not name");
+                Check(FactionData.BuildTicks(Faction.Humans, Role.Defense, slot) ==
+                      FactionData.BuildTicks(Faction.TreeSpirits, Role.Defense),
+                    where + " stands up in " + FactionData.BuildTicks(Faction.Humans, Role.Defense, slot) +
+                    " ticks, the shared row is " + FactionData.BuildTicks(Faction.TreeSpirits, Role.Defense) +
+                    ": 대포's override reached an entry it does not name");
+            }
+        }
+
+        /// <summary>
         /// The tech building needs the production building standing, not merely
         /// paid for. The half-built middle step is the one worth asserting: a site
         /// under construction opens nothing.
@@ -4310,7 +4478,7 @@ namespace WordCraft.Replay
             world.Step(Build(0, 3, Role.Tech, At(20, 20)));
             Check(world.EntityCount == 3, "the finished production building did not open tier 2");
             Check(world.GetEntity(2).Role == Role.Tech, "the prerequisite opened the wrong role");
-            Check(world.GetResources(0) == banked - FactionData.BuildCost(Role.Tech),
+            Check(world.GetResources(0) == banked - FactionData.BuildCost(Faction.TreeSpirits, Role.Tech),
                 "the tech building charged the wrong price");
         }
 
@@ -4898,6 +5066,77 @@ namespace WordCraft.Replay
                 advanced = (e.Position - world.GetEntity(enemyBase).Position).SqrMagnitude < start;
             }
             Check(advanced, "no AI unit ever moved toward the enemy");
+        }
+
+        /// <summary>
+        /// The opponent asks for a fighter its own faction fields. Its ladder named
+        /// Role.Melee outright, which was survivable only while Produce would build
+        /// a nameless body: 인간 마법 문명's melee row is blank on purpose, so once
+        /// the roster gate went in a 인간 opponent that kept asking for melee made
+        /// workers and nothing else and its mirror never resolved. That is the
+        /// failure #110 was reverted for, and it is what this check watches.
+        ///
+        /// Read off the same mirror MirrorMatchesAreReproducible plays, because
+        /// that is the run the regression actually appeared in. Two peers each, so
+        /// this is not one lucky side.
+        ///
+        /// 세계수 정령 is the control and it is not decoration: a fallback written
+        /// as a replacement — any order that put ranged ahead of melee — would pass
+        /// every 인간 assertion here and quietly change what all five other factions
+        /// buy. The ladder still has to want melee wherever melee exists.
+        /// </summary>
+        private static void TheAiAsksOnlyForRolesItsFactionFields()
+        {
+            Check(!FactionData.Has(Faction.Humans, Role.Melee),
+                "인간 마법 문명 grew a melee unit, so the ladder has nothing left to fall back from");
+            Check(FactionData.Has(Faction.Humans, Role.Ranged),
+                "인간 마법 문명 lost 공수 특공대, so there is nothing left to fall back to");
+            Check(FactionData.Has(Faction.TreeSpirits, Role.Melee),
+                "세계수 정령 lost its melee unit, so it is no longer a control");
+
+            RunMirror(Faction.Humans, out World humans);
+            RunMirror(Faction.TreeSpirits, out World spirits);
+            // Taken per faction off a world built from the same seed and never
+            // stepped, rather than assumed equal: the two openings happen to be the
+            // same length today, and a scenario that ever gave one faction an extra
+            // body would silently shift what counts as bought.
+            int humanOpening = MatchScenario.Build(Seed, Faction.Humans, Faction.Humans).EntityCount;
+            int spiritOpening = MatchScenario.Build(Seed, Faction.TreeSpirits, Faction.TreeSpirits).EntityCount;
+
+            for (int peer = 0; peer < MatchScenario.Peers; peer++)
+            {
+                // First of the three, and the order is deliberate: this is the
+                // defect the issue was filed about, and it needs both the ladder
+                // and the gate to be wrong at once, which is exactly the state main
+                // was in. Asked before the other two so that state reports itself
+                // here rather than as one of them.
+                Check(Bought(humans, peer, Role.Melee, humanOpening) == 0,
+                    "인간 AI peer " + peer + " put a body on the field out of a blank roster row");
+                Check(Bought(humans, peer, Role.Ranged, humanOpening) > 0,
+                    "인간 AI peer " + peer + " never bought a fighter: the ladder is still asking " +
+                    "for a role its own roster leaves blank");
+                Check(Bought(spirits, peer, Role.Melee, spiritOpening) > 0,
+                    "세계수 정령 AI peer " + peer + " stopped buying melee, so the fallback replaced " +
+                    "the ladder rather than backing it up");
+            }
+        }
+
+        /// <summary>
+        /// How many bodies of this role this peer put on the field after the
+        /// opening, dead or alive. Counted by id past what the scenario spawned:
+        /// ids are handed out in order and never reused, so anything past the
+        /// opening roster was bought, and a fighter that was bought and then died
+        /// still says what the ladder asked for.
+        /// </summary>
+        private static int Bought(World world, int peer, Role role, int opening)
+        {
+            int n = 0;
+            for (int i = opening; i < world.EntityCount; i++)
+            {
+                Entity e = world.GetEntity(i);
+                if (e.Owner == peer && e.Kind == EntityKind.Unit && e.Role == role) n++;
+            }
+            return n;
         }
 
         /// <summary>

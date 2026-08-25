@@ -267,16 +267,24 @@ namespace WordCraft.Sim
             // produced, so a Produce naming one is refused by the same line rather
             // than by a range test of its own: the table is what knows how long
             // each list is, and one gate cannot drift from the other.
-            //
-            // ponytail: entry 0 of a role the faction leaves blank is not refused
-            // here, only entries past the end of the list. 인간's melee row has no
-            // name and no art and a Produce naming it still queues one, which
-            // CanBuild's Has test would have refused for a placement. Closing it
-            // needs the AI to learn a fallback first: its ladder asks for Melee by
-            // name, so a 인간 opponent that could not produce one would produce
-            // nothing but workers.
             ProductionCost cost = FactionData.Production(factions[peer], role, slot);
             if (!cost.Produced) return;
+            // And the roster has to field it. The line above says the slot is the
+            // kind of thing a queue makes; this one says this faction fields one,
+            // which is the test CanBuild has always made and Produce never had.
+            // 인간 마법 문명's melee row is the case: it is on the shared production
+            // list like everyone else's, and it has no name and no art because the
+            // faction holds the line with 대포 and 공수 특공대 instead. Without this
+            // line a Produce naming it queued a body the view could only draw as a
+            // raw shape.
+            //
+            // After the production test rather than before it, though the two
+            // orders refuse exactly the same commands. An entry past the end of a
+            // list fails both tests, and the harness has a check on that refusal
+            // aimed at the line above; asked first, this line would take that
+            // refusal over and the check would go on passing with the rule it was
+            // written for deleted.
+            if (!FactionData.Has(factions[peer], role, slot)) return;
             if (FactionData.Tier(role) > TierOf(peer)) return;
             if (b.QueueCount >= MaxQueue) return;
             // One roster entry for the whole queue, so a second order naming a

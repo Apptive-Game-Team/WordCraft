@@ -252,7 +252,16 @@ namespace WordCraft.View
                 {
                     // The price on the button, because a build menu that hides what
                     // a thing costs is a menu the player has to learn by failing.
-                    Label = role + "\n" + FactionData.BuildCost(role),
+                    //
+                    // The faction's own price, and entry 0's, which is the entry a
+                    // Build names (see CardSlot.Slot). #147 gave the roster its
+                    // first building prices that differ by faction — 굴절 기둥
+                    // 70, 인간 대포 55, 인간 마법 탑 60 — so the shared row this
+                    // read before is now a number the 차원 유랑종 and 인간 players
+                    // are never charged. The faction-free FactionData.BuildCost is
+                    // gone rather than merely unused here, so the next cell that
+                    // wants a price cannot reach for it by accident.
+                    Label = role + "\n" + FactionData.BuildCost(faction, role),
                     Type = CommandType.Build,
                     Produce = role,
                 };
