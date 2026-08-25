@@ -96,7 +96,8 @@ namespace WordCraft.Sim
                 if (b.BuildTicksLeft > 0 || b.QueueCount > 0) continue;
                 if (b.Role != Role.Base && b.Role != Role.Production) continue;
 
-                Role want = workers < AiWorkerTarget ? Role.Worker : Role.Melee;
+                Role want = workers < AiWorkerTarget ? Role.Worker : AiFighterRole(peer);
+                if (want == Role.None) continue; // nothing this faction fields to ask for
                 // ponytail: entry 0 of whatever it wants. It cannot see that
                 // 차원 유랑종 melee holds three entries or that 지옥불 fields a
                 // second ranged unit, so half the roster is invisible to it. Give
@@ -123,6 +124,52 @@ namespace WordCraft.Sim
 
             // 5. Attack with what it has.
             AiAttack(peer);
+        }
+
+        /// <summary>
+        /// The combat roles the ladder will settle for, in the order it prefers
+        /// them. Melee first, which is what it always asked for; the two behind it
+        /// are what it falls back to. Static data rather than state: never written,
+        /// walked by index, and the same list on every peer.
+        /// </summary>
+        private static readonly Role[] AiFighterRoles = { Role.Melee, Role.Ranged, Role.Signature };
+
+        /// <summary>
+        /// The fighter this peer asks for: the first role on that list its own
+        /// faction actually fields. Role.None when it fields none of them, which
+        /// no roster does today and which the caller reads as nothing to order.
+        ///
+        /// The whole of the fallback, and it exists because 인간 마법 문명 leaves
+        /// its melee row blank on purpose. Asking for Melee by name was harmless
+        /// only while Produce would build a nameless body anyway; now that it
+        /// refuses one, a 인간 opponent that kept asking would make workers and
+        /// nothing else and never fight at all.
+        ///
+        /// FactionData.Has is the test, which is the same gate TryQueueUnit takes
+        /// and the same one CanBuild takes, so the ladder cannot come to a
+        /// different opinion about what its faction owns than the command layer
+        /// that answers it.
+        /// </summary>
+        // ponytail: still a fixed order with no memory. It asks for melee wherever
+        // melee exists and never weighs one role against what it is walking into,
+        // because there is nothing here that looks at the opponent at all. Give it
+        // a reason to prefer one the day the ladder is meant to be a plan.
+        //
+        // ponytail: Has is only half of what the command layer asks. A faction can
+        // field an entry that no building makes — 지옥불's ranged entry 0 is 군단장의
+        // 자손, which is spawned — and this would ask for it and be refused. Melee
+        // first is what keeps it away from that one today, so the order of the list
+        // above is load-bearing rather than a preference: reversing it makes the
+        // 지옥불 opponent stop fighting, which MirrorMatchesAreReproducible and
+        // TheAiPlaysARealGame both catch. Ask Production(...).Produced here as well
+        // the day the order is meant to be free.
+        private Role AiFighterRole(int peer)
+        {
+            for (int i = 0; i < AiFighterRoles.Length; i++)
+            {
+                if (FactionData.Has(factions[peer], AiFighterRoles[i])) return AiFighterRoles[i];
+            }
+            return Role.None;
         }
 
         /// <summary>
