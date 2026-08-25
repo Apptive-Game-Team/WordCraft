@@ -153,9 +153,12 @@ namespace WordCraft.Sim
         /// rather than desync on tick 1. So does a rule: 차원 유랑종 통로 moved this
         /// to 23 without touching a table, because a peer that arrives a body at a
         /// 굴절 기둥 and a peer that puts it down at the 통로 have diverged on tick 0
-        /// of the order with nothing in the roster to say why.
+        /// of the order with nothing in the roster to say why. 24 is the plainer
+        /// case: 차원 유랑종's own numbers landed in the tables, and a 경계 운반자
+        /// that carries a weapon on one peer and none on the other is a body that
+        /// kills something on one screen and nothing on the other.
         /// </summary>
-        public const uint ContentVersion = 23;
+        public const uint ContentVersion = 24;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -307,6 +310,63 @@ namespace WordCraft.Sim
                     HitsGround = true,
                 }),
 
+            // 차원 유랑종 폭풍편. 체력 110, 근접, 피해 8, per
+            // docs/FACTION-MECHANICS.md. The shared melee reach, rate and speed are
+            // written out here rather than inherited, for the reason 고목 수호자's
+            // row writes them out: what a body a player paid 60 for walks and swings
+            // at is a decision, and this row is the one place a reader looks for it.
+            // Entry 0 of the slot; the two 멸종 슬라임 behind it keep the shared row
+            // until 한시적 소환 gives them numbers of their own.
+            (Faction.Driftworlds, Role.Melee, 0,
+                new UnitStats
+                {
+                    Hp = 110,
+                    Speed = Fix.Ratio(1, 4),
+                    Damage = 8,
+                    Range = Fix.FromInt(2),
+                    AttackTicks = 15,
+                    HitsGround = true,
+                }),
+
+            // 차원 유랑종 굴절 기둥. 체력 200, per docs/FACTION-MECHANICS.md, and a
+            // third of the shared defense row's 300 — the one number in this table
+            // the 통로 mechanic actually reads back, because 기둥이 부서지면 그
+            // 지역에 대한 접근이 통째로 끊긴다 and a pillar that dies faster is a
+            // region that is lost sooner. The shared defense weapon is kept and
+            // written out: the document gives it no damage, reach or rate of its
+            // own, and a 방어 building that shot nothing would be a second, silent
+            // departure hidden inside a hp change.
+            (Faction.Driftworlds, Role.Defense, 0,
+                new UnitStats
+                {
+                    Hp = 200,
+                    Damage = 9,
+                    Range = Fix.FromInt(6),
+                    AttackTicks = 20,
+                    HitsAir = true,
+                    HitsGround = true,
+                }),
+
+            // 차원 유랑종 경계 운반자. 체력 240 and 비전투, per
+            // docs/FACTION-MECHANICS.md; docs/FACTIONS.md says the same of the
+            // original — 직접 공격하지 않는 개체다 — and asks that it not be turned
+            // into a combat unit. No Damage, so HasWeapon is false and CanAttack
+            // refuses it every path into a fight, exactly as it refuses 지옥불
+            // 군단장. What it is worth instead is the arrival radius it walks
+            // around with; see World.ProvidesArrival.
+            //
+            // The shared signature speed is written out rather than inherited, for
+            // the reason 지옥불 군단장's row writes out the same number: a body the
+            // player has to keep alive is a body the player has to be able to pull
+            // out, and how fast it walks is the whole of that.
+            //
+            // 도주 is not here. The document asks for it and the simulation has no
+            // flee behaviour to give it, so this row disarms the body and leaves it
+            // standing; see the note on OnlyNonCombatantsAreUnarmed in
+            // Replay/Program.cs for why that is a separate thing from 비전투.
+            (Faction.Driftworlds, Role.Signature, 0,
+                new UnitStats { Hp = 240, Speed = Fix.Ratio(3, 8) }),
+
             // 인간 대포. 지상 전용, per docs/FACTION-MECHANICS.md 공중, which is
             // the whole reason this row exists: everything else about it could
             // have stayed on the shared defense row. Entry 0 of the defense slot;
@@ -411,6 +471,30 @@ namespace WordCraft.Sim
             // then 무료 is only a discount on a unit you can also just buy. Entry 0
             // only: 균열 파수병 behind it is bought at the shared ranged price.
             (Faction.Hellfire, Role.Ranged, 0, new ProductionCost()),
+
+            // 차원 유랑종. The faction that does not make units but lets them cross,
+            // and until now every one of them crossed at the shared 20자원 40틱.
+            // Numbers from docs/FACTION-MECHANICS.md.
+            //
+            // 화산편 40자원 35틱. Its 체력 60 is already the shared worker row, so
+            // there is no stat override above it: the document and the table agree
+            // on that number, and a row written to restate it would be a second
+            // place for the two to drift apart.
+            (Faction.Driftworlds, Role.Worker, 0, Produce(40, 35)),
+            // 폭풍편 60자원 50틱.
+            (Faction.Driftworlds, Role.Melee, 0, Produce(60, 50)),
+            // 틈새 사수, at the 통로's own clock. The document times three bodies by
+            // name and then gives 도착 one number — 통로에서 60틱 — which is what
+            // anything else crossing takes. 틈새 사수 is the only entry that falls
+            // under it today: the three 멸종 슬라임 behind it are 한시적 소환 the
+            // 층위 관측대 unlocks, and this table's own rule is that a number
+            // arrives with the mechanic that needs it rather than ahead of it.
+            // Priced at the shared cost, because the document gives it none.
+            (Faction.Driftworlds, Role.Ranged, 0, Produce(DefaultProduceCost, 60)),
+            // 경계 운반자 130자원 90틱. The second most expensive body in the game
+            // and it kills nothing, which is the same bargain 지옥불 군단장 is: what
+            // it is worth is the 반경 6칸 that walks with it.
+            (Faction.Driftworlds, Role.Signature, 0, Produce(130, 90)),
 
             // 인간 Towerback. Off the production list for the same reason 자손 is,
             // and it matters more here: 포획으로만 획득한다 is the mechanic, so a
@@ -637,6 +721,16 @@ namespace WordCraft.Sim
         /// an override row keyed by Faction, Role and Slot the way statOverrides is,
         /// and <see cref="BuildCost(Faction, Role, int)"/> already takes the entry
         /// so that adding one moves the table and not its callers.
+        ///
+        /// ponytail: three buildings in docs/FACTION-MECHANICS.md are priced apart
+        /// from this row and none of them is here — 차원 유랑종 굴절 기둥 70자원
+        /// 50틱, 인간 대포 55자원 50틱, 인간 마법 탑 60자원 80틱. Their hp landed in
+        /// statOverrides because that table exists; their price and clock need the
+        /// override table above, which is a table plus a fill loop plus a decision
+        /// about <see cref="BuildCost(Role)"/>. That faction-free overload is what
+        /// the Unity command card labels the build menu with, and the day one
+        /// faction is charged a different price it starts lying to exactly the
+        /// player who is charged it.
         /// </summary>
         private static readonly int[] buildCosts =
         {

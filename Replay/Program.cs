@@ -41,7 +41,9 @@ namespace WordCraft.Replay
                 OffspringCannotBeProduced();
                 TheWarlordNeverGoesLookingForAFight();
                 TheWarlordRefusesAttackOrders();
-                OnlyTheWarlordIsUnarmed();
+                OnlyNonCombatantsAreUnarmed();
+                EveryUnarmedSlotIsWorthSomethingElse();
+                TheCarrierRefusesToFight();
                 EveryWeaponReachesSomething();
                 TheCannonRefusesAir();
                 CaptureTurnsANeutralIntoATowerback();
@@ -56,6 +58,7 @@ namespace WordCraft.Replay
                 AGrowthKilledMidwayJustDies();
                 GrowRefusesWhatIsNotOnTheGrowthList();
                 GrowthTargetsCannotBeProduced();
+                TheDriftworldsRosterCarriesItsOwnNumbers();
                 ThePassageArrivesAtWhatItAimedAt();
                 TheArrivalRadiusIsSixCells();
                 AKilledPillarSendsTheNextBodyToThePassage();
@@ -1348,34 +1351,279 @@ namespace WordCraft.Replay
         };
 
         /// <summary>
-        /// The disarm reaches exactly one row of the roster. Every other combat
-        /// slot every faction fields still carries a weapon, defense buildings
-        /// included: a rule written one field too wide would take the whole game's
-        /// combat with it, and the checks above would all still pass, because a
-        /// world where nothing acquires is also a world where the warlord stands
-        /// still.
+        /// The roster entries the documents call 비전투: 지옥불 군단장 and 차원
+        /// 유랑종 경계 운반자, and nothing else.
+        ///
+        /// Written through the constants the simulation identifies each body with
+        /// rather than as a second copy of the roster coordinates. World.CarrierRole
+        /// is what ProvidesArrival tests, so a check that named Role.Signature
+        /// directly would go on passing after somebody moved the 경계 운반자 to
+        /// another slot and left this rule pinning an empty one.
+        ///
+        /// The warlord's entry number is a literal, because 지옥불's signature slot
+        /// holds one entry and Hellfire.cs names no constant for it — unlike
+        /// WarlordOffspringSlot, which exists because 균열 파수병 stands behind 자손
+        /// and the two had to be told apart.
         /// </summary>
-        private static void OnlyTheWarlordIsUnarmed()
+        private static bool IsNonCombatant(Faction faction, Role role, int slot) =>
+            (faction == Faction.Hellfire && role == World.WarlordRole && slot == 0) ||
+            (faction == World.PassageFaction && role == World.CarrierRole &&
+             slot == World.CarrierSlot);
+
+        /// <summary>
+        /// The disarm reaches exactly the rows above and no others. Every other
+        /// combat entry every faction fields still carries a weapon, defense
+        /// buildings and the entries past the first included: a rule written one
+        /// field too wide would take the whole game's combat with it, and the
+        /// behavioural checks around it would all still pass, because a world where
+        /// nothing acquires is also a world where 지옥불 군단장 stands still.
+        ///
+        /// Is 경계 운반자's unarmedness the same kind as 군단장's? For this assertion,
+        /// yes, and that is why it is one assertion and not two. Both are signature
+        /// bodies their document calls 비전투; both are disarmed by the one field the
+        /// simulation reads, Damage, so CanAttack refuses them acquisition, the
+        /// chase and both attack orders through one gate; and both are meant to pay
+        /// for themselves with a mechanic that is not damage. A rule that split them
+        /// would be two copies of "this row has no weapon" keyed on nothing the
+        /// simulation can see apart.
+        ///
+        /// Everywhere else they are not the same, and the difference is not about
+        /// the weapon. 군단장 is finished when the weapon is gone — 소환만 하고
+        /// 싸우지 않는다 describes a body that stands where it is put, and
+        /// WarlordSpawnSystem is the rest of it. 경계 운반자 is not finished: the
+        /// document says 비전투 and 도주, and disarming it produces a body that
+        /// stands still and is killed, which is the opposite of fleeing. So the
+        /// second half of the exception is not a wider version of this rule at all;
+        /// it is EveryUnarmedSlotIsWorthSomethingElse below, which asks what each
+        /// unarmed body has instead — and 도주 is an issue of its own, because
+        /// nothing in the simulation flees from anything.
+        /// </summary>
+        private static void OnlyNonCombatantsAreUnarmed()
         {
             for (int f = 0; f < FactionData.FactionCount; f++)
             {
                 var faction = (Faction)f;
                 foreach (Role role in FightingRoles)
                 {
-                    // A slot the faction leaves empty fields nothing to arm.
-                    if (!FactionData.Has(faction, role)) continue;
-
-                    string where = faction + "." + role;
-                    bool armed = FactionData.Stats(faction, role).HasWeapon;
-
-                    if (faction == Faction.Hellfire && role == World.WarlordRole)
+                    // Every entry, not only the first. An entry past the first
+                    // inherits its slot's shared row and can be overridden away from
+                    // it, so it is a row that can lose its weapon on its own — and
+                    // while this loop walked entry 0 alone, 차원 유랑종's two 멸종
+                    // 슬라임 and 인간's 마도 정찰기 were outside the rule entirely.
+                    for (int s = 0; s < FactionData.SlotCount(faction, role); s++)
                     {
-                        Check(!armed, "지옥불 군단장 carries a weapon: " + where);
-                        continue;
+                        // A slot the faction leaves empty fields nothing to arm.
+                        if (!FactionData.Has(faction, role, s)) continue;
+
+                        string where = faction + "." + role + "[" + s + "]";
+                        bool armed = FactionData.Stats(faction, role, s).HasWeapon;
+
+                        if (IsNonCombatant(faction, role, s))
+                        {
+                            Check(!armed, FactionData.Name(faction, role, s) +
+                                " is 비전투 and carries a weapon: " + where);
+                            continue;
+                        }
+                        Check(armed, "an unarmed combat slot at " + where);
                     }
-                    Check(armed, "an unarmed combat slot at " + where);
                 }
             }
+        }
+
+
+        /// <summary>
+        /// The other half of the exception, and the half that keeps the list above
+        /// from becoming a list of names. Taking a body's weapon away is free; what
+        /// costs something is giving it a reason to exist, and a roster is one
+        /// careless override row away from a signature unit that costs 130, kills
+        /// nothing, and does nothing else either.
+        ///
+        /// So every entry IsNonCombatant names has to answer a mechanic the
+        /// simulation really gives it, asked of a real body in a real world rather
+        /// than of the table: 지옥불 군단장 is a warlord WarlordSpawnSystem will emit
+        /// from, and 경계 운반자 lends its owner an arrival radius. Each is also
+        /// asserted disarmed through World.Armed, which is what the combat gate
+        /// reads — the table saying Damage = 0 and the simulation agreeing are two
+        /// claims, and Armed is where the second one is kept.
+        ///
+        /// Driven off the same list the rule above is, not written out twice. A
+        /// third name added to IsNonCombatant arrives here needing a mechanic of its
+        /// own, and the disjunction below is deliberately closed: a body with a new
+        /// kind of worth fails until somebody says here what that worth is, which is
+        /// the sentence this whole check exists to force somebody to write.
+        ///
+        /// The size of the list is pinned first, before anything is spawned. Every
+        /// assertion here lives inside a loop over it, so a list that named a slot
+        /// no faction fields would otherwise pass by running zero times — and a
+        /// list that grew a third name has to stop somebody here, at a sentence
+        /// about the list, rather than three lines later inside a fixture written
+        /// when there were two.
+        /// </summary>
+        private static void EveryUnarmedSlotIsWorthSomethingElse()
+        {
+            Check(NonCombatantCount() == 2,
+                "the roster hands this check " + NonCombatantCount() + " non-combatants, " +
+                "expected 2: IsNonCombatant has grown a name, or names a slot no faction fields");
+
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                foreach (Role role in FightingRoles)
+                {
+                    for (int s = 0; s < FactionData.SlotCount(faction, role); s++)
+                    {
+                        if (!FactionData.Has(faction, role, s)) continue;
+                        if (!IsNonCombatant(faction, role, s)) continue;
+
+                        string name = FactionData.Name(faction, role, s);
+                        Check(!FactionData.IsBuilding(role),
+                            name + " is a building on the non-combatant list, and this check " +
+                            "puts a unit down");
+
+                        var world = new World(Seed);
+                        world.SetPeerFaction(0, faction);
+                        world.SpawnUnit(0, role, s, At(30, 30));
+                        Entity body = world.GetEntity(0);
+
+                        Check(!world.Armed(body),
+                            name + " is armed in the world the table disarmed it in");
+                        Check(world.IsWarlord(body) || world.ProvidesArrival(body, 0),
+                            name + " carries no weapon and has no mechanic either, so it is " +
+                            "worth nothing at all");
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// How many roster entries IsNonCombatant actually reaches. Counted rather
+        /// than assumed: a clause that names a slot no faction fields matches
+        /// nothing, and a rule that pins nothing looks exactly like a rule that
+        /// holds.
+        /// </summary>
+        private static int NonCombatantCount()
+        {
+            int count = 0;
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                foreach (Role role in FightingRoles)
+                {
+                    for (int s = 0; s < FactionData.SlotCount(faction, role); s++)
+                    {
+                        if (!FactionData.Has(faction, role, s)) continue;
+                        if (IsNonCombatant(faction, role, s)) count++;
+                    }
+                }
+            }
+            return count;
+        }
+
+        // 차원 유랑종 경계 운반자 비전투. The same fixture 지옥불 군단장 gets, because
+        // it is the same claim about a different body: an unarmed unit that the
+        // simulation nonetheless walks into a fight is a unit standing in weapon
+        // range firing nothing.
+        private const int CarrierTicks = 300;
+        private const int UnarmedCarrier = 0;
+        private const int CarrierPrey = 1;
+        private const int CarrierControl = 2;
+        private const int CarrierControlPrey = 3;
+
+        /// <summary>
+        /// 경계 운반자 refuses a fight it is walked into and a fight it is ordered
+        /// into, and can still be moved by its owner. Read the table it would all
+        /// follow from Damage = 0; read the world it is three separate paths —
+        /// acquisition, the Attack order, the AttackMove order — and the last
+        /// assertion is the one a disarm written a line too wide takes with it,
+        /// because a 경계 운반자 that cannot be moved is 이동식 반경 with nothing
+        /// mobile about it.
+        ///
+        /// The armed control pair is what makes the null results mean something: a
+        /// world where combat had simply stopped would pass every assertion about
+        /// the carrier and fail the ones about 폭풍편. Twenty cells south, so
+        /// neither group can acquire into the other.
+        /// </summary>
+        private static void TheCarrierRefusesToFight()
+        {
+            World world = BuildCarrierWorld();
+            var idle = new List<Command>();
+            for (int t = 0; t < CarrierTicks; t++) world.Step(idle);
+
+            Entity carrier = world.GetEntity(UnarmedCarrier);
+            Check(!world.Armed(carrier), "경계 운반자 carries a weapon after all");
+            Check(carrier.TargetId < 0, "경계 운반자 acquired target " + carrier.TargetId);
+            Check(carrier.Position.Equals(At(30, 30)), "경계 운반자 went looking for a fight");
+            // Target is the field a chase writes and it is hashed, so a carrier held
+            // still only by the mover would still be caught here.
+            Check(carrier.Target.Equals(At(30, 30)), "경계 운반자 took a walk order from combat");
+            Check(world.GetEntity(CarrierPrey).Hp == world.GetEntity(CarrierPrey).MaxHp,
+                "경계 운반자 shot something");
+
+            // The control unit is read by what it did rather than by what it is
+            // holding: over CarrierTicks the 폭풍편 kills its prey outright, and a
+            // finished attacker has already dropped the target it acquired.
+            Entity control = world.GetEntity(CarrierControl);
+            Check(!control.Position.Equals(At(30, 50)),
+                "the armed 폭풍편 never chased either, so the check proves nothing");
+            Entity controlPrey = world.GetEntity(CarrierControlPrey);
+            Check(!controlPrey.Alive || controlPrey.Hp < controlPrey.MaxHp,
+                "the armed 폭풍편 never got a shot off, so the check proves nothing");
+
+            // Both orders, on a fresh world so the run above cannot have left the
+            // carrier in a mode of its own.
+            World ordered = BuildCarrierWorld();
+            ordered.Step(new List<Command>
+            {
+                new Command(0, 0, 0, CommandType.Attack, UnarmedCarrier, FixVec2.Zero, CarrierPrey),
+                new Command(0, 0, 1, CommandType.Attack, CarrierControl, FixVec2.Zero, CarrierControlPrey),
+            });
+            Check(ordered.GetEntity(UnarmedCarrier).Mode == OrderMode.None,
+                "an attack order put 경계 운반자 in " + ordered.GetEntity(UnarmedCarrier).Mode);
+            Check(ordered.GetEntity(UnarmedCarrier).TargetId < 0,
+                "an attack order gave 경계 운반자 victim " + ordered.GetEntity(UnarmedCarrier).TargetId);
+            Check(ordered.GetEntity(CarrierControl).Mode == OrderMode.Attack,
+                "the control 폭풍편 refused the attack order too, so the check proves nothing");
+
+            // Ordered at the prey's own cell, so a carrier that took the order would
+            // walk the whole way there and be standing on it at the end.
+            ordered.Step(new List<Command>
+            {
+                new Command(0, 0, 2, CommandType.AttackMove, UnarmedCarrier, At(35, 30)),
+            });
+            Check(ordered.GetEntity(UnarmedCarrier).Mode == OrderMode.None,
+                "an attack-move put 경계 운반자 in " + ordered.GetEntity(UnarmedCarrier).Mode);
+
+            for (int t = 0; t < CarrierTicks; t++) ordered.Step(idle);
+            Check(ordered.GetEntity(UnarmedCarrier).Position.Equals(At(30, 30)),
+                "경계 운반자 walked off under an order that was refused");
+            Check(ordered.GetEntity(CarrierPrey).Hp == ordered.GetEntity(CarrierPrey).MaxHp,
+                "경계 운반자 shot what it was ordered at");
+
+            // 이동식 반경 6칸. The radius walks, so the body has to.
+            ordered.Step(new List<Command>
+            {
+                new Command(0, 0, 3, CommandType.Move, UnarmedCarrier, At(30, 20)),
+            });
+            for (int t = 0; t < CarrierTicks; t++) ordered.Step(idle);
+            Check(ordered.GetEntity(UnarmedCarrier).Position.Equals(At(30, 20)),
+                "경계 운반자 cannot be moved by its owner, so 이동식 반경 moves nothing");
+        }
+
+        /// <summary>
+        /// Workers for prey, so neither of them shoots back and both halves of the
+        /// run are about what the attacker does rather than about who wins.
+        /// </summary>
+        private static World BuildCarrierWorld()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, World.PassageFaction);
+            world.SetPeerFaction(1, Faction.Hellfire);
+
+            world.SpawnUnit(0, World.CarrierRole, World.CarrierSlot, At(30, 30)); // UnarmedCarrier
+            world.SpawnWorker(1, At(35, 30));                                     // CarrierPrey, 5 out
+            world.SpawnUnit(0, Role.Melee, At(30, 50));                           // CarrierControl, 폭풍편
+            world.SpawnWorker(1, At(35, 50));                                     // CarrierControlPrey
+            return world;
         }
 
         /// <summary>One 지옥불 군단장 on an empty map, and nothing else at all.</summary>
@@ -2268,6 +2516,17 @@ namespace WordCraft.Replay
         /// <summary>The point every arrival fixture aims at: three cells off the anchor at (30, 30).</summary>
         private static FixVec2 Aim() => At(33, 30);
 
+        /// <summary>
+        /// What every 통로 below is ordered to make: 폭풍편, entry 0 of the melee
+        /// slot. Its price and clock are read off the roster rather than through
+        /// World.ProduceCost and World.ProduceTicks, which are the shared defaults
+        /// 차원 유랑종 stopped sitting on. A fixture that waited the shared forty
+        /// ticks for a fifty-tick body fails as "nothing arrived", which is a
+        /// sentence about the wait and not about the mechanic under test.
+        /// </summary>
+        private static ProductionCost StormShard =>
+            FactionData.Production(Faction.Driftworlds, Role.Melee, 0);
+
         private static World BuildPassageWorld()
         {
             var world = new World(Seed);
@@ -2319,7 +2578,7 @@ namespace WordCraft.Replay
         {
             var idle = new List<Command>();
             int standing = world.EntityCount;
-            for (int t = 0; t < World.ProduceTicks + 5 && world.EntityCount == standing; t++)
+            for (int t = 0; t < StormShard.Ticks + 5 && world.EntityCount == standing; t++)
             {
                 world.Step(idle);
             }
@@ -2327,6 +2586,119 @@ namespace WordCraft.Replay
                 what + " never arrived, or arrived more than once: " + world.EntityCount +
                 " bodies where " + (standing + 1) + " were due");
             return world.GetEntity(standing);
+        }
+
+        // 차원 유랑종 수치. A 정박한 세계 to order from and a 층위 관측대 behind it,
+        // because the 경계 운반자 is a signature body and tier 3 is shut without one.
+        private const int DriftBase = 0;
+        private const int DriftCarrier = 2;
+        private const int DriftBank = 1000;
+
+        /// <summary>
+        /// The numbers docs/FACTION-MECHANICS.md gives 차원 유랑종, pinned as numbers.
+        /// Every one of them sat on the shared 20자원 40틱 row until now, which is a
+        /// state the roster cannot report on its own: a faction that is meant to be
+        /// expensive and is quietly free plays a different game and breaks no
+        /// invariant while it does it.
+        ///
+        /// A faction still on the shared row is read back at the end; see the note
+        /// there for what that assertion does and does not catch.
+        ///
+        /// Then 경계 운반자 is charged through a real queue rather than read off the
+        /// table twice, because what the table says and what ProductionSystem spends
+        /// are two different claims.
+        /// </summary>
+        private static void TheDriftworldsRosterCarriesItsOwnNumbers()
+        {
+            // 화산편 40자원 35틱 체력 60. The hp is the shared worker row already,
+            // and is read back here anyway: the document names it, so a shared row
+            // retuned out from under it has to fail somewhere.
+            Pinned(Role.Worker, 0, "화산편", 40, 35);
+            PinnedHp(Role.Worker, 0, "화산편", 60);
+
+            // 폭풍편 60자원 50틱 체력 110, 근접, 피해 8.
+            Pinned(Role.Melee, 0, "폭풍편", 60, 50);
+            PinnedHp(Role.Melee, 0, "폭풍편", 110);
+            Check(FactionData.Stats(Faction.Driftworlds, Role.Melee, 0).Damage == 8,
+                "폭풍편 hits for " +
+                FactionData.Stats(Faction.Driftworlds, Role.Melee, 0).Damage);
+
+            // 굴절 기둥 체력 200. The document takes a third of its life away and
+            // none of its weapon; that it still has one is OnlyNonCombatantsAreUnarmed
+            // rather than a line here, which is where every combat slot in the game
+            // is already held armed.
+            PinnedHp(World.PillarRole, World.PillarSlot, "굴절 기둥", 200);
+
+            // 경계 운반자 130자원 90틱 체력 240. 비전투 is the same rule's business,
+            // and both halves of it — the weapon and what stands in for one — are
+            // OnlyNonCombatantsAreUnarmed and EveryUnarmedSlotIsWorthSomethingElse.
+            Pinned(World.CarrierRole, World.CarrierSlot, "경계 운반자", 130, 90);
+            PinnedHp(World.CarrierRole, World.CarrierSlot, "경계 운반자", 240);
+
+            // 도착: 통로에서 60틱. The clock for anything crossing that the table does
+            // not time by name, which today is 틈새 사수 alone.
+            Check(FactionData.Production(Faction.Driftworlds, Role.Ranged, 0).Ticks == 60,
+                "틈새 사수 crosses in " +
+                FactionData.Production(Faction.Driftworlds, Role.Ranged, 0).Ticks + " ticks");
+
+            // And nobody else moved. Every number above could have been landed by
+            // retuning the shared row, and five other factions would have come with
+            // it — so one of them is read back on that row, the way
+            // ProductionIsPricedPerRole reads 세계수 정령's signature back after
+            // pinning 지옥불 군단장's price.
+            //
+            // 물 슬라임 rather than 세계수 정령 on purpose. A shared-row retune trips
+            // ProductionStopsAtThePopulationCap long before this line, because the
+            // default faction is 세계수 정령 and half the harness spends
+            // World.ProduceCost through it. What this assertion is left holding is
+            // the narrower mistake: an override row written against the wrong
+            // faction, on a faction quiet enough that nothing above would notice.
+            Check(FactionData.Production(Faction.WaterSlimes, Role.Worker, 0).Resources ==
+                  FactionData.DefaultProduceCost &&
+                  FactionData.Production(Faction.WaterSlimes, Role.Worker, 0).Ticks ==
+                  FactionData.DefaultProduceTicks,
+                "차원 유랑종's numbers leaked onto 물 슬라임's worker: the shared row moved");
+
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Driftworlds);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // DriftBase
+            world.SpawnBuilding(0, Role.Tech, At(9, 5), complete: true); // opens tier 3
+            world.GrantResources(0, DriftBank);
+
+            int banked = world.GetResources(0);
+            var idle = new List<Command>();
+            world.Step(Produce(DriftBase, 0, 0, World.CarrierRole, World.CarrierSlot));
+            Check(world.GetResources(0) == banked - 130,
+                "queueing 경계 운반자 spent " + (banked - world.GetResources(0)));
+
+            // One tick short of the roster time, then the tick itself, like every
+            // other production check here: the order tick is the first of the 90, so
+            // 88 idle ones leave exactly one.
+            int born = world.EntityCount;
+            for (int t = 0; t < 88; t++) world.Step(idle);
+            Check(world.EntityCount == born, "경계 운반자 arrived before its 90 ticks were up");
+            world.Step(idle);
+            Check(world.EntityCount == born + 1, "경계 운반자 never arrived");
+
+            Entity carrier = world.GetEntity(DriftCarrier);
+            Check(carrier.Role == World.CarrierRole && carrier.Slot == World.CarrierSlot,
+                "the queue finished a " + carrier.Role + "[" + carrier.Slot + "]");
+        }
+
+        /// <summary>One 차원 유랑종 entry's price and clock, read back against the document.</summary>
+        private static void Pinned(Role role, int slot, string name, int resources, int ticks)
+        {
+            ProductionCost cost = FactionData.Production(Faction.Driftworlds, role, slot);
+            Check(cost.Resources == resources && cost.Ticks == ticks,
+                name + " is " + cost.Resources + "자원 " + cost.Ticks + "틱, expected " +
+                resources + "자원 " + ticks + "틱");
+        }
+
+        /// <summary>The same for one entry's hp.</summary>
+        private static void PinnedHp(Role role, int slot, string name, int hp)
+        {
+            int actual = FactionData.Stats(Faction.Driftworlds, role, slot).Hp;
+            Check(actual == hp, name + " stands on " + actual + " hp, expected " + hp);
         }
 
         /// <summary>
@@ -2373,7 +2745,7 @@ namespace WordCraft.Replay
             // the arrival would pass every position assertion and fail these.
             Check(world.EntityCount == PassageAnchor + 2,
                 "arriving through a " + anchor + " left " + world.EntityCount + " bodies standing");
-            Check(world.GetResources(0) == PassageBank - World.ProduceCost,
+            Check(world.GetResources(0) == PassageBank - StormShard.Resources,
                 "arriving through a " + anchor + " cost " + (PassageBank - world.GetResources(0)));
             Check(world.GetPopulation(0) == (carrier ? 2 : 1),
                 "arriving through a " + anchor + " moved the population count to " +
@@ -2400,7 +2772,7 @@ namespace WordCraft.Replay
 
             int standing = world.EntityCount;
             var idle = new List<Command>();
-            for (int t = 0; t < World.ProduceTicks + 5 && world.EntityCount == standing; t++)
+            for (int t = 0; t < StormShard.Ticks + 5 && world.EntityCount == standing; t++)
             {
                 world.Step(idle);
                 hashes.Add(world.Hash());
@@ -2467,18 +2839,31 @@ namespace WordCraft.Replay
             Check(!world.ArrivalValid(1, Aim()), "the enemy may arrive at this peer's 굴절 기둥");
         }
 
-        // Nine 지옥불 turrets standing around the 굴절 기둥, none of them on the cell
-        // the arrival is aimed at. Nine damage every twenty ticks each, so 81 lands
-        // on ticks 0, 20, 40 and 60 and a 300 hp pillar is down on tick 60: after
-        // the first body off the queue has arrived on tick 39 and before the second
-        // is due on tick 79. Each turret holds the pillar until it dies rather than
-        // trading it for the nearer body that arrives — an acquired target is only
-        // re-acquired once it stops being valid — so the clock above is the clock.
+        // Six 지옥불 turrets standing around the 굴절 기둥, none of them on the cell
+        // the arrival is aimed at. Nine damage every twenty ticks each, so 54 lands
+        // on ticks 0, 20, 40 and 60, and a 굴절 기둥 on the 체력 200 the document
+        // gives it has 38 left after tick 40 and is down on tick 60: after the first
+        // body off the queue has arrived on tick 49 and before the second is due on
+        // tick 99. Each turret holds the pillar until it dies rather than trading it
+        // for the nearer body that arrives — an acquired target is only re-acquired
+        // once it stops being valid — so the clock above is the clock.
+        //
+        // Nine turrets and a 300 hp pillar was the same window before 차원 유랑종 got
+        // its own numbers, and both ends of it moved at once: the pillar lost a
+        // third of its hp and 폭풍편's clock went from the shared 40 ticks to 50. The
+        // siege is sized to the pair, so a body arriving at tick 49 still finds the
+        // anchor standing and the one behind it still does not.
+        //
+        // (34, 29) is load-bearing beyond its damage: it stands 1.41 cells from the
+        // aimed point, inside 폭풍편's reach of 2. The arriving body acquires it and
+        // is already in range, so it fires without walking and the position read on
+        // its arrival tick is the arrival rather than the arrival plus one step of a
+        // chase. Drop that cell and this fixture fails by a quarter of a cell, which
+        // Show() rounds away into "arrived at (33, 30) and not at (33, 30)".
         private static readonly int[][] PillarSiege =
         {
-            new[] { 30, 26 }, new[] { 31, 26 }, new[] { 29, 26 },
-            new[] { 28, 27 }, new[] { 32, 27 }, new[] { 27, 28 },
-            new[] { 33, 28 }, new[] { 26, 29 }, new[] { 34, 29 },
+            new[] { 34, 29 }, new[] { 33, 28 }, new[] { 32, 27 },
+            new[] { 31, 26 }, new[] { 30, 26 }, new[] { 29, 26 },
         };
 
         private static World BuildDoomedPillarWorld()
@@ -2611,7 +2996,7 @@ namespace WordCraft.Replay
             world.Step(ProduceAt(Passage, 0, 0, aim));
             Entity passage = world.GetEntity(Passage);
             Check(passage.QueueCount == 1, "the unanchored order was refused rather than accepted");
-            Check(world.GetResources(0) == PassageBank - World.ProduceCost,
+            Check(world.GetResources(0) == PassageBank - StormShard.Resources,
                 "the unanchored order was not paid for in full");
             Check(!passage.HasArrivalPoint && passage.ArrivalPoint.Equals(FixVec2.Zero),
                 "a point nothing covered was kept on the 통로");
@@ -2921,11 +3306,18 @@ namespace WordCraft.Replay
                 "돌 골렘 부족's ranged slot is shut for every entry, so the refusals prove nothing");
         }
 
-        // 차원 유랑종's melee list holds three entries and no override row touches
-        // any of them, so all three carry the same stats and the same price. Two
-        // worlds that differ only in which one they name differ in nothing a peer
-        // can see except the entry number itself, which is what makes them the pair
-        // to hash.
+        // 차원 유랑종's melee list holds three entries: 폭풍편 with its own row, and
+        // the two 멸종 슬라임 behind it that no override touches. The pair to hash
+        // with is the second and the third — entries 1 and 2 — because two worlds
+        // that differ only in which of those they name differ in nothing a peer can
+        // see except the entry number itself.
+        //
+        // It used to be entries 0 and 1, and it stopped being them the day 폭풍편 got
+        // 체력 110 and 60자원 50틱 of its own. That is the premise failing loudly
+        // rather than the check quietly proving something else, which is what the
+        // two assertions at the top of the run are for.
+        private const int SlotHashLeft = 1;
+        private const int SlotHashRight = 2;
         private const int SlotHashBase = 0;
 
         /// <summary>
@@ -2942,28 +3334,30 @@ namespace WordCraft.Replay
             // The premise: these entries are indistinguishable except by number.
             // Were they priced or statted apart, the hashes would differ for
             // reasons that say nothing about whether the entry itself is hashed.
-            UnitStats first = FactionData.Stats(Faction.Driftworlds, Role.Melee, 0);
-            UnitStats second = FactionData.Stats(Faction.Driftworlds, Role.Melee, 1);
+            UnitStats first = FactionData.Stats(Faction.Driftworlds, Role.Melee, SlotHashLeft);
+            UnitStats second = FactionData.Stats(Faction.Driftworlds, Role.Melee, SlotHashRight);
             Check(first.Hp == second.Hp && first.Speed.Raw == second.Speed.Raw &&
                   first.Damage == second.Damage && first.Range.Raw == second.Range.Raw &&
                   first.AttackTicks == second.AttackTicks && first.Air == second.Air,
-                "차원 유랑종's first two melee entries are statted apart, so this check proves nothing");
-            Check(FactionData.Production(Faction.Driftworlds, Role.Melee, 0).Resources ==
-                  FactionData.Production(Faction.Driftworlds, Role.Melee, 1).Resources &&
-                  FactionData.Production(Faction.Driftworlds, Role.Melee, 0).Ticks ==
-                  FactionData.Production(Faction.Driftworlds, Role.Melee, 1).Ticks,
-                "차원 유랑종's first two melee entries are priced apart, so this check proves nothing");
+                "차원 유랑종 melee entries " + SlotHashLeft + " and " + SlotHashRight +
+                " are statted apart, so this check proves nothing");
+            Check(FactionData.Production(Faction.Driftworlds, Role.Melee, SlotHashLeft).Resources ==
+                  FactionData.Production(Faction.Driftworlds, Role.Melee, SlotHashRight).Resources &&
+                  FactionData.Production(Faction.Driftworlds, Role.Melee, SlotHashLeft).Ticks ==
+                  FactionData.Production(Faction.Driftworlds, Role.Melee, SlotHashRight).Ticks,
+                "차원 유랑종 melee entries " + SlotHashLeft + " and " + SlotHashRight +
+                " are priced apart, so this check proves nothing");
 
             // On the body. Spawned rather than produced, so nothing but the entry
             // number has had a chance to move.
-            Check(SpawnedSlotHash(0) != SpawnedSlotHash(1),
+            Check(SpawnedSlotHash(SlotHashLeft) != SpawnedSlotHash(SlotHashRight),
                 "two worlds holding different roster entries hash the same: Entity.Slot is not in World.Hash()");
 
             // On the queue. Stopped one tick after the order, while the entry is
             // still only a number on the building: run to completion the two would
             // differ by the spawned body's own entry as well, and this half is
             // about the field the building carries in the meantime.
-            Check(QueuedSlotHash(0) != QueuedSlotHash(1),
+            Check(QueuedSlotHash(SlotHashLeft) != QueuedSlotHash(SlotHashRight),
                 "two worlds queueing different roster entries hash the same: Entity.ProduceSlot is not in World.Hash()");
         }
 
