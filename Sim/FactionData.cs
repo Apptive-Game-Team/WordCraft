@@ -112,6 +112,16 @@ namespace WordCraft.Sim
         /// and none of it is no weapon.
         /// </summary>
         public bool HasWeapon => Damage > 0;
+
+        /// <summary>
+        /// How many ticks a body of this row lives once it is spawned, or 0 for a
+        /// body that lives until something kills it, which is every row but the
+        /// five 멸종 슬라임 of 차원 유랑종 (docs/TECH-TREE.md M10, 묶음 6). Roster
+        /// data rather than entity state for the reason <see cref="Air"/> is.
+        /// What a body carries is the tick it lapses on, World's
+        /// Entity.ExpireTick, which is hashed; this number only decides it.
+        /// </summary>
+        public int Lifetime;
     }
 
     /// <summary>
@@ -376,6 +386,11 @@ namespace WordCraft.Sim
         ChainDischarge = 47,
         AmplifyRadius = 48,
         MarkAmount = 49,
+
+        // docs/TECH-TREE.md 연구 행 배치, 묶음 6: summons that lapse and bursts.
+
+        // 차원 유랑종: 멸종 슬라임 수명 600 → 800틱.
+        SummonLifetime = 50,
     }
 
     /// <summary>
@@ -1717,6 +1732,31 @@ namespace WordCraft.Sim
         }
 
         /// <summary>
+        /// 한시 소환, docs/TECH-TREE.md 차원 유랑종 유닛: how long a 멸종 슬라임
+        /// lives once it arrives, in ticks. Six hundred, thirty seconds.
+        /// </summary>
+        public const int SummonLifetime = 600;
+
+        /// <summary>The lifetime once 소환 수명 is researched. See World.LifetimeFor.</summary>
+        public const int SummonLifetimeResearched = 800;
+
+        /// <summary>
+        /// The rows that lapse, docs/TECH-TREE.md M10: the five 멸종 슬라임 of
+        /// 차원 유랑종, each SummonLifetime. Written onto UnitStats.Lifetime by the
+        /// static constructor, after the stat overrides, so three of the five can
+        /// keep the shared row they fight from and still lapse. Every other row
+        /// lives until it is killed.
+        /// </summary>
+        private static readonly (Faction Faction, Role Role, int Slot, int Ticks)[] lifetimes =
+        {
+            (Faction.Driftworlds, Role.Melee, 1, SummonLifetime), // 멸종한 화염 슬라임
+            (Faction.Driftworlds, Role.Melee, 2, SummonLifetime), // 멸종한 바위 슬라임
+            (Faction.Driftworlds, Role.Ranged, 1, SummonLifetime), // 멸종한 번개 슬라임
+            (Faction.Driftworlds, Role.Ranged, 3, SummonLifetime), // 멸종한 바람 슬라임
+            (Faction.Driftworlds, Role.Signature, 3, SummonLifetime), // 멸종한 자연 슬라임
+        };
+
+        /// <summary>
         /// The most rows any faction's upgrade table holds. Sizes the per-peer
         /// level array World hashes, so a faction given a ninth row has to move
         /// this too, and the type load refuses a table that outgrows it. Eight
@@ -1724,7 +1764,9 @@ namespace WordCraft.Sim
         /// eight rows each. Nine since 묶음 4 (#197): 씨앗 요람 반경 and 위상 닻
         /// 반경 are the ninth rows of 세계수 정령 and 차원 유랑종. Twelve since 묶음 5
         /// (#200): 지옥불 군단 gains four rows (화염탄, 피 냄새, 화상 오라 강화, 집결
-        /// 반경) on top of its eight.
+        /// 반경) on top of its eight. Still twelve after 묶음 6 (#202): 세계수 정령
+        /// grows to twelve with 과부하 강화 and 차원 유랑종 to twelve with 소환 수명,
+        /// 층위 고정 반경 and 화염 분출 강화.
         /// </summary>
         public const int MaxUpgrades = 12;
 
@@ -1861,6 +1903,9 @@ namespace WordCraft.Sim
             (Faction.Humans, ResearchRow("연쇄 방전", 125, 200, 2, UpgradeEffect.ChainDischarge, (Role.Tech, 1), NoBuilding)),
             (Faction.Humans, ResearchRow("증폭 반경", 100, 160, 2, UpgradeEffect.AmplifyRadius, (Role.Tech, 1), NoBuilding)),
             (Faction.Humans, ResearchRow("표식 강화", 100, 160, 2, UpgradeEffect.MarkAmount, (Role.Tech, 1), NoBuilding)),
+
+            // docs/TECH-TREE.md 묶음 6 (#202): summons that lapse and bursts.
+            (Faction.Driftworlds, ResearchRow("소환 수명", 150, 200, 3, UpgradeEffect.SummonLifetime, (Role.Tech, 0), NoBuilding)),
         };
 
         /// <summary>
@@ -2240,6 +2285,21 @@ namespace WordCraft.Sim
                 else extraStats[ExtraIndex(faction, role, slot)] = replacement;
             }
 
+            // After the overrides, so a row that keeps the shared stats still
+            // lapses. A body that lapses has to walk on the field and be spawned
+            // through SpawnUnit, where its clock is set: a building or a worker
+            // never reaches that line, and neither does a body that grows into
+            // its row, which RequireGrowthSources refuses.
+            for (int i = 0; i < lifetimes.Length; i++)
+            {
+                var (faction, role, slot, ticks) = lifetimes[i];
+                RequireFielded(faction, role, slot, "lifetimes");
+                Require(!IsBuilding(role) && role != Role.Worker, "lifetimes row " + i + " is not a combat body");
+                Require(ticks > 0, "lifetimes row " + i + " lapses at once");
+                if (slot == 0) stats[Index(faction, role)].Lifetime = ticks;
+                else extraStats[ExtraIndex(faction, role, slot)].Lifetime = ticks;
+            }
+
             for (int i = 0; i < productionOverrides.Length; i++)
             {
                 var (faction, role, slot, replacement) = productionOverrides[i];
@@ -2440,6 +2500,9 @@ namespace WordCraft.Sim
                 // A spawner's clock is armed in SpawnUnit, which a growth never
                 // passes through, so a body that grew into one would never emit.
                 Require(!Spawner(faction, role, slot).Spawns, "growthTargets row " + i + " grows into a spawner");
+                // ExpireTick is set in SpawnUnit too, so a body that grew into a
+                // row that lapses would live for ever.
+                Require(Stats(faction, role, slot).Lifetime == 0, "growthTargets row " + i + " grows into a summon that lapses");
             }
         }
 
