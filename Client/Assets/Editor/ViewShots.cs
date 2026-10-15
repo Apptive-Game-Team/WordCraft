@@ -714,14 +714,18 @@ namespace WordCraft.View
         {
             List<Command>[] log = ScriptedLog.Build();
             Moments(log, out int shotTick, out Vector2 shotAt, out int killTick, out Vector2 killAt,
-                    out int spawnTick, out Vector2 spawnAt);
+                    out int spawnTick, out Vector2 spawnAt, out int finishTick, out Vector2 finishAt,
+                    out int razeTick, out Vector2 razeAt);
             Debug.Log("match strips: first ranged shot at tick " + shotTick + ", first unit death at tick " + killTick +
-                      ", first produced unit at tick " + spawnTick);
+                      ", first produced unit at tick " + spawnTick + ", first site finished at tick " + finishTick +
+                      ", first building razed at tick " + razeTick);
 
             int written = 0;
             if (shotTick >= 0) { MatchStrip(output, "fight", log, shotTick, shotAt); written++; }
             if (killTick >= 0) { MatchStrip(output, "kill", log, killTick, killAt); written++; }
             if (spawnTick >= 0) { MatchStrip(output, "spawn", log, spawnTick, spawnAt); written++; }
+            if (finishTick >= 0) { MatchStrip(output, "build", log, finishTick, finishAt); written++; }
+            if (razeTick >= 0) { MatchStrip(output, "raze", log, razeTick, razeAt); written++; }
             return written;
         }
 
@@ -735,17 +739,20 @@ namespace WordCraft.View
         /// an id appearing.
         /// </summary>
         private static void Moments(List<Command>[] log, out int shotTick, out Vector2 shotAt,
-                                    out int killTick, out Vector2 killAt, out int spawnTick, out Vector2 spawnAt)
+                                    out int killTick, out Vector2 killAt, out int spawnTick, out Vector2 spawnAt,
+                                    out int finishTick, out Vector2 finishAt, out int razeTick, out Vector2 razeAt)
         {
-            shotTick = killTick = spawnTick = -1;
-            shotAt = killAt = spawnAt = Vector2.zero;
+            shotTick = killTick = spawnTick = finishTick = razeTick = -1;
+            shotAt = killAt = spawnAt = finishAt = razeAt = Vector2.zero;
             World world = Scripted();
             var cooldowns = new List<int>();
             var alive = new List<bool>();
+            var sites = new List<int>();
             for (int i = 0; i < world.EntityCount; i++)
             {
                 cooldowns.Add(world.GetEntity(i).AttackCooldown);
                 alive.Add(world.GetEntity(i).Alive);
+                sites.Add(world.GetEntity(i).BuildTicksLeft);
             }
 
             for (int t = 0; t < log.Length; t++)
@@ -758,6 +765,7 @@ namespace WordCraft.View
                     {
                         cooldowns.Add(e.AttackCooldown);
                         alive.Add(e.Alive);
+                        sites.Add(e.BuildTicksLeft);
                         if (spawnTick < 0 && e.Kind == EntityKind.Unit)
                         {
                             spawnTick = world.Tick;
@@ -778,8 +786,22 @@ namespace WordCraft.View
                         killAt = MatchRunner.ToView(e.Position);
                         Debug.Log("match strips: entity " + i + " (" + e.Role + ", peer " + e.Owner + ") dies at tick " + killTick);
                     }
+                    // A site finishing and a building razed (issue #186), read the
+                    // way MatchView reads them: BuildTicksLeft reaching zero, Alive
+                    // going false on a building.
+                    if (finishTick < 0 && e.Kind == EntityKind.Building && e.Alive && sites[i] > 0 && e.BuildTicksLeft == 0)
+                    {
+                        finishTick = world.Tick;
+                        finishAt = MatchRunner.ToView(e.Position);
+                    }
+                    if (razeTick < 0 && alive[i] && !e.Alive && e.Kind == EntityKind.Building)
+                    {
+                        razeTick = world.Tick;
+                        razeAt = MatchRunner.ToView(e.Position);
+                    }
                     cooldowns[i] = e.AttackCooldown;
                     alive[i] = e.Alive;
+                    sites[i] = e.BuildTicksLeft;
                 }
             }
         }
