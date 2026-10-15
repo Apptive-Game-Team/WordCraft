@@ -99,7 +99,15 @@ inline fixed4 LightingWcPaper(SurfaceOutput s, fixed3 lightDir, fixed3 viewDir, 
     // A cast shadow lands in the shade band and goes no lower. A shadow that
     // reached black would separate shapes by stroke, which is the one thing the
     // style forbids, and on a dark palette it reads as a hole in the map.
-    half lit = max(ndl, 0.0h) * lerp(_WcBands.z, 1.0h, atten);
+    //
+    // Faces turned only just past the shade threshold take a cast shadow by
+    // degrees. On those, the soft shadow filter's small variations in atten
+    // were enough to flip the band back and forth and speckled the jittered
+    // cliff strata; easing the shadow in over 0.12 of n·l past the threshold
+    // keeps a face either lit or shaded. A face in full shadow still drops into
+    // the shade band unless its n·l is within about 0.02 of the threshold.
+    half shadowed = lerp(1.0h, atten, smoothstep(_WcBands.x, _WcBands.x + 0.12h, ndl));
+    half lit = max(ndl, 0.0h) * lerp(_WcBands.z, 1.0h, shadowed);
     half3 direct = s.Albedo * _LightColor0.rgb * WcBand(lit);
 
     half3 colour = direct;
