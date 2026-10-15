@@ -20,7 +20,7 @@ namespace WordCraft.View
         /// on. Update it only when the simulation intentionally changes, and only
         /// after both runtimes agree on the new value.
         /// </summary>
-        public const ulong GoldenHash = 0xA8461E0C5D70DE8AUL;
+        public const ulong GoldenHash = 0xC9E3B6CFC16E4BA9UL;
 
         /// <summary>
         /// The factions the golden hash was taken over. Factions are hashed, so
@@ -33,6 +33,12 @@ namespace WordCraft.View
         // Ids are handed out in MatchScenario.Build order and never reused.
         private const int Base0 = 0, Worker0A = 1, Worker0B = 2, Melee0 = 3, Ranged0 = 4, Node0 = 5;
         private const int Base1 = 6, Worker1A = 7, Worker1B = 8, Melee1 = 9, Ranged1 = 10, Node1 = 11;
+
+        // Peer 0's 기술 건물, placed by the Build at tick 380. Ids are handed out
+        // in order and never reused, so it is 24 on every run of this log;
+        // Replay's UpgradeChecks.ScriptedLogResearches asserts the id still
+        // names it and that the order lands.
+        private const int Tech0 = 24;
 
         public static List<Command>[] Build()
         {
@@ -76,6 +82,12 @@ namespace WordCraft.View
             Add(log, 300, 1, seq, CommandType.Produce, Base1, FixVec2.Zero, 0);
             Add(log, 420, 0, seq, CommandType.Produce, Base0, FixVec2.Zero, 0);
             Add(log, 420, 1, seq, CommandType.Produce, Base1, FixVec2.Zero, 0);
+
+            // One research, on the 기술 건물 that finished at 500, so the golden
+            // hash covers the Research command, the price it takes and the
+            // ResearchSystem clock. 공격력 level 1 is 50 and peer 0 has 75 by then;
+            // the level itself lands at 665, past the end of the log.
+            Add(log, 505, 0, seq, CommandType.Research, Tech0, FixVec2.Zero, 0);
 
             for (int t = 60; t < Ticks; t += 37)
             {

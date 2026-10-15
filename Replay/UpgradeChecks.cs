@@ -40,6 +40,7 @@ namespace WordCraft.Replay
             ResearchedPassageArrivesInFortyTicks();
             ResearchedCaptureTakesFortyTicks();
             TheAiResearchesInTheSoloMatch();
+            ScriptedLogResearches();
         }
 
         // ---------------------------------------------------------------------
@@ -524,6 +525,32 @@ namespace WordCraft.Replay
                 }
             }
             Check(researched, "the AI never started a research in the solo match");
+        }
+
+        /// <summary>
+        /// The client's scripted log carries one Research, so the golden hash both
+        /// runtimes assert covers the command and the clock. A refused order
+        /// changes no state, and a log whose research was silently refused would
+        /// hash identically on both runtimes and cover nothing, so the order is
+        /// checked to have landed: the named entity is peer 0's 기술 건물 and it is
+        /// still researching 공격력 when the log ends.
+        /// </summary>
+        private static void ScriptedLogResearches()
+        {
+            List<Command>[] log = ScriptedLog.Build();
+            World world = MatchScenario.Build(Seed, ScriptedLog.Peer0Faction, ScriptedLog.Peer1Faction);
+            int tech = -1;
+            for (int t = 0; t < log.Length; t++)
+            {
+                world.Step(log[t]);
+                foreach (Command c in log[t]) if (c.Type == CommandType.Research) tech = c.EntityId;
+            }
+
+            Check(tech >= 0, "the scripted log carries no Research");
+            Entity b = world.GetEntity(tech);
+            Check(b.Alive && b.Owner == 0 && b.Role == Role.Tech, "the scripted log's Research names entity " + tech +
+                ", which is not peer 0's 기술 건물");
+            Check(b.ResearchIndex == 0 && b.ResearchTicksLeft > 0, "the scripted log's Research was refused");
         }
 
         // ---------------------------------------------------------------------
