@@ -38,7 +38,7 @@ namespace WordCraft.Sim
     /// moment, and the only field it could live in is a field nobody has to have.
     ///
     /// A threat can arrive rather than approach. ProductionSystem and
-    /// WarlordSpawnSystem both run before combat and therefore before this, so a
+    /// SpawnerSystem both run before combat and therefore before this, so a
     /// body that stood up on tick T is fled from on tick T — the same boundary an
     /// offspring's first shot already gets.
     ///

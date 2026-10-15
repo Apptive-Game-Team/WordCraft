@@ -631,7 +631,7 @@ namespace WordCraft.Sim
         {
             UnitStats s = FactionData.Stats(factions[owner], role, slot);
             int id = Add(EntityKind.Unit, owner, role, slot, position, s.Speed, hpOverride < 0 ? s.Hp : hpOverride);
-            ArmWarlord(id);
+            ArmSpawner(id);
             return id;
         }
 
@@ -736,7 +736,7 @@ namespace WordCraft.Sim
                 ConstructionSystem();
                 ProductionSystem();
                 ResearchSystem();
-                WarlordSpawnSystem();
+                SpawnerSystem();
                 CombatSystem();
                 FleeSystem();
                 MoveSystem();

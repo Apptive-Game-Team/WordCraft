@@ -452,9 +452,9 @@ namespace WordCraft.Replay
             };
 
         /// <summary>
-        /// docs/TECH-TREE.md 연구 행 배치 묶음 3, each row as its faction's
-        /// 업그레이드 table gives it, in the order the faction's table appends them
-        /// behind the four rows of #164.
+        /// docs/TECH-TREE.md 연구 행 배치 묶음 3 and 묶음 4 (#197), each row as its
+        /// faction's 업그레이드 table gives it, in the order the faction's table
+        /// appends them behind the four rows of #164.
         /// </summary>
         private static readonly ResearchRow[] NewResearch =
         {
@@ -467,6 +467,8 @@ namespace WordCraft.Replay
             Research(Faction.Hellfire, "용암 투석 사거리", 150, 200, 3, UpgradeEffect.LavaCatapultRange, Role.Tech, 0, Role.None, 0),
             Research(Faction.Hellfire, "재날개 공격 주기", 100, 160, 3, UpgradeEffect.AshWingAttackTicks, Role.Tech, 0, Role.None, 0),
             Research(Faction.Hellfire, "갑각 경화", 150, 200, 3, UpgradeEffect.HardenedCarapace, Role.Tech, 1, Role.Tech, 0),
+            // 묶음 4 (#197): read off the spawner table, not an entry.
+            Research(Faction.Hellfire, "산란 상한", 100, 160, 2, UpgradeEffect.BroodCap, Role.Tech, 1, Role.None, 0),
             // 물 슬라임
             Research(Faction.WaterSlimes, "물결 궁수 사거리", 125, 200, 2, UpgradeEffect.ArcherRange, Role.Tech, 1, Role.None, 0),
             Research(Faction.WaterSlimes, "침 사거리", 75, 120, 2, UpgradeEffect.SpitterRange, Role.Tech, 1, Role.None, 0),
@@ -488,7 +490,7 @@ namespace WordCraft.Replay
 
         private static void TheResearchRowsAreTheDocumentedOnes()
         {
-            int[] counts = { 8, 7, 7, 6, 8, 8 };
+            int[] counts = { 8, 8, 7, 6, 8, 8 };
             for (int f = 0; f < FactionData.FactionCount; f++)
             {
                 var faction = (Faction)f;

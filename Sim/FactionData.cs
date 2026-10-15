@@ -163,6 +163,44 @@ namespace WordCraft.Sim
     }
 
     /// <summary>
+    /// One roster entry that emits free bodies on a clock: docs/TECH-TREE.md
+    /// 데이터 모델 확장 M8. What it emits, how often, how many it keeps alive,
+    /// and which research rows move the clock and the cap. Default on the
+    /// struct has Spawns false, so an entry nobody wrote emits nothing.
+    ///
+    /// Static, like every table in FactionData. What a spawner has done so far
+    /// is the state it already carries — SpawnCooldown, OffspringCount, and
+    /// each child's ParentId — so a second spawner costs no hashed field.
+    /// </summary>
+    public struct SpawnerRow
+    {
+        public Faction Faction;
+        public Role Role;
+        public int Slot;
+
+        /// <summary>The entry each emission is, owned by the spawner's owner.</summary>
+        public Role ChildRole;
+        public int ChildSlot;
+
+        /// <summary>Whole ticks between one emission and the next.</summary>
+        public int Ticks;
+
+        /// <summary>Most children of one spawner alive at once.</summary>
+        public int Cap;
+
+        /// <summary>The research row that shortens Ticks, or None.</summary>
+        public UpgradeEffect TicksEffect;
+        public int TicksResearched;
+
+        /// <summary>The research row that raises Cap, or None.</summary>
+        public UpgradeEffect CapEffect;
+        public int CapResearched;
+
+        /// <summary>Whether this is a row at all. False on the default struct.</summary>
+        public bool Spawns;
+    }
+
+    /// <summary>
     /// What one row of the upgrade table changes. Not hashed — a level is hashed,
     /// and the effect is read back off the row the level belongs to — but kept
     /// in a fixed order anyway, because the harness names rows by it.
@@ -238,6 +276,13 @@ namespace WordCraft.Sim
         ArcaneRiderSpeed = 32,
         BindingRange = 33,
         BindingArmor = 34,
+
+        // docs/TECH-TREE.md 연구 행 배치, 묶음 4: one number of a mechanic
+        // table row. Which row and what value is the table itself
+        // (FactionData.spawners, arrivals, freeQueues).
+
+        // 지옥불 군단: 잿불 새끼 상한 3 → 4.
+        BroodCap = 35,
     }
 
     /// <summary>
@@ -618,7 +663,7 @@ namespace WordCraft.Sim
 
             // 지옥불 군단장의 자손. Airborne, shorter reach and lighter hit than the
             // shared ranged row. Free and spawned rather than produced, which is
-            // what productionOverrides below says and World.WarlordSpawnSystem does.
+            // what productionOverrides below says and World.SpawnerSystem does.
             // Entry 0 only: 균열 파수병 is entry 1 and holds the ground on the
             // shared ranged row, which is the whole reason this key names a slot.
             (Faction.Hellfire, Role.Ranged, 0,
@@ -1272,6 +1317,63 @@ namespace WordCraft.Sim
             growthTargets[index];
 
         /// <summary>
+        /// Every roster entry that emits free bodies on a clock, docs/TECH-TREE.md
+        /// M8. 지옥불 군단장 carries the numbers it has always had — 100 ticks and
+        /// five 자손, the two World constants — and 산란 악마 is the second row:
+        /// a 잿불 새끼 every 120 ticks, three alive. Walked in declaration order,
+        /// never through a keyed collection, for the reason
+        /// <see cref="growthTargets"/> is.
+        ///
+        /// Each row names its own research. 군단 확장 and 산란 가속 move the
+        /// warlord's row and nothing else; 산란 상한 moves the 산란 악마's cap.
+        /// </summary>
+        private static readonly SpawnerRow[] spawners =
+        {
+            // 지옥불 군단장 → 자손. 100틱, 5기. 연구: 70틱, 7기.
+            Spawner(Faction.Hellfire, Role.Signature, 0, Role.Ranged, 0,
+                World.WarlordSpawnTicks, World.WarlordOffspring,
+                UpgradeEffect.OffspringPeriod, World.WarlordSpawnTicksResearched,
+                UpgradeEffect.OffspringCap, World.WarlordOffspringResearched),
+            // 산란 악마 → 잿불 새끼. 120틱, 3기. 연구: 산란 상한 4기.
+            Spawner(Faction.Hellfire, Role.Signature, 1, Role.Melee, 3,
+                120, 3,
+                UpgradeEffect.None, 0,
+                UpgradeEffect.BroodCap, 4),
+        };
+
+        private static SpawnerRow Spawner(Faction faction, Role role, int slot, Role childRole, int childSlot,
+            int ticks, int cap, UpgradeEffect ticksEffect, int ticksResearched, UpgradeEffect capEffect, int capResearched) =>
+            new SpawnerRow
+            {
+                Faction = faction, Role = role, Slot = slot,
+                ChildRole = childRole, ChildSlot = childSlot,
+                Ticks = ticks, Cap = cap,
+                TicksEffect = ticksEffect, TicksResearched = ticksResearched,
+                CapEffect = capEffect, CapResearched = capResearched,
+                Spawns = true,
+            };
+
+        /// <summary>
+        /// The spawner row of one entry, or a default row with Spawns false. A
+        /// linear scan in declaration order.
+        /// </summary>
+        public static SpawnerRow Spawner(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < spawners.Length; i++)
+            {
+                SpawnerRow row = spawners[i];
+                if (row.Faction == faction && row.Role == role && row.Slot == slot) return row;
+            }
+            return new SpawnerRow();
+        }
+
+        /// <summary>How many rows the spawner table holds, for the harness.</summary>
+        public static int SpawnerCount => spawners.Length;
+
+        /// <summary>One row of the spawner table, in declaration order.</summary>
+        public static SpawnerRow SpawnerAt(int index) => spawners[index];
+
+        /// <summary>
         /// The most rows any faction's upgrade table holds. Sizes the per-peer
         /// level array World hashes, so a faction given a ninth row has to move
         /// this too, and the type load refuses a table that outgrows it. Eight
@@ -1369,6 +1471,8 @@ namespace WordCraft.Sim
             (Faction.Hellfire, ResearchRow("용암 투석 사거리", 150, 200, 3, UpgradeEffect.LavaCatapultRange, (Role.Tech, 0), NoBuilding)),
             (Faction.Hellfire, ResearchRow("재날개 공격 주기", 100, 160, 3, UpgradeEffect.AshWingAttackTicks, (Role.Tech, 0), NoBuilding)),
             (Faction.Hellfire, ResearchRow("갑각 경화", 150, 200, 3, UpgradeEffect.HardenedCarapace, (Role.Tech, 1), (Role.Tech, 0))),
+            // docs/TECH-TREE.md 묶음 4. 잿불 새끼 상한 3 → 4, read off the spawner table.
+            (Faction.Hellfire, ResearchRow("산란 상한", 100, 160, 2, UpgradeEffect.BroodCap, (Role.Tech, 1), NoBuilding)),
 
             // 물 슬라임, docs/TECH-TREE.md 묶음 3.
             (Faction.WaterSlimes, ResearchRow("물결 궁수 사거리", 125, 200, 2, UpgradeEffect.ArcherRange, (Role.Tech, 1), NoBuilding)),
@@ -1712,6 +1816,44 @@ namespace WordCraft.Sim
                         "entryUpgrades gives " + faction + " " + role + " " + slot + " two " + stat + " values");
                 }
             }
+
+            RequireMechanicTables();
+        }
+
+        /// <summary>
+        /// The mechanic tables of docs/TECH-TREE.md 묶음 4, checked the way the
+        /// tech tree tables above are: every entry they name is fielded, and every
+        /// research row they read is one the faction can research. Called from the
+        /// static constructor.
+        /// </summary>
+        private static void RequireMechanicTables()
+        {
+            for (int i = 0; i < spawners.Length; i++)
+            {
+                SpawnerRow row = spawners[i];
+                RequireFielded(row.Faction, row.Role, row.Slot, "spawners");
+                RequireFielded(row.Faction, row.ChildRole, row.ChildSlot, "spawners");
+                Require(!IsBuilding(row.Role) && !IsBuilding(row.ChildRole), "spawners row " + i + " names a building");
+                Require(row.Ticks > 0 && row.Cap > 0, "spawners row " + i + " never emits");
+                RequireResearchable(row.Faction, row.TicksEffect, "spawners");
+                RequireResearchable(row.Faction, row.CapEffect, "spawners");
+                for (int j = 0; j < i; j++)
+                {
+                    Require(spawners[j].Faction != row.Faction || spawners[j].Role != row.Role || spawners[j].Slot != row.Slot,
+                        "spawners lists " + row.Faction + " " + row.Role + " " + row.Slot + " twice");
+                }
+            }
+        }
+
+        private static void RequireResearchable(Faction faction, UpgradeEffect effect, string table)
+        {
+            if (effect == UpgradeEffect.None) return;
+            bool listed = false;
+            for (int u = 0; u < UpgradeCount(faction); u++)
+            {
+                if (Upgrade(faction, u).Effect == effect) listed = true;
+            }
+            Require(listed, table + " names " + effect + ", which " + faction + " cannot research");
         }
 
         private static void Require(bool holds, string what)

@@ -46,9 +46,9 @@ namespace WordCraft.Sim
     /// worker is a Worker and then a Unit, so neither ever sees it. PopulationCap
     /// and TierOf read Role off buildings only, for the same reason.
     ///
-    /// WarlordSpawnSystem reads Kind and Role through IsWarlord, which also asks
-    /// the faction. 세계수 정령 is not 지옥불, so this answers false before and
-    /// after. The order matters anyway: growth runs before it, so a body that
+    /// SpawnerSystem reads Kind, Role and Slot through the spawner table, which is
+    /// keyed by faction. 세계수 정령 has no row there, so this answers false before
+    /// and after. The order matters anyway: growth runs before it, so a body that
     /// became a Signature this tick would be armed for this tick's spawn pass, and
     /// the faction test is what makes that a fact about 지옥불 rather than luck.
     ///
