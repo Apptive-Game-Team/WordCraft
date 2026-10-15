@@ -284,7 +284,19 @@ namespace WordCraft.View
         /// The building motions of issue #186, each over three buildings of one
         /// faction: a site assembling, a building at work, a building razed.
         /// </summary>
-        private static readonly string[] BuildingMotions = { "build", "work", "destroy" };
+        private static readonly string[] BuildingMotions = { "build", "work", "destroy", "sitedestroy" };
+
+        /// <summary>
+        /// How far built a sitedestroy strip's sites are: halfway, so the fall
+        /// starts from a pose with parts still missing and parts still rising.
+        /// </summary>
+        private const float SiteDestroyProgress = 0.5f;
+
+        /// <summary>
+        /// How long a sitedestroy strip's sites stand after Die before they
+        /// fall: the hold a tracer still in the air puts on a death in MatchView.
+        /// </summary>
+        private const float HeldDeath = 0.25f;
 
         /// <summary>
         /// How long a build strip takes to go from nothing to finished: six of the
@@ -468,6 +480,7 @@ namespace WordCraft.View
                     if (!towers && !buildings) Turn(rigs[i], FacingYaw);
                     if (growth && i % 2 == 1) rigs[i].Spawn(1e6f); // not there until the worker has swelled
                     if (motion == "build") rigs[i].Progress(0f); // a bare site through the preroll
+                    if (motion == "sitedestroy") rigs[i].Progress(SiteDestroyProgress);
                     if (motion == "work") rigs[i].Work(true);   // at work through the preroll, so motes are already up
                     // Fix is cells a tick; a strip walks at the roster's own pace.
                     speeds[i] = FactionData.Stats(faction, cast[i].Role, cast[i].Slot).Speed.Raw / (float)Fix.One * World.TicksPerSecond;
@@ -536,6 +549,9 @@ namespace WordCraft.View
                         break;
                     case "destroy":
                         rigs[i].Die(false);
+                        break;
+                    case "sitedestroy":
+                        rigs[i].Die(false, HeldDeath);
                         break;
                 }
             }
@@ -736,19 +752,17 @@ namespace WordCraft.View
             List<Command>[] log = ScriptedLog.Build();
             Moments(log, out int shotTick, out Vector2 shotAt, out int killTick, out Vector2 killAt,
                     out int spawnTick, out Vector2 spawnAt, out int finishTick, out Vector2 finishAt);
-            int razeTick = Razed(false, out Vector2 razeAt);
-            int siteTick = Razed(true, out Vector2 siteAt);
+            int razeTick = Razed(out Vector2 razeAt);
             Debug.Log("match strips: first ranged shot at tick " + shotTick + ", first unit death at tick " + killTick +
                       ", first produced unit at tick " + spawnTick + ", first site finished at tick " + finishTick +
-                      ", siege razes the building at tick " + razeTick + " and the site at tick " + siteTick);
+                      ", siege razes the building at tick " + razeTick);
 
             int written = 0;
             if (shotTick >= 0) { MatchStrip(output, "fight", log, shotTick, shotAt); written++; }
             if (killTick >= 0) { MatchStrip(output, "kill", log, killTick, killAt); written++; }
             if (spawnTick >= 0) { MatchStrip(output, "spawn", log, spawnTick, spawnAt); written++; }
             if (finishTick >= 0) { MatchStrip(output, "build", log, finishTick, finishAt); written++; }
-            if (razeTick >= 0) { MatchStrip(output, "raze", NoLog, razeTick, razeAt, () => Siege(false), SiegeCells, SiegeTicksPerFrame); written++; }
-            if (siteTick >= 0) { MatchStrip(output, "razesite", NoLog, siteTick, siteAt, () => Siege(true), SiegeCells, SiegeTicksPerFrame); written++; }
+            if (razeTick >= 0) { MatchStrip(output, "raze", NoLog, razeTick, razeAt, Siege, SiegeCells, SiegeTicksPerFrame); written++; }
             return written;
         }
 
@@ -772,24 +786,21 @@ namespace WordCraft.View
         /// <summary>
         /// The scripted log never razes a building, so the raze is seen through
         /// MatchView in a siege of its own (issue #186): a fresh map, peer 1's
-        /// 풀씨 둥지 (세계수 정령 production), and four of peer 0's 지옥불 ranged
-        /// standing either side of it with nothing to do but find it. Peer 0 is the local
-        /// peer, so the fog is the attackers'. With <paramref name="site"/> the
-        /// building is half built when the attackers arrive, so a site is seen
-        /// falling from where its assembly had got to.
+        /// finished 풀씨 둥지 (세계수 정령 production), and four of peer 0's
+        /// 지옥불 ranged standing either side of it with nothing to do but find
+        /// it. Peer 0 is the local peer, so the fog is the attackers'.
+        ///
+        /// Finished, not a site: ConstructionSystem sets a site's hp from its
+        /// progress every tick, so damage short of the whole ramp in one tick is
+        /// undone, and a site only falls to a burst in its first few percent. A
+        /// half-built site falling is the sitedestroy strip, driven directly.
         /// </summary>
-        private static World Siege(bool site)
+        private static World Siege()
         {
             var world = new World(new WordCraft.Net.MatchConfig().Seed);
             world.SetPeerFaction(0, Faction.Hellfire);
             world.SetPeerFaction(1, Faction.TreeSpirits);
-            world.SpawnBuilding(1, Role.Production, 0, MatchRunner.ToSim(SiegeAt), complete: !site);
-            var idle = new List<Command>();
-            if (site)
-            {
-                int half = FactionData.BuildTicks(Faction.TreeSpirits, Role.Production, 0) / 2;
-                for (int t = 0; t < half; t++) world.Step(idle);
-            }
+            world.SpawnBuilding(1, Role.Production, 0, MatchRunner.ToSim(SiegeAt), complete: true);
             // Shooters, either side of it as the camera looks and out of reach
             // of a swing: melee crowd onto the building and hide it, a shooter
             // behind it hovers over it on screen, and a shot is what the real
@@ -806,9 +817,9 @@ namespace WordCraft.View
         }
 
         /// <summary>The tick the siege's building dies, or -1 if it stands for a minute.</summary>
-        private static int Razed(bool site, out Vector2 at)
+        private static int Razed(out Vector2 at)
         {
-            World world = Siege(site);
+            World world = Siege();
             at = MatchRunner.ToView(world.GetEntity(0).Position);
             var idle = new List<Command>();
             for (int t = 0; t < 60 * World.TicksPerSecond; t++)
