@@ -459,8 +459,24 @@ namespace WordCraft.View
             }
 
             Entity e = world.GetEntity(lead);
-            GUI.Label(new Rect(area.x, y, area.width, UiStyle.Line + UiStyle.S1),
-                FactionData.Name(world.FactionOf(e.Owner), e.Role, e.Slot), UiStyle.BigStyle);
+            string name = FactionData.Name(world.FactionOf(e.Owner), e.Role, e.Slot);
+            GUI.Label(new Rect(area.x, y, area.width, UiStyle.Line + UiStyle.S1), name, UiStyle.BigStyle);
+
+            // What 공격력 and 방어력 have added, beside the name, for the player's own
+            // fighters: "+1/+2" is attack then armor. Measured off the name because
+            // names are not one width, and S1 lower because Body is smaller than the
+            // name's Big and the two should read as one line. Muted while both are zero, so it
+            // is there to be learned without shouting about nothing. The local
+            // peer's own only; an opponent's levels are not something selecting
+            // their unit should read out.
+            if (e.Kind == EntityKind.Unit && e.Owner == runner.LocalPeer)
+            {
+                float nameWidth = UiStyle.BigStyle.CalcSize(new GUIContent(name)).x;
+                UiStyle.Label(
+                    new Rect(area.x + nameWidth + UiStyle.S2, y + UiStyle.S1, area.width - nameWidth - UiStyle.S2, UiStyle.Line),
+                    ResearchMenu.Bonus(world, e.Owner),
+                    ResearchMenu.HasBonus(world, e.Owner) ? UiStyle.Good : UiStyle.InkMute);
+            }
             y += UiStyle.Line + UiStyle.S2;
 
             float ratio = e.MaxHp > 0 ? Mathf.Clamp01(e.Hp / (float)e.MaxHp) : 0f;
@@ -485,11 +501,22 @@ namespace WordCraft.View
                 y += UiStyle.Line;
             }
 
-            string state = StateOf(e);
+            string state = StateOf(world, e);
             if (state != null)
             {
                 UiStyle.Note(new Rect(area.x, y, area.width, UiStyle.Line), state);
                 y += UiStyle.Line;
+            }
+
+            // The research's progress, in the colour the production queue's bar is
+            // drawn in on the field: it is the same question, what is this building
+            // making, and the colour says "work in progress" everywhere on this HUD.
+            // Under the state line it belongs to, and gone when nothing is running.
+            float researching = ResearchMenu.Progress(world, e);
+            if (researching >= 0f)
+            {
+                UiStyle.Meter(new Rect(area.x, y + UiStyle.S1, area.width, UiStyle.S1), researching, UiStyle.Queue);
+                y += UiStyle.S1 + UiStyle.S1;
             }
 
             Arrival(area, world, y, e);
@@ -545,10 +572,18 @@ namespace WordCraft.View
         /// </summary>
         private static string Cell(FixVec2 p) => p.X.ToInt() + ", " + p.Y.ToInt();
 
-        private static string StateOf(Entity e)
+        private static string StateOf(World world, Entity e)
         {
             if (e.Kind == EntityKind.Building)
             {
+                // A building at work on a row says which, before it says anything
+                // about a queue it is not running: a researching 기술 건물 used to
+                // read "queue 0  ·  next in 0t" while it did exactly this.
+                string researching = ResearchMenu.Researching(world, e);
+                if (researching != null)
+                {
+                    return "researching " + researching + ", " + e.ResearchTicksLeft + "t left";
+                }
                 return e.BuildTicksLeft > 0
                     ? "under construction, " + e.BuildTicksLeft + "t left"
                     : "queue " + e.QueueCount + "  ·  next in " + e.ProduceTicksLeft + "t";
