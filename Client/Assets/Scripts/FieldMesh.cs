@@ -36,7 +36,9 @@ namespace WordCraft.View
         /// Cells on a chunk's side. Eight gives 64 chunks: few enough draws to be
         /// nothing, small enough that the camera culls the far side of the map,
         /// and a worst-case chunk stays a few thousand vertices, nowhere near the
-        /// 65535 a 16 bit index buffer holds.
+        /// 65535 a 16 bit index buffer holds. ViewSelfCheck logs the largest:
+        /// 5542 vertices for a Ground chunk and 1152 for a Water chunk on the
+        /// scenario's map, with the strata, props and edge cliff of #187 in them.
         /// </summary>
         public const int ChunkCells = 8;
 
