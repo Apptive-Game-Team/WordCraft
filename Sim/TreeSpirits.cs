@@ -52,18 +52,17 @@ namespace WordCraft.Sim
     /// became a Signature this tick would be armed for this tick's spawn pass, and
     /// the faction test is what makes that a fact about 지옥불 rather than luck.
     ///
-    /// CombatSystem is where the swap is visible, and for a worker 공격 불가 rests
-    /// on one clause of it: CanAttack admits Kind == Unit and a finished Defense
-    /// building, and a growing worker is a Worker until the tick it lands. A unit
-    /// that grows (docs/TECH-TREE.md M6, 잎날 정령 → 폭풍 기수) is a Unit
-    /// throughout, so CanAttack also refuses IsGrowing; that clause is the
-    /// growth-specific line for units, and the worker case below stands as it was. Armed would also answer no, because the worker row
-    /// carries no weapon, but it is not what is holding the rule — arming that row
-    /// changes nothing about a growing body, which was checked rather than assumed.
-    /// The consequence is worth stating: there is no growth-specific line here to
-    /// delete, so the harness cannot make 공격 불가 fail on its own. What it can do
-    /// is refuse to let the assertion be vacuous, by standing the same enemy at the
-    /// same distance and requiring it to bleed one reload after the growth lands.
+    /// CombatSystem is where the swap is visible, and 공격 불가 rests on one
+    /// clause of it: CanAttack refuses a body for which IsGrowing answers true.
+    /// For a growing worker that clause is belt on top of braces, because
+    /// CanAttack also admits only Kind == Unit and a finished Defense building,
+    /// and a growing worker is a Worker until the tick it lands; Armed answers no
+    /// as well, the worker row carrying no weapon. For a unit that grows
+    /// (docs/TECH-TREE.md M6, 잎날 정령 → 폭풍 기수) the clause is the whole
+    /// enforcement: the body is a Unit on an armed row for the entire growth.
+    /// Deleting it is what MechanicsChecks.AGrowingUnitHoldsItsFire catches, and
+    /// that check also refuses to be vacuous by requiring the same enemy to bleed
+    /// one reload after the growth lands.
     /// On the completion tick the body is a Unit on its new row, and it fights that
     /// tick, exactly as a 자손 emitted this tick fights this tick and a 징발 that
     /// lands this tick shoots this tick. VolleyBonus reads Kind, Role and Slot
