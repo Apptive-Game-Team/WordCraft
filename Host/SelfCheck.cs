@@ -54,8 +54,12 @@ namespace WordCraft.Host
         /// <summary>Two completed games with alternating sides produce the same result line on a second run.</summary>
         private static void ArenaIsReproducible()
         {
-            // 2000, not 1200: 용암 갑각 악마 at 90자원 80틱 lengthens the Driftworlds vs Hellfire game.
-            const int ArenaTicks = 2000;
+            // 6000, the arena's own default cap, so both games are played to the
+            // end. The check is about reproducibility and about both completed
+            // games being counted; it must not depend on how fast this pair
+            // finishes, which every roster change moves (1200 → 2000 for #179's
+            // 용암 갑각 악마, and past 2000 for #180's rows).
+            const int ArenaTicks = 6000;
             string first = Arena.ResultLine(Faction.Driftworlds, Faction.Hellfire, 2, ArenaTicks, 0xC0FFEE);
             string second = Arena.ResultLine(Faction.Driftworlds, Faction.Hellfire, 2, ArenaTicks, 0xC0FFEE);
             Check(first == second, "arena pair result changed between runs: " + first + " / " + second);
