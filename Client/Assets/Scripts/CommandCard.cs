@@ -273,6 +273,10 @@ namespace WordCraft.View
         /// Lays the submenu out for this faction and returns it. Bottom two rows,
         /// keeping the top row where the worker card's own commands live, so the
         /// submenu reads as an extension of the card rather than a new screen.
+        ///
+        /// Four to a row, so the five building roles take cells 4-8: four on row 1
+        /// and the fifth at the start of row 2. Eight cells are free and five are
+        /// used, which is why this menu has no page.
         /// </summary>
         // ponytail: every building the faction lists is shown live, whether or not
         // the peer can afford it or has the tier for it; the simulation refuses the
