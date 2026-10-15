@@ -55,9 +55,26 @@
 - 건물은 돌려 세우지 않으므로 카메라 쪽은 -z 다. 새 건물의 문, 얼굴, 문장은 -z 에 둔다.
   기존 건물(마법 탑의 문 등)은 +z 에 있어 화면에서 보이지 않는다. 이 이슈 범위 밖이다.
 - lineup 은 진영마다 3장(전체, `-units`, `-buildings`)으로 18장, 걷는 행 strip 은 4기씩
-  나눠 walk/attack/hit/death/idle/spawn 이 진영마다 3장이 된다. 전체 실행은 167장이다.
+  나눠 walk/attack/hit/death/idle/spawn 이 진영마다 3장이 된다. build/work/destroy/sitedestroy
+  strip 은 건물 3채씩 나눠 생산·방어·연구 칸의 모든 행을 돈다. 전체 실행은 213장이다.
   `CLAUDE.md` 의 "83 PNGs" 설명은 쓰기 범위 밖이라 고치지 않았다.
 - lineup 을 다섯 번 찍어 고쳤다: 씨앗 요람의 소유자 띠가 받침 전체를 덮던 것, 도깨비불이
   흰 덩어리로 보이던 것, 재날개 악마 날개의 막대, 큰 균열의 띠, 각성의 원과 잠듦의 고리의
   띠, 부유석 첨탑의 뜬 바위와 받침 사이 틈, 비구름 폭, 멸종한 자연 슬라임의 몸이 외피에
   가려지던 것.
+
+## 리뷰 반영 (critic NONPASS 이후)
+
+- 건물 strip: `Buildings()` 가 슬롯 0 만 찍던 것을 생산·방어·연구 칸의 모든 행으로 넓혔다.
+  새 건물 24채의 건설, 활동, 파괴 장면을 보았다. 거품 장벽의 작은 거품이 1.9 떨어진 부품에
+  붙어 휩쓸리던 것, 깊은 통로의 안쪽 판 두 장이 한 부품으로 같이 닫히던 것을 고쳤다.
+  유랑종 판이 크게 열렸다 닫히는 모습은 기존 통로와 같은 `Assembly.Close` 동작이다.
+- 걸음: 거대 덩쿨(속도 0), 견인 대포, 마나 증폭기를 `Float` 에서 다리 없는 `Walk` 로 바꿨다.
+- 색: `Driftworlds.NatureWorld`(#9AAE4E), `Driftworlds.WindWorld`(#A9DCE0)를 chosen 으로 더했다.
+- 정리: `FourLegs`, `SixLegs`, `Curl` 도우미, 크기를 받는 `CrawlerLeg`. 인간 방어 슬롯 1·2 를
+  `HumanExtraBuilding` 으로 옮겨 슬롯 1 이상의 건물 경로를 하나로 했다. lineup 결과는 같다.
+- 비슷한 몸 분리: 성벽 골렘 등의 넓은 판, 부유석 첨탑의 가는 첨탑과 높이 뜬 바위, 침 뱉는
+  슬라임의 앞으로 나온 입, 덩쿨편의 높은 덩굴, 큰 균열의 빛 테두리, 비구름의 납작하고 밝은
+  구름, 떠도는 섬의 바깥으로 벌어진 가는 뿌리 10개.
+- `Models.HasBuilder` 와 `ViewSelfCheck.RosterBodiesAreWritten`: 전용 builder 가 없는 로스터
+  행이 있으면 실패한다. 찌릿쥐의 case 를 지워 실패하는 것을 확인했다.
