@@ -23,14 +23,21 @@ namespace WordCraft.Sim
         /// </summary>
         public static readonly Fix MaxMoveSpeed = Fix.Ratio(3, 4);
 
-        // The aura sources standing at the start of the pass that asks, as pairs
-        // of entity id and ability row, in ascending id. Scratch, not state: it
-        // is rebuilt from the entities at the start of every pass that reads it
-        // and read only inside that pass, so nothing about it survives a tick
-        // and nothing about it needs hashing. A source killed later in the same
-        // pass is skipped by its Alive flag at the moment it is asked.
+        // The aura sources standing at the start of the pass that asks: entity
+        // id, ability row and the position the source stood on then, in
+        // ascending id. Scratch, not state: it is rebuilt from the entities at
+        // the start of every pass that reads it and read only inside that pass,
+        // so nothing about it survives a tick and nothing about it needs hashing.
+        //
+        // The position is taken once because a source can walk inside the pass
+        // that asks: a 덩굴 군집 steps in MoveSystem, and a body with a lower id
+        // would measure it before that step and one with a higher id after. Every
+        // body measures from where the source stood when the pass began. Life is
+        // still read live: a source killed later in the same pass is skipped by
+        // its Alive flag at the moment it is asked.
         private readonly List<int> auraIds = new List<int>();
         private readonly List<int> auraRows = new List<int>();
+        private readonly List<FixVec2> auraPositions = new List<FixVec2>();
 
         /// <summary>Whether this peer can use this ability: no unlock research, or its level is above 0.</summary>
         public bool AbilityUnlocked(int peer, AbilityRow row) =>
@@ -83,6 +90,7 @@ namespace WordCraft.Sim
         {
             auraIds.Clear();
             auraRows.Clear();
+            auraPositions.Clear();
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
@@ -95,6 +103,7 @@ namespace WordCraft.Sim
                     if (!IsAura(row.Kind) || !AbilityUnlocked(e.Owner, row)) continue;
                     auraIds.Add(i);
                     auraRows.Add(r);
+                    auraPositions.Add(e.Position);
                 }
             }
         }
@@ -128,7 +137,7 @@ namespace WordCraft.Sim
                 if (auraRows[k] != row) continue;
                 Entity s = entities[auraIds[k]];
                 if (!s.Alive || s.Owner != peer) continue;
-                if (WithinRange(s.Position, t.Position, Fix.FromInt(AbilityRadius(s.Owner, r)))) return true;
+                if (WithinRange(auraPositions[k], t.Position, Fix.FromInt(AbilityRadius(s.Owner, r)))) return true;
             }
             return false;
         }
@@ -144,7 +153,7 @@ namespace WordCraft.Sim
                 if (auraRows[k] != row) continue;
                 Entity s = entities[auraIds[k]];
                 if (!s.Alive || s.Owner == t.Owner) continue;
-                if (WithinRange(s.Position, t.Position, Fix.FromInt(AbilityRadius(s.Owner, r)))) return true;
+                if (WithinRange(auraPositions[k], t.Position, Fix.FromInt(AbilityRadius(s.Owner, r)))) return true;
             }
             return false;
         }

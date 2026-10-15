@@ -25,6 +25,7 @@ namespace WordCraft.Replay
             EntangleRefreshesAndNeverStacks();
             ASlowedBodyWalksAtHalfSpeed();
             TheVineFieldSlowsHostileGroundBodiesOnce();
+            AWalkingVineFieldSlowsByWhereItStoodAtTheStart();
             NoSpeedReachesTheCap();
             FireShotNeedsItsResearch();
             ABurnDealsSixOverSixtyTicks();
@@ -280,6 +281,41 @@ namespace WordCraft.Replay
             Fix near = air.GetEntity(flier).Position.X - At(31, 40).X;
             Fix away = air.GetEntity(far).Position.X - At(31, 52).X;
             Check(away > Fix.Zero && near == away, "a flier inside the field walked " + near.Raw + " raw against " + away.Raw);
+        }
+
+        /// <summary>
+        /// A walking 덩굴 군집 is measured from where it stood when MoveSystem
+        /// began, whatever its id. Two hostile workers stand mirrored about it,
+        /// one spawned before it and one after, and walk out of the field east
+        /// and west while it walks north: they are slowed on the same ticks. Read
+        /// live, the lower id would measure the 군집 before its step and the
+        /// higher id after it.
+        /// </summary>
+        private static void AWalkingVineFieldSlowsByWhereItStoodAtTheStart()
+        {
+            World world = Two(Faction.TreeSpirits, Faction.Hellfire);
+            int west = world.SpawnWorker(1, At(28, 41));
+            int colony = world.SpawnUnit(0, Role.Signature, 2, At(30, 40));
+            int east = world.SpawnWorker(1, At(32, 41));
+            world.Step(new List<Command>
+            {
+                Move(0, 1, colony, At(30, 60)),
+                Move(1, 1, west, At(10, 41)),
+                Move(1, 2, east, At(50, 41)),
+            });
+            int slowed = 0, freed = 0;
+            for (int t = 0; t < 40; t++)
+            {
+                Fix westX = world.GetEntity(west).Position.X, eastX = world.GetEntity(east).Position.X;
+                world.Step(Idle);
+                Fix westRun = westX - world.GetEntity(west).Position.X;
+                Fix eastRun = world.GetEntity(east).Position.X - eastX;
+                Check(westRun == eastRun, "on tick " + world.Tick + " the worker before the 군집 walked " + westRun.Raw +
+                    " raw and the worker after it " + eastRun.Raw);
+                if (eastRun * 2 == FactionData.Stats(Faction.Hellfire, Role.Worker).Speed) slowed++;
+                else freed++;
+            }
+            Check(slowed > 0 && freed > 0, "the workers never left the field (" + slowed + " slowed, " + freed + " free), so the check proves nothing");
         }
 
         /// <summary>
