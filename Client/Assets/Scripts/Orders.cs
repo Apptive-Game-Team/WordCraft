@@ -484,6 +484,9 @@ namespace WordCraft.View
             Sound.Command();
         }
 
-        private Vector2 MouseWorld() => cam.ScreenToWorldPoint(Input.mousePosition);
+        /// <summary>Where the pointer is on the map, or the frame's centre when it points at the sky. The
+        /// ground is hills now, so this is a ray against the terrain and not a plane at a depth.</summary>
+        private Vector2 MouseWorld() =>
+            Field.Pointer(cam, Input.mousePosition, out Vector2 under) ? under : CameraRig.Instance.Frame;
     }
 }

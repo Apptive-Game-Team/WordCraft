@@ -395,11 +395,13 @@ namespace WordCraft.View
         /// </summary>
         private void Add(AudioClip clip, Vector2 point)
         {
-            Camera cam = Camera.main;
-            if (clip == null || cam == null) return;
+            CameraRig rig = CameraRig.Instance;
+            if (clip == null || rig == null) return;
 
-            Vector3 c = cam.transform.position;
-            float half = cam.orthographicSize;
+            // The camera is perspective now, so its half-height is the rig's: the
+            // half-height of the view at the point it is framing, which is what the
+            // orthographic size used to be.
+            float half = rig.HalfHeight;
             float d = Range(point);
             if (d >= half * FarBand) return;
 
@@ -411,7 +413,7 @@ namespace WordCraft.View
                     : 1f - (d - half * NearBand) / (half * (FarBand - NearBand)),
                 // A cheap sense of which side of the screen it was on. Half a view
                 // wide is hard left or hard right.
-                Pan = Mathf.Clamp((point.x - c.x) / (half * cam.aspect), -1f, 1f),
+                Pan = Mathf.Clamp(Vector2.Dot(point - rig.Frame, rig.Right) / (half * Camera.main.aspect), -1f, 1f),
                 Distance = d,
             });
         }
@@ -469,19 +471,18 @@ namespace WordCraft.View
             return null;
         }
 
-        /// <summary>Cells from the middle of the view. Only the cap and Add read it.</summary>
+        /// <summary>Cells from the point the camera frames. Only the cap and Add read it.</summary>
         private static float Range(Vector2 point)
         {
-            Camera cam = Camera.main;
-            if (cam == null) return float.MaxValue;
-            Vector3 c = cam.transform.position;
-            return Vector2.Distance(point, new Vector2(c.x, c.y));
+            CameraRig rig = CameraRig.Instance;
+            if (rig == null) return float.MaxValue;
+            return Vector2.Distance(point, rig.Frame);
         }
 
         /// <summary>
         /// 2D sources with the distance worked out here. Unity's 3D falloff wants a
         /// listener that tracks the camera and a rolloff curve, and no built-in
-        /// curve can be a multiple of the orthographic size, which is what makes
+        /// curve can be a multiple of the view's half-height, which is what makes
         /// this one right at both ends of the zoom.
         /// </summary>
         private AudioSource NewSource(bool loop)

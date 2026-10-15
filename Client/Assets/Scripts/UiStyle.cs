@@ -105,39 +105,16 @@ namespace WordCraft.View
 
         // ---- field ----
 
-        public static readonly Color Sky = Rgb(0x0D0D10);
-        public static readonly Color Ground = Rgb(0x1C1E24);
         public static readonly Color Node = Rgb(0xFFD140);
 
         // ---- field: terrain ----
 
-        // One rule carries the whole layer: walkable ground is the darkest thing
-        // on the map and anything raised out of it is blocked. Value alone answers
-        // "can I walk there", so the answer survives a greyscale screenshot, a
-        // colour-blind player and the map drawn at eleven pixels a cell.
-        //
-        //   Ground  0x1C1E24   open
-        //   Water   0x1B3050   impassable
-        //   Rock    0x454250   impassable
-        //
-        // Hue then separates the two blocked kinds from each other, and the edge
-        // tones below separate them from the ground they touch.
-
-        public static readonly Color Water = Rgb(0x1B3050);
-
-        /// <summary>A water cell with water on all four sides. Gives a lake a middle.</summary>
-        public static readonly Color WaterDeep = Rgb(0x142440);
-
-        /// <summary>The foam rim, inside the water, on every side that meets something else.</summary>
-        public static readonly Color WaterShore = Rgb(0x3E7099);
-
-        public static readonly Color Rock = Rgb(0x454250);
-
-        /// <summary>The lit rim of the slab, on its top and left faces. Light comes from the top left.</summary>
-        public static readonly Color RockLit = Rgb(0x625E6E);
-
-        /// <summary>The shadow the slab throws, painted on the ground below and to its right.</summary>
-        public static readonly Color RockShade = Rgb(0x0E0F13);
+        // The terrain's own colours live in FieldPalette.cs, beside the mesh that
+        // wears them: the field is lit now, and the values that were right for an
+        // unlit 2D bake go black under a light. What stays here is the minimap,
+        // which is still a picture, and keeps the field's order of value — walkable
+        // ground darkest, water above it, rock above that — so the shape of the
+        // map is the same shape twice.
 
         /// <summary>The minimap's two blocked kinds. Same order of value as the field's, lifted to sit on MinimapGround.</summary>
         public static readonly Color MinimapWater = Rgb(0x122031);
@@ -210,22 +187,6 @@ namespace WordCraft.View
         /// </summary>
         public static readonly Color MinimapNeutral = Rgb(0x8B8794);
 
-        /// <summary>Texels a cell is baked at. One cell is a flat colour plus an edge, not a picture.</summary>
-        public const int TileTexels = 8;
-
-        /// <summary>How deep an edge band cuts into its cell, in texels. A quarter of a cell.</summary>
-        public const int TileBand = 2;
-
-        /// <summary>How much deeper or shallower that band runs cell to cell. A rim of one thickness is a stripe.</summary>
-        public const int TileJitter = 1;
-
-        /// <summary>
-        /// How far every other blocked cell is lifted, so a lake is not one
-        /// rectangle of paint. Open ground gets none: it is most of the map, and a
-        /// grain there is four thousand visible squares.
-        /// </summary>
-        public const float TileGrain = 0.06f;
-
         // ---- field: fog ----
 
         // Two tones and no third: the lit state is the absence of both. Unexplored
@@ -233,7 +194,7 @@ namespace WordCraft.View
         // of the map this peer has never walked into reads as nothing rather than
         // as a place painted dark.
 
-        /// <summary>Never seen. Opaque, and the same value as <see cref="Sky"/>.</summary>
+        /// <summary>Never seen. Opaque, and the same value as the sky beyond the map.</summary>
         public static readonly Color FogUnseen = Rgb(0x0D0D10);
 
         /// <summary>
@@ -262,6 +223,13 @@ namespace WordCraft.View
         /// </summary>
         public static readonly Color RangeRing = Rgba(0xFFFFFF, 0.45f);
         public static readonly Color MeterBack = Rgba(0x0A0A0D, 0.85f);
+
+        /// <summary>
+        /// A flier's shadow on the ground. The one thing that tells the eye how
+        /// high a body hovers, so it is dark enough to read on lit grass and
+        /// translucent enough that the ground's shape still shows through it.
+        /// </summary>
+        public static readonly Color Shadow = Rgba(0x0A0A0D, 0.45f);
         public static readonly Color Queue = Rgba(0x73D9FF, 0.95f);
         public static readonly Color Rally = Rgba(0x8CFF99, 0.85f);
         public static readonly Color GhostOk = Rgba(0x73FF8C, 0.55f);

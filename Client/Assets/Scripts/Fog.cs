@@ -26,6 +26,23 @@ namespace WordCraft.View
     ///            actually saw stay drawn, dimmed, frozen at what it last saw.
     ///   Seen     inside the sight radius of something of this peer's, right now.
     ///
+    /// The ground reads the fog from a texture, not from a sprite laid over it:
+    /// <see cref="Texture"/> is one texel a cell, and every shader that includes
+    /// Paper.cginc samples it by world x and z (the _WcFog globals), so terrain,
+    /// water, props and bodies all fall to the same dark at the same edge.
+    ///
+    /// Sight is height aware, and only here, in the view. Fog is per local peer,
+    /// so the two peers of a match are allowed to disagree about it and the state
+    /// hash does not care. Two rules, both skipped by flying units:
+    ///
+    ///   A seer sees <see cref="HeightSight"/> cells further for every height
+    ///   level of the cell it stands on: a unit on a ridge sees further than the
+    ///   same unit in the valley.
+    ///
+    ///   A cell two or more levels above the seer's own is not revealed unless it
+    ///   is within <see cref="PlateauSight"/> cells of the seer: you cannot see
+    ///   onto a plateau from its foot, only the cliff face in front of you.
+    ///
     /// Enemy units are never remembered. A unit that has moved on but is still
     /// drawn where it was is a lie the player acts on, and acting on it loses
     /// armies. Buildings do not move, so remembering them is the truth, and
@@ -40,6 +57,32 @@ namespace WordCraft.View
         public const byte Seen = 2;
 
         private const int Cells = MatchScenario.MapSize;
+
+        /// <summary>Cells of extra sight per height level of the cell the seer stands on.</summary>
+        private const float HeightSight = 0.6f;
+
+        /// <summary>
+        /// How close a seer must be to see a cell two or more levels above its own.
+        /// Past this the plateau stays dark; inside it the seer is standing at the
+        /// foot of the cliff and can see the rim.
+        /// </summary>
+        private const float PlateauSight = 1.5f;
+
+        /// <summary>A level difference this big hides the higher cell from a ground seer.</summary>
+        private const int PlateauLevels = 2;
+
+        /// <summary>What the texture holds for a cell in full light.</summary>
+        private const byte SeenValue = 255;
+
+        /// <summary>What the texture holds for a cell that has never been seen. The shader turns it into UiStyle.FogUnseen.</summary>
+        private const byte HiddenValue = 0;
+
+        /// <summary>
+        /// What the texture holds for a remembered cell. FogSeen is the fog colour
+        /// at part alpha laid over the map, so remembered ground keeps one minus
+        /// that alpha of its light: 0.45 of 255, which is 115.
+        /// </summary>
+        private static readonly byte MemoryValue = (byte)Mathf.RoundToInt((1f - UiStyle.FogSeen.a) * 255f);
 
         /// <summary>One byte a cell. 4 KB for the whole map, and that is the whole structure.</summary>
         private static readonly byte[] state = new byte[Cells * Cells];
@@ -59,7 +102,6 @@ namespace WordCraft.View
         private static int lastTick = -UiStyle.FogTicks;
 
         private static Texture2D texture;
-        private static Sprite sprite;
 
         /// <summary>
         /// False outside a match. The start screen draws the map behind its menu
@@ -72,27 +114,47 @@ namespace WordCraft.View
         public static int Version { get; private set; }
 
         /// <summary>
-        /// The mask, one texel a cell, drawn over the field as one sprite. Point
-        /// filtered like the terrain under it: this style is cut paper, and a
-        /// blurred fog edge would be the one thing docs/UI-STYLE.md bans outright,
-        /// a gradient.
+        /// The mask, one texel a cell: texel (x, y) is cell (x, y), and texture row
+        /// 0 is sim y 0, which is world z 0, so there is no flip anywhere. The value
+        /// is in all four channels: 1 seen, about 0.45 remembered, 0 never seen.
+        /// Bilinear and clamped, so the edge of the light is a slope across a cell
+        /// rather than a staircase. Created on first ask and lit all over, so a
+        /// shader that samples it before the first vision pass shows the whole map.
         /// </summary>
-        // ponytail: a hard cell edge is the ceiling. A soft border wants a blur or
-        // a shader and a render texture; take that bill the day the blocky edge is
-        // the thing people notice rather than the thing they never mention.
-        public static Sprite Field()
+        public static Texture2D Texture
         {
-            if (sprite != null) return sprite;
-
-            texture = new Texture2D(Cells, Cells, TextureFormat.RGBA32, mipChain: false)
+            get
             {
-                filterMode = FilterMode.Point,
-                wrapMode = TextureWrapMode.Clamp,
-            };
-            // One texel to one cell, pivoted in the middle, so it lands on the map
-            // at scale one exactly like the baked terrain.
-            sprite = Sprite.Create(texture, new Rect(0f, 0f, Cells, Cells), new Vector2(0.5f, 0.5f), 1f);
-            return sprite;
+                if (texture != null) return texture;
+
+                texture = new Texture2D(Cells, Cells, TextureFormat.RGBA32, mipChain: false)
+                {
+                    name = "WordCraft Fog",
+                    filterMode = FilterMode.Bilinear,
+                    wrapMode = TextureWrapMode.Clamp,
+                };
+                Color32 lit = new Color32(SeenValue, SeenValue, SeenValue, SeenValue);
+                for (int i = 0; i < pixels.Length; i++) pixels[i] = lit;
+                texture.SetPixels32(pixels);
+                texture.Apply(updateMipmaps: false);
+                PushGlobals();
+                return texture;
+            }
+        }
+
+        /// <summary>
+        /// Hands the shaders everything they read about the fog: the texture, the
+        /// scale that turns a world position into a texture coordinate (one over
+        /// the cells on a side), whether fog is on at all, and the colour unseen
+        /// ground falls to. Outside a match the on-switch is 0 and the shaders skip
+        /// the fog, so the start screen's map and the result screen's reveal show
+        /// the whole ground.
+        /// </summary>
+        private static void PushGlobals()
+        {
+            Shader.SetGlobalTexture("_WcFog", texture);
+            Shader.SetGlobalVector("_WcFogParams", new Vector4(1f / World.GridSize, Active ? 1f : 0f, 0f, 0f));
+            Shader.SetGlobalColor("_WcFogTint", UiStyle.FogUnseen);
         }
 
         /// <summary>
@@ -106,6 +168,10 @@ namespace WordCraft.View
         {
             World world = runner.World;
             bool active = runner.Phase == Phase.Match;
+
+            // Sight reads heights, so the field has to be shaped for this world.
+            // Idempotent: a world that is already shaped returns at once.
+            Field.Build(world);
 
             if (!ReferenceEquals(world, shown))
             {
@@ -122,6 +188,9 @@ namespace WordCraft.View
             {
                 Active = active;
                 Version++;
+                // The texture is made first, so the globals never point at nothing.
+                _ = Texture;
+                PushGlobals();
             }
             if (!active) return;
 
@@ -147,7 +216,7 @@ namespace WordCraft.View
             {
                 Entity e = world.GetEntity(i);
                 if (!e.Alive || e.Owner != peer) continue;
-                Reveal(MatchRunner.ToView(e.Position), Sight(seeing, e));
+                Reveal(MatchRunner.ToView(e.Position), seeing, e);
             }
 
             for (int i = 0; i < world.EntityCount; i++)
@@ -206,8 +275,9 @@ namespace WordCraft.View
             (shown != null && shown.IsNeutralRock(e));
 
         /// <summary>
-        /// Sight, in cells, taken from numbers that already exist rather than a
-        /// table invented for the fog.
+        /// Sight on level ground, in cells, taken from numbers that already exist
+        /// rather than a table invented for the fog. Height changes it afterwards,
+        /// in <see cref="Reveal"/>.
         ///
         /// Anything that moves sees <see cref="World.AcquireRange"/>, which is how
         /// far the simulation already lets a unit notice a hostile. Sight shorter
@@ -233,13 +303,35 @@ namespace WordCraft.View
 
         private static float Reach(Fix f) => f.Raw / (float)Fix.One;
 
-        /// <summary>A disc of light around a point, clipped to the map.</summary>
-        private static void Reveal(Vector2 p, float radius)
+        /// <summary>
+        /// A disc of light around a seer, clipped to the map and shaped by height.
+        ///
+        /// The radius is the seer's <see cref="Sight"/> plus <see cref="HeightSight"/>
+        /// for each level of the cell it stands on. Then a cell that sits
+        /// <see cref="PlateauLevels"/> or more above the seer's own level is skipped
+        /// when it is further than <see cref="PlateauSight"/> away. A building's own
+        /// footprint is the exception to that: it is never fogged under its own
+        /// feet, so the near distance grows to the footprint for a static seer.
+        /// A flying seer takes neither rule.
+        /// </summary>
+        private static void Reveal(Vector2 p, Faction faction, Entity e)
         {
+            int cx = Mathf.Clamp((int)p.x, 0, Cells - 1);
+            int cy = Mathf.Clamp((int)p.y, 0, Cells - 1);
+            int level = Field.Level(cy * Cells + cx);
+
+            bool air = FactionData.Stats(faction, e.Role).Air;
+            float radius = Sight(faction, e);
+            float near = PlateauSight;
+            if (!air)
+            {
+                radius += level * HeightSight;
+                if (Static(e)) near = Mathf.Max(near, MatchView.Cells(e.Role));
+            }
+
             int r = Mathf.CeilToInt(radius);
-            int cx = (int)p.x;
-            int cy = (int)p.y;
-            float rr = radius * radius;
+            float radiusSquared = radius * radius;
+            float nearSquared = near * near;
 
             for (int y = cy - r; y <= cy + r; y++)
             {
@@ -249,28 +341,31 @@ namespace WordCraft.View
                     if (x < 0 || x >= Cells) continue;
                     float dx = x + 0.5f - p.x;
                     float dy = y + 0.5f - p.y;
-                    if (dx * dx + dy * dy > rr) continue;
+                    float distanceSquared = dx * dx + dy * dy;
+                    if (distanceSquared > radiusSquared) continue;
+                    if (!air && distanceSquared > nearSquared &&
+                        Field.Level(y * Cells + x) >= level + PlateauLevels) continue;
                     state[y * Cells + x] = Seen;
                 }
             }
         }
 
         /// <summary>
-        /// The mask, repainted on the cadence and not on the frame. Texture row 0
-        /// is the bottom one and the sprite is drawn unflipped, so a cell's texel
-        /// is at its own coordinates with no flip anywhere.
+        /// The mask, repainted on the cadence and not on the frame, then pushed to
+        /// the shaders. The value goes in every channel, so whichever one a shader
+        /// reads is the visibility.
         /// </summary>
         private static void Paint()
         {
-            Field();
+            Texture2D target = Texture;
             for (int i = 0; i < state.Length; i++)
             {
-                pixels[i] = state[i] == Hidden ? UiStyle.FogUnseen
-                    : state[i] == Memory ? UiStyle.FogSeen
-                    : Color.clear;
+                byte v = state[i] == Hidden ? HiddenValue : state[i] == Memory ? MemoryValue : SeenValue;
+                pixels[i] = new Color32(v, v, v, v);
             }
-            texture.SetPixels32(pixels);
-            texture.Apply(updateMipmaps: false);
+            target.SetPixels32(pixels);
+            target.Apply(updateMipmaps: false);
+            PushGlobals();
         }
     }
 }

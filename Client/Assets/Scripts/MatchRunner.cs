@@ -33,6 +33,7 @@ namespace WordCraft.View
     ///   WordCraft.app -port 45677     host on that port, no start screen
     ///   WordCraft.app -join 10.0.0.4  join that address
     ///   WordCraft.app -ticks 400      host, stop there and print the state hash
+    ///   WordCraft.app -shot out.png   with -ticks: save what the screen shows at the stop
     ///   WordCraft.app -faction Humans play that faction
     /// </summary>
     public sealed class MatchRunner : MonoBehaviour
@@ -92,6 +93,20 @@ namespace WordCraft.View
         private long lastStepMs;
         private bool stopReported;
         private int stopAtTick;
+
+        /// <summary>
+        /// Where -shot writes the screen at the stop tick, or null. Taken by the
+        /// real player with the real HUD, fog and camera over it, which is the
+        /// one picture the editor's screenshot harness cannot take.
+        /// </summary>
+        private string shotPath;
+
+        /// <summary>
+        /// Frames still to run after the capture was requested. The capture is
+        /// asynchronous and lands at the end of a later frame; quitting on the
+        /// frame it was asked for leaves an empty file.
+        /// </summary>
+        private int shotFrames = -1;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot()
@@ -301,6 +316,7 @@ namespace WordCraft.View
             DontDestroyOnLoad(gameObject);
 
             stopAtTick = Arg("-ticks", 0);
+            shotPath = Arg("-shot");
             ShowStart();
 
             string join = Arg("-join");
@@ -375,6 +391,17 @@ namespace WordCraft.View
             if (stopAtTick > 0)
             {
                 if (World.Tick < stopAtTick) return;
+
+                if (shotPath != null && shotFrames < 0)
+                {
+                    ScreenCapture.CaptureScreenshot(shotPath);
+                    shotFrames = 8;
+                }
+                if (shotFrames > 0)
+                {
+                    shotFrames--;
+                    return;
+                }
 
                 // Two clients that ran the same match must end on the same hash.
                 // This is the line a LAN check reads out of each player log.

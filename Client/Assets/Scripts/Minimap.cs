@@ -6,7 +6,8 @@ namespace WordCraft.View
 {
     /// <summary>
     /// The square at the left end of the bottom bar: the whole map at once, and
-    /// the camera's window on it. Without one there is no way to answer "where",
+    /// the camera's window on it, which is a trapezoid because the camera looks
+    /// down at a slant. Without one there is no way to answer "where",
     /// which is the only question a player of this game asks that the screen in
     /// front of them cannot.
     ///
@@ -43,6 +44,12 @@ namespace WordCraft.View
         /// <summary>A hit this near a live mark refreshes it instead of adding another.</summary>
         private const float MarkMergeCells = 4f;
 
+        /// <summary>Value added to open ground per height level: +8% a level, so three levels of plateau are a quarter lighter.</summary>
+        private const float LevelLift = 0.08f;
+
+        /// <summary>What the pixels along a cliff are multiplied by.</summary>
+        private const float CliffShade = 0.6f;
+
         /// <summary>A mark is a square this many pixels across. Big enough to catch the eye off-centre.</summary>
         private const float MarkPixels = 7f;
 
@@ -71,6 +78,10 @@ namespace WordCraft.View
         private static bool scrubbing;
 
         private static readonly List<Mark> marks = new List<Mark>();
+
+        /// <summary>The four view corners on the ground, and whether each landed. Held so a repaint allocates nothing.</summary>
+        private static readonly Vector2[] viewGround = new Vector2[4];
+        private static readonly bool[] viewLanded = new bool[4];
 
         private struct Mark
         {
@@ -310,21 +321,61 @@ namespace WordCraft.View
         /// Flat fills, no shoreline: a cell is two pixels here and an edge band at
         /// that size is a smear rather than a shape. What carries across from the
         /// field is the order of value, so the map is the same shape twice.
+        ///
+        /// Open ground is lifted in value by <see cref="LevelLift"/> a height level,
+        /// so a plateau is a lighter patch, and the pixel row or column a cliff
+        /// runs along is darkened, so the plateau has an edge that reads at this
+        /// size. Water and rock keep their tints: those two already say "blocked",
+        /// and a lighter lake would say "high ground".
         /// </summary>
         private static void Backdrop(World world)
         {
+            // Heights come from Field, which is shaped once per world; asking
+            // again for the same world returns at once.
+            Field.Build(world);
+
+            const int map = MatchScenario.MapSize;
+            const int block = Res / map;
+
             if (backdrop == null) backdrop = new Color32[Res * Res];
             for (int y = 0; y < Res; y++)
             {
-                int cy = y * MatchScenario.MapSize / Res;
+                int cy = y * map / Res;
                 for (int x = 0; x < Res; x++)
                 {
-                    int cx = x * MatchScenario.MapSize / Res;
-                    backdrop[y * Res + x] =
-                        Tiles.MinimapTint(world.TerrainAt(cy * MatchScenario.MapSize + cx));
+                    int cx = x * map / Res;
+                    int cell = cy * map + cx;
+                    TileKind kind = world.TerrainAt(cell);
+                    Color32 tint = Tiles.MinimapTint(kind);
+
+                    if (kind == TileKind.Open)
+                    {
+                        tint = Scale(tint, 1f + Field.Level(cell) * LevelLift);
+
+                        // The pixel on the side of the cell that faces a cliff. Both
+                        // cells of the pair get theirs, so the edge is two pixels.
+                        int px = x - cx * block;
+                        int py = y - cy * block;
+                        bool edge =
+                            (px == 0 && cx > 0 && Field.Cliff(cell, cell - 1)) ||
+                            (px == block - 1 && cx < map - 1 && Field.Cliff(cell, cell + 1)) ||
+                            (py == 0 && cy > 0 && Field.Cliff(cell, cell - map)) ||
+                            (py == block - 1 && cy < map - 1 && Field.Cliff(cell, cell + map));
+                        if (edge) tint = Scale(tint, CliffShade);
+                    }
+
+                    backdrop[y * Res + x] = tint;
                 }
             }
         }
+
+        /// <summary>A colour with its value multiplied, clamped at white.</summary>
+        private static Color32 Scale(Color32 c, float by) =>
+            new Color32(
+                (byte)Mathf.Min(255, Mathf.RoundToInt(c.r * by)),
+                (byte)Mathf.Min(255, Mathf.RoundToInt(c.g * by)),
+                (byte)Mathf.Min(255, Mathf.RoundToInt(c.b * by)),
+                c.a);
 
         /// <summary>
         /// The terrain with this peer's vision applied: never-seen cells are the
@@ -393,25 +444,100 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// What the camera can see, as an outline. Clamped to the square, because
-        /// the rig lets the view sit a few cells past the map edge and a rectangle
-        /// drawn outside here would land on the selection list.
+        /// What the camera can see, as an outline. The camera is perspective and
+        /// tilted, so the ground it sees is a trapezoid, wider along the far edge of
+        /// the screen than along the near one, and it follows the hills. The four
+        /// screen corners are put on the ground with Field.Pointer, the same march
+        /// a click uses, so the outline and the cursor agree about what is where.
+        ///
+        /// A corner whose ray goes over the horizon never lands. It is walked out
+        /// along the ray's direction on the ground to the map edge instead, which is
+        /// where that side of the view runs off to. A ray pointing straight up has
+        /// no such direction, and the two edges that start at it are left out.
+        ///
+        /// Every point is clamped into the square, because the rig lets the view
+        /// sit a few cells past the map edge and a line drawn outside here would
+        /// land on the selection list.
         /// </summary>
         private static void ViewRect(Rect area)
         {
             Camera cam = Camera.main;
             if (cam == null) return;
 
-            float halfHeight = cam.orthographicSize;
-            float halfWidth = halfHeight * cam.aspect;
-            Vector3 c = cam.transform.position;
+            Rect screen = cam.pixelRect;
+            // Around the screen, from its bottom left corner.
+            Vector2[] corners =
+            {
+                new Vector2(screen.xMin, screen.yMin),
+                new Vector2(screen.xMax, screen.yMin),
+                new Vector2(screen.xMax, screen.yMax),
+                new Vector2(screen.xMin, screen.yMax),
+            };
 
-            float left = X(area, c.x - halfWidth);
-            float right = X(area, c.x + halfWidth);
-            float top = Y(area, c.y + halfHeight);
-            float bottom = Y(area, c.y - halfHeight);
+            Vector2[] ground = viewGround;
+            bool[] landed = viewLanded;
+            for (int i = 0; i < 4; i++)
+            {
+                landed[i] = Field.Pointer(cam, corners[i], out ground[i]) ||
+                            HorizonPoint(cam, corners[i], out ground[i]);
+            }
 
-            UiStyle.Frame(Rect.MinMaxRect(left, top, right, bottom), UiStyle.MinimapView);
+            for (int i = 0; i < 4; i++)
+            {
+                int next = (i + 1) % 4;
+                if (!landed[i] || !landed[next]) continue;
+                Line(new Vector2(X(area, ground[i].x), Y(area, ground[i].y)),
+                     new Vector2(X(area, ground[next].x), Y(area, ground[next].y)),
+                     UiStyle.MinimapView);
+            }
+        }
+
+        /// <summary>
+        /// Where a ray that never reaches the ground leaves the map: its horizontal
+        /// direction, followed from where it starts until it runs out of square.
+        /// False for a ray with no horizontal direction at all.
+        /// </summary>
+        private static bool HorizonPoint(Camera cam, Vector2 screenPoint, out Vector2 plane)
+        {
+            plane = Vector2.zero;
+            Ray ray = cam.ScreenPointToRay(screenPoint);
+
+            Vector2 direction = Field.Plane(ray.direction);
+            if (direction.sqrMagnitude < 1e-8f) return false;
+            direction.Normalize();
+
+            const float edge = MatchScenario.MapSize;
+            Vector2 start = Field.Plane(ray.origin);
+            start.x = Mathf.Clamp(start.x, 0f, edge);
+            start.y = Mathf.Clamp(start.y, 0f, edge);
+
+            // Distance along the direction to the wall it is heading for, per axis;
+            // the nearer wall is the one it leaves through.
+            float reach = float.MaxValue;
+            if (direction.x > 1e-6f) reach = Mathf.Min(reach, (edge - start.x) / direction.x);
+            else if (direction.x < -1e-6f) reach = Mathf.Min(reach, -start.x / direction.x);
+            if (direction.y > 1e-6f) reach = Mathf.Min(reach, (edge - start.y) / direction.y);
+            else if (direction.y < -1e-6f) reach = Mathf.Min(reach, -start.y / direction.y);
+
+            plane = start + direction * reach;
+            return true;
+        }
+
+        /// <summary>
+        /// A hairline between two points on the GUI. IMGUI has no line primitive,
+        /// so it is a one pixel rectangle rotated about its start, with the matrix
+        /// put back after so nothing drawn next is turned.
+        /// </summary>
+        private static void Line(Vector2 from, Vector2 to, Color color)
+        {
+            Vector2 delta = to - from;
+            float length = delta.magnitude;
+            if (length < 0.5f) return;
+
+            Matrix4x4 was = GUI.matrix;
+            GUIUtility.RotateAroundPivot(Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg, from);
+            UiStyle.Fill(new Rect(from.x, from.y - UiStyle.Hairline * 0.5f, length, UiStyle.Hairline), color);
+            GUI.matrix = was;
         }
 
         /// <summary>World x to a pixel column of the square. Clamped, so nothing draws outside it.</summary>
