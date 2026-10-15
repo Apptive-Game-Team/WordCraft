@@ -18,34 +18,70 @@ namespace WordCraft.View
     /// cut paper in the faction's colour, not a glow. .art/STYLE.md bans the
     /// ember and spark scatter that a particle system would reach for, so a
     /// burst is five shards that fly out and shrink to nothing, big enough to
-    /// read at the zoom a fight is watched from.
+    /// read at the zoom a fight is watched from, with a ring on the ground
+    /// under it. A 돌 골렘 body that dies breaks into chunks here too
+    /// (<see cref="Crumble"/>), pooled the same way.
     /// </summary>
     public sealed class Effects
     {
-        /// <summary>Tracer length in cells. The issue asks for 0.3 to 0.5.</summary>
-        private const float TracerLength = 0.5f;
+        /// <summary>
+        /// Tracer length in cells. Longer than the issue's first 0.3 to 0.5: the
+        /// strips showed a half-cell sliver vanishing at the zoom a fight is
+        /// watched from.
+        /// </summary>
+        private const float TracerLength = 0.75f;
 
         /// <summary>Tracer thickness in cells: thick enough to survive the downscale to a 64 px body.</summary>
-        private const float TracerWidth = 0.17f;
+        private const float TracerWidth = 0.34f;
+
+        /// <summary>The see-through streak behind a tracer: longer and wider, so the line of fire reads before the tracer does.</summary>
+        private const float TrailLength = 1.3f;
+        private const float TrailWidth = 0.5f;
+        private const float TrailAlpha = 0.35f;
 
         /// <summary>How fast a tracer flies, in cells a second. A short shot is clamped up to the floor below.</summary>
-        private const float TracerSpeed = 40f;
+        private const float TracerSpeed = 14f;
 
-        /// <summary>Shortest and longest a tracer is in the air. The issue asks for 0.12 to 0.2 seconds.</summary>
-        private const float MinFlight = 0.12f;
-        private const float MaxFlight = 0.2f;
+        /// <summary>
+        /// Shortest and longest a tracer is in the air: long enough to be seen in
+        /// two frames an eighth of a second apart.
+        /// </summary>
+        private const float MinFlight = 0.24f;
+        private const float MaxFlight = 0.28f;
 
         /// <summary>How long a burst lasts.</summary>
         private const float BurstSeconds = 0.25f;
 
-        /// <summary>Shards a burst throws. The issue asks for 4 to 6.</summary>
-        private const int ShardsPerBurst = 5;
+        /// <summary>Shards a burst throws.</summary>
+        private const int ShardsPerBurst = 7;
 
         /// <summary>Shard size in cells at the start of a burst; it shrinks to nothing.</summary>
-        private const float ShardSize = 0.24f;
+        private const float ShardSize = 0.42f;
 
         /// <summary>How far a shard flies out, in cells.</summary>
-        private const float BurstReach = 0.75f;
+        private const float BurstReach = 0.95f;
+
+        /// <summary>
+        /// How far every third shard is moved toward paper white: the light catch
+        /// that makes a burst read as a burst rather than as more of the body.
+        /// </summary>
+        private const float ShardLight = 0.6f;
+
+        /// <summary>The ground ring under a burst: from this radius to the outer one, in cells, fading out.</summary>
+        private const float RingFrom = 0.2f;
+        private const float RingTo = 0.85f;
+        private const float RingBand = 0.08f;
+        private const float RingAlpha = 0.6f;
+
+        /// <summary>A burst further than this above the ground gets no ring: the ring would be under nothing.</summary>
+        private const float RingHeight = 1.2f;
+
+        // A golem's chunks: how many, how long they lie before shrinking away,
+        // how fast they shrink, and how hard they fall.
+        private const int ChunksPerCrumble = 3;
+        private const float ChunkLie = 0.55f;
+        private const float ChunkShrink = 0.15f;
+        private const float ChunkGravity = 14f;
 
         /// <summary>How far a shard falls over the burst, in cells, on top of flying out.</summary>
         private const float BurstDrop = 0.25f;
@@ -53,10 +89,14 @@ namespace WordCraft.View
         /// <summary>Pools are made this big up front, so the first fight does not pay for them.</summary>
         private const int TracerWarm = 24;
         private const int BurstWarm = 16;
+        private const int CrumbleWarm = 4;
 
         private static readonly int TintId = Shader.PropertyToID("_Tint");
+        private static readonly int ColorId = Shader.PropertyToID("_Color");
         private static Mesh tracerMesh;
         private static Mesh shardMesh;
+        private static Mesh trailMesh;
+        private static Mesh chunkMesh;
 
         private struct Tracer
         {
@@ -64,6 +104,13 @@ namespace WordCraft.View
             public Vector3 From, To;
             public float Started, Flight;
             public Color Colour;
+        }
+
+        private struct Chunk
+        {
+            public bool Live;
+            public Vector3 From, Velocity;
+            public float Started, Rest, Radius, Spin;
         }
 
         private struct Burst
@@ -83,6 +130,11 @@ namespace WordCraft.View
         private readonly List<Burst> bursts = new List<Burst>(BurstWarm);
         /// <summary>ShardsPerBurst renderers per burst, burst after burst.</summary>
         private readonly List<MeshRenderer> shardRenderers = new List<MeshRenderer>(BurstWarm * ShardsPerBurst);
+        private readonly List<MeshRenderer> trailRenderers = new List<MeshRenderer>(TracerWarm);
+        private readonly List<Decal> rings = new List<Decal>(BurstWarm);
+        private readonly List<Chunk> chunks = new List<Chunk>(CrumbleWarm * ChunksPerCrumble);
+        private readonly List<MeshRenderer> chunkRenderers = new List<MeshRenderer>(CrumbleWarm * ChunksPerCrumble);
+        private readonly List<Color> ringColours = new List<Color>(BurstWarm);
 
         private int burstCounter;
 
@@ -91,27 +143,60 @@ namespace WordCraft.View
             this.parent = parent;
             for (int i = 0; i < TracerWarm; i++) AddTracer();
             for (int i = 0; i < BurstWarm; i++) AddBurst();
+            for (int i = 0; i < CrumbleWarm * ChunksPerCrumble; i++) AddChunk();
         }
 
         /// <summary>
-        /// A tracer from <paramref name="from"/> to <paramref name="to"/>, and a
-        /// burst where it lands. Returns the flight time, so a caller can time
-        /// something to the landing.
+        /// A tracer from <paramref name="from"/> to <paramref name="to"/>, leaving
+        /// after <paramref name="delay"/> seconds, and a burst where it lands.
+        /// Returns the seconds from now until it lands, so the target's hit
+        /// reaction can be timed to the arrival.
         /// </summary>
-        public float Shot(Vector3 from, Vector3 to, Color colour)
+        public float Shot(Vector3 from, Vector3 to, Color colour, float delay = 0f)
         {
             int i = FreeTracer();
             float flight = Mathf.Clamp(Vector3.Distance(from, to) / TracerSpeed, MinFlight, MaxFlight);
             tracers[i] = new Tracer
             {
-                Live = true, From = from, To = to, Started = ViewClock.Now, Flight = flight, Colour = colour,
+                Live = true, From = from, To = to, Started = ViewClock.Now + delay, Flight = flight, Colour = colour,
             };
 
-            MeshRenderer r = tracerRenderers[i];
-            Colour(r, colour);
-            Fly(r.transform, from, to, 0f);
-            r.enabled = true;
-            return flight;
+            Colour(tracerRenderers[i], colour);
+            Color streak = BodyPalette.Lighter(colour, 0.3f);
+            streak.a = TrailAlpha;
+            TrailColour(trailRenderers[i], streak);
+            tracerRenderers[i].enabled = false; // until it leaves
+            trailRenderers[i].enabled = false;
+            return delay + flight;
+        }
+
+        /// <summary>
+        /// A 돌 골렘 body breaking into chunks of rubble where it stands on
+        /// <paramref name="foot"/>: three lumps thrown a little out of the body
+        /// that fall, bounce once, lie for a moment and shrink away, leaving the
+        /// rubble pile MatchView draws on the cell.
+        /// </summary>
+        public void Crumble(Vector3 foot, float size, Color colour, float yaw)
+        {
+            for (int k = 0; k < ChunksPerCrumble; k++)
+            {
+                int i = FreeChunk();
+                float around = yaw + 40f + k * (360f / ChunksPerCrumble);
+                Vector3 outward = Quaternion.Euler(0f, around, 0f) * Vector3.forward;
+                float radius = size * (0.17f - 0.03f * k);
+                chunks[i] = new Chunk
+                {
+                    Live = true,
+                    From = foot + outward * (size * 0.1f) + Vector3.up * (size * (0.35f + 0.15f * k)),
+                    Velocity = outward * (size * (0.45f + 0.2f * k)) + Vector3.up * (size * 0.5f),
+                    Started = ViewClock.Now + 0.04f * k,
+                    Rest = foot.y + radius * 0.55f,
+                    Radius = radius,
+                    Spin = (k % 2 == 0 ? 1f : -1f) * (300f + 120f * k),
+                };
+                Colour(chunkRenderers[i], BodyPalette.Darker(colour, k == 1 ? 0.82f : k == 2 ? 0.92f : 1f));
+                chunkRenderers[i].enabled = false;
+            }
         }
 
         /// <summary>
@@ -127,12 +212,17 @@ namespace WordCraft.View
                 Live = true, At = at, Started = ViewClock.Now + delay, Spin = burstCounter * 47f,
             };
 
+            Color light = Color.Lerp(colour, BodyPalette.HitFlash, ShardLight);
             for (int s = 0; s < ShardsPerBurst; s++)
             {
                 MeshRenderer r = shardRenderers[i * ShardsPerBurst + s];
-                Colour(r, colour);
+                Colour(r, s % 3 == 0 ? light : colour);
                 r.enabled = false; // until the delay is over
             }
+
+            Color ring = BodyPalette.Lighter(colour, 0.25f);
+            ringColours[i] = ring;
+            rings[i].Visible = false;
         }
 
         /// <summary>One frame at <see cref="ViewClock.Now"/>: tracers fly and land, shards spread and shrink.</summary>
@@ -147,15 +237,26 @@ namespace WordCraft.View
 
                 float p = (now - t.Started) / t.Flight;
                 MeshRenderer r = tracerRenderers[i];
+                MeshRenderer trail = trailRenderers[i];
+                if (p < 0f) continue;
                 if (p >= 1f)
                 {
                     t.Live = false;
                     tracers[i] = t;
                     r.enabled = false;
+                    trail.enabled = false;
                     Impact(t.To, t.Colour);
                     continue;
                 }
-                Fly(r.transform, t.From, t.To, Mathf.Max(p, 0f));
+                Fly(r.transform, t.From, t.To, p);
+                r.enabled = true;
+
+                // The streak hangs off the tracer's tail, never longer than the
+                // ground already covered, so it does not reach back into the shooter.
+                float covered = Vector3.Distance(t.From, t.To) * p;
+                trail.transform.SetPositionAndRotation(r.transform.position, r.transform.rotation);
+                trail.transform.localScale = new Vector3(TrailWidth, TrailWidth, Mathf.Min(TrailLength, covered + TracerLength * 0.5f));
+                trail.enabled = true;
             }
 
             for (int i = 0; i < bursts.Count; i++)
@@ -177,6 +278,17 @@ namespace WordCraft.View
                 // need the see-through material and its second pass.
                 float spread = 1f - (1f - p) * (1f - p);
                 float size = ShardSize * (1f - p);
+
+                Decal ring = rings[i];
+                bool low = b.At.y - Field.Height(b.At.x, b.At.z) < RingHeight;
+                ring.Visible = !over && low;
+                if (ring.Visible)
+                {
+                    ring.Set(new Vector2(b.At.x, b.At.z), Mathf.Lerp(RingFrom, RingTo, spread), RingBand);
+                    Color c = ringColours[i];
+                    c.a = RingAlpha * (1f - p);
+                    ring.Colour = c;
+                }
                 for (int s = 0; s < ShardsPerBurst; s++)
                 {
                     MeshRenderer r = shardRenderers[i * ShardsPerBurst + s];
@@ -196,6 +308,68 @@ namespace WordCraft.View
                     r.enabled = true;
                 }
             }
+
+            for (int i = 0; i < chunks.Count; i++)
+            {
+                Chunk c = chunks[i];
+                if (!c.Live) continue;
+
+                float t = now - c.Started;
+                MeshRenderer r = chunkRenderers[i];
+                if (t < 0f) continue;
+                if (t >= ChunkLie + ChunkShrink)
+                {
+                    c.Live = false;
+                    chunks[i] = c;
+                    r.enabled = false;
+                    continue;
+                }
+
+                Vector3 at = Ballistic(c, t, out bool resting);
+                float shrink = t > ChunkLie ? 1f - (t - ChunkLie) / ChunkShrink : 1f;
+                Transform chunk = r.transform;
+                chunk.position = at;
+                if (!resting) chunk.rotation = Quaternion.Euler(c.Spin * t * 0.6f, c.Spin * 0.3f, c.Spin * t);
+                chunk.localScale = Vector3.one * Mathf.Max(c.Radius * shrink, 0.001f);
+                r.enabled = true;
+            }
+        }
+
+        /// <summary>
+        /// Where a chunk is <paramref name="t"/> seconds after it was thrown: out
+        /// and down on a parabola to its resting height, one bounce at a third of
+        /// the speed it landed with and less than half the drift, then still.
+        /// </summary>
+        private static Vector3 Ballistic(Chunk c, float t, out bool resting)
+        {
+            float g = ChunkGravity;
+            float height = c.From.y - c.Rest;
+            float vy = c.Velocity.y;
+            float land = (vy + Mathf.Sqrt(vy * vy + 2f * g * Mathf.Max(height, 0f))) / g;
+            Vector3 drift = new Vector3(c.Velocity.x, 0f, c.Velocity.z);
+            resting = false;
+
+            if (t < land)
+            {
+                Vector3 p = c.From + drift * t;
+                p.y = c.From.y + vy * t - 0.5f * g * t * t;
+                return p;
+            }
+
+            float up = 0.3f * (g * land - vy);
+            float hop = 2f * up / g;
+            float after = t - land;
+            Vector3 landed = c.From + drift * land;
+            if (after < hop)
+            {
+                Vector3 p = landed + drift * (0.4f * after);
+                p.y = c.Rest + up * after - 0.5f * g * after * after;
+                return p;
+            }
+            resting = true;
+            Vector3 still = landed + drift * (0.4f * hop);
+            still.y = c.Rest;
+            return still;
         }
 
         /// <summary>Everything in flight disappears: a new match, or a harness done with a shot.</summary>
@@ -208,6 +382,13 @@ namespace WordCraft.View
             }
             for (int i = 0; i < bursts.Count; i++) bursts[i] = default;
             for (int i = 0; i < shardRenderers.Count; i++) shardRenderers[i].enabled = false;
+            for (int i = 0; i < trailRenderers.Count; i++) trailRenderers[i].enabled = false;
+            for (int i = 0; i < rings.Count; i++) rings[i].Visible = false;
+            for (int i = 0; i < chunks.Count; i++)
+            {
+                chunks[i] = default;
+                chunkRenderers[i].enabled = false;
+            }
         }
 
         // ------------------------------------------------------------------
@@ -234,18 +415,50 @@ namespace WordCraft.View
             return bursts.Count - 1;
         }
 
+        private int FreeChunk()
+        {
+            for (int i = 0; i < chunks.Count; i++)
+            {
+                if (!chunks[i].Live) return i;
+            }
+            AddChunk();
+            return chunks.Count - 1;
+        }
+
         private void AddTracer()
         {
             tracers.Add(default);
             MeshRenderer r = Renderer("Tracer", TracerMesh);
             r.transform.localScale = new Vector3(TracerWidth, TracerWidth, TracerLength);
             tracerRenderers.Add(r);
+
+            // Unlit and see-through, like a mark: a streak is the line of fire,
+            // not a thing standing in the light.
+            var go = new GameObject("Trail");
+            go.transform.SetParent(parent, false);
+            go.AddComponent<MeshFilter>().sharedMesh = TrailMesh;
+            var trail = go.AddComponent<MeshRenderer>();
+            trail.sharedMaterial = Marks.Ground;
+            trail.shadowCastingMode = ShadowCastingMode.Off;
+            trail.receiveShadows = false;
+            trail.enabled = false;
+            trailRenderers.Add(trail);
         }
 
         private void AddBurst()
         {
             bursts.Add(default);
             for (int s = 0; s < ShardsPerBurst; s++) shardRenderers.Add(Renderer("Shard", ShardMesh));
+            rings.Add(Decal.Make(parent, "ImpactRing", ring: true, Color.clear));
+            ringColours.Add(Color.clear);
+        }
+
+        private void AddChunk()
+        {
+            chunks.Add(default);
+            MeshRenderer r = Renderer("Chunk", ChunkMesh);
+            r.shadowCastingMode = ShadowCastingMode.On;
+            chunkRenderers.Add(r);
         }
 
         private MeshRenderer Renderer(string name, Mesh mesh)
@@ -267,6 +480,13 @@ namespace WordCraft.View
         {
             block.Clear();
             block.SetColor(TintId, colour);
+            r.SetPropertyBlock(block);
+        }
+
+        private void TrailColour(MeshRenderer r, Color colour)
+        {
+            block.Clear();
+            block.SetColor(ColorId, colour);
             r.SetPropertyBlock(block);
         }
 
@@ -298,6 +518,45 @@ namespace WordCraft.View
                 solids.Prism(new Vector3(0f, 0f, 0.18f), 4, 0.5f, 0f, 0.32f, Color.white, lying);
                 tracerMesh = solids.Bake("Tracer");
                 return tracerMesh;
+            }
+        }
+
+        /// <summary>
+        /// The streak: two quads crossed along -z, a unit long behind the origin
+        /// and tapering from a unit wide at the tracer to a fifth of that at the
+        /// tail, so it reads from any camera angle. Cull Off on the decal shader
+        /// draws both faces.
+        /// </summary>
+        private static Mesh TrailMesh
+        {
+            get
+            {
+                if (trailMesh != null) return trailMesh;
+                trailMesh = new Mesh { name = "Trail" };
+                trailMesh.SetVertices(new[]
+                {
+                    new Vector3(-0.5f, 0f, 0f), new Vector3(0.5f, 0f, 0f), new Vector3(0.1f, 0f, -1f), new Vector3(-0.1f, 0f, -1f),
+                    new Vector3(0f, -0.5f, 0f), new Vector3(0f, 0.5f, 0f), new Vector3(0f, 0.1f, -1f), new Vector3(0f, -0.1f, -1f),
+                });
+                var white = new Color[8];
+                for (int i = 0; i < white.Length; i++) white[i] = Color.white;
+                trailMesh.SetColors(white);
+                trailMesh.SetTriangles(new[] { 0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7 }, 0);
+                trailMesh.RecalculateBounds();
+                return trailMesh;
+            }
+        }
+
+        /// <summary>A unit-radius boulder, the bare twenty-face ball the rubble pile is made of.</summary>
+        private static Mesh ChunkMesh
+        {
+            get
+            {
+                if (chunkMesh != null) return chunkMesh;
+                var solids = new Solids(0x43484E4B, 0.05f);
+                solids.Lump(Vector3.zero, new Vector3(1f, 0.75f, 0.9f), Color.white, Quaternion.Euler(0f, 20f, 10f));
+                chunkMesh = solids.Bake("Chunk");
+                return chunkMesh;
             }
         }
 
