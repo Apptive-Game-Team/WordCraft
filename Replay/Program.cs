@@ -4974,6 +4974,7 @@ namespace WordCraft.Replay
             for (int t = 0; t < MirrorTicks; t++)
             {
                 world.Step(idle);
+                BurstQueueIsEmpty(world, "the " + faction + " mirror");
                 hashes[t] = world.Hash();
             }
             return hashes;
@@ -5164,9 +5165,22 @@ namespace WordCraft.Replay
             for (int t = 0; t < log.Length; t++)
             {
                 world.Step(log[t]);
+                BurstQueueIsEmpty(world, "the scripted log");
                 hashes[t] = world.Hash();
             }
             return hashes;
+        }
+
+        /// <summary>
+        /// docs/TECH-TREE.md 능력 공통 규칙: the burst queue is empty at every
+        /// tick end, which is why it is not hashed. Asked after every step of
+        /// the scripted log, the solo match and every mirror match, so a Kill
+        /// added after BurstSystem fails here and not only in SummonChecks.
+        /// </summary>
+        private static void BurstQueueIsEmpty(World world, string where)
+        {
+            Check(world.PendingBurstCount == 0,
+                where + " left " + world.PendingBurstCount + " bursts queued at the end of tick " + (world.Tick - 1));
         }
 
         // The solo match: one human peer that does nothing and one the simulation
@@ -5358,6 +5372,7 @@ namespace WordCraft.Replay
             for (int t = 0; t < ticks; t++)
             {
                 world.Step(idle);
+                BurstQueueIsEmpty(world, "the solo match");
                 if (world.GetResources(SoloAi) > last) banked = true;
                 last = world.GetResources(SoloAi);
                 hashes[t] = world.Hash();
