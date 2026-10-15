@@ -638,35 +638,108 @@ namespace WordCraft.Replay
                 "a dead body still carries AbilityCooldown " + e.AbilityCooldown + " and AbilityTicksLeft " + e.AbilityTicksLeft);
         }
 
-        /// <summary>The mixed match twice from scratch: the same hash on every tick.</summary>
+        /// <summary>
+        /// The two mixed matches twice from scratch: the same hash on every tick.
+        /// Each run counts what it exercised, and every count has to be above 0,
+        /// or a run that agreed with itself would prove nothing about the ability
+        /// it never used.
+        /// </summary>
         private static void TwoWorldsAgree()
         {
-            ulong a = Mixed(), b = Mixed();
+            ulong a = Mixed(out MixedCounts first), b = Mixed(out _);
             Check(a == b, "two runs of the batch 7 abilities hash apart: 0x" + a.ToString("X16") + " against 0x" + b.ToString("X16"));
+            Check(first.RollStarts > 0, "no 구르는 바위 rolled in the mixed match");
+            Check(first.CooldownsSet > 0, "no ability cooldown was set in the mixed match");
+            Check(first.DebrisConsumed > 0, "no debris was consumed in the mixed match");
+            Check(first.GaleSets > 0, "no 질풍 was set in the mixed match");
+            Check(first.SteadyAims > 0, "no 틈새 사수 reached 40 still ticks in the mixed match");
+        }
+
+        private struct MixedCounts
+        {
+            public int RollStarts, CooldownsSet, DebrisConsumed, GaleSets, SteadyAims;
         }
 
         /// <summary>
-        /// 돌 골렘 peer 0 with every batch 7 research of its own, two 바위 술사,
-        /// two 구르는 바위, golems, a 잠듦의 고리 and debris; 지옥불 peer 1 with
-        /// two 용암 투석 악마 and fighters, 600 ticks. A golem that falls drops
-        /// debris the mages then throw and mend with.
+        /// Two matches, 600 ticks each, folded into one number. 돌 골렘 peer 0
+        /// with 굴러 들이받기 and 잔해 수리, two 바위 술사, two 구르는 바위, golems,
+        /// a 잠듦의 고리 and debris, against 지옥불 peer 1 with two 용암 투석 악마
+        /// and fighters: a golem that falls drops debris the mages then throw and
+        /// mend with. Then 세계수 정령 peer 0 with 질풍 and three 폭풍 기수 on an
+        /// attack-move, against 차원 유랑종 peer 1 with 정조준 and three 틈새 사수
+        /// standing where the riders arrive.
         /// </summary>
-        private static ulong Mixed()
+        private static ulong Mixed(out MixedCounts counts)
         {
-            World world = Two(Faction.RockGolems, Faction.Hellfire);
-            Research(world, 0, UpgradeEffect.RollCharge);
-            Research(world, 0, UpgradeEffect.RemnantRepair);
-            world.SpawnBuilding(0, Role.Defense, 2, At(30, 30), complete: true);
+            counts = new MixedCounts();
+            World rock = Two(Faction.RockGolems, Faction.Hellfire);
+            Research(rock, 0, UpgradeEffect.RollCharge);
+            Research(rock, 0, UpgradeEffect.RemnantRepair);
+            rock.SpawnBuilding(0, Role.Defense, 2, At(30, 30), complete: true);
             for (int i = 0; i < 2; i++)
             {
-                world.SpawnUnit(0, Role.Ranged, 0, At(28, 28 + 4 * i));
-                world.SpawnUnit(0, Role.Melee, 1, At(31, 27 + 6 * i));
-                world.SpawnUnit(0, Role.Melee, 0, At(33, 29 + 2 * i));
-                world.SpawnUnit(1, Role.Ranged, 2, At(44, 28 + 4 * i));
-                world.SpawnUnit(1, Role.Melee, 1, At(40, 29 + 2 * i));
+                rock.SpawnUnit(0, Role.Ranged, 0, At(28, 28 + 4 * i));
+                rock.SpawnUnit(0, Role.Melee, 1, At(31, 27 + 6 * i));
+                rock.SpawnUnit(0, Role.Melee, 0, At(33, 29 + 2 * i));
+                rock.SpawnUnit(1, Role.Ranged, 2, At(44, 28 + 4 * i));
+                rock.SpawnUnit(1, Role.Melee, 1, At(40, 29 + 2 * i));
             }
-            for (int x = 29; x < 32; x++) world.SetRemnantForScenario(Cell(x, 33), world.Tick + 60);
-            return EveryTickHashed(world, 600);
+            for (int x = 29; x < 32; x++) rock.SetRemnantForScenario(Cell(x, 33), rock.Tick + 60);
+            ulong folded = Counted(rock, 600, ref counts);
+
+            World field = Two(Faction.TreeSpirits, Faction.Driftworlds);
+            Research(field, 0, UpgradeEffect.Gale);
+            Research(field, 1, UpgradeEffect.SteadyAim);
+            var orders = new List<Command>();
+            for (int i = 0; i < 3; i++)
+            {
+                int rider = field.SpawnUnit(0, Role.Melee, 3, At(22, 28 + 3 * i));
+                orders.Add(new Command(field.Tick, 0, 4000 + i, CommandType.AttackMove, rider, At(46, 28 + 3 * i)));
+                field.SpawnUnit(1, Role.Ranged, 0, At(46, 29 + 3 * i));
+            }
+            Step(field, orders);
+            return folded * 1099511628211UL ^ Counted(field, 600, ref counts);
+        }
+
+        /// <summary>
+        /// EveryTickHashed, counting on the way: rolls started, cooldowns set,
+        /// debris cells consumed, 질풍 clocks set, 정조준 counts reaching their
+        /// row's ticks.
+        /// </summary>
+        private static ulong Counted(World world, int ticks, ref MixedCounts counts)
+        {
+            ulong folded = 0;
+            var cooldown = new List<int>();
+            var clock = new List<int>();
+            var standing = new bool[World.GridCells];
+            for (int t = 0; t < ticks; t++)
+            {
+                cooldown.Clear();
+                clock.Clear();
+                for (int i = 0; i < world.EntityCount; i++)
+                {
+                    cooldown.Add(world.GetEntity(i).AbilityCooldown);
+                    clock.Add(world.GetEntity(i).AbilityTicksLeft);
+                }
+                for (int c = 0; c < World.GridCells; c++) standing[c] = world.HasRemnant(c);
+                Step(world);
+                for (int i = 0; i < cooldown.Count; i++)
+                {
+                    Entity e = world.GetEntity(i);
+                    if (!e.Alive) continue;
+                    if (e.AbilityCooldown > cooldown[i]) counts.CooldownsSet++;
+                    int row = FactionData.StatefulAbilityOf(world.FactionOf(e.Owner), e.Role, e.Slot);
+                    if (row < 0) continue;
+                    AbilityRow r = FactionData.AbilityRowAt(row);
+                    if (r.Kind == AbilityKind.RollCharge && clock[i] == 0 && e.AbilityTicksLeft > 0) counts.RollStarts++;
+                    if (r.Kind == AbilityKind.GaleAfterAttack && e.AbilityTicksLeft == r.Ticks) counts.GaleSets++;
+                    if (r.Kind == AbilityKind.SteadyAim && clock[i] < r.Ticks && e.AbilityTicksLeft == r.Ticks) counts.SteadyAims++;
+                }
+                for (int c = 0; c < World.GridCells; c++)
+                    if (standing[c] && world.RemnantExpiry(c) == 0) counts.DebrisConsumed++;
+                folded = folded * 1099511628211UL ^ world.Hash();
+            }
+            return folded;
         }
 
         /// <summary>Two worlds one body's AbilityCooldown apart hash apart.</summary>
@@ -698,7 +771,7 @@ namespace WordCraft.Replay
         private static readonly List<Command> Idle = new List<Command>();
 
         /// <summary>One step, then the rule the burst queue is never hashed on: it is empty.</summary>
-        private static void Step(World world, List<Command> commands = null)
+        internal static void Step(World world, List<Command> commands = null)
         {
             world.Step(commands ?? Idle);
             Check(world.PendingBurstCount == 0,
@@ -711,7 +784,7 @@ namespace WordCraft.Replay
         /// clock off by one tick that has run out by the end leaves the last
         /// hash alone.
         /// </summary>
-        private static ulong EveryTickHashed(World world, int ticks)
+        internal static ulong EveryTickHashed(World world, int ticks)
         {
             ulong folded = 0;
             for (int t = 0; t < ticks; t++)
@@ -722,7 +795,7 @@ namespace WordCraft.Replay
             return folded;
         }
 
-        private static void Run(World world, int ticks)
+        internal static void Run(World world, int ticks)
         {
             for (int t = 0; t < ticks; t++) Step(world);
         }
@@ -772,10 +845,10 @@ namespace WordCraft.Replay
         private static Fix Distance(World world, int a, int b) =>
             (world.GetEntity(a).Position - world.GetEntity(b).Position).Magnitude;
 
-        private static int Cell(int x, int y) => y * World.GridSize + x;
+        internal static int Cell(int x, int y) => y * World.GridSize + x;
 
         /// <summary>Peer 0 and peer 1 of these factions, nothing standing.</summary>
-        private static World Two(Faction zero, Faction one)
+        internal static World Two(Faction zero, Faction one)
         {
             var world = new World(Seed);
             world.SetPeerFaction(0, zero);
