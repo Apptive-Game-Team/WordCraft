@@ -45,21 +45,30 @@ namespace WordCraft.View
         /// <summary>Deeper than any panel. Holes: an empty card cell, a keycap well.</summary>
         public static readonly Color Void = Rgb(0x0C0C10);
 
+        // The chrome sits one clear step above the fog and the void. It used to
+        // share their value — #17171C over an unlit map whose darkest ground was
+        // #1C1E24 — and that read as one dark field with furniture on it. Over a
+        // lit field the map is bright and the fog is #0D0D10, and a panel at
+        // #17171C over fog was a panel nobody could find: its card cells (Void)
+        // and its hairlines (Edge) vanished into it. A step up keeps the rule that
+        // chrome is darker than the field, and gives the holes something to be
+        // holes in.
+
         /// <summary>Panels that sit over the live map, so nearly opaque.</summary>
-        public static readonly Color Panel = Rgba(0x17171C, 0.94f);
+        public static readonly Color Panel = Rgba(0x20212A, 0.96f);
 
-        /// <summary>The two match bars. Thinner, so the map still shows through the edge.</summary>
-        public static readonly Color Bar = Rgba(0x17171C, 0.90f);
+        /// <summary>The two match bars. Nearly opaque: what shows through a bar over fog is nothing.</summary>
+        public static readonly Color Bar = Rgba(0x20212A, 0.95f);
 
-        public static readonly Color Raised = Rgb(0x22222A);
-        public static readonly Color Lifted = Rgb(0x2E2E39);
+        public static readonly Color Raised = Rgb(0x2C2D38);
+        public static readonly Color Lifted = Rgb(0x3B3C4A);
 
         /// <summary>Hairlines. Separation is a one-pixel line, never a box outline.</summary>
-        public static readonly Color Edge = Rgb(0x3A3A46);
+        public static readonly Color Edge = Rgb(0x4A4B5A);
 
         public static readonly Color Ink = Rgb(0xE7E3DA);
-        public static readonly Color InkDim = Rgb(0x9A958B);
-        public static readonly Color InkMute = Rgb(0x5F5B55);
+        public static readonly Color InkDim = Rgb(0xA9A49A);
+        public static readonly Color InkMute = Rgb(0x7A766E);
 
         /// <summary>
         /// The one accent, and it is a material rather than a signal: cut paper.
