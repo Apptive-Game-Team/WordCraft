@@ -605,6 +605,25 @@ namespace WordCraft.Sim
             air || (terrain[cell] == (byte)TileKind.Open && remnantExpiry[cell] <= Tick);
 
         /// <summary>
+        /// Whether something may be put down on this cell on the ground: IsPassable
+        /// for a walker, and no building or resource node standing on it. The cells
+        /// the pathfinder blocks, asked by CanBuild for a placement and by
+        /// ArrivalValid for a walking body's arrival, so the two cannot disagree.
+        /// </summary>
+        public bool GroundCellOpen(int cell)
+        {
+            if (!IsPassable(cell, air: false)) return false;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (!e.Alive) continue;
+                if (e.Kind != EntityKind.Building && e.Kind != EntityKind.ResourceNode) continue;
+                if (CellOf(e.Position) == cell) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
         /// The roster row this body fights from: its owner's faction, its role,
         /// and its own entry of that role. One accessor rather than the lookup
         /// written out at each call site, so no system can ask by role alone and

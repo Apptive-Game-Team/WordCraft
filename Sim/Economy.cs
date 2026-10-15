@@ -176,16 +176,8 @@ namespace WordCraft.Sim
             // Nothing stands in water or on rock. Checked here rather than in
             // TryPlaceBuilding so the client's placement ghost, which calls this,
             // greys out the same cells the simulation is going to refuse.
-            if (!IsPassable(cell, air: false)) return false;
-
-            for (int i = 0; i < entities.Count; i++)
-            {
-                Entity e = entities[i];
-                if (!e.Alive) continue;
-                if (e.Kind != EntityKind.Building && e.Kind != EntityKind.ResourceNode) continue;
-                if (CellOf(e.Position) == cell) return false;
-            }
-            return true;
+            // Nor on a cell a building or a resource node already holds.
+            return GroundCellOpen(cell);
         }
 
         /// <summary>

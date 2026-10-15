@@ -2,9 +2,10 @@ namespace WordCraft.Sim
 {
     /// <summary>
     /// 차원 유랑종 통로: the 통로 does not make units, it lets them cross. A Produce
-    /// aimed at one names a point on the map, and if that point lies inside
-    /// <see cref="ArrivalRadius"/> of a friendly 굴절 기둥 or 경계 운반자 the body
-    /// stands up there instead of at the building. 무효면 통로 자리에 출현한다.
+    /// aimed at one names a point on the map, and if that point lies inside the
+    /// radius of a friendly anchor (굴절 기둥, 경계 운반자, 위상 닻, 떠도는 섬, each by
+    /// its own row of FactionData's arrival table) the body stands up there
+    /// instead of at the building. 무효면 통로 자리에 출현한다.
     ///
     /// Every mechanic before this one decided at a single moment. This one decides
     /// twice — once when the order is given and once when the body arrives — and
@@ -41,7 +42,7 @@ namespace WordCraft.Sim
     /// Nothing else about an anchor can change at all, and that is worth stating
     /// rather than assuming. Owner moves only through 인간 징발, which transfers a
     /// neutral 꼬마돌 and nothing else. Role and Slot move only through 세계수 정령
-    /// 성장, which is one faction's workers. Neither can reach a 차원 유랑종 body,
+    /// 성장, which is one faction's bodies. Neither can reach a 차원 유랑종 body,
     /// so an anchor is an anchor for its whole life and the only questions left are
     /// where it is standing and whether it is alive.
     ///
@@ -106,14 +107,16 @@ namespace WordCraft.Sim
         public const int MarksmanSlot = 0;
 
         /// <summary>
-        /// 반경 6칸, per docs/FACTION-MECHANICS.md, and the same number for the
-        /// 굴절 기둥 and the 경계 운반자 both — the document gives them one radius,
-        /// and one that walks is the only difference between them.
+        /// 반경 6칸, the 굴절 기둥's row of FactionData's arrival table, which the
+        /// 경계 운반자's row shares. Read off the table rather than written again
+        /// here, so the view's ring and the simulation's check have one source.
         /// </summary>
-        public static readonly Fix ArrivalRadius = Fix.FromInt(6);
+        public static readonly Fix ArrivalRadius =
+            Fix.FromInt(FactionData.Arrival(PassageFaction, PillarRole, PillarSlot).Radius);
 
-        /// <summary>The radius once 도착 반경 is researched.</summary>
-        public static readonly Fix ArrivalRadiusResearched = Fix.FromInt(8);
+        /// <summary>The radius of that row once 도착 반경 is researched, off the same row.</summary>
+        public static readonly Fix ArrivalRadiusResearched =
+            Fix.FromInt(FactionData.Arrival(PassageFaction, PillarRole, PillarSlot).RadiusResearched);
 
         /// <summary>
         /// 도착 가속: the 통로's own clock once researched. The unresearched clock is
@@ -241,42 +244,44 @@ namespace WordCraft.Sim
         }
 
         /// <summary>
-        /// Whether this peer may arrive a body at this point, asked of the world as
-        /// it stands on this tick. The one place the rule is written, and it is
-        /// called at both moments the mechanic decides — a second copy of it is the
-        /// one defect that could make the two answers differ for a reason that is
-        /// not about the world.
+        /// Whether this peer may arrive a walking body at this point: the
+        /// three-argument rule below with air false. A water or rock cell, a cell
+        /// under debris, and a cell a building or a resource node stands on all
+        /// answer no here, whatever the anchors say.
         ///
-        /// Distance goes through WithinRange, which compares SqrMagnitude against
-        /// the square of the radius in fixed point and takes no square root. Every
-        /// range question in the simulation already asks it that way, and a second
-        /// distance calculation invented here would be a second rounding for two
-        /// peers to disagree over.
-        ///
-        /// The scan is by ascending entity id and stops at the first anchor in
-        /// range, which costs nothing to say because the answer is a bool: there is
-        /// no anchor to name, so the order it is found in cannot reach the result.
-        ///
-        /// Public because the view will tint a placement cursor with it once the
-        /// arrival point is something a player picks. The answer that counts is the
-        /// one taken inside the simulation; a view that asked a moment earlier is
-        /// looking at a world one tick stale, which is the caveat CanBuild carries.
+        /// Public because the view tints its aim cursor with it. The answer that
+        /// counts is the one taken inside the simulation; a view that asked a moment
+        /// earlier is looking at a world one tick stale, which is the caveat
+        /// CanBuild carries. A view aiming a flying body is told no on those cells
+        /// too, which is the safe direction to be wrong in.
         /// </summary>
         public bool ArrivalValid(int peer, FixVec2 point) => ArrivalValid(peer, point, air: false);
 
         /// <summary>
-        /// The rule itself, for a body that flies or walks. Everything above, and
-        /// one more clause from docs/TECH-TREE.md 도착 규칙: a walking body needs a
-        /// cell it could stand on. A cell of water or rock, a cell under debris, or a
-        /// cell a building or a resource node stands on is refused, and the body
-        /// stands up at the 통로 instead, the same ending every other invalid point
-        /// gets. A flying body is not asked, for the reason IsPassable lets air
-        /// through: terrain, debris and buildings stop nothing in the air.
+        /// Whether this peer may arrive a body that flies or walks at this point,
+        /// asked of the world as it stands on this tick. The one place the rule is
+        /// written, and it is called at both moments the mechanic decides — a
+        /// second copy of it is the one defect that could make the two answers
+        /// differ for a reason that is not about the world.
         ///
-        /// The cell is asked here rather than beside the call in ArrivalOf, so both
-        /// moments ask it through this one method: a body aimed at debris is refused
-        /// when the order is given, and one aimed at a cell that debris covered while
-        /// it crossed lands at the 통로.
+        /// A walking body needs a cell it could stand on (docs/TECH-TREE.md 도착
+        /// 규칙): GroundCellOpen, the cells CanBuild refuses and the pathfinder
+        /// blocks. Otherwise the body stands up at the 통로, the same ending every
+        /// other invalid point gets. A flying body is not asked, for the reason
+        /// IsPassable lets air through. The cell is asked here rather than beside
+        /// the call in ArrivalOf, so a body aimed at debris is refused when the
+        /// order is given, and one aimed at a cell that debris covered while it
+        /// crossed lands at the 통로.
+        ///
+        /// Distance goes through WithinRange, which compares SqrMagnitude against
+        /// the square of each anchor's own radius in fixed point and takes no
+        /// square root. Every range question in the simulation already asks it that
+        /// way, and a second distance calculation invented here would be a second
+        /// rounding for two peers to disagree over.
+        ///
+        /// The scan is by ascending entity id and stops at the first anchor in
+        /// range, which costs nothing to say because the answer is a bool: there is
+        /// no anchor to name, so the order it is found in cannot reach the result.
         /// </summary>
         public bool ArrivalValid(int peer, FixVec2 point, bool air)
         {
@@ -294,7 +299,7 @@ namespace WordCraft.Sim
             if (point.X < Fix.Zero || point.Y < Fix.Zero) return false;
             if (point.X >= Fix.FromInt(GridSize) || point.Y >= Fix.FromInt(GridSize)) return false;
 
-            if (!air && !ArrivalCellOpen(CellOf(point))) return false;
+            if (!air && !GroundCellOpen(CellOf(point))) return false;
 
             // Each anchor by its own row's radius. Still a bool and still the first
             // anchor in range: a radius per anchor changes how far each one reaches
@@ -306,24 +311,6 @@ namespace WordCraft.Sim
                 if (WithinRange(point, e.Position, ArrivalRadiusOf(e))) return true;
             }
             return false;
-        }
-
-        /// <summary>
-        /// Whether a walking body may stand up on this cell: IsPassable for the
-        /// ground, and no building or resource node standing on it — the cells
-        /// CanBuild refuses and the pathfinder blocks, by the same test.
-        /// </summary>
-        private bool ArrivalCellOpen(int cell)
-        {
-            if (!IsPassable(cell, air: false)) return false;
-            for (int i = 0; i < entities.Count; i++)
-            {
-                Entity e = entities[i];
-                if (!e.Alive) continue;
-                if (e.Kind != EntityKind.Building && e.Kind != EntityKind.ResourceNode) continue;
-                if (CellOf(e.Position) == cell) return false;
-            }
-            return true;
         }
 
         /// <summary>
@@ -352,9 +339,10 @@ namespace WordCraft.Sim
         /// for the two to disagree about. Every body still on the queue arrives at
         /// the point named last, and each of them is checked again on its own tick.
         ///
-        /// Nothing but a 통로 keeps an arrival point. A Base can produce and
-        /// 차원 유랑종's is 정박한 세계, not a 통로 — 통로는 유닛을 만들지 않는다 is
-        /// about one building, so this rule is too.
+        /// Nothing but a 통로 or a 깊은 통로 keeps an arrival point: the rows of
+        /// the arrival table marked Passage. A Base can produce and 차원 유랑종's
+        /// is 정박한 세계, which has no such row, so its bodies come out at its
+        /// RallyOffset as every other building's do.
         /// </summary>
         private void AimArrival(ref Entity b, int peer, FixVec2 point)
         {
