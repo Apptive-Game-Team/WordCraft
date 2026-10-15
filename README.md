@@ -85,6 +85,25 @@ Unity -batchmode -nographics -quit -projectPath Client \
 하는 진입점이 둘이면 맞춰야 할 것이 하나 더 늘기 때문이고, 둘이 공유하는 것은 이름
 뿐입니다 — 어느 쪽이든 바이너리는 `WordCraft`입니다.
 
+## 화면 확인
+
+필드는 3D 입니다. 지형은 mesh, 바디는 코드가 만드는 저폴리 모델, 조명은 하나의
+surface shader 조명 모델(`Client/Assets/Resources/Shaders/Paper.cginc`)입니다.
+플레이어를 띄우지 않고 지금 화면이 어떻게 보이는지 보려면:
+
+```bash
+Unity -batchmode -quit -projectPath Client       -executeMethod WordCraft.View.ViewShots.Run       -shotsOutput shots -shotsTicks 900
+```
+
+스크립트된 매치를 900틱 돌린 상태를 다섯 각도(기지, lane 과 고지, 전체,
+근접, 측면 메사)에서 PNG 로 남깁니다. GPU 가 필요하므로 `-nographics` 를 주지
+않습니다. HUD 와 안개까지 포함한 실제 플레이어 화면은 플레이어에 `-ticks` 와
+`-shot` 을 함께 줍니다:
+
+```bash
+play/WordCraft.exe -port 45677 -ticks 300 -shot shot.png
+```
+
 ## 결정론 자체 검증
 
 `Replay`는 테스트 프레임워크 없이 assert 기반으로 다음을 검증합니다.

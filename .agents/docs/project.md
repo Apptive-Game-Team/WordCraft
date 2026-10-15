@@ -28,7 +28,11 @@ Fill this document during project initialization. Agents must verify commands ag
   - `Host/` — console runner for a match between two peers.
   - `Client/` — the Unity 2022 LTS view. Consumes `Sim` and `Net` as compiled
     assemblies that `dotnet build` vendors into `Client/Assets/Plugins/`; they
-    are gitignored, so build once before opening the project.
+    are gitignored, so build once before opening the project. The field is a
+    3D scene built from code at runtime: `Field.cs` (the sim-to-world mapping
+    and terrain heights), `FieldMesh.cs` (terrain), `Models.cs` + `BodyRig.cs`
+    (every body), `Sky.cs` (light), `Decals.cs` (marks), with one lighting
+    model in `Resources/Shaders/Paper.cginc`. Sprites remain only as HUD icons.
 - `Net/` carries two wires, and they run on two separate sockets:
   - The match wire (`ITransport`/`UdpTransport`, driven by `LockstepSession`)
     — exactly two peers. Every datagram piggybacks an ack, and a tick barrier
@@ -63,6 +67,8 @@ Fill this document during project initialization. Agents must verify commands ag
 | Unit tests | `dotnet run --project Replay` (assert-based self-check, no test framework) |
 | Integration tests | `dotnet run --project Host -- selfcheck` (two peers over a lossy in-memory link) |
 | Build | `dotnet build` (root `WordCraft.sln`) |
+| View determinism | `Unity -batchmode -quit -projectPath Client -executeMethod WordCraft.View.ViewSelfCheck.Run` |
+| Screenshots | `Unity -batchmode -quit -projectPath Client -executeMethod WordCraft.View.ViewShots.Run -shotsOutput shots` (needs a GPU, so no `-nographics`) |
 
 ## Constraints
 

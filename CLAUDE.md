@@ -46,6 +46,25 @@ to whatever platform the editor is already set to. Development builds only: the
 release workflow does not call this entry point — game-ci's `unity-builder`
 brings its own build step.
 
+## See it
+
+```bash
+Unity -batchmode -quit -projectPath Client       -executeMethod WordCraft.View.ViewShots.Run       -shotsOutput shots -shotsTicks 900
+```
+
+Renders five PNGs of the scripted match in progress — the base, the lane and its
+high ground, the whole map, a close-up, the flank — from the camera poses the
+player gets. No `-nographics`: it needs a GPU. This is how a change to the
+field, a model or the light is looked at without launching a player.
+
+```bash
+Unity -batchmode -quit -projectPath Client       -executeMethod WordCraft.View.ViewSelfCheck.Run
+```
+
+Prints `OK: all view determinism checks passed`. Run it after any change under
+`Client/` that reads the world, and after any change to `Sim/` that moves the
+golden hash in `ScriptedLog.cs`.
+
 **The stale-plugin trap.** Unity has no idea the vendored assemblies came from
 source, so forgetting the `dotnet build` does not fail. It produces a perfectly
 working player that plays by last week's rules, with nothing anywhere saying so.
@@ -65,7 +84,11 @@ editor; that order is on you.
   `replay`, `compare`.
 - `Client/` — the Unity 2022 LTS view. Consumes `Sim` and `Net` as compiled
   assemblies that `dotnet build` vendors into `Client/Assets/Plugins/`; they are
-  gitignored, so build once before opening the project.
+  gitignored, so build once before opening the project. The field is 3D and
+  built at runtime from code: `Field.cs` maps sim `(x, y)` to world
+  `(x, height, y)` and is the only place that does, `FieldMesh.cs` is the
+  terrain, `Models.cs` builds every body, `Resources/Shaders/Paper.cginc` is the
+  one lighting model. No scene, prefab, mesh or material asset is ever edited.
 
 The Unity project was built late on purpose, so that Unity types and floating
 point could not leak into the simulation while the determinism core was being
