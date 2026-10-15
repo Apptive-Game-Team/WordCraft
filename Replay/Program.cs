@@ -2179,7 +2179,7 @@ namespace WordCraft.Replay
         /// 인간 대포, 지옥불 용암 아가리 and 돌 골렘 굴림바위 언덕, each entry 0 of
         /// its faction's defense slot.
         /// </summary>
-        internal static bool IsGroundOnlyDefense(Faction faction, Role role, int slot) =>
+        private static bool IsGroundOnlyDefense(Faction faction, Role role, int slot) =>
             role == Role.Defense && slot == 0 &&
             (faction == Faction.Humans || faction == Faction.Hellfire || faction == Faction.RockGolems);
 
