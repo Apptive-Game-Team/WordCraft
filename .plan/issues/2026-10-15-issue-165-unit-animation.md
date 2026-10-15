@@ -68,9 +68,10 @@ a 비율) 로 한다. 곱하기 tint 로는 잔해 색에 닿지 않는다.
 ### 투사체와 impact (`Effects.cs`, 새 파일)
 
 - `MatchView.Pose` 가 쿨다운 리셋을 볼 때 사거리가 2칸을 넘으면 tracer 를 쏜다.
-  공격자 가슴 높이에서 목표 가슴 높이까지 0.12~0.2초 (거리에 비례). 길이 0.4셀.
-- 착탄 순간 impact: shard 5개가 퍼지며 0.25초에 작아져 사라진다. 근접은 tracer
-  없이 impact 만.
+  공격자의 wind-up 뒤에 목표 가슴 높이까지 0.24~0.28초 (거리에 비례). 길이 0.75셀.
+  처음 계획은 0.12~0.2초와 0.4셀이었고, 2차 라운드에서 바꿨다 (아래).
+- 착탄 순간 impact: shard 7개가 퍼지며 0.25초에 작아져 사라지고 땅에 ring 이 퍼진다.
+  근접은 tracer 없이 impact 만.
 - 색은 `BodyPalette.Shot(faction)`. tracer 와 shard 는 미리 만든 pool 에서 꺼내고,
   모자랄 때만 늘린다.
 
@@ -92,6 +93,7 @@ a 비율) 로 한다. 곱하기 tint 로는 잔해 색에 닿지 않는다.
 - [x] **Step 7** — 유휴
 - [x] **Step 8** — 걷기와 공격 다듬기, strip 으로 세 번 이상 반복
 - [x] **Step 9** — 2차 라운드: tracer, wind-up, 불투명 죽음, 유휴 진폭, growth strip
+- [x] **Step 10** — 3차 라운드: 착탄 시점 flinch 와 죽음, fog 처리, 규칙 공유, match strip
 
 ## Validation
 
@@ -126,7 +128,7 @@ strip 을 다섯 번 렌더하며 고쳤다.
 |---|---|---|
 | tracer | 길이 0.5셀, 굵기 0.17, 비행 0.12~0.2초. strip 에 1프레임 | 길이 0.75셀, 굵기 0.34, 반투명 trail (1.3셀, alpha 0.35), 비행 0.24~0.28초, wind-up 뒤 발사. strip 에 2프레임 |
 | impact | shard 5개, 0.24셀 | shard 7개, 0.42셀, 셋 중 하나는 종이 흰색 쪽으로 60%, 땅에 퍼지는 ring decal |
-| 피격 시점 | 피해 순간 | 원거리는 tracer 도착 순간 (`Hit(delay)`), 근접은 즉시 |
+| 피격 시점 | 피해 순간 | 원거리는 tracer 도착 순간, 근접은 즉시 (3차에서 구현 방식 변경) |
 | 공격 준비 | 없음 | 0.0875초 wind-up (뒤로 당김과 웅크림). `Lunge` 팔 160도, `Recoil` 팔 70도. 전체 0.35초 |
 | 죽음 | 0.18초부터 페이드 | 처음 60% 불투명. 걷는 몸은 쓰러지며 다리가 벌어짐, 나는 몸은 떨어져 한 번 튐, 팔이 있는 몸은 팔 반대쪽으로 쓰러짐. 돌 골렘 전투 유닛은 잔해 덩어리 3개 (`Effects.Crumble`) |
 | 유휴 | 호흡 1.8%, 슬라임 눌림 펄스, 부유 크기 비례 | 호흡 3.5%, 슬라임 눌림 연속 11%, 부유 ±0.06 world unit |
@@ -135,11 +137,34 @@ strip 을 다섯 번 렌더하며 고쳤다.
 attack strip 은 Attack 을 frame 0 보다 0.05초 먼저 불러 frame 0 에 wind-up 이 잡힌다.
 유휴 strip 의 인접 프레임 차이(밝기 차 12 초과 픽셀 수)는 1,100~4,800 이다.
 
+## 3차 라운드 (critic 검토 후)
+
+| 항목 | 고친 것 |
+|---|---|
+| 집중 사격 때 flinch 없음 | `Hit(delay)` 는 매번 시작을 미래로 밀었다. `Hit()` 는 이제 즉시만 받고, `Effects` 가 tracer 마다 목표 id 를 들고 있다가 도착한 프레임에 `Landed` 로 알려 MatchView 가 그때 `Hit()` 을 부른다 |
+| 원거리 처치의 순서 | 죽음을 프레임 끝의 `Consequences` 에서 모든 사격 뒤에 준다. `Die(rubble, delay)` 의 delay 는 그 몸으로 날아가는 마지막 tracer 의 남은 시간 (`Effects.Incoming`) 이고, 나중 호출은 쓰러짐을 앞당길 수만 있다 |
+| 안개에서 나온 순간의 가짜 사격 | `cooldowns[i]` 를 fog 판단 전에 모든 entity 에 대해 갱신하고, `Pose` 는 비교 결과만 받는다 |
+| tracer 가 숨은 목표를 드러냄 | 목표가 `Fog.Seen` 이 아니면 tracer 는 거리의 60% 에서 사라지고 burst, ring, landing 이 없다 |
+| harness 와 규칙 중복 | `MatchView.TracerReach`, `Throws(UnitStats)`, `Rubble(Faction, EntityKind)` 를 공개하고 `ViewShots` 가 부른다 |
+| 붉은 hit flash ring | `HitDetection` 이 고른 몸이라도 tracer 가 날아오는 중이면 ring 을 착탄 순간에 켠다 |
+| 검증 공백 | `strip-match-fight`, `-kill`, `-spawn`: 스크립트 매치를 tick 하나에 held-clock 3프레임씩 진행하며 `MatchView.Draw` (LateUpdate 그대로) 로 그린다. `MatchRunner` 상태는 reflection 으로 넣는다 (`MatchRunner` 는 쓰기 범위 밖이고 setter 가 private). peer 0 의 fog 가 켜져 있다 |
+
+match strip 이 찾은 순간: 첫 원거리 사격 tick 150, 첫 유닛 죽음 tick 348 (entity 10, 지옥불 원거리), 첫 생산 유닛 tick 340.
+`strip-match-kill.png` 에서 tick 348 에 죽은 지옥불 원거리 유닛은 뇌우 정령의 tracer 가 닿는 frame 4 까지 서 있다가 frame 5 에 쓰러진다.
+
+이슈 문구에서 달라진 숫자: tracer 0.75셀 (이슈 0.3~0.5), 비행 0.24~0.28초 (이슈 0.12~0.2),
+shard 7개 (이슈 4~6), 걷는 몸 호흡 3.5% (이슈 1~2%). `BodyPalette.cs` 는 이슈의 쓰기 범위 목록에
+없지만, 색 literal 이 들어갈 수 있는 파일이라 `HitFlash` 와 `Shot(faction)` 을 거기에 추가했다.
+
 ## Risks & Rollback
 
 - **Risks:** 컴파일은 Unity 에서만 확인된다. 죽는 몸을 fog 보다 먼저 보이게 하는
-  분기를 잘못 두면 안개 속 적의 죽음이 보이거나, 기억된 건물이 사라진다. 투사체는
-  시뮬레이션의 hitscan 피해보다 0.12~0.2초 늦게 닿는다.
+  분기를 잘못 두면 안개 속 적의 죽음이 보이거나, 기억된 건물이 사라진다. 원거리
+  피격 반응과 그 사격으로 인한 죽음은 시뮬레이션의 즉시 피해보다 0.33~0.37초
+  (wind-up 0.0875초 + 비행 0.24~0.28초) 늦게 보인다. 체력바는 피해 순간에 줄어든다.
+  match strip 은 `MatchRunner` 의 private 멤버 이름 (`previous`, `current`,
+  `lastStepMs`, `World`, `LocalPeer`, `Phase`, `Instance`) 에 기대므로, 그쪽 이름이
+  바뀌면 `ViewShots` 가 `MissingFieldException` 으로 멈춘다.
 - **Rollback steps:** `git revert`. 뷰 파일만 바뀌고 시뮬레이션과 저장 형식은 그대로다.
 
 ## Open Questions
