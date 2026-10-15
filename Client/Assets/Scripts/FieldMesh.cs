@@ -280,6 +280,24 @@ namespace WordCraft.View
             }
         }
 
+        /// <summary>
+        /// How high the solid top of a cell is at plane point (x, z) inside it, for
+        /// a prop standing on rock, whose top is jittered here and so is not
+        /// Field's. Bilinear across the four corners, which is within a few
+        /// hundredths of the two facets the mesh draws; a prop sinks further than
+        /// that into whatever it stands on.
+        /// </summary>
+        internal static float SolidHeight(int cell, float x, float z)
+        {
+            int cx = cell % Field.Cells;
+            int cy = cell / Field.Cells;
+            float fx = Mathf.Clamp01(x - cx);
+            float fz = Mathf.Clamp01(z - cy);
+            float near = Mathf.Lerp(Top(cell, 0), Top(cell, 1), fx);
+            float far = Mathf.Lerp(Top(cell, 2), Top(cell, 3), fx);
+            return Mathf.Lerp(near, far, fz);
+        }
+
         private static bool Flat(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3) =>
             Mathf.Abs(p0.y - p1.y) <= Epsilon && Mathf.Abs(p0.y - p2.y) <= Epsilon && Mathf.Abs(p0.y - p3.y) <= Epsilon;
 

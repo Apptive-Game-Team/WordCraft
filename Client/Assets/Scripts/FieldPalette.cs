@@ -260,6 +260,57 @@ namespace WordCraft.View
         /// <summary>A loose stone's top.</summary>
         public static readonly Color PebbleTop = Rgb(0x96919E);
 
+        /// <summary>A tuft on the high ground: dry, straw coloured, the plateau tops being the windswept, thinner ground.</summary>
+        public static readonly Color DryTuft = Rgb(0x7D7E4B);
+
+        /// <summary>A dry tuft's tips.</summary>
+        public static readonly Color DryTuftTip = Rgb(0xA49C66);
+
+        /// <summary>
+        /// A broadleaf crown's lower facets. A warmer, olive green beside the
+        /// pine's blue green, so the two trees are two kinds at a glance, and kept
+        /// as dark as the pine: the nature spirits are a light yellow green, and a
+        /// light crown the same size as one of them reads as a unit at a glance.
+        /// </summary>
+        public static readonly Color Leaf = Rgb(0x55693C);
+
+        /// <summary>A broadleaf crown's upper facets.</summary>
+        public static readonly Color LeafTop = Rgb(0x6B7F4A);
+
+        /// <summary>A fern's fronds near the root. A deep green, shade-loving, a step darker than the tuft.</summary>
+        public static readonly Color Fern = Rgb(0x4E6D3E);
+
+        /// <summary>A fern's frond tips.</summary>
+        public static readonly Color FernTip = Rgb(0x6E8C50);
+
+        /// <summary>
+        /// Flower heads: cream, pale straw and a faded lilac. Chalky and low in
+        /// saturation, so a clump of flowers is a detail in the grass and never
+        /// a dot of colour that could be read as a unit's owner hue.
+        /// </summary>
+        public static readonly Color FlowerCream = Rgb(0xD8D2B8);
+
+        /// <summary>The straw flower.</summary>
+        public static readonly Color FlowerStraw = Rgb(0xCFBD7A);
+
+        /// <summary>The lilac flower.</summary>
+        public static readonly Color FlowerLilac = Rgb(0xAE9DB4);
+
+        /// <summary>A mushroom's cap. Muted rust, the one warm accent the shade at a cliff's foot gets.</summary>
+        public static readonly Color MushroomCap = Rgb(0x9A6048);
+
+        /// <summary>A mushroom's stem.</summary>
+        public static readonly Color MushroomStem = Rgb(0xD5CBB0);
+
+        /// <summary>The cut end of a fallen log. Pale wood against the bark, so the log reads as cut and lying down.</summary>
+        public static readonly Color LogEnd = Rgb(0xA88C68);
+
+        /// <summary>Rubble under an earth cliff: the cliff's own earth, broken. Between the lip and the foot.</summary>
+        public static readonly Color Rubble = Rgb(0x75644E);
+
+        /// <summary>Earth rubble's tops.</summary>
+        public static readonly Color RubbleTop = Rgb(0x8E7B60);
+
         /// <summary>A reed's stem. Olive, a step away from the grass, so a clump at the shore reads as water plants and not as a tuft that wandered in.</summary>
         public static readonly Color Reed = Rgb(0x66713F);
 
@@ -278,6 +329,10 @@ namespace WordCraft.View
             float t = Mathf.Clamp01(level / (float)Mathf.Max(1, World.MaxHeight));
             return Color.Lerp(GrassLow, GrassHigh, t);
         }
+
+        /// <summary>One of the three flower colours, by index.</summary>
+        public static Color Flower(int index) =>
+            index == 0 ? FlowerCream : index == 1 ? FlowerStraw : FlowerLilac;
 
         /// <summary>The same level's grass on a ramp cell.</summary>
         public static Color Slope(int level) => Color.Lerp(Grass(level), SlopeTint, SlopeShift);
