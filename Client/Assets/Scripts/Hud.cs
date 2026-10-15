@@ -622,7 +622,7 @@ namespace WordCraft.View
 
             CardKind kind = orders.Kind();
             Faction faction = runner.World.FactionOf(runner.LocalPeer);
-            CardSlot[] card = CommandCard.Of(kind, faction);
+            CardSlot[] card = orders.Card();
 
             // The card changes under the same rectangle, so it says what it is.
             // Without this a build submenu and a produce row look alike.
@@ -638,7 +638,7 @@ namespace WordCraft.View
                     top + i / CommandCard.Cols * step,
                     UiStyle.CardCellSize, UiStyle.CardCellSize);
 
-                if (card[i].Type == CommandType.None && !card[i].Aim)
+                if (card[i].Type == CommandType.None && !card[i].Aim && !card[i].More)
                 {
                     UiStyle.EmptyCell(cell);
                     continue;
@@ -660,7 +660,14 @@ namespace WordCraft.View
                 // Armed is the cell inverting, and the aim cell is armed by its own
                 // state rather than by Pending: nothing is pending, because pressing
                 // it puts no command on the wire.
-                bool armed = card[i].Aim ? orders.Aiming : orders.Pending == card[i].Type;
+                //
+                // More is None-typed like the aim cell, and Pending is None while
+                // nothing is armed, so left to the comparison it would read as armed
+                // the whole time. Turning a page is a press and a release, never a
+                // state.
+                bool armed = card[i].Aim
+                    ? orders.Aiming
+                    : !card[i].More && orders.Pending == card[i].Type;
 
                 if (UiStyle.CardCell(cell, CommandCard.Keys[i].ToString(), card[i].Label, armed, live))
                 {

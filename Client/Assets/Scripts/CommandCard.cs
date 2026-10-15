@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using WordCraft.Sim;
@@ -52,6 +53,14 @@ namespace WordCraft.View
         /// so it says so in a field of its own.
         /// </summary>
         public bool Aim;
+
+        /// <summary>
+        /// True on the cell that turns the production list to its next page. Like
+        /// <see cref="Aim"/> it puts nothing on the wire and has no command to
+        /// borrow, so it says so in a field of its own; the page it turns is view
+        /// state (Orders.Page).
+        /// </summary>
+        public bool More;
     }
 
     /// <summary>
@@ -157,16 +166,17 @@ namespace WordCraft.View
 
         /// <summary>
         /// The card for this selection kind, laid out for this faction. Always
-        /// Cells long. The HUD and the keys both call this, so what a key fires is
-        /// always what the button under it says.
+        /// Cells long. The HUD and the keys both get it through Orders.Card, so
+        /// what a key fires is always what the button under it says. Page is the
+        /// production list's page and means nothing to any other card.
         /// </summary>
-        public static CardSlot[] Of(CardKind kind, Faction faction)
+        public static CardSlot[] Of(CardKind kind, Faction faction, int page)
         {
             switch (kind)
             {
                 case CardKind.Fighter: return fighter;
                 case CardKind.Worker: return worker;
-                case CardKind.Building: return Building(faction);
+                case CardKind.Building: return Building(faction, page);
                 case CardKind.BuildMenu: return buildMenu;
                 default: return none;
             }
@@ -180,14 +190,16 @@ namespace WordCraft.View
         /// — runs headless in Replay/ProductionMenuChecks.cs. This method only
         /// turns that list into CardSlots and keys.
         ///
-        /// Rows 1 and 2 (<see cref="ProductionMenu.Cells"/>, six) are the whole
-        /// budget, not the bottom row alone. 차원 유랑종 fills all six today: three
-        /// melee entries (its two temporary extinct-slime summons standing
-        /// beside 화산편), two ranged (틈새 사수 and 멸종한 번개 슬라임), one
-        /// signature — every other faction fits in three. A faction that grew a
-        /// seventh producible entry would overflow this card; nothing on the
-        /// roster does yet, and #114 leaves rebalancing or paging the card to
-        /// whoever adds one.
+        /// Rows 1 and 2 (<see cref="ProductionMenu.Cells"/>, eight) are the whole
+        /// budget, column 3 included: the card was widened to four columns so a
+        /// roster past six entries still has a button each. 차원 유랑종 fills six
+        /// today, every other faction three.
+        ///
+        /// A list longer than eight is paged. Each page lists seven entries and
+        /// cell 11 (key M) becomes More, which turns to the next page and, on the
+        /// last, back to the first. The page is the caller's: it is view state
+        /// (Orders.Page), and turning it sends nothing to the simulation. Every
+        /// entry is on exactly one page, in roster order.
         ///
         /// 도착 goes in cell 2 because it is the last free cell of row 0, and row 0
         /// is where a building's own settings live rather than what it makes. It
@@ -201,7 +213,7 @@ namespace WordCraft.View
         /// appeared only for 차원 유랑종 would move nothing today and everything the
         /// day row 0 grows a fourth entry.
         /// </summary>
-        public static CardSlot[] Building(Faction faction)
+        public static CardSlot[] Building(Faction faction, int page)
         {
             for (int i = 0; i < Cells; i++) building[i] = Empty;
             building[0] = Cmd("Rally", CommandType.SetRallyPoint);
@@ -210,8 +222,12 @@ namespace WordCraft.View
             building[2] = new CardSlot { Label = "Arrive", Aim = true };
 
             List<ProductionMenu.Entry> entries = ProductionMenu.For(faction);
+            int pages = ProductionMenu.Pages(entries.Count);
+            page = Math.Max(0, Math.Min(page, pages - 1));
+            ProductionMenu.PageRange(entries.Count, page, out int first, out int length);
+
             int cell = Cols; // rows 1-2: one cell per producible roster entry
-            for (int i = 0; i < entries.Count && cell < Cells; i++)
+            for (int i = first; i < first + length; i++)
             {
                 ProductionMenu.Entry entry = entries[i];
                 building[cell++] = new CardSlot
@@ -222,8 +238,23 @@ namespace WordCraft.View
                     Slot = entry.Slot,
                 };
             }
+
+            // The last cell of the card, whatever the page holds, so the key that
+            // turns the page never moves. The label says where the list stands.
+            if (pages > 1)
+            {
+                building[Cells - 1] = new CardSlot { Label = "More\n" + (page + 1) + "/" + pages, More = true };
+            }
             return building;
         }
+
+        /// <summary>
+        /// How many pages this faction's production list takes. Orders reads it to
+        /// know where More wraps; the card itself only needs the count to decide
+        /// whether it has a More at all.
+        /// </summary>
+        public static int PageCount(Faction faction) =>
+            ProductionMenu.Pages(ProductionMenu.For(faction).Count);
 
         /// <summary>What the card is for, drawn over it so the player is never guessing.</summary>
         public static string Title(CardKind kind)

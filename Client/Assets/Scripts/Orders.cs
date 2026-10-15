@@ -16,6 +16,7 @@ namespace WordCraft.View
     ///   left click         completes an armed command, Esc cancels it
     ///   build key          opens the submenu; a second key picks the building
     ///   arrive key         names 차원 유랑종's 도착 지점; sends nothing by itself
+    ///   more key           turns the production list to its next page; sends nothing
     /// </summary>
     public sealed class Orders : MonoBehaviour
     {
@@ -61,6 +62,17 @@ namespace WordCraft.View
         /// </summary>
         public bool HasArrivalPoint { get; private set; }
 
+        /// <summary>
+        /// Which page of the production list the building card shows. View state
+        /// like <see cref="BuildMenuOpen"/>: nothing about it reaches the
+        /// simulation, and it goes back to 0 whenever the selection changes, so a
+        /// new building always opens on its first entries.
+        /// </summary>
+        public int Page { get; private set; }
+
+        /// <summary>What the selection looked like when Page was last valid. See SyncPage.</summary>
+        private int pageSignature;
+
         private MatchRunner runner;
         private Selection selection;
         private Camera cam;
@@ -95,6 +107,41 @@ namespace WordCraft.View
 
         /// <summary>The card the current selection shows. The HUD draws it, the keys fire it.</summary>
         public CardKind Kind() => BuildMenuOpen ? CardKind.BuildMenu : SelectionKind();
+
+        /// <summary>
+        /// The card the keys fire and the HUD draws, built from one place so the
+        /// two cannot be handed different pages.
+        /// </summary>
+        public CardSlot[] Card()
+        {
+            SyncPage();
+            return CommandCard.Of(Kind(), runner.World.FactionOf(runner.LocalPeer), Page);
+        }
+
+        /// <summary>
+        /// Drops Page to 0 when the selection is not the one it was turned on. Run
+        /// by whoever reads the card first each frame (Update or the HUD), so a
+        /// frame never draws a new building at the old one's page.
+        ///
+        /// The signature is every selected id in order, not just the representative:
+        /// "the selection changed" means the player picked something else, and a
+        /// representative alone would miss swapping one building for another of the
+        /// same kind. A hash, because only equality is asked.
+        /// </summary>
+        private void SyncPage()
+        {
+            int signature = selection == null ? 0 : selection.Selected.Count;
+            if (selection != null)
+            {
+                for (int i = 0; i < selection.Selected.Count; i++)
+                {
+                    signature = unchecked(signature * 31 + selection.Selected[i]);
+                }
+            }
+            if (signature == pageSignature) return;
+            pageSignature = signature;
+            Page = 0;
+        }
 
         private CardKind SelectionKind()
         {
@@ -134,7 +181,7 @@ namespace WordCraft.View
             // names a point nothing will ever read.
             if (Aiming && !Aims()) Aiming = false;
 
-            CardSlot[] card = CommandCard.Of(Kind(), runner.World.FactionOf(runner.LocalPeer));
+            CardSlot[] card = Card();
             for (int i = 0; i < CommandCard.Cells; i++)
             {
                 if (Input.GetKeyDown(CommandCard.Keys[i])) Run(card[i]);
@@ -232,6 +279,15 @@ namespace WordCraft.View
                 bool was = Aiming;
                 Cancel();
                 Aiming = !was;
+                return;
+            }
+
+            if (slot.More)
+            {
+                // Wraps, so the last page's More is the way back to the first and
+                // the player never has to find another key for it. Nothing is
+                // sent: the page is this component's own.
+                Page = (Page + 1) % CommandCard.PageCount(runner.World.FactionOf(runner.LocalPeer));
                 return;
             }
 
