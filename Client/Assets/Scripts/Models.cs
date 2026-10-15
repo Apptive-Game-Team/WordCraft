@@ -2205,8 +2205,21 @@ namespace WordCraft.View
             switch (role)
             {
                 case Role.Worker: Apprentice(b); break;
-                case Role.Ranged: Commando(b); break;
-                case Role.Signature: if (slot == 1) ScoutDrone(b); else Towerback(b); break;
+                case Role.Ranged:
+                    if (slot == 1) Crossbowman(b);
+                    else if (slot == 2) ArcaneMage(b);
+                    else if (slot == 3) StoneWalker(b);
+                    else if (slot == 4) TowedCannon(b);
+                    else if (slot == 5) ArcaneBomber(b);
+                    else if (slot == 6) ArcaneRider(b);
+                    else Commando(b);
+                    break;
+                case Role.Signature:
+                    if (slot == 1) ScoutDrone(b);
+                    else if (slot == 2) WorkshopEngineer(b);
+                    else if (slot == 3) ManaAmplifier(b);
+                    else Towerback(b);
+                    break;
                 default: GenericUnit(b, Faction.Humans); break;
             }
         }
@@ -2320,6 +2333,237 @@ namespace WordCraft.View
             Wing(b.LimbRight, 1f, Point(0.18f, 0.56f, 0f), 0.3f, 0.18f, 0.12f, 0f, 10f, bronze);
         }
 
+        /// <summary>석궁 사수: a hooded marksman in grey plate and a steel tabard, a wide crossbow levelled forward. No face, the hood is dark.</summary>
+        private static void Crossbowman(Blueprint b)
+        {
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color stone = BodyPalette.Humans.Stone, stoneMid = BodyPalette.Humans.StoneMid;
+            Color steel = BodyPalette.Humans.Steel, wood = BodyPalette.Humans.Wood, bronze = BodyPalette.Humans.Bronze;
+
+            Legs(b, 0.22f, 0.09f, 0.1f, BodyPalette.Humans.StoneDark, wood);
+            hull.Taper(Point(0f, 0.2f, 0f), Pair(0.38f, 0.28f), Pair(0.36f, 0.26f), 0.34f, stoneMid);
+            hull.Box(Point(0f, 0.36f, 0.135f), Extent(0.16f, 0.3f, 0.03f), steel);
+            hull.Box(Point(-0.2f, 0.52f, 0f), Extent(0.12f, 0.08f, 0.24f), stone);
+            hull.Box(Point(0.2f, 0.52f, 0f), Extent(0.12f, 0.08f, 0.24f), stone);
+            hull.Taper(Point(0f, 0.54f, -0.02f), Pair(0.3f, 0.28f), Pair(0.18f, 0.18f), 0.28f, stone);
+            hull.Prism(Point(0f, 0.76f, -0.08f), 4, 0.07f, 0f, 0.14f, stone, Turn(-40f, 0f, 0f));
+            hull.Box(Point(0f, 0.64f, 0.11f), Extent(0.15f, 0.13f, 0.05f), BodyPalette.Humans.Hood);
+            Strap(b, hull, Point(0f, 0.25f, 0f), Extent(0.39f, 0.05f, 0.29f));
+
+            b.Arm.Origin = Point(0.18f, 0.46f, 0.04f);
+            b.Arm.Box(Point(0.1f, 0.44f, 0.22f), Extent(0.06f, 0.06f, 0.42f), wood);
+            b.Arm.Box(Point(-0.04f, 0.45f, 0.38f), Extent(0.28f, 0.04f, 0.05f), bronze, Turn(0f, -14f, 0f));
+            b.Arm.Box(Point(0.24f, 0.45f, 0.38f), Extent(0.28f, 0.04f, 0.05f), bronze, Turn(0f, 14f, 0f));
+            b.Arm.Box(Point(0.1f, 0.47f, 0.32f), Extent(0.48f, 0.012f, 0.012f), BodyPalette.Humans.Canvas);
+            b.Arm.Prism(Point(0.1f, 0.48f, 0.42f), 4, 0.025f, 0f, 0.06f, steel, Lying);
+        }
+
+        /// <summary>마도사: a robed mage, steel pauldrons, a pointed hood, a tall staff crowned with a large mana crystal.</summary>
+        private static void ArcaneMage(Blueprint b)
+        {
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color stone = BodyPalette.Humans.Stone, steel = BodyPalette.Humans.Steel;
+            Color bronze = BodyPalette.Humans.Bronze, mana = BodyPalette.Humans.Mana;
+
+            Legs(b, 0.14f, 0.08f, 0.08f, BodyPalette.Humans.StoneDark, BodyPalette.Humans.Wood);
+            hull.Taper(Point(0f, 0.06f, 0f), Pair(0.5f, 0.42f), Pair(0.28f, 0.24f), 0.52f, stone);
+            hull.Box(Point(0f, 0.3f, 0.165f), Extent(0.08f, 0.46f, 0.03f), steel, Turn(-10f, 0f, 0f));
+            hull.Box(Point(-0.17f, 0.56f, 0f), Extent(0.14f, 0.08f, 0.26f), steel);
+            hull.Box(Point(0.17f, 0.56f, 0f), Extent(0.14f, 0.08f, 0.26f), steel);
+            hull.Box(Point(0f, 0.55f, 0.13f), Extent(0.06f, 0.06f, 0.03f), bronze);
+            hull.Taper(Point(0f, 0.58f, -0.02f), Pair(0.26f, 0.26f), Pair(0.16f, 0.16f), 0.24f, stone);
+            hull.Prism(Point(0f, 0.8f, -0.05f), 4, 0.09f, 0f, 0.24f, steel, Turn(-25f, 0f, 0f));
+            hull.Box(Point(0f, 0.67f, 0.1f), Extent(0.14f, 0.13f, 0.05f), BodyPalette.Humans.Hood);
+            Strap(b, hull, Point(0f, 0.38f, 0f), Extent(0.34f, 0.05f, 0.3f));
+
+            b.Arm.Origin = Point(0.24f, 0.46f, 0.04f);
+            b.Arm.Box(Point(0.25f, 0.42f, 0.06f), Extent(0.08f, 0.1f, 0.08f), stone);
+            b.Arm.Box(Point(0.27f, 0.52f, 0.1f), Extent(0.035f, 0.95f, 0.035f), BodyPalette.Humans.Wood);
+            b.Arm.Prism(Point(0.27f, 0.98f, 0.1f), 4, 0.04f, 0.07f, 0.06f, bronze);
+            b.Arm.Prism(Point(0.27f, 1.08f, 0.1f), 4, 0.08f, 0f, 0.14f, mana);
+            b.Arm.Prism(Point(0.27f, 1.08f, 0.1f), 4, 0.08f, 0f, 0.09f, mana, Turn(180f, 0f, 0f));
+        }
+
+        /// <summary>석조 보행 포대: a low cut-stone battery on four block legs, a thick front plate, a short cannon on a steel turret.</summary>
+        private static void StoneWalker(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Step;
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color stone = BodyPalette.Humans.Stone, stoneMid = BodyPalette.Humans.StoneMid, steel = BodyPalette.Humans.Steel;
+            Color bronze = BodyPalette.Humans.Bronze;
+
+            hull.Box(Point(0f, 0.42f, -0.04f), Extent(0.56f, 0.28f, 0.6f), stone);
+            hull.Box(Point(0f, 0.42f, -0.04f), Extent(0.58f, 0.03f, 0.62f), stoneMid);
+            hull.Box(Point(0f, 0.42f, 0.29f), Extent(0.62f, 0.34f, 0.08f), stoneMid);
+            for (int side = -1; side <= 1; side += 2)
+                hull.Box(Point(side * 0.2f, 0.5f, 0.335f), Extent(0.05f, 0.05f, 0.02f), bronze);
+            Strap(b, hull, Point(0f, 0.32f, -0.04f), Extent(0.58f, 0.05f, 0.62f));
+
+            WalkerLeg(b.LimbLeft, -0.2f, 0.16f);
+            WalkerLeg(b.LimbLeft, 0.2f, -0.24f);
+            WalkerLeg(b.LimbRight, 0.2f, 0.16f);
+            WalkerLeg(b.LimbRight, -0.2f, -0.24f);
+
+            b.Arm.Origin = Point(0f, 0.6f, -0.06f);
+            b.Arm.Box(Point(0f, 0.64f, -0.06f), Extent(0.34f, 0.14f, 0.34f), steel);
+            b.Arm.Prism(Point(0f, 0.68f, 0f), 8, 0.1f, 0.09f, 0.42f, BodyPalette.Humans.StoneDark, Lying);
+            b.Arm.Prism(Point(0f, 0.68f, 0.4f), 8, 0.11f, 0.11f, 0.05f, bronze, Lying);
+        }
+
+        private static void WalkerLeg(Solids part, float x, float z)
+        {
+            part.Box(Point(x, 0.16f, z), Extent(0.14f, 0.28f, 0.16f), BodyPalette.Humans.StoneMid);
+            part.Box(Point(x, 0.03f, z + 0.02f), Extent(0.17f, 0.06f, 0.2f), BodyPalette.Humans.Steel);
+        }
+
+        /// <summary>견인 대포: a long barrel on a wooden carriage between two wheels, a trail bar dragging behind. Rolls rather than walks.</summary>
+        private static void TowedCannon(Blueprint b)
+        {
+            b.Gait = Gait.Float;
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color wood = BodyPalette.Humans.Wood, steel = BodyPalette.Humans.Steel, bronze = BodyPalette.Humans.Bronze;
+
+            for (int side = -1; side <= 1; side += 2)
+            {
+                hull.Prism(Point(side * 0.26f, 0.24f, 0f), 10, 0.24f, 0.24f, 0.07f, wood, Turn(0f, 0f, -side * 90f));
+                hull.Prism(Point(side * 0.32f, 0.24f, 0f), 6, 0.07f, 0.06f, 0.04f, steel, Turn(0f, 0f, -side * 90f));
+            }
+            hull.Box(Point(0f, 0.24f, 0f), Extent(0.54f, 0.06f, 0.06f), BodyPalette.Humans.SteelDark);
+            hull.Box(Point(0f, 0.32f, -0.1f), Extent(0.3f, 0.12f, 0.4f), wood);
+            hull.Box(Point(0f, 0.18f, -0.5f), Extent(0.08f, 0.06f, 0.54f), wood, Turn(-16f, 0f, 0f));
+            hull.Box(Point(0f, 0.06f, -0.76f), Extent(0.12f, 0.06f, 0.08f), steel);
+            Strap(b, hull, Point(0f, 0.32f, -0.22f), Extent(0.32f, 0.13f, 0.06f));
+
+            b.Arm.Origin = Point(0f, 0.4f, -0.1f);
+            b.Arm.Box(Point(0f, 0.42f, -0.2f), Extent(0.22f, 0.2f, 0.26f), BodyPalette.Humans.Stone);
+            b.Arm.Prism(Point(0f, 0.44f, -0.1f), 10, 0.1f, 0.075f, 0.74f, BodyPalette.Humans.StoneDark, Turn(84f, 0f, 0f));
+            b.Arm.Prism(Point(0f, 0.47f, 0.18f), 10, 0.1f, 0.1f, 0.04f, steel, Turn(84f, 0f, 0f));
+            b.Arm.Prism(Point(0f, 0.51f, 0.6f), 10, 0.095f, 0.095f, 0.05f, bronze, Turn(84f, 0f, 0f));
+        }
+
+        /// <summary>마도 폭격선: a stone-and-steel hull on two wide straight wings, a closed bomb bay underneath, a tail fin. Airborne.</summary>
+        private static void ArcaneBomber(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Flap;
+            b.LimbsRideHull = true;
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color stone = BodyPalette.Humans.Stone, steel = BodyPalette.Humans.Steel, bronze = BodyPalette.Humans.Bronze;
+
+            hull.Prism(Point(0f, 0.42f, -0.48f), 8, 0.12f, 0.2f, 0.32f, steel, Lying);
+            hull.Prism(Point(0f, 0.42f, -0.16f), 8, 0.2f, 0.2f, 0.4f, stone, Lying);
+            hull.Prism(Point(0f, 0.42f, 0.24f), 8, 0.2f, 0.08f, 0.22f, steel, Lying);
+            hull.Prism(Point(0f, 0.42f, 0.45f), 8, 0.06f, 0.06f, 0.03f, BodyPalette.Humans.Mana, Lying);
+            hull.Prism(Point(0f, 0.42f, -0.18f), 8, 0.21f, 0.21f, 0.04f, bronze, Lying);
+            hull.Prism(Point(0f, 0.42f, 0.18f), 8, 0.21f, 0.21f, 0.04f, bronze, Lying);
+            hull.Box(Point(0f, 0.22f, 0f), Extent(0.18f, 0.08f, 0.3f), BodyPalette.Humans.StoneDark);
+            hull.Box(Point(0f, 0.18f, 0f), Extent(0.02f, 0.01f, 0.28f), bronze);
+            hull.Box(Point(0f, 0.6f, -0.46f), Extent(0.03f, 0.2f, 0.18f), steel);
+            hull.Box(Point(0f, 0.44f, -0.54f), Extent(0.42f, 0.03f, 0.12f), bronze);
+            Strap(b, hull, Point(0f, 0.62f, -0.02f), Extent(0.16f, 0.03f, 0.2f));
+
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Solids wing = side < 0 ? b.LimbLeft : b.LimbRight;
+                Wing(wing, side, Point(0.18f, 0.44f, 0f), 0.52f, 0.24f, 0.18f, 0f, 4f, steel);
+                wing.Box(Point(side * 0.44f, 0.46f, 0.12f), Extent(0.52f, 0.03f, 0.03f), bronze);
+            }
+        }
+
+        /// <summary>마도 기수: a rider in steel on a four-legged stone mount with a lens for a head, a short gun levelled forward.</summary>
+        private static void ArcaneRider(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Step;
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color stone = BodyPalette.Humans.Stone, stoneMid = BodyPalette.Humans.StoneMid, steel = BodyPalette.Humans.Steel;
+
+            hull.Box(Point(0f, 0.42f, 0f), Extent(0.4f, 0.2f, 0.62f), stone);
+            hull.Box(Point(0f, 0.43f, 0f), Extent(0.42f, 0.04f, 0.3f), steel);
+            hull.Box(Point(0f, 0.5f, 0.38f), Extent(0.22f, 0.2f, 0.2f), stoneMid);
+            hull.Prism(Point(0f, 0.52f, 0.48f), 8, 0.06f, 0.06f, 0.03f, BodyPalette.Humans.Mana, Lying);
+            hull.Box(Point(0f, 0.64f, -0.06f), Extent(0.22f, 0.24f, 0.16f), steel);
+            hull.Box(Point(0f, 0.84f, -0.06f), Extent(0.15f, 0.15f, 0.15f), stone);
+            hull.Box(Point(0f, 0.83f, 0.01f), Extent(0.12f, 0.09f, 0.03f), BodyPalette.Humans.Hood);
+            Strap(b, hull, Point(0f, 0.72f, -0.06f), Extent(0.24f, 0.05f, 0.18f));
+
+            RiderLeg(b.LimbLeft, -0.16f, 0.2f);
+            RiderLeg(b.LimbLeft, 0.16f, -0.22f);
+            RiderLeg(b.LimbRight, 0.16f, 0.2f);
+            RiderLeg(b.LimbRight, -0.16f, -0.22f);
+
+            b.Arm.Origin = Point(0.14f, 0.66f, 0f);
+            b.Arm.Box(Point(0.15f, 0.64f, 0.04f), Extent(0.07f, 0.08f, 0.12f), steel);
+            b.Arm.Prism(Point(0.15f, 0.66f, 0f), 6, 0.04f, 0.04f, 0.36f, BodyPalette.Humans.StoneDark, Lying);
+            b.Arm.Prism(Point(0.15f, 0.66f, 0.34f), 6, 0.05f, 0.05f, 0.04f, BodyPalette.Humans.Bronze, Lying);
+        }
+
+        private static void RiderLeg(Solids part, float x, float z)
+        {
+            part.Box(Point(x, 0.17f, z), Extent(0.1f, 0.3f, 0.12f), BodyPalette.Humans.StoneMid);
+            part.Box(Point(x, 0.3f, z), Extent(0.12f, 0.06f, 0.14f), BodyPalette.Humans.Steel);
+            part.Box(Point(x, 0.03f, z + 0.02f), Extent(0.13f, 0.06f, 0.16f), BodyPalette.Humans.SteelDark);
+        }
+
+        /// <summary>공방 기술자: a capped engineer in a canvas apron, a tool box at the hip, a big wrench in hand. Weaponless.</summary>
+        private static void WorkshopEngineer(Blueprint b)
+        {
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color steel = BodyPalette.Humans.Steel, wood = BodyPalette.Humans.Wood, bronze = BodyPalette.Humans.Bronze;
+
+            Legs(b, 0.22f, 0.09f, 0.1f, BodyPalette.Humans.SteelDark, wood);
+            hull.Taper(Point(0f, 0.2f, 0f), Pair(0.38f, 0.28f), Pair(0.38f, 0.26f), 0.36f, steel);
+            hull.Box(Point(0f, 0.34f, 0.14f), Extent(0.26f, 0.34f, 0.03f), BodyPalette.Humans.Canvas);
+            hull.Box(Point(0f, 0.68f, 0.02f), Extent(0.22f, 0.18f, 0.2f), BodyPalette.Humans.StoneMid);
+            hull.Box(Point(0f, 0.79f, 0.02f), Extent(0.26f, 0.06f, 0.24f), bronze);
+            hull.Box(Point(0f, 0.79f, 0.16f), Extent(0.2f, 0.03f, 0.08f), bronze);
+            hull.Box(Point(0f, 0.66f, 0.12f), Extent(0.16f, 0.1f, 0.03f), BodyPalette.Humans.Hood);
+            hull.Box(Point(-0.29f, 0.26f, 0.04f), Extent(0.14f, 0.14f, 0.24f), wood);
+            hull.Box(Point(-0.29f, 0.34f, 0.04f), Extent(0.15f, 0.03f, 0.25f), bronze);
+            Strap(b, hull, Point(0f, 0.25f, 0f), Extent(0.4f, 0.05f, 0.29f));
+
+            b.Arm.Origin = Point(0.24f, 0.5f, 0.04f);
+            b.Arm.Box(Point(0.26f, 0.42f, 0.06f), Extent(0.08f, 0.1f, 0.08f), steel);
+            b.Arm.Box(Point(0.27f, 0.48f, 0.14f), Extent(0.05f, 0.46f, 0.05f), BodyPalette.Humans.StoneDark, Turn(25f, 0f, 0f));
+            b.Arm.Box(Point(0.27f, 0.72f, 0.24f), Extent(0.07f, 0.08f, 0.2f), BodyPalette.Humans.Stone, Turn(25f, 0f, 0f));
+            b.Arm.Box(Point(0.27f, 0.8f, 0.2f), Extent(0.07f, 0.1f, 0.05f), BodyPalette.Humans.Stone, Turn(25f, 0f, 0f));
+            b.Arm.Box(Point(0.27f, 0.76f, 0.34f), Extent(0.07f, 0.1f, 0.05f), BodyPalette.Humans.Stone, Turn(25f, 0f, 0f));
+        }
+
+        /// <summary>마나 증폭기: a wheeled steel cart carrying a stone pillar, a guarded crystal and two antennas. Rolls; weaponless.</summary>
+        private static void ManaAmplifier(Blueprint b)
+        {
+            b.Gait = Gait.Float;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color stone = BodyPalette.Humans.Stone, steel = BodyPalette.Humans.Steel, bronze = BodyPalette.Humans.Bronze;
+            Color mana = BodyPalette.Humans.Mana;
+
+            hull.Box(Point(0f, 0.24f, 0f), Extent(0.56f, 0.18f, 0.5f), steel);
+            for (int i = 0; i < 4; i++)
+            {
+                float x = i % 2 == 0 ? -0.29f : 0.29f, z = i < 2 ? 0.16f : -0.16f;
+                hull.Prism(Point(x, 0.12f, z), 8, 0.12f, 0.12f, 0.06f, BodyPalette.Humans.StoneDark, Turn(0f, 0f, x < 0f ? 90f : -90f));
+            }
+            hull.Box(Point(0f, 0.6f, 0f), Extent(0.3f, 0.54f, 0.3f), stone);
+            hull.Box(Point(0f, 0.45f, 0f), Extent(0.32f, 0.04f, 0.32f), bronze);
+            hull.Box(Point(0f, 0.6f, 0.155f), Extent(0.14f, 0.2f, 0.02f), mana);
+            hull.Box(Point(0f, 0.6f, 0.165f), Extent(0.02f, 0.22f, 0.02f), bronze);
+            hull.Box(Point(0f, 0.88f, 0f), Extent(0.34f, 0.04f, 0.34f), BodyPalette.Humans.StoneMid);
+            hull.Prism(Point(0f, 0.9f, 0f), 4, 0.08f, 0f, 0.18f, mana);
+            for (int side = -1; side <= 1; side += 2)
+            {
+                hull.Box(Point(side * 0.24f, 0.72f, 0f), Extent(0.04f, 0.6f, 0.04f), steel, Turn(0f, 0f, -side * 8f));
+                hull.Box(Point(side * 0.28f, 1.02f, 0f), Extent(0.08f, 0.08f, 0.08f), bronze);
+            }
+            Strap(b, hull, Point(0f, 0.3f, 0f), Extent(0.58f, 0.05f, 0.52f));
+        }
+
         // ------------------------------------------------------------------
         // Buildings. Authored in world units: a footprint of F cells is F units
         // wide. Heights follow issue #159's brief — Base about 3.2, Production
@@ -2357,6 +2601,7 @@ namespace WordCraft.View
                 case Faction.WaterSlimes: return WaterSlimeExtraBuilding(b, role, slot);
                 case Faction.RockGolems: return RockGolemExtraBuilding(b, role, slot);
                 case Faction.Driftworlds: return DriftworldExtraBuilding(b, role, slot);
+                case Faction.Humans: return HumanExtraBuilding(b, role, slot);
                 default: return false;
             }
         }
@@ -3573,6 +3818,153 @@ namespace WordCraft.View
                 default:
                     GenericBuilding(b, Faction.Humans, Cells(role));
                     break;
+            }
+        }
+
+        private static bool HumanExtraBuilding(Blueprint b, Role role, int slot)
+        {
+            Solids hull = b.Hull;
+            Color stone = BodyPalette.Humans.Stone, stoneMid = BodyPalette.Humans.StoneMid, stoneDark = BodyPalette.Humans.StoneDark;
+            Color steel = BodyPalette.Humans.Steel, wood = BodyPalette.Humans.Wood, bronze = BodyPalette.Humans.Bronze;
+            Color mana = BodyPalette.Humans.Mana;
+
+            // Fronts face -z here, the camera's side: a building stands unturned.
+            switch (role)
+            {
+                case Role.Production when slot == 1:
+                    // 석조 병영: a long low hall under a steel roof, a gatehouse in front, a fenced yard either side.
+                    hull.Box(Point(0f, 0.06f, 0f), Extent(2.6f, 0.12f, 1.9f), stoneMid);
+                    Strap(b, hull, Point(0f, 0.06f, 0f), Extent(2.64f, 0.06f, 1.94f));
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        for (int k = 0; k < 3; k++)
+                            hull.Box(Point(side * (0.75f + k * 0.25f), 0.26f, -0.82f), Extent(0.06f, 0.3f, 0.06f), wood);
+                        hull.Box(Point(side * 1.0f, 0.3f, -0.82f), Extent(0.56f, 0.05f, 0.04f), wood);
+                    }
+                    hull = b.Tier(Point(0f, 0.12f, 0.3f));
+                    hull.Box(Point(0f, 0.52f, 0.3f), Extent(2.2f, 0.8f, 1.0f), stone);
+                    hull.Box(Point(0f, 0.6f, -0.205f), Extent(2.2f, 0.06f, 0.02f), stoneMid);
+                    hull = b.Tier(Point(0f, 0.92f, 0.3f));
+                    hull.Taper(Point(0f, 0.92f, 0.3f), Pair(2.3f, 1.1f), Pair(2.3f, 0.08f), 0.5f, steel);
+                    hull = b.Tier(Point(0f, 0.12f, -0.25f));
+                    hull.Box(Point(0f, 0.77f, -0.25f), Extent(0.8f, 1.3f, 0.7f), stone);
+                    hull.Box(Point(0f, 0.42f, -0.605f), Extent(0.36f, 0.6f, 0.04f), wood);
+                    hull.Box(Point(0f, 0.76f, -0.61f), Extent(0.44f, 0.06f, 0.04f), bronze);
+                    for (int i = 0; i < 4; i++)
+                    {
+                        float yaw = 45f + i * 90f;
+                        hull.Box(Around(yaw) * 0.42f + Point(0f, 1.48f, -0.25f), Extent(0.16f, 0.16f, 0.16f), stoneMid);
+                    }
+                    if (b.HasAccent) hull.Box(Point(0f, 1.08f, -0.61f), Extent(0.26f, 0.36f, 0.03f), b.Accent);
+                    return true;
+
+                case Role.Production when slot == 2:
+                {
+                    // 마도 공창: two open workshops, a cannon carriage in one and a mana forge in the other, a crane turning between them.
+                    hull.Box(Point(0f, 0.06f, 0f), Extent(2.6f, 0.12f, 1.9f), stoneMid);
+                    Strap(b, hull, Point(0f, 0.06f, 0f), Extent(2.64f, 0.06f, 1.94f));
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        hull = b.Tier(Point(side * 0.85f, 0.12f, 0f));
+                        hull.Box(Point(side * 0.85f, 0.62f, 0.5f), Extent(0.9f, 1.0f, 0.14f), stone);
+                        hull.Box(Point(side * 1.24f, 0.62f, 0.05f), Extent(0.14f, 1.0f, 1.0f), stone);
+                        hull.Box(Point(side * 0.85f, 1.16f, 0.08f), Extent(1.0f, 0.1f, 1.1f), steel);
+                        hull.Box(Point(side * 0.85f, 1.1f, -0.47f), Extent(1.0f, 0.12f, 0.06f), wood);
+                        if (side < 0)
+                        {
+                            hull.Prism(Point(-0.85f, 0.38f, -0.2f), 10, 0.1f, 0.08f, 0.6f, stoneDark, Turn(90f, 0f, 0f));
+                            hull.Prism(Point(-1.05f, 0.3f, 0f), 10, 0.18f, 0.18f, 0.05f, wood, Turn(0f, 0f, 90f));
+                            hull.Prism(Point(-0.65f, 0.3f, 0f), 10, 0.18f, 0.18f, 0.05f, wood, Turn(0f, 0f, -90f));
+                        }
+                        else
+                        {
+                            hull.Box(Point(0.85f, 0.32f, 0.05f), Extent(0.5f, 0.4f, 0.4f), stoneDark);
+                            hull.Box(Point(0.85f, 0.34f, -0.16f), Extent(0.24f, 0.16f, 0.02f), mana);
+                        }
+                    }
+                    hull = b.Tier(Point(0f, 0.12f, 0.3f));
+                    hull.Box(Point(-0.22f, 1.0f, 0.3f), Extent(0.14f, 1.8f, 0.14f), wood);
+                    hull.Box(Point(0.22f, 1.0f, 0.3f), Extent(0.14f, 1.8f, 0.14f), wood);
+                    hull.Box(Point(0f, 1.86f, 0.3f), Extent(0.6f, 0.12f, 0.18f), bronze);
+                    if (b.HasAccent) hull.Box(Point(0f, 1.5f, 0.22f), Extent(0.3f, 0.4f, 0.03f), b.Accent);
+
+                    Solids crown = b.Crown;
+                    crown.Origin = Point(0f, 1.92f, 0.3f);
+                    crown.Box(Point(0f, 2.0f, 0.3f), Extent(0.18f, 0.08f, 0.18f), steel);
+                    crown.Box(Point(0f, 2.06f, -0.15f), Extent(0.1f, 0.1f, 1.1f), bronze);
+                    crown.Box(Point(0f, 1.78f, -0.6f), Extent(0.025f, 0.5f, 0.025f), stoneDark);
+                    crown.Box(Point(0f, 1.5f, -0.6f), Extent(0.14f, 0.1f, 0.1f), steel);
+                    b.CrownSpin = 12f;
+                    return true;
+                }
+
+                case Role.Tech when slot == 1:
+                {
+                    // 마도 학당: a tall hall under a steep roof between two low wings, a book and a crystal over the door, a crystal turning on the spire.
+                    hull.Box(Point(0f, 0.06f, 0f), Extent(1.7f, 0.12f, 1.4f), stoneMid);
+                    Strap(b, hull, Point(0f, 0.06f, 0f), Extent(1.74f, 0.06f, 1.44f));
+                    hull = b.Tier(Point(0f, 0.12f, 0.05f));
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        hull.Box(Point(side * 0.56f, 0.46f, 0.05f), Extent(0.5f, 0.68f, 1.0f), stone);
+                        hull.Prism(Point(side * 0.56f, 0.8f, 0.05f), 4, 0.42f, 0f, 0.4f, steel);
+                        hull.Box(Point(side * 0.56f, 0.5f, -0.455f), Extent(0.14f, 0.24f, 0.02f), mana);
+                    }
+                    hull = b.Tier(Point(0f, 0.12f, 0f));
+                    hull.Box(Point(0f, 0.8f, 0f), Extent(0.7f, 1.36f, 0.8f), stone);
+                    hull.Box(Point(0f, 0.36f, -0.41f), Extent(0.26f, 0.48f, 0.03f), wood);
+                    hull.Box(Point(0f, 0.86f, -0.415f), Extent(0.34f, 0.22f, 0.03f), BodyPalette.Humans.Canvas);
+                    hull.Box(Point(0f, 0.86f, -0.43f), Extent(0.03f, 0.22f, 0.02f), bronze);
+                    hull.Box(Point(0f, 1.18f, -0.415f), Extent(0.12f, 0.2f, 0.03f), mana);
+                    hull = b.Tier(Point(0f, 1.48f, 0f));
+                    hull.Prism(Point(0f, 1.48f, 0f), 4, 0.62f, 0f, 0.75f, steel);
+                    hull.Prism(Point(0f, 2.1f, 0f), 6, 0.04f, 0.04f, 0.3f, bronze);
+
+                    Solids crown = b.Crown;
+                    crown.Origin = Point(0f, 2.4f, 0f);
+                    crown.Prism(Point(0f, 2.48f, 0f), 4, 0.12f, 0f, 0.22f, mana);
+                    crown.Prism(Point(0f, 2.48f, 0f), 4, 0.12f, 0f, 0.14f, mana, Turn(180f, 0f, 0f));
+                    crown.Box(Point(0f, 2.48f, 0f), Extent(0.36f, 0.03f, 0.03f), bronze);
+                    b.CrownSpin = 50f;
+                    return true;
+                }
+
+                case Role.Tech when slot == 2:
+                {
+                    // 결속대: a low platform between two hooked stone posts, bronze chains hanging to an empty slab, a binding ring turning over it.
+                    hull.Box(Point(0f, 0.12f, 0f), Extent(1.6f, 0.24f, 1.2f), stone);
+                    hull.Box(Point(0f, 0.27f, 0f), Extent(0.8f, 0.06f, 0.6f), stoneMid);
+                    for (int i = 0; i < 4; i++)
+                        hull.Box(Point(i % 2 == 0 ? -0.72f : 0.72f, 0.2f, i < 2 ? -0.52f : 0.52f), Extent(0.2f, 0.18f, 0.2f), steel);
+                    Strap(b, hull, Point(0f, 0.1f, 0f), Extent(1.64f, 0.08f, 1.24f));
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        hull = b.Tier(Point(side * 0.62f, 0.24f, 0f));
+                        hull.Box(Point(side * 0.62f, 0.74f, 0f), Extent(0.26f, 1.0f, 0.3f), stone);
+                        hull.Box(Point(side * 0.48f, 1.32f, 0f), Extent(0.4f, 0.18f, 0.3f), stoneMid);
+                        hull.Box(Point(side * 0.32f, 1.18f, 0f), Extent(0.1f, 0.18f, 0.3f), stoneMid);
+                        hull.Box(Point(side * 0.62f, 0.56f, -0.16f), Extent(0.3f, 0.5f, 0.04f), steel);
+                        for (int k = 0; k < 5; k++)
+                        {
+                            float t = k / 4f;
+                            hull.Box(Point(side * Mathf.Lerp(0.32f, 0.14f, t), Mathf.Lerp(1.06f, 0.4f, t), 0f), Extent(0.06f, 0.1f, 0.03f), bronze,
+                                     Turn(0f, k % 2 == 0 ? 0f : 90f, side * 20f));
+                        }
+                    }
+
+                    Solids crown = b.Crown;
+                    crown.Origin = Point(0f, 0.85f, 0f);
+                    for (int i = 0; i < 8; i++)
+                    {
+                        float yaw = i * 45f;
+                        crown.Box(Around(yaw) * 0.22f + Point(0f, 0.85f, 0f), Extent(0.1f, 0.05f, 0.05f), bronze, Quaternion.Euler(0f, yaw + 90f, 0f));
+                    }
+                    b.CrownSpin = 30f;
+                    return true;
+                }
+
+                default:
+                    return false;
             }
         }
 
