@@ -821,8 +821,8 @@ namespace WordCraft.View
 
         /// <summary>
         /// The first tick the scripted log sets off anything issue #206 draws:
-        /// a body slowed or burning, a heal (hp up with MaxHp unchanged, not a
-        /// site), or a shot by a body holding an unlocked chain row. Read as
+        /// a body slowed or burning, a heal (hp up with MaxHp unchanged, and
+        /// not a site, nor one that finished this tick), or a shot by a body holding an unlocked chain row. Read as
         /// MatchView reads them. -1 when there is none.
         /// </summary>
         private static int StatusMoment(List<Command>[] log, out Vector2 at, out string what)
@@ -832,6 +832,7 @@ namespace WordCraft.View
             World world = Scripted();
             var hp = new List<int>();
             var top = new List<int>();
+            var sites = new List<int>();
             var cooldowns = new List<int>();
             for (int t = 0; t < log.Length; t++)
             {
@@ -843,12 +844,13 @@ namespace WordCraft.View
                     {
                         hp.Add(e.Hp);
                         top.Add(e.MaxHp);
+                        sites.Add(e.BuildTicksLeft);
                         cooldowns.Add(e.AttackCooldown);
                         continue;
                     }
                     if (e.Alive && e.SlowTicksLeft > 0) what = "slow";
                     else if (e.Alive && e.BurnTicksLeft > 0) what = "burn";
-                    else if (e.Alive && e.Hp > hp[i] && e.MaxHp == top[i] && e.BuildTicksLeft == 0) what = "heal";
+                    else if (e.Alive && e.Hp > hp[i] && e.MaxHp == top[i] && sites[i] == 0 && e.BuildTicksLeft == 0) what = "heal";
                     else if (e.Owner >= 0 && e.AttackCooldown > cooldowns[i])
                     {
                         int row = FactionData.AbilityOf(world.FactionOf(e.Owner), e.Role, e.Slot, AbilityKind.ChainOnHit);
@@ -856,6 +858,7 @@ namespace WordCraft.View
                     }
                     hp[i] = e.Hp;
                     top[i] = e.MaxHp;
+                    sites[i] = e.BuildTicksLeft;
                     cooldowns[i] = e.AttackCooldown;
                     if (what != null)
                     {
