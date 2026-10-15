@@ -120,6 +120,7 @@ namespace WordCraft.Replay
                 SelectionMatchChecks.Check();
                 CaptureOrderChecks.Check();
                 ArrivalOrderChecks.Check();
+                RemnantFadeChecks.Check();
                 TerrainChecks.Check();
                 SeparationChecks.Check();
                 UpgradeChecks.Check();
