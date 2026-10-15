@@ -669,10 +669,9 @@ namespace WordCraft.View
         ///
         /// Three columns per cell edge: the two corners and the middle. The top and
         /// foot rows never move, because they are where the wall meets the ground
-        /// above and below and that ground is Field's. Corner columns move by a
-        /// vector hashed from the grid point and the stratum alone, so the two
-        /// walls that share a corner — straight on, or turning round a plateau's
-        /// corner — compute the same vertex and meet without a crack.
+        /// above and below and that ground is Field's. The middle column bulges;
+        /// corner columns only move up and down their own vertical line (see
+        /// <see cref="Jitter"/>), so walls meeting at a corner close along it.
         /// </summary>
         private static void Strata(Facets f, Vector2 e0, Vector2 e1, float top0, float top1, float foot0, float foot1,
                                    Vector3 outward, Color lip, Color footColour, Color rim)
@@ -716,8 +715,13 @@ namespace WordCraft.View
         /// Where one stratum vertex moves. Keyed by the point doubled, so a mid
         /// edge point and a corner both land on whole numbers, and by the stratum
         /// index, so every band moves on its own. Mid edge vertices bulge mostly
-        /// out from the wall; corner vertices move in any direction on the ground
-        /// plane, since a corner may be shared by a wall facing another way.
+        /// out from the wall and lift or drop a little. Corner vertices only lift
+        /// or drop: they stay on the corner's vertical line, which is the one line
+        /// every face meeting at that grid point shares — another strata wall
+        /// round the corner, a plain wall where a ramp meets the cliff, a seam
+        /// with fewer strata. Faces that each keep their edge on that line meet
+        /// along it whatever rows they built, so the corner stays closed without
+        /// every wall there having to build the same column.
         /// </summary>
         private static Vector3 Jitter(Vector2 at, int stratum, Vector3 outward, bool corner)
         {
@@ -725,11 +729,7 @@ namespace WordCraft.View
             int gz = Mathf.RoundToInt(at.y * 2f);
             int salt = 20 + stratum * 3;
             float lift = (Unit(gx, gz, salt + 1) - 0.5f) * 0.1f;
-            if (corner)
-            {
-                return new Vector3((Unit(gx, gz, salt) * 2f - 1f) * FaceJitter, lift,
-                                   (Unit(gx, gz, salt + 2) * 2f - 1f) * FaceJitter);
-            }
+            if (corner) return Vector3.up * lift;
             float push = (Unit(gx, gz, salt) * 1.3f - 0.3f) * FaceJitter;
             return outward * push + Vector3.up * lift;
         }
@@ -981,16 +981,17 @@ namespace WordCraft.View
         /// with three rows — the grass edge, the waterline, the bed — and the
         /// lower two pushed into the lake by a hashed amount, so where the water
         /// surface meets the bank it draws a wandering line and not the cell's
-        /// straight edge. Corners push along <see cref="Inward"/>, which two banks
-        /// meeting at a lake corner compute alike.
+        /// straight edge. Corners push along <see cref="Inward"/>, which every bank
+        /// reaching that point computes alike, and only where all of them start
+        /// from the same top; otherwise the corner stays on its vertical line.
         /// </summary>
         private static void Bank(Facets f, Vector2 e0, Vector2 e1, float top0, float top1, float foot0, float foot1,
                                  Vector3 towardWater, float waterline)
         {
             Vector2 mid = (e0 + e1) * 0.5f;
-            Shelf(columnA, e0, top0, foot0, waterline, Inward(e0));
+            Shelf(columnA, e0, top0, foot0, waterline, Inward(e0, top0));
             Shelf(columnB, mid, (top0 + top1) * 0.5f, (foot0 + foot1) * 0.5f, waterline, towardWater);
-            Shelf(columnC, e1, top1, foot1, waterline, Inward(e1));
+            Shelf(columnC, e1, top1, foot1, waterline, Inward(e1, top1));
 
             float crest = Mathf.Max(top0, top1);
             Zip(f, columnA, columnB, towardWater, crest, FieldPalette.Bank, FieldPalette.ShoreFoot, FieldPalette.Bank, strata: false);
@@ -1019,9 +1020,10 @@ namespace WordCraft.View
         /// -1 on an axis where every water cell touching the point lies on that
         /// side, 0 where they lie on both. A point on a lake's straight side gets
         /// the side's normal, a lake's corner gets the diagonal, and every bank
-        /// that reaches that point gets the same answer.
+        /// that reaches that point gets the same answer. Zero where the ground
+        /// cells touching the point stand at different heights than top.
         /// </summary>
-        private static Vector3 Inward(Vector2 at)
+        private static Vector3 Inward(Vector2 at, float top)
         {
             int gx = Mathf.RoundToInt(at.x);
             int gz = Mathf.RoundToInt(at.y);
@@ -1030,7 +1032,18 @@ namespace WordCraft.View
             {
                 for (int dx = -1; dx <= 0; dx++)
                 {
-                    if (!IsWater(gx + dx, gz + dy)) continue;
+                    int nx = gx + dx;
+                    int nz = gz + dy;
+                    if (!IsWater(nx, nz))
+                    {
+                        // A bank from a different height also reaches this point:
+                        // its rows would not be these rows, so hold the corner on
+                        // its vertical line, where any two faces meet.
+                        if (nx < 0 || nz < 0 || nx >= Field.Cells || nz >= Field.Cells) continue;
+                        int land = nz * Field.Cells + nx;
+                        if (Mathf.Abs(Top(land, CornerAt(land, new Vector2Int(gx, gz))) - top) > Epsilon) return Vector3.zero;
+                        continue;
+                    }
                     if (dx < 0) lowX++; else highX++;
                     if (dy < 0) lowZ++; else highZ++;
                 }
