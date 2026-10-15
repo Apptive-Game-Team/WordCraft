@@ -30,7 +30,9 @@ namespace WordCraft.Sim
         /// <summary>
         /// Runs after ExpirySystem and before CombatSystem, docs/TECH-TREE.md
         /// 시스템 순서 10. Every body by ascending id: its cooldown comes down one
-        /// tick, then the one ability with state it holds runs its clock.
+        /// tick, then the one ability with state it holds runs its clock. Then
+        /// the periodic ones, each by ascending holder id: 수리, the water field
+        /// emitters, 잠듦의 고리.
         /// </summary>
         private void AbilitySystem()
         {
@@ -55,6 +57,42 @@ namespace WordCraft.Sim
             }
             RepairDevices();
             EmitWaterFields();
+            HoldRemnants();
+        }
+
+        /// <summary>
+        /// 잠듦의 고리, docs/TECH-TREE.md 잔해 규칙 만료 연장, last in
+        /// AbilitySystem: on a tick the row's period divides, every finished
+        /// ring by ascending id puts standing debris in the square its radius
+        /// spans around its cell (9×9) that would lapse before the row's ticks
+        /// from now back to exactly that tick. Never shorter: debris already
+        /// lasting longer is left alone. A ring that falls leaves the debris on
+        /// the last value it wrote.
+        /// </summary>
+        private void HoldRemnants()
+        {
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                int row = ActiveAbility(e, AbilityKind.RemnantHold);
+                if (row < 0) continue;
+                AbilityRow r = FactionData.AbilityRowAt(row);
+                if (Tick % r.Period != 0) continue;
+                int hold = Tick + AbilityTicks(e.Owner, r);
+                int half = AbilityRadius(e.Owner, r);
+                int center = CellOf(e.Position);
+                int cx = center % GridSize, cy = center / GridSize;
+                for (int y = cy - half; y <= cy + half; y++)
+                {
+                    if (y < 0 || y >= GridSize) continue;
+                    for (int x = cx - half; x <= cx + half; x++)
+                    {
+                        if (x < 0 || x >= GridSize) continue;
+                        int cell = y * GridSize + x;
+                        if (HasRemnant(cell) && remnantExpiry[cell] < hold) remnantExpiry[cell] = hold;
+                    }
+                }
+            }
         }
 
         /// <summary>
