@@ -20,6 +20,7 @@ namespace WordCraft.Host
     ///   dotnet run --project Host -- replay &lt;path&gt;
     ///   dotnet run --project Host -- compare &lt;path&gt; &lt;path&gt;
     ///   dotnet run --project Host -- arena [-games N] [-ticks T] [-seed S] [-a &lt;faction&gt;] [-b &lt;faction&gt;]
+    ///   In arena, a is peer 0 on even games and peer 1 on odd games.
     /// </summary>
     internal static class Program
     {
@@ -54,6 +55,7 @@ namespace WordCraft.Host
                                   " | watch <ip> [port] [ticks]" +
                                   " | replay <path> | compare <path> <path>" +
                                   " | arena [-games N] [-ticks T] [-seed S] [-a <faction>] [-b <faction>]");
+                Console.WriteLine("arena: a is peer 0 on even games and peer 1 on odd games");
                 return 2;
             }
 

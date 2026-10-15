@@ -9,7 +9,9 @@ namespace WordCraft.Host
     /// <summary>
     /// Runs both AI peers on the client's map. Each game has a second world
     /// stepped beside the first, so the tick where their states part is known
-    /// before a win or an average can hide it.
+    /// before a win or an average can hide it. Sim draws no randomness yet: seed
+    /// plus game index changes only the hashed RNG state. Alternating peer slots
+    /// is the only gameplay variation between games of a pair.
     /// </summary>
     internal static class Arena
     {
@@ -26,6 +28,8 @@ namespace WordCraft.Host
             public int AWins;
             public int BWins;
             public int Draws;
+            public int Peer0Wins;
+            public int Peer1Wins;
             public long Ticks;
             public long PeakA;
             public long PeakB;
@@ -50,13 +54,18 @@ namespace WordCraft.Host
                 if (i + 1 == args.Length || !TryOption(args[i], args[i + 1],
                     ref games, ref ticks, ref seed, ref a, ref b))
                 {
-                    Console.WriteLine("usage: arena [-games N] [-ticks T] [-seed S] [-a <faction>] [-b <faction>]");
+                    PrintUsage();
                     return 2;
                 }
             }
-            if ((a.HasValue != b.HasValue) || games < 1 || ticks < 1)
+            if (a.HasValue != b.HasValue)
             {
-                Console.WriteLine("usage: arena [-games N] [-ticks T] [-seed S] [-a <faction>] [-b <faction>]");
+                Console.WriteLine("-a and -b must be given together");
+                return 2;
+            }
+            if (games < 1 || ticks < 1)
+            {
+                PrintUsage();
                 return 2;
             }
 
@@ -64,10 +73,13 @@ namespace WordCraft.Host
             var totals = new FactionResult[factions.Length];
             for (int i = 0; i < totals.Length; i++) totals[i] = new FactionResult();
             var pairs = new List<PairResult>();
+            long peer0Wins = 0, peer1Wins = 0, draws = 0;
 
             Console.WriteLine("arena: " + (a.HasValue ? "1 pair" : factions.Length * factions.Length + " pairs") +
                               ", " + games + " game(s) each, at most " + ticks +
                               " ticks, seed 0x" + seed.ToString("X"));
+            if (games > 1)
+                Console.WriteLine("note: Sim draws no randomness yet; -seed changes nothing, side alternation is the only variation");
             try
             {
                 foreach (Faction first in factions)
@@ -78,6 +90,9 @@ namespace WordCraft.Host
                         if (b.HasValue && second != b.Value) continue;
                         PairResult pair = PlayPair(first, second, games, ticks, seed);
                         pairs.Add(pair);
+                        peer0Wins += pair.Peer0Wins;
+                        peer1Wins += pair.Peer1Wins;
+                        draws += pair.Draws;
                         AddTotals(totals[(int)first], pair.Games, pair.AWins, pair.BWins, pair.Draws);
                         AddTotals(totals[(int)second], pair.Games, pair.BWins, pair.AWins, pair.Draws);
                         Console.WriteLine(FormatPair(pair));
@@ -101,6 +116,8 @@ namespace WordCraft.Host
                     100.0 * result.Wins / result.Games));
             }
 
+            Console.WriteLine("peer 0 wins " + peer0Wins + ", peer 1 wins " + peer1Wins + ", draws " + draws);
+
             pairs.Sort((left, right) =>
             {
                 // Divide by games only after comparing, so the order is exact
@@ -112,7 +129,7 @@ namespace WordCraft.Host
                 int firstOrder = left.A.CompareTo(right.A);
                 return firstOrder != 0 ? firstOrder : left.B.CompareTo(right.B);
             });
-            Console.WriteLine("Most skewed pairs (win difference / games):");
+            Console.WriteLine("Most skewed pairs (win difference / games) (ties ordered by faction):");
             for (int i = 0; i < Math.Min(5, pairs.Count); i++)
             {
                 PairResult pair = pairs[i];
@@ -127,6 +144,12 @@ namespace WordCraft.Host
         /// <summary>One result line, also used by SelfCheck to exercise the whole pair path twice.</summary>
         internal static string ResultLine(Faction a, Faction b, int games, int ticks, ulong seed) =>
             FormatPair(PlayPair(a, b, games, ticks, seed));
+
+        private static void PrintUsage()
+        {
+            Console.WriteLine("usage: arena [-games N] [-ticks T] [-seed S] [-a <faction>] [-b <faction>]");
+            Console.WriteLine("a is peer 0 on even games and peer 1 on odd games (game indexes start at 0)");
+        }
 
         private static bool TryOption(string name, string value, ref int games, ref int ticks,
             ref ulong seed, ref Faction? a, ref Faction? b)
@@ -158,31 +181,43 @@ namespace WordCraft.Host
             for (int game = 0; game < games; game++)
             {
                 ulong gameSeed = unchecked(seed + (ulong)game);
-                World first = NewWorld(gameSeed, a, b);
-                World repeat = NewWorld(gameSeed, a, b);
-                int peakA = first.GetPopulation(0), peakB = first.GetPopulation(1);
+                int peerA = game % 2, peerB = 1 - peerA;
+                Faction peer0 = peerA == 0 ? a : b;
+                Faction peer1 = peerA == 0 ? b : a;
+                World first = NewWorld(gameSeed, peer0, peer1);
+                World repeat = NewWorld(gameSeed, peer0, peer1);
+                int peakA = first.GetPopulation(peerA), peakB = first.GetPopulation(peerB);
+                CheckHashes(first, repeat, a, b, gameSeed);
 
                 while (first.Tick < ticks && !first.MatchOver)
                 {
                     first.Step(NoCommands);
                     repeat.Step(NoCommands);
-                    if (first.Hash() != repeat.Hash())
-                    {
-                        throw new InvalidOperationException("FAIL: desync at tick " + first.Tick +
-                            " (" + a + " vs " + b + ", 0x" + gameSeed.ToString("X") + ")");
-                    }
-                    peakA = Math.Max(peakA, first.GetPopulation(0));
-                    peakB = Math.Max(peakB, first.GetPopulation(1));
+                    CheckHashes(first, repeat, a, b, gameSeed);
+                    peakA = Math.Max(peakA, first.GetPopulation(peerA));
+                    peakB = Math.Max(peakB, first.GetPopulation(peerB));
                 }
 
-                if (first.MatchOver && first.Winner == 0) result.AWins++;
-                else if (first.MatchOver && first.Winner == 1) result.BWins++;
+                if (first.MatchOver && (first.Winner == 0 || first.Winner == 1))
+                {
+                    if (first.Winner == peerA) result.AWins++;
+                    else result.BWins++;
+                    if (first.Winner == 0) result.Peer0Wins++;
+                    else result.Peer1Wins++;
+                }
                 else result.Draws++;
                 result.Ticks += first.Tick;
                 result.PeakA += peakA;
                 result.PeakB += peakB;
             }
             return result;
+        }
+
+        private static void CheckHashes(World first, World repeat, Faction a, Faction b, ulong seed)
+        {
+            if (first.Hash() != repeat.Hash())
+                throw new InvalidOperationException("FAIL: desync at tick " + first.Tick +
+                    " (" + a + " vs " + b + ", 0x" + seed.ToString("X") + ")");
         }
 
         private static World NewWorld(ulong seed, Faction a, Faction b)

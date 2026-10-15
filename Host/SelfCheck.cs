@@ -51,12 +51,15 @@ namespace WordCraft.Host
             return 0;
         }
 
-        /// <summary>Two games from one faction pair produce the same result line on a second run.</summary>
+        /// <summary>Two completed games with alternating sides produce the same result line on a second run.</summary>
         private static void ArenaIsReproducible()
         {
-            string first = Arena.ResultLine(Faction.Humans, Faction.Hellfire, 2, Ticks, 0xC0FFEE);
-            string second = Arena.ResultLine(Faction.Humans, Faction.Hellfire, 2, Ticks, 0xC0FFEE);
+            const int ArenaTicks = 1200;
+            string first = Arena.ResultLine(Faction.Driftworlds, Faction.Hellfire, 2, ArenaTicks, 0xC0FFEE);
+            string second = Arena.ResultLine(Faction.Driftworlds, Faction.Hellfire, 2, ArenaTicks, 0xC0FFEE);
             Check(first == second, "arena pair result changed between runs: " + first + " / " + second);
+            Check(first.Contains("a wins   0, b wins   2, draws   0"),
+                "arena did not count both completed games for Hellfire after alternating sides: " + first);
         }
 
         /// <summary>Drop, duplicate, reorder, and delay, yet identical hashes every tick.</summary>
