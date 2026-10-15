@@ -4455,7 +4455,11 @@ namespace WordCraft.Replay
         /// </summary>
         private static void BuildIsGatedByTheTechTier()
         {
-            Check(FactionData.Tier(Role.Tech) == 2, "the tech building is no longer tier gated");
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                Check(FactionData.Tier((Faction)f, Role.Tech, 0) == 2,
+                    (Faction)f + "'s tech building is no longer tier gated");
+            }
 
             var world = new World(Seed);
             world.SetPeerFaction(0, Faction.TreeSpirits);

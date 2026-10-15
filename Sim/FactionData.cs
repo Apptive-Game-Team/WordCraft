@@ -226,6 +226,23 @@ namespace WordCraft.Sim
         public int Tier;
 
         public UpgradeEffect Effect;
+
+        /// <summary>
+        /// The building entry that runs this row. A Research names a building, and
+        /// only one whose role and slot are these takes it. (Role.Tech, 0) on every
+        /// row today, the 기술 건물 each faction already has. docs/TECH-TREE.md
+        /// moves rows onto a second research building (Tech 1 and after) once
+        /// those buildings exist, and on that day this field changes and no rule does.
+        /// </summary>
+        public (Role Role, int Slot) ResearchAt;
+
+        /// <summary>
+        /// A building entry other than the one researching that has to stand,
+        /// finished, before this row can start. Role.None is no such building,
+        /// which is every row today. Asked through World.HasStanding, the same
+        /// question a unit's prerequisite asks, so the two cannot answer apart.
+        /// </summary>
+        public (Role Role, int Slot) Requires;
     }
 
     /// <summary>
@@ -272,9 +289,13 @@ namespace WordCraft.Sim
         /// after that reads different positions. 30 is research: a 기술 건물 takes
         /// a Research order and a finished level changes damage, armor and six
         /// factions' mechanic numbers, so a peer on 29 refuses an order a peer on
-        /// 30 charges for, and the two banks differ from that tick on.
+        /// 30 charges for, and the two banks differ from that tick on. 31 is the
+        /// tech tree: tier, prerequisite and producing building are asked of the
+        /// entry rather than the role. A peer on 30 queues a 잎날 정령 at the 생명의
+        /// 나무 that a peer on 31 refuses, and the two banks differ by twenty on the
+        /// tick the order was given.
         /// </summary>
-        public const uint ContentVersion = 30;
+        public const uint ContentVersion = 31;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -819,6 +840,23 @@ namespace WordCraft.Sim
             (Faction.Humans, UniqueRow("대포 사거리", UpgradeEffect.CannonRange)),
         };
 
+        /// <summary>
+        /// Where every row on the table today is researched: the 기술 건물, entry
+        /// 0 of the Tech slot, per docs/TECH-TREE.md 업그레이드 (연구 건물 열).
+        ///
+        /// A property rather than a readonly field, and that is load-bearing: the
+        /// upgrade table above is a field initializer that calls StatRow, and
+        /// initializers run in declaration order, so a field declared down here
+        /// would still read (None, 0) when the table was built.
+        /// </summary>
+        private static (Role Role, int Slot) TechBuilding => (Role.Tech, 0);
+
+        /// <summary>
+        /// No building: what a prerequisite, a Requires or a producer slot that
+        /// names nothing answers. A property for the reason TechBuilding is.
+        /// </summary>
+        public static (Role Role, int Slot) NoBuilding => (Role.None, 0);
+
         private static UpgradeRow StatRow(string name, UpgradeEffect effect) =>
             new UpgradeRow
             {
@@ -828,6 +866,8 @@ namespace WordCraft.Sim
                 MaxLevel = StatUpgradeLevels,
                 Tier = 3,
                 Effect = effect,
+                ResearchAt = TechBuilding,
+                Requires = NoBuilding,
             };
 
         private static UpgradeRow UniqueRow(string name, UpgradeEffect effect) =>
@@ -839,6 +879,8 @@ namespace WordCraft.Sim
                 MaxLevel = 1,
                 Tier = 3,
                 Effect = effect,
+                ResearchAt = TechBuilding,
+                Requires = NoBuilding,
             };
 
         /// <summary>How many rows this faction's upgrade table holds.</summary>
@@ -883,6 +925,7 @@ namespace WordCraft.Sim
             production = new ProductionCost[FactionCount * RoleCount];
             buildCosts = new int[FactionCount * RoleCount];
             buildTicks = new int[FactionCount * RoleCount];
+            tiers = new int[FactionCount * RoleCount];
             for (int faction = 0; faction < FactionCount; faction++)
             {
                 for (int role = 0; role < RoleCount; role++)
@@ -891,6 +934,7 @@ namespace WordCraft.Sim
                     production[Index((Faction)faction, (Role)role)] = sharedProduction[role];
                     buildCosts[Index((Faction)faction, (Role)role)] = sharedBuildCosts[role];
                     buildTicks[Index((Faction)faction, (Role)role)] = sharedBuildTicks[role];
+                    tiers[Index((Faction)faction, (Role)role)] = sharedTiers[role];
                 }
             }
 
@@ -902,12 +946,14 @@ namespace WordCraft.Sim
             extraProduction = new ProductionCost[extras.Length];
             extraBuildCosts = new int[extras.Length];
             extraBuildTicks = new int[extras.Length];
+            extraTiers = new int[extras.Length];
             for (int i = 0; i < extras.Length; i++)
             {
                 extraStats[i] = sharedStats[(int)extras[i].Role];
                 extraProduction[i] = sharedProduction[(int)extras[i].Role];
                 extraBuildCosts[i] = sharedBuildCosts[(int)extras[i].Role];
                 extraBuildTicks[i] = sharedBuildTicks[(int)extras[i].Role];
+                extraTiers[i] = sharedTiers[(int)extras[i].Role];
             }
 
             // Entry 0 lands in the flat tables, everything else in the parallel
@@ -946,6 +992,62 @@ namespace WordCraft.Sim
                     extraBuildTicks[extra] = ticks;
                 }
             }
+
+            // The tech tree tables are newer than the ones above and check more
+            // than the subscript does: entry 0 of a slot the faction leaves blank
+            // is a real index, so the subscript alone would let a row land on
+            // 인간's nameless melee entry without a word. Every row is asked
+            // whether the roster fields what it names, on both ends, and a row
+            // that does not stops the type from loading — loud, immediate, and
+            // the same on every runtime.
+            for (int i = 0; i < tierOverrides.Length; i++)
+            {
+                var (faction, role, slot, tier) = tierOverrides[i];
+                RequireFielded(faction, role, slot, "tierOverrides");
+                Require(tier >= 1 && tier <= MaxTier, "tierOverrides gives " + faction + " " + role + " " + slot + " tier " + tier);
+                if (slot == 0) tiers[Index(faction, role)] = tier;
+                else extraTiers[ExtraIndex(faction, role, slot)] = tier;
+            }
+
+            for (int i = 0; i < prerequisites.Length; i++)
+            {
+                var (faction, role, slot, needs) = prerequisites[i];
+                RequireFielded(faction, role, slot, "prerequisites");
+                RequireBuilding(faction, needs, "prerequisites");
+            }
+
+            for (int i = 0; i < producerOverrides.Length; i++)
+            {
+                var (faction, role, slot, first, second) = producerOverrides[i];
+                RequireFielded(faction, role, slot, "producerOverrides");
+                Require(Production(faction, role, slot).Produced,
+                    "producerOverrides names " + faction + " " + role + " " + slot + ", which nothing produces");
+                RequireBuilding(faction, first, "producerOverrides");
+                if (second.Role != Role.None) RequireBuilding(faction, second, "producerOverrides");
+            }
+
+            for (int i = 0; i < upgrades.Length; i++)
+            {
+                var (faction, row) = upgrades[i];
+                RequireBuilding(faction, row.ResearchAt, "upgrades");
+                if (row.Requires.Role != Role.None) RequireBuilding(faction, row.Requires, "upgrades");
+            }
+        }
+
+        private static void Require(bool holds, string what)
+        {
+            if (!holds) throw new System.InvalidOperationException("FactionData: " + what);
+        }
+
+        private static void RequireFielded(Faction faction, Role role, int slot, string table) =>
+            Require(Has(faction, role, slot),
+                table + " names " + faction + " " + role + " " + slot + ", which the roster does not field");
+
+        private static void RequireBuilding(Faction faction, (Role Role, int Slot) building, string table)
+        {
+            RequireFielded(faction, building.Role, building.Slot, table);
+            Require(IsBuilding(building.Role),
+                table + " names " + faction + " " + building.Role + " " + building.Slot + " as a building");
         }
 
         /// <summary>
@@ -1022,11 +1124,20 @@ namespace WordCraft.Sim
         };
 
         /// <summary>
-        /// Tech tier per roster entry, indexed by Role. A tier is a roster number
-        /// like hp, not a case in the command handler: the day a faction opens its
-        /// signature unit one tier earlier, this table is the only thing that moves.
+        /// The highest tier there is. T1 is the base, T2 the production building,
+        /// T3 the 기술 건물, per docs/FACTIONS.md and docs/TECH-TREE.md 기술 단계.
         /// </summary>
-        private static readonly int[] tiers =
+        public const int MaxTier = 3;
+
+        /// <summary>
+        /// The tier every entry of a role starts from, indexed by Role. A tier is a
+        /// roster number like hp, not a case in the command handler. Keyed by role
+        /// because it is a baseline, for the reason <see cref="sharedBuildCosts"/>
+        /// is: it says nothing about any entry in particular. What one entry
+        /// actually opens at comes out of <see cref="Tier(Faction, Role, int)"/>,
+        /// and where an entry departs from this row is <see cref="tierOverrides"/>.
+        /// </summary>
+        private static readonly int[] sharedTiers =
         {
             /* None       */ 1,
             /* Base       */ 1,
@@ -1038,6 +1149,156 @@ namespace WordCraft.Sim
             /* Signature  */ 3,
             /* Supply     */ 1,
             /* Tech       */ 2, // the production building comes first, or T3 is one purchase away
+        };
+
+        /// <summary>
+        /// The tier entry 0 of every slot opens at, subscripted by
+        /// <see cref="Index"/>, and the tier of the entries past the first,
+        /// parallel to <see cref="extras"/>. Filled from <see cref="sharedTiers"/>
+        /// and <see cref="tierOverrides"/> the way the stats tables are.
+        /// </summary>
+        private static readonly int[] tiers;
+
+        private static readonly int[] extraTiers;
+
+        /// <summary>
+        /// Where one entry opens at a tier other than its role's row, keyed by
+        /// Faction, Role and Slot for the reason <see cref="statOverrides"/> is.
+        /// Every value is the 단계 column of docs/TECH-TREE.md, which is the
+        /// source for the tier of every existing entry; the rows below are the
+        /// entries where that column and the role's row disagree.
+        ///
+        /// While this was keyed by role the two entries of one slot had to open
+        /// together. 세계수 정령's ranged slot holds 번개 정령, a tier-3 unit the
+        /// 풀씨 둥지 makes once 뿌리 회당 stands, and 덩쿨 정령, which a worker
+        /// grows into from tier 1. One number for both was wrong about one of them.
+        /// </summary>
+        private static readonly (Faction Faction, Role Role, int Slot, int Tier)[] tierOverrides =
+        {
+            // 세계수 정령. 잎날 정령 is what the 풀씨 둥지 makes, so it opens with
+            // the building that makes it. 고목 수호자 is a growth target and opens
+            // with the 풀씨 둥지 as well. 번개 정령 waits for 뿌리 회당. 덩쿨 정령
+            // is the one combat body the faction has at tier 1.
+            (Faction.TreeSpirits, Role.Melee, 0, 2),
+            (Faction.TreeSpirits, Role.Melee, 1, 2),
+            (Faction.TreeSpirits, Role.Ranged, 0, 3),
+            (Faction.TreeSpirits, Role.Ranged, 1, 1),
+
+            // 지옥불 군단. 용암 갑각 악마 is the 악마 산란장's unit. 자손 is never
+            // produced, so its tier only says where it sits in the tree.
+            (Faction.Hellfire, Role.Melee, 0, 2),
+            (Faction.Hellfire, Role.Ranged, 0, 3),
+
+            // 물 슬라임 해일 인도자, behind the 조수 제단. 물결 궁수 in front of it
+            // keeps the ranged row's tier 2.
+            (Faction.WaterSlimes, Role.Ranged, 1, 3),
+
+            // 차원 유랑종. The three 멸종 슬라임 and 틈새 사수 are what the 층위
+            // 관측대 unlocks, so they open at tier 3. 경계 운반자 opens a tier
+            // earlier than the signature row, with the 통로 it comes out of.
+            (Faction.Driftworlds, Role.Melee, 1, 3),
+            (Faction.Driftworlds, Role.Melee, 2, 3),
+            (Faction.Driftworlds, Role.Ranged, 0, 3),
+            (Faction.Driftworlds, Role.Ranged, 1, 3),
+            (Faction.Driftworlds, Role.Signature, 0, 2),
+        };
+
+        /// <summary>
+        /// The building one entry needs standing, finished, before it can be
+        /// produced, placed, grown into or researched, per the 선행 column of
+        /// docs/TECH-TREE.md. An entry not listed needs nothing beyond its tier.
+        ///
+        /// A tier and a prerequisite are two different questions and an entry
+        /// passes both. A tier is what a peer has reached and a building that
+        /// grants it can be any of several; a prerequisite is one named building,
+        /// and only that one answers. Today the two coincide for most rows below,
+        /// because the one building that opens tier 3 is also the one the tier-3
+        /// units name, and they part the day docs/TECH-TREE.md adds a second
+        /// research building that opens no tier and is still what a unit needs.
+        ///
+        /// Keyed by Faction, Role and Slot, and walked in declaration order, never
+        /// through a keyed collection, for the reason <see cref="growthTargets"/> is.
+        /// </summary>
+        // ponytail: two rows below stand in for buildings 묶음 3 adds. 바람 정령's
+        // prerequisite is the 바람 토템 (Tech 1) and 마도 정찰기's is the 마도 공창
+        // (Production 2), and neither is in the roster yet, so a row naming one
+        // would fail at type load. Both name Tech 0 until then; swap them when
+        // the buildings arrive.
+        private static readonly (Faction Faction, Role Role, int Slot, (Role Role, int Slot) Needs)[] prerequisites =
+        {
+            // Every faction's 기술 건물 needs its production building: T2, and
+            // that building by name.
+            (Faction.TreeSpirits, Role.Tech, 0, (Role.Production, 0)),
+            (Faction.Hellfire, Role.Tech, 0, (Role.Production, 0)),
+            (Faction.WaterSlimes, Role.Tech, 0, (Role.Production, 0)),
+            (Faction.RockGolems, Role.Tech, 0, (Role.Production, 0)),
+            (Faction.Driftworlds, Role.Tech, 0, (Role.Production, 0)),
+            (Faction.Humans, Role.Tech, 0, (Role.Production, 0)),
+
+            // 세계수 정령. 고목 수호자 grows only beside a 풀씨 둥지; 번개 정령 needs
+            // 뿌리 회당.
+            (Faction.TreeSpirits, Role.Melee, 1, (Role.Production, 0)),
+            (Faction.TreeSpirits, Role.Ranged, 0, (Role.Tech, 0)),
+            // 바람 정령: 뿌리 회당 for now, 바람 토템 in 묶음 3.
+            (Faction.TreeSpirits, Role.Signature, 0, (Role.Tech, 0)),
+
+            // 지옥불 군단장 needs the 용암 도가니.
+            (Faction.Hellfire, Role.Signature, 0, (Role.Tech, 0)),
+
+            // 물 슬라임 해일 인도자 and 구름 용 need the 조수 제단.
+            (Faction.WaterSlimes, Role.Ranged, 1, (Role.Tech, 0)),
+            (Faction.WaterSlimes, Role.Signature, 0, (Role.Tech, 0)),
+
+            // 돌 골렘 고대 골렘 needs the 고대 이끼돌.
+            (Faction.RockGolems, Role.Signature, 0, (Role.Tech, 0)),
+
+            // 차원 유랑종. The 층위 관측대 is what unlocks the summons and 틈새 사수.
+            (Faction.Driftworlds, Role.Melee, 1, (Role.Tech, 0)),
+            (Faction.Driftworlds, Role.Melee, 2, (Role.Tech, 0)),
+            (Faction.Driftworlds, Role.Ranged, 0, (Role.Tech, 0)),
+            (Faction.Driftworlds, Role.Ranged, 1, (Role.Tech, 0)),
+
+            // 인간 마도 정찰기: 공방 for now. It comes out of the 마법 탑 until the
+            // 마도 공창 it is listed under exists, and this keeps it behind tier 3's
+            // building in the meantime.
+            (Faction.Humans, Role.Signature, 1, (Role.Tech, 0)),
+        };
+
+        /// <summary>
+        /// How many buildings one unit entry may come out of. Two, per
+        /// docs/TECH-TREE.md 데이터 모델 M4: no entry there names more.
+        /// </summary>
+        public const int MaxProducers = 2;
+
+        /// <summary>
+        /// Where a unit entry is made, for the entries docs/TECH-TREE.md lists
+        /// under more than the default building. Every other produced entry comes
+        /// out of one building by rule: a worker out of the base, anything else out
+        /// of the production building. That rule is what the document's tables say
+        /// for every entry not listed here, so writing it out sixty times would be
+        /// sixty rows that are meant to stay identical.
+        ///
+        /// The four rows below are the four existing entries the document puts on
+        /// the base as well as on the production building. Second is NoBuilding
+        /// where an entry has one.
+        /// </summary>
+        // ponytail: docs/TECH-TREE.md also lists 지옥불 군단장, 구름 용 and 고대 골렘
+        // under a second production building (큰 균열, 구름 둥지, 각성의 원), 공수
+        // 특공대 under 석조 병영, and 마도 정찰기 under 마도 공창 alone. None of those
+        // buildings is in the roster yet, so each of these entries stays on its
+        // production building 0 until 묶음 3 adds the building; add the producer
+        // with it. 마도 정찰기 on the 마법 탑 is a placeholder of that kind: move it
+        // to the 마도 공창 alone then, and its prerequisite with it.
+        private static readonly (Faction Faction, Role Role, int Slot, (Role Role, int Slot) First, (Role Role, int Slot) Second)[] producerOverrides =
+        {
+            // 세계수 정령 풀씨 정령: 생명의 나무 and 풀씨 둥지.
+            (Faction.TreeSpirits, Role.Worker, 0, (Role.Base, 0), (Role.Production, 0)),
+            // 물 슬라임 거품 정령: 수맥 웅덩이 and 거품 생성기.
+            (Faction.WaterSlimes, Role.Melee, 0, (Role.Base, 0), (Role.Production, 0)),
+            // 돌 골렘 이끼바위 골렘: 이끼바위 성소 and 각성 바위.
+            (Faction.RockGolems, Role.Melee, 0, (Role.Base, 0), (Role.Production, 0)),
+            // 차원 유랑종 폭풍편: 정박한 세계 and 통로.
+            (Faction.Driftworlds, Role.Melee, 0, (Role.Base, 0), (Role.Production, 0)),
         };
 
         /// <summary>
@@ -1187,8 +1448,100 @@ namespace WordCraft.Sim
             return extra < 0 ? new ProductionCost() : extraProduction[extra];
         }
 
-        /// <summary>What the owner's tier must reach before this role can be produced.</summary>
-        public static int Tier(Role role) => tiers[(int)role];
+        /// <summary>
+        /// What the owner's tier must reach before this entry can be produced,
+        /// placed or grown into. A slot this faction does not field answers a tier
+        /// above <see cref="MaxTier"/>, which no peer reaches: the gate fails
+        /// closed, the way Production does for an entry nobody wrote.
+        ///
+        /// There is deliberately no role-keyed overload. The one there was answered
+        /// one tier for every entry of a role, and docs/TECH-TREE.md opens two
+        /// entries of one role two tiers apart; a caller that cannot name the
+        /// entry is a caller asking about somebody else's unit.
+        /// </summary>
+        public static int Tier(Faction faction, Role role, int slot)
+        {
+            if (slot == 0) return tiers[Index(faction, role)];
+            int extra = ExtraIndex(faction, role, slot);
+            return extra < 0 ? MaxTier + 1 : extraTiers[extra];
+        }
+
+        /// <summary>
+        /// The building entry that has to stand, finished, before this entry can
+        /// be produced, placed, grown into or researched, or
+        /// <see cref="NoBuilding"/> when it needs none. A linear scan of a short
+        /// table in declaration order, never a keyed lookup.
+        /// </summary>
+        public static (Role Role, int Slot) Prerequisite(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < prerequisites.Length; i++)
+            {
+                var row = prerequisites[i];
+                if (row.Faction == faction && row.Role == role && row.Slot == slot) return row.Needs;
+            }
+            return NoBuilding;
+        }
+
+        /// <summary>
+        /// The tier this building entry opens once it stands finished: 2 for entry
+        /// 0 of the production slot, 3 for entry 0 of the Tech slot, and 0 for
+        /// everything else, per docs/TECH-TREE.md 기술 단계. A rule rather than a
+        /// table, because it is the same rule for all six factions and no entry
+        /// departs from it.
+        ///
+        /// The slot is the point. While TierOf asked the role, any finished
+        /// production or tech building opened a tier, and the second research
+        /// building docs/TECH-TREE.md gives each faction (Tech 1, a T2 building)
+        /// would have opened tier 3 on the tick it stood.
+        /// </summary>
+        public static int GrantsTier(Faction faction, Role role, int slot)
+        {
+            if (slot != 0 || !Has(faction, role, slot)) return 0;
+            if (role == Role.Production) return 2;
+            if (role == Role.Tech) return MaxTier;
+            return 0;
+        }
+
+        /// <summary>
+        /// One of the buildings this unit entry comes out of, index 0 to
+        /// <see cref="MaxProducers"/> - 1, or <see cref="NoBuilding"/> past the
+        /// end of its list. An entry nothing produces — a building, 지옥불 자손,
+        /// the Towerback, a growth target, a slot the faction does not field — has
+        /// an empty list, so the producer test refuses it on its own and does not
+        /// lean on the production test in front of it.
+        ///
+        /// By default a worker comes out of the base and anything else out of the
+        /// production building; <see cref="producerOverrides"/> is where an entry
+        /// has a list of its own.
+        /// </summary>
+        public static (Role Role, int Slot) ProducedAt(Faction faction, Role role, int slot, int index)
+        {
+            if (index < 0 || index >= MaxProducers) return NoBuilding;
+            if (!Has(faction, role, slot) || !Production(faction, role, slot).Produced) return NoBuilding;
+            for (int i = 0; i < producerOverrides.Length; i++)
+            {
+                var row = producerOverrides[i];
+                if (row.Faction == faction && row.Role == role && row.Slot == slot)
+                    return index == 0 ? row.First : row.Second;
+            }
+            if (index > 0) return NoBuilding;
+            return role == Role.Worker ? (Role.Base, 0) : (Role.Production, 0);
+        }
+
+        /// <summary>
+        /// True when a building of this entry is on this unit entry's producer
+        /// list. The question TryQueueUnit asks of the building a Produce names.
+        /// </summary>
+        public static bool IsProducedAt(Faction faction, Role role, int slot, Role buildingRole, int buildingSlot)
+        {
+            if (buildingRole == Role.None) return false;
+            for (int i = 0; i < MaxProducers; i++)
+            {
+                var at = ProducedAt(faction, role, slot, i);
+                if (at.Role == buildingRole && at.Slot == buildingSlot) return true;
+            }
+            return false;
+        }
 
         /// <summary>
         /// What placing entry 0 of this faction's take on this building costs.
