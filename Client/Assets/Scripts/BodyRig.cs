@@ -587,6 +587,10 @@ namespace WordCraft.View
             dying = true;
             rubble = toRubble;
             diedAt = at;
+            // A dead body neither burns nor stays slowed, even while its fall
+            // waits for the tracer that killed it.
+            burning = false;
+            slowed = false;
         }
 
         /// <summary>
@@ -980,7 +984,7 @@ namespace WordCraft.View
             }
             Look(BodyPalette.HitFlash, washToward, 1f);
 
-            if (slowed) scale *= 1f - SlowShrink;
+            if (slowed && !dying) scale *= 1f - SlowShrink;
 
             hull.localPosition = hullRest + offset;
             hull.localRotation = Quaternion.Euler(pitch, twist, roll);
@@ -1150,7 +1154,7 @@ namespace WordCraft.View
         /// </summary>
         private void Embers(float now)
         {
-            if (effects == null || !shown || now < nextEmber) return;
+            if (effects == null || !shown || dying || now < nextEmber) return;
             if (now - nextEmber > EmberInterval) nextEmber = now;
             nextEmber += EmberInterval;
             embers++;
