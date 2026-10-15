@@ -1081,7 +1081,7 @@ namespace WordCraft.View
                 hitFlashes.Add(Decal.Make(transform, "HitFlash", ring: true, UiStyle.Danger));
                 shadows.Add(Decal.Make(transform, "Shadow", ring: false, UiStyle.Shadow));
                 barBacks.Add(Billboard.Make(transform, "HpBack", UiStyle.MeterBack));
-                barFills.Add(Billboard.Make(transform, "HpFill", Color.white));
+                barFills.Add(Billboard.Make(transform, "HpFill", Color.white, front: true));
                 queueFills.Add(Billboard.Make(transform, "Queue", UiStyle.Queue));
             }
 

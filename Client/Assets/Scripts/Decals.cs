@@ -249,7 +249,13 @@ namespace WordCraft.View
         private MeshRenderer meshRenderer;
         private MaterialPropertyBlock block;
 
-        public static Billboard Make(Transform parent, string name, Color colour)
+        /// <summary>
+        /// Makes one, switched off. <paramref name="front"/> draws it after the
+        /// other billboards: a fill and its back stand on the same spot, and
+        /// with no depth test the camera-distance sort alone can put the back
+        /// over the fill.
+        /// </summary>
+        public static Billboard Make(Transform parent, string name, Color colour, bool front = false)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, worldPositionStays: false);
@@ -259,6 +265,7 @@ namespace WordCraft.View
             b.meshRenderer.sharedMaterial = Marks.Overlay;
             b.meshRenderer.shadowCastingMode = ShadowCastingMode.Off;
             b.meshRenderer.receiveShadows = false;
+            if (front) b.meshRenderer.sortingOrder = 1;
             b.block = new MaterialPropertyBlock();
             b.Colour = colour;
             b.Visible = false;
