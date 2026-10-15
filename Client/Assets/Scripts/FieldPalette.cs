@@ -64,10 +64,16 @@ namespace WordCraft.View
         public static readonly Color Sun = Rgb(0xFFF1DA);
 
         /// <summary>Hemisphere ambient from above. Cool, the colour of open sky, so faces turned up and away from the sun still read as outdoors.</summary>
-        public static readonly Color SkyLight = Rgb(0x4C525C);
+        public static readonly Color SkyLight = Rgb(0x4A5059);
 
-        /// <summary>Hemisphere ambient from below. Warm and dim, the grass and earth bouncing back into the undersides.</summary>
-        public static readonly Color EarthLight = Rgb(0x2C2722);
+        /// <summary>
+        /// Hemisphere ambient from below. Warm and dim, the grass and earth
+        /// bouncing back into the undersides. Raised a step and SkyLight lowered a
+        /// step in #187: flat ground takes almost all its ambient from the sky and
+        /// a body's sides take half theirs from the earth, so the trade lifts the
+        /// bodies against the ground they stand on without changing the bands.
+        /// </summary>
+        public static readonly Color EarthLight = Rgb(0x342E28);
 
         /// <summary>The lit paper edge. Pale and warm like the sun it belongs to; alpha is its strength.</summary>
         public static readonly Color Rim = Rgba(0xFFEACB, 0.35f);
@@ -91,15 +97,60 @@ namespace WordCraft.View
         /// </summary>
         public static readonly Color SlopeTint = Rgb(0x8E7D58);
 
+        /// <summary>
+        /// The worn lines up a ramp. Darker and browner than the slope under them,
+        /// trodden earth with the grass gone, so the lines read as a path and not
+        /// as more grass of another colour.
+        /// </summary>
+        public static readonly Color Rut = Rgb(0x76674D);
+
         /// <summary>How far a slope cell moves from its level's grass toward <see cref="SlopeTint"/>.</summary>
         public const float SlopeShift = 0.3f;
 
         /// <summary>
-        /// Per cell value grain, as a fraction either way. Far below the 2D bake's
-        /// grain: the light now separates facets on its own, and grain on top of
-        /// that is the fine detail noise the style rules out.
+        /// Large patches of open ground that are not the level's plain grass:
+        /// dry grass, moss, bare earth. Each is what GrassLow becomes at a patch's
+        /// heart, and a patch on higher ground moves its own level's grass by the
+        /// same ratio, so the level still reads by value through a patch.
+        /// Lighter-and-yellower, darker-and-greener, browner: three directions
+        /// away from the sage, none far enough to be mistaken for a ramp's earth
+        /// or a lake's blue.
         /// </summary>
-        public const float Grain = 0.010f;
+        public static readonly Color PatchDry = Rgb(0x8C9160);
+
+        /// <summary>Moss: the darker, greener patch.</summary>
+        public static readonly Color PatchMoss = Rgb(0x5B7449);
+
+        /// <summary>Bare earth: grass worn thin, warm and a touch lighter.</summary>
+        public static readonly Color PatchDirt = Rgb(0x857A5C);
+
+        /// <summary>How many patch kinds there are; FieldMesh deals one of these to each patch.</summary>
+        public const int PatchKinds = 3;
+
+        /// <summary>How far toward its patch colour the heart of a patch goes. A little past half, so a patch is a change in the ground and not a second ground.</summary>
+        public const float PatchStrength = 0.6f;
+
+        /// <summary>
+        /// Moves a ground colour toward patch kind by weight (0..1, the patch's
+        /// falloff at that point): multiplies by the patch colour's ratio to
+        /// GrassLow, so the move is the same on every level's grass.
+        /// </summary>
+        public static Color PatchTint(Color colour, int kind, float weight)
+        {
+            Color target = kind == 0 ? PatchDry : kind == 1 ? PatchMoss : PatchDirt;
+            var moved = new Color(colour.r * target.r / GrassLow.r, colour.g * target.g / GrassLow.g,
+                                  colour.b * target.b / GrassLow.b, colour.a);
+            return Color.Lerp(colour, moved, weight * PatchStrength);
+        }
+
+        /// <summary>
+        /// Per grid point value grain, as a fraction either way. Far below the 2D bake's
+        /// grain: the light now separates facets on its own, and grain on top of
+        /// that is the fine detail noise the style rules out. Per grid point, so it
+        /// fades across a cell rather than stepping at the cell's border; per cell,
+        /// even one percent drew the grid as a faint chequer.
+        /// </summary>
+        public const float Grain = 0.015f;
 
         // ---------------------------------------------------------------- cliffs
 
@@ -108,6 +159,20 @@ namespace WordCraft.View
 
         /// <summary>A cliff's foot. Darker, so the eye reads depth down the face without any line drawn at the bottom.</summary>
         public static readonly Color CliffFoot = Rgb(0x5A4D40);
+
+        /// <summary>
+        /// The thin lip along a cliff's top edge. Paler and warmer than the face
+        /// under it, the cut edge of the paper catching the sun, so the top of a
+        /// cliff reads as an edge from across the map.
+        /// </summary>
+        public static readonly Color CliffRim = Rgb(0xB09C76);
+
+        /// <summary>
+        /// How far alternate strata move in value, either way. Enough that the
+        /// bands read as layers of rock, little enough that the wall stays one
+        /// shape in one of Paper.cginc's three bands.
+        /// </summary>
+        public const float StrataShift = 0.07f;
 
         /// <summary>The foot of a shore wall, at the lake bed. Wet earth: darker and cooler than a dry cliff foot.</summary>
         public static readonly Color ShoreFoot = Rgb(0x433D34);
@@ -124,13 +189,37 @@ namespace WordCraft.View
         /// <summary>The ridge's walls, a step down from its top so the top catches the light first.</summary>
         public static readonly Color RockFace = Rgb(0x777281);
 
+        /// <summary>The ridge's lip, a step above its top, for the same reason a cliff has one.</summary>
+        public static readonly Color RockRim = Rgb(0xA6A1AE);
+
         /// <summary>The ridge's foot, where it meets the ground.</summary>
         public static readonly Color RockFoot = Rgb(0x55515E);
 
         // ---------------------------------------------------------------- water
 
-        /// <summary>The lake bed. Dark wet earth, seen through the water, which is what makes a lake a hollow.</summary>
+        /// <summary>
+        /// The lip of a wall whose high side is a lake bed: a lake standing above
+        /// lower ground. The scenario's map has none, since its lakes sit on the
+        /// floor, but FieldMesh still needs a colour for the case. The bed itself
+        /// is <see cref="BedShallow"/> and <see cref="BedDeep"/>.
+        /// </summary>
         public static readonly Color Bed = Rgb(0x48433A);
+
+        /// <summary>
+        /// The shelf of bed along a lake's edge, the cells with ground beside them.
+        /// Sandier and lighter than the deep bed, so through the water a lake
+        /// reads in two steps: shallow at the edge, deep in the middle.
+        /// </summary>
+        public static readonly Color BedShallow = Rgb(0x6B6450);
+
+        /// <summary>The bed in a lake's middle, where it drops away. Darker and cooler than the shelf.</summary>
+        public static readonly Color BedDeep = Rgb(0x3A3934);
+
+        /// <summary>
+        /// A lake's bank above the water: the earth between the grass edge and
+        /// the waterline. Darker than a dry cliff's lip because it is wet.
+        /// </summary>
+        public static readonly Color Bank = Rgb(0x7A6A50);
 
         /// <summary>Open water between the shore band and the middle.</summary>
         public static readonly Color Water = Rgb(0x4A7894);
@@ -138,22 +227,23 @@ namespace WordCraft.View
         /// <summary>The middle of a lake: every cell around it is water. Gives a lake depth, as WaterDeep did in the 2D bake.</summary>
         public static readonly Color WaterDeep = Rgb(0x3A6482);
 
-        /// <summary>The band where water meets anything else. Pale, and going all the way round because foam has no light direction.</summary>
+        /// <summary>
+        /// The foam where water meets the bank. Pale, and going all the way round
+        /// because foam has no light direction. Water.shader draws it from each
+        /// vertex's shore distance; FieldMesh hands it this colour on the material.
+        /// </summary>
         public static readonly Color Foam = Rgb(0xA6C4D0);
 
-        // ---------------------------------------------------------------- map rim
+        // ---------------------------------------------------------------- map edge
 
-        /// <summary>The plinth the board stands on. Dark earth, so the cut edge of the diorama reads as a side and not as more ground.</summary>
-        public static readonly Color Plinth = Rgb(0x51463A);
-
-        /// <summary>The plinth's foot, darker again, so the board seems to stand on something rather than hang.</summary>
-        public static readonly Color PlinthFoot = Rgb(0x342D26);
-
-        /// <summary>The thin base slab's lip. A shade off the plinth so the step between them is a step and not a line.</summary>
-        public static readonly Color SlabTop = Rgb(0x463D33);
-
-        /// <summary>The slab's sides.</summary>
-        public static readonly Color SlabSide = Rgb(0x2C2620);
+        /// <summary>
+        /// How far the ground turns toward the cliff face's colour as it rolls over
+        /// the map's edge. The edge cliff below it has no colour of its own to
+        /// speak of: it is the cliff palette, faded toward Backdrop with depth by
+        /// Paper.cginc's WcEdgeFade, so the map ends in the haze rather than at a
+        /// coloured side.
+        /// </summary>
+        public const float ShoulderShift = 0.3f;
 
         // ---------------------------------------------------------------- props
 
@@ -178,6 +268,63 @@ namespace WordCraft.View
         /// <summary>A loose stone's top.</summary>
         public static readonly Color PebbleTop = Rgb(0x96919E);
 
+        /// <summary>A tuft on the high ground: dry, straw coloured, the plateau tops being the windswept, thinner ground.</summary>
+        public static readonly Color DryTuft = Rgb(0x7D7E4B);
+
+        /// <summary>A dry tuft's tips.</summary>
+        public static readonly Color DryTuftTip = Rgb(0xA49C66);
+
+        /// <summary>
+        /// A broadleaf crown's lower facets. A warmer, olive green beside the
+        /// pine's blue green, so the two trees are two kinds at a glance, and kept
+        /// as dark as the pine: the nature spirits are a light yellow green, and a
+        /// light crown the same size as one of them reads as a unit at a glance.
+        /// </summary>
+        public static readonly Color Leaf = Rgb(0x55693C);
+
+        /// <summary>A broadleaf crown's upper facets.</summary>
+        public static readonly Color LeafTop = Rgb(0x6B7F4A);
+
+        /// <summary>A fern's fronds near the root. A deep green, shade-loving, a step darker than the tuft.</summary>
+        public static readonly Color Fern = Rgb(0x4E6D3E);
+
+        /// <summary>A fern's frond tips.</summary>
+        public static readonly Color FernTip = Rgb(0x6E8C50);
+
+        /// <summary>
+        /// Flower heads: cream, pale straw and a faded lilac. Chalky and low in
+        /// saturation, so a clump of flowers is a detail in the grass and never
+        /// a dot of colour that could be read as a unit's owner hue.
+        /// </summary>
+        public static readonly Color FlowerCream = Rgb(0xD8D2B8);
+
+        /// <summary>The straw flower.</summary>
+        public static readonly Color FlowerStraw = Rgb(0xCFBD7A);
+
+        /// <summary>The lilac flower.</summary>
+        public static readonly Color FlowerLilac = Rgb(0xAE9DB4);
+
+        /// <summary>A mushroom's cap. Muted rust, the one warm accent the shade at a cliff's foot gets.</summary>
+        public static readonly Color MushroomCap = Rgb(0x9A6048);
+
+        /// <summary>A mushroom's stem.</summary>
+        public static readonly Color MushroomStem = Rgb(0xD5CBB0);
+
+        /// <summary>The cut end of a fallen log. Pale wood against the bark, so the log reads as cut and lying down.</summary>
+        public static readonly Color LogEnd = Rgb(0xA88C68);
+
+        /// <summary>Rubble under an earth cliff: the cliff's own earth, broken. Between the lip and the foot.</summary>
+        public static readonly Color Rubble = Rgb(0x75644E);
+
+        /// <summary>Earth rubble's tops.</summary>
+        public static readonly Color RubbleTop = Rgb(0x8E7B60);
+
+        /// <summary>A reed's stem. Olive, a step away from the grass, so a clump at the shore reads as water plants and not as a tuft that wandered in.</summary>
+        public static readonly Color Reed = Rgb(0x66713F);
+
+        /// <summary>A reed's tip. Dry straw, the light end of the blade.</summary>
+        public static readonly Color ReedTip = Rgb(0xA89C68);
+
         // ---------------------------------------------------------------- rules
 
         /// <summary>
@@ -190,6 +337,10 @@ namespace WordCraft.View
             float t = Mathf.Clamp01(level / (float)Mathf.Max(1, World.MaxHeight));
             return Color.Lerp(GrassLow, GrassHigh, t);
         }
+
+        /// <summary>One of the three flower colours, by index.</summary>
+        public static Color Flower(int index) =>
+            index == 0 ? FlowerCream : index == 1 ? FlowerStraw : FlowerLilac;
 
         /// <summary>The same level's grass on a ramp cell.</summary>
         public static Color Slope(int level) => Color.Lerp(Grass(level), SlopeTint, SlopeShift);

@@ -52,10 +52,39 @@ brings its own build step.
 Unity -batchmode -quit -projectPath Client       -executeMethod WordCraft.View.ViewShots.Run       -shotsOutput shots -shotsTicks 900
 ```
 
-Renders five PNGs of the scripted match in progress — the base, the lane and its
-high ground, the whole map, a close-up, the flank — from the camera poses the
-player gets. No `-nographics`: it needs a GPU. This is how a change to the
-field, a model or the light is looked at without launching a player.
+Writes PNGs into the `-shotsOutput` directory (created if missing; a relative
+path is taken from the working directory, not from `Client/`). How many depends
+on the roster, so no total is written here: the `OK: N shots written to ...`
+line of the `ViewShots.Run` log counts them, per kind. The kinds:
+
+- `field`: 5 shots of the scripted match in progress: the base, the lane and its
+  high ground, the whole map, a close-up, the flank, from the camera poses the
+  player gets;
+- `lineup`: 3 shots per faction, 18 in all. `lineup-<faction>` has every roster
+  entry of the faction in a row; `lineup-<faction>-units` and
+  `lineup-<faction>-buildings` are the same row split in two, so each body is
+  twice the size;
+- strips, one per faction and motion: `strip-<faction>-<motion>`, eight frames
+  across 0.9 seconds side by side, so an animation reads from one still. A strip
+  holds four bodies (three buildings for a building motion). A faction with more
+  rows than one page holds gets further pages, `strip-<faction>-<motion>-2`,
+  `-3` and so on, so every roster row is seen. The unit motions are `walk`,
+  `attack`, `hit`, `death`, `idle`, `spawn`, `tower` and `growth`; the building
+  motions are `build`, `work`, `destroy` and `sitedestroy` (a half-built site
+  that stands 0.25 s, then falls). `tower` takes the defenses that have a weapon
+  (`UnitStats.HasWeapon`); `growth` takes a worker and the body it grows into;
+- `match`: 5 shots, `strip-match-<fight|kill|spawn|build|raze>`, the real
+  `MatchView` driven over the scripted log, so tracers, flinches, deaths and a
+  site finishing are seen as the player sees them. The scripted log razes no
+  building, so `raze` drives it over a small siege of its own: a finished
+  풀씨 둥지 shot down by four 지옥불 ranged units.
+
+`-shotsTicks` is how many ticks of the scripted log run before the field shots
+(900 by default). `-shotsOnly lineup,build` writes only the kinds it names:
+`field`, `lineup`, `match`, `growth`, or any strip motion above, so one kind can
+be looked at again in a minute instead of rendering everything. A name that is
+no kind fails the run. No `-nographics`: it needs a GPU. This is how a change to
+the field, a model or the light is looked at without launching a player.
 
 ```bash
 Unity -batchmode -quit -projectPath Client       -executeMethod WordCraft.View.ViewSelfCheck.Run

@@ -15,6 +15,7 @@ Shader "WordCraft/BodyGhost"
         _Tint ("Tint", Color) = (1, 1, 1, 1)
         _Alpha ("Alpha", Range(0, 1)) = 0.5
         _Desaturate ("Desaturate", Range(0, 1)) = 0
+        _Wash ("Wash", Color) = (1, 1, 1, 0)
     }
 
     SubShader
@@ -56,6 +57,7 @@ Shader "WordCraft/BodyGhost"
         fixed4 _Tint;
         fixed _Alpha;
         fixed _Desaturate;
+        fixed4 _Wash;
 
         struct Input
         {
@@ -66,6 +68,7 @@ Shader "WordCraft/BodyGhost"
         void surf (Input IN, inout SurfaceOutput o)
         {
             fixed3 albedo = IN.color.rgb * _Tint.rgb;
+            albedo = lerp(albedo, _Wash.rgb, _Wash.a);
             fixed grey = dot(albedo, fixed3(0.299, 0.587, 0.114));
             o.Albedo = lerp(albedo, fixed3(grey, grey, grey), _Desaturate);
             o.Alpha = _Alpha;

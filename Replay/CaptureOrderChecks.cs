@@ -204,14 +204,14 @@ namespace WordCraft.Replay
             int worker = FirstOwned(world, 0, EntityKind.Worker);
             int rock = FirstNeutralRock(world);
 
-            Check(CaptureOrder.Progress(world.GetEntity(worker)) < 0f,
+            Check(CaptureOrder.Progress(world, world.GetEntity(worker)) < 0f,
                 "a worker with no capture reports progress");
 
             world.Step(new List<Command>
             {
                 new Command(0, 0, 0, CommandType.Capture, worker, FixVec2.Zero, rock),
             });
-            Check(CaptureOrder.Progress(world.GetEntity(worker)) == 0f,
+            Check(CaptureOrder.Progress(world, world.GetEntity(worker)) == 0f,
                 "a worker still walking to a 꼬마돌 already reports progress");
 
             var idle = new List<Command>();
@@ -219,7 +219,7 @@ namespace WordCraft.Replay
             for (int t = 0; t < 2000 && world.GetEntity(worker).CaptureTargetId >= 0; t++)
             {
                 world.Step(idle);
-                float now = CaptureOrder.Progress(world.GetEntity(worker));
+                float now = CaptureOrder.Progress(world, world.GetEntity(worker));
                 if (now > highest) highest = now;
             }
 

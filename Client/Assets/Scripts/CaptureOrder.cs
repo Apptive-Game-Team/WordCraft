@@ -65,9 +65,11 @@ namespace WordCraft.View
         /// This reading divides by the base clock, <see cref="World.CaptureTicks"/>,
         /// which is right for a peer that has not researched 포획 가속 and wrong
         /// after: the clock then starts at 40 and the bar would begin a third of
-        /// the way across. Kept for the callers that have no world to hand
-        /// (MatchView's field meter, until the follow-up that moves it); anything
-        /// that can ask the world should use the overload below.
+        /// the way across. Nothing in the view calls it any more: MatchView's field
+        /// meter reads the overload below. It stays as the base-clock reading
+        /// Replay/ResearchMenuChecks.cs compares an unresearched peer's bar
+        /// against; delete it with that comparison. Anything that can ask the
+        /// world should use the overload below.
         /// </summary>
         public static float Progress(Entity worker) => Progress(worker, World.CaptureTicks);
 

@@ -77,6 +77,51 @@ namespace WordCraft.View
         /// </summary>
         private const float ShadowRatio = 0.55f;
 
+        // 상태 이상과 오라 (issue #206).
+
+        /// <summary>A slowed body's vine ring: its radius as a share of the footprint, and its band, in cells.</summary>
+        private const float SlowRingRatio = 0.42f;
+        private const float SlowRingBand = 0.22f;
+
+        /// <summary>The vine ring's alpha with the whole slow ahead of it and with none left: it fades as the slow runs out.</summary>
+        private const float SlowAlphaFull = 0.95f;
+        private const float SlowAlphaLast = 0.3f;
+
+        /// <summary>An aura's radius ring, as a share of its radius: thinner than a weapon's, it is a reach, not a threat.</summary>
+        private const float AuraBandRatio = 0.05f;
+
+        /// <summary>The burn aura's standing ring: a fixed band in cells, and faint, since it is on whether or not anyone asked.</summary>
+        private const float BurnAuraBand = 0.12f;
+
+        /// <summary>A burn's tick, as a share of a weapon's burst.</summary>
+        private const float BurnTickScale = 0.55f;
+
+        /// <summary>
+        /// Slack on a chain's hop radius, in cells, when the view guesses which
+        /// bodies a chain reached: the guess measures between whole-tick
+        /// positions as the simulation does, but a frame can span two ticks.
+        /// </summary>
+        private const float ChainSlack = 0.5f;
+
+        /// <summary>Seconds between one hop of a chain and the next, so the jump is seen to travel.</summary>
+        private const float ChainHopDelay = 0.07f;
+
+        /// <summary>
+        /// The vine ring: 세계수's lightest leaf, lifted a fifth toward white so
+        /// it still reads on the dark ground under a 지옥불 hull.
+        /// </summary>
+        private static readonly Color SlowColour = BodyPalette.Lighter(BodyPalette.TreeSpirits.LeafLight, 0.2f);
+        private static readonly Color HealRing = WithAlpha(UiStyle.Good, 0.8f);
+
+        /// <summary>A heal's motes: the Good green lifted toward white, so they read on grass, which is green too.</summary>
+        private static readonly Color HealMote = BodyPalette.Lighter(UiStyle.Good, 0.45f);
+
+        /// <summary>A heal's ring, and its alpha: stronger than a building's dust, so a heal reads at 64 px.</summary>
+        private static readonly Color HealDust = BodyPalette.Lighter(UiStyle.Good, 0.3f);
+        private const float HealDustAlpha = 0.95f;
+        private static readonly Color AuraRing = WithAlpha(UiStyle.Accent, 0.7f);
+        private static readonly Color BurnAuraRing = WithAlpha(BodyPalette.Hellfire.Ember, 0.35f);
+
         /// <summary>Where the imported WordOnline sprites live, relative to a Resources folder. The HUD's icons.</summary>
         public const string SpriteFolder = "Art/Sprites/";
 
@@ -113,6 +158,119 @@ namespace WordCraft.View
 
         /// <summary>The fading ring a hit itself puts on a body (issue #104), sized like the selection ring and coloured like danger instead of chosen.</summary>
         private readonly List<Decal> hitFlashes = new List<Decal>();
+
+        /// <summary>
+        /// Whether each entity was alive as of the last frame, parallel to bodies.
+        /// Alive going from true to false is the frame a death is drawn from: the
+        /// simulation has no death event, only the flag, and this is the view
+        /// noticing the flag change.
+        /// </summary>
+        private readonly List<bool> alive = new List<bool>();
+
+        /// <summary>
+        /// Bodies that no longer belong to any entity and are playing their way
+        /// out: a growth's old body swelling before the new one comes up. Destroyed
+        /// when they report themselves spent.
+        /// </summary>
+        private readonly List<BodyRig> retiring = new List<BodyRig>();
+
+        /// <summary>Tracers and impact shards, pooled (issue #165).</summary>
+        private Effects effects;
+
+        /// <summary>
+        /// This frame's hit ids, copied out of HitDetection's shared list at the
+        /// top of the frame and applied after every shot of the frame has been
+        /// fired, so a hit whose tracer is still in the air waits for it.
+        /// </summary>
+        private readonly List<int> struck = new List<int>();
+
+        /// <summary>Entities seen dying this frame, given their death after every shot of the frame.</summary>
+        private readonly List<int> fallen = new List<int>();
+
+        /// <summary>
+        /// Each entity's production queue as of the last frame, parallel to
+        /// bodies. A queue that went down on the frame a unit of the same owner
+        /// appeared is a unit delivered; one that went down with nothing new
+        /// beside it was cancelled, and the building does nothing (issue #186).
+        /// </summary>
+        private readonly List<int> queues = new List<int>();
+
+        /// <summary>The units and workers that appeared this frame: what a building that just delivered looks for.</summary>
+        private readonly List<int> born = new List<int>();
+
+        /// <summary>
+        /// Per entity: a hit flash is owed when the tracer now flying at it lands.
+        /// Parallel to bodies. HitDetection decides who gets a flash (the local
+        /// peer's own bodies); the landing only decides when.
+        /// </summary>
+        private readonly List<bool> flashOnLanding = new List<bool>();
+
+        /// <summary>
+        /// False until the first frame of a world has built its bodies. Everything
+        /// built on that frame was already standing when the match began; only a
+        /// body built after it was produced, and only that one rises out of the ground.
+        /// </summary>
+        private bool primed;
+
+        /// <summary>
+        /// The reach above which a weapon fires something visible. FactionData
+        /// gives melee a reach of exactly two cells; the issue draws a tracer for
+        /// anything that reaches further.
+        /// </summary>
+        public static readonly Fix TracerReach = Fix.FromInt(2);
+
+        /// <summary>Whether a weapon with these stats throws a tracer rather than landing a blow. The one test, shared with ViewShots.</summary>
+        public static bool Throws(UnitStats stats) => Throws(stats.Range);
+
+        /// <summary>
+        /// The same test on a reach alone, for a caller holding a live body: World.RangeFor
+        /// is the researched reach, and 골렘 사거리 lifts a golem's 2 cells to 3, so a
+        /// swing that has become a throw gets a tracer.
+        /// </summary>
+        public static bool Throws(Fix range) => range > TracerReach;
+
+        /// <summary>
+        /// 돌 골렘 부족's combat unit leaves rubble where it falls (Sim/World.cs
+        /// DropRemnant), so it dies into rubble. The one test, shared with ViewShots.
+        /// </summary>
+        public static bool Rubble(Faction faction, EntityKind kind) =>
+            kind == EntityKind.Unit && faction == Faction.RockGolems;
+
+        /// <summary>
+        /// What the view saw of each entity's hp and status clocks last frame,
+        /// parallel to bodies (issue #206). The simulation keeps no event for a
+        /// heal or a burn's tick, only the numbers; this is the view comparing
+        /// them, as it compares cooldowns for a shot.
+        /// </summary>
+        private struct Vital
+        {
+            public int Hp, MaxHp, Site, Burn, Slow;
+            /// <summary>The slow clock when it was last set: what the vine ring's fade is measured against.</summary>
+            public int SlowPeak;
+        }
+
+        private readonly List<Vital> vitals = new List<Vital>();
+
+        /// <summary>Whether each entity's hp fell this frame, parallel to bodies: what a chain's guess looks for.</summary>
+        private readonly List<bool> dropped = new List<bool>();
+
+        /// <summary>The vine ring under a slowed body, parallel to bodies.</summary>
+        private readonly List<Decal> slowRings = new List<Decal>();
+
+        /// <summary>An aura source's radius ring, parallel to bodies: the burn aura's always, the others' while selected.</summary>
+        private readonly List<Decal> auraRings = new List<Decal>();
+
+        /// <summary>The aura row of the ability table each entity's roster entry holds, or -1; parallel to bodies.</summary>
+        private readonly List<int> auraRows = new List<int>();
+
+        // The chain shooters that fired this frame and when their tracer lands,
+        // in pairs. Refilled every frame, so nothing allocates once they are big
+        // enough.
+        private readonly List<int> chained = new List<int>();
+        private readonly List<float> chainLands = new List<float>();
+
+        /// <summary>The ids one chain's guess has already used, first target first.</summary>
+        private readonly int[] hops = new int[FactionData.MaxChainHops + 1];
 
         /// <summary>Unscaled time each entity's flash goes dark. -1 means never armed; parallel to bodies.</summary>
         private readonly List<float> hitUntil = new List<float>();
@@ -157,7 +315,9 @@ namespace WordCraft.View
 
         private void Awake()
         {
-            DontDestroyOnLoad(gameObject);
+            // Only in play mode: ViewShots builds a view in the editor, where
+            // DontDestroyOnLoad throws.
+            if (Application.isPlaying) DontDestroyOnLoad(gameObject);
 
             // A perspective camera; the rig puts it where it goes. Built here
             // rather than in a scene so that no gameplay change ever has to touch
@@ -168,13 +328,32 @@ namespace WordCraft.View
             Cam.fieldOfView = CameraRig.FieldOfView;
             Cam.nearClipPlane = 0.5f;
             Cam.farClipPlane = 400f;
-            DontDestroyOnLoad(Cam.gameObject);
+            if (Application.isPlaying) DontDestroyOnLoad(Cam.gameObject);
             Sky.Build(Cam);
 
             hover = Decal.Make(transform, "Hover", ring: true, UiStyle.HoverRing);
+            effects = new Effects(transform);
         }
 
         private void Start() => runner = MatchRunner.Instance;
+
+        /// <summary>
+        /// A view over <paramref name="over"/> built outside play mode, for the
+        /// screenshot harness: the editor never calls Awake, Start or LateUpdate
+        /// on a component added from a batch method, so this does the first two
+        /// and <see cref="Draw"/> stands in for the third. The game never calls
+        /// either; it boots its view from <see cref="Boot"/>.
+        /// </summary>
+        public static MatchView Detached(MatchRunner over)
+        {
+            var view = new GameObject("WordCraft View (detached)").AddComponent<MatchView>();
+            view.Awake();
+            view.runner = over;
+            return view;
+        }
+
+        /// <summary>One frame of the view, exactly as LateUpdate draws it. For <see cref="Detached"/> views.</summary>
+        public void Draw() => LateUpdate();
 
         /// <summary>
         /// LateUpdate, so the interpolated draw position is read after the frame's
@@ -198,12 +377,23 @@ namespace WordCraft.View
                 Drop(rangeRings);
                 Drop(hitFlashes);
                 Drop(shadows);
+                Drop(slowRings);
+                Drop(auraRings);
                 Drop(barBacks);
                 Drop(barFills);
                 Drop(queueFills);
                 skins.Clear();      // parallel to bodies, and Create refills it
                 cooldowns.Clear();  // same
                 hitUntil.Clear();   // same: a restart's ids owe nothing to the match before it
+                alive.Clear();      // same
+                queues.Clear();     // same
+                flashOnLanding.Clear(); // same
+                vitals.Clear();     // same
+                dropped.Clear();    // same
+                auraRows.Clear();   // same
+                DropBodies(retiring);
+                effects.Clear();
+                primed = false;
                 shown = world;
 
                 // Terrain is fixed for the whole match, so the field is shaped and
@@ -212,18 +402,31 @@ namespace WordCraft.View
                 FieldMesh.Build(world, transform);
             }
 
-            for (int i = bodies.Count; i < world.EntityCount; i++) bodies.Add(Create(world, world.GetEntity(i)));
+            born.Clear();
+            for (int i = bodies.Count; i < world.EntityCount; i++)
+            {
+                Entity made = world.GetEntity(i);
+                BodyRig body = Create(world, made);
+                bodies.Add(body);
+                if (primed && made.Kind != EntityKind.Building && made.Kind != EntityKind.ResourceNode)
+                {
+                    body.Spawn();
+                    born.Add(i);
+                }
+            }
+            primed = true;
+            Retire();
 
             // Stamped once here rather than read again per entity below: this is
             // the same list HitDetection hands the minimap and the alert, so a
             // hit already lit up off-screen feedback does not walk World a second
             // time to also light up on-screen feedback (issue #104).
             IReadOnlyList<int> hits = HitDetection.HitIds(world, runner.LocalPeer);
-            for (int h = 0; h < hits.Count; h++)
-            {
-                hitUntil[hits[h]] = Time.unscaledTime + HitFlashSeconds;
-                bodies[hits[h]].Hit();
-            }
+            struck.Clear();
+            for (int h = 0; h < hits.Count; h++) struck.Add(hits[h]);
+            fallen.Clear();
+            chained.Clear();
+            chainLands.Clear();
 
             Fog.Update(runner);
 
@@ -237,12 +440,78 @@ namespace WordCraft.View
                 // already a Towerback the first frame it is seen again.
                 if (skins[i] != SkinOf(e))
                 {
-                    Destroy(bodies[i].gameObject);
+                    // A body that changes what it is in sight — a growth landing,
+                    // a 꼬마돌 taken — swells once and the new body comes up in
+                    // its place. Out of sight it is simply swapped.
+                    BodyRig old = bodies[i];
                     bodies[i] = Create(world, e);
                     skins[i] = SkinOf(e);
+                    auraRows[i] = AuraRow(world, e);
+                    // A new body is a new reading: what the old one had is no
+                    // heal and no burn of this one.
+                    vitals[i] = VitalOf(e, default);
+                    if (e.Alive && old.Shown && !old.Remembered)
+                    {
+                        old.Swell();
+                        retiring.Add(old);
+                        bodies[i].Spawn(BodyRig.SwellSeconds);
+                    }
+                    else
+                    {
+                        Destroy(old.gameObject);
+                    }
                 }
 
                 BodyRig body = bodies[i];
+
+                // Before the fog, which hides anything dead: a death seen live
+                // plays out where it fell, then the body switches itself off and
+                // the fog's Hidden below takes over. One that happened in the
+                // fog, or to a remembered building, is not news and plays nothing.
+                //
+                // The death itself is given after the loop, once every shot of
+                // the frame has been fired, so a body killed by a tracer that
+                // leaves this frame waits for it whatever order the ids run in.
+                bool was = alive[i];
+                alive[i] = e.Alive;
+                bool falls = was && !e.Alive && body.Shown && !body.Remembered;
+                if (falls) fallen.Add(i);
+
+                // Every entity, seen or not, so a cooldown that reset in the fog
+                // is not taken for a fresh shot the frame the shooter comes into
+                // sight. Pose only compares.
+                bool fired = e.AttackCooldown > cooldowns[i];
+                cooldowns[i] = e.AttackCooldown;
+
+                // The same for a queue: read for every entity, so one that ran
+                // down out of sight is not taken for a delivery later.
+                bool delivered = e.QueueCount < queues[i];
+                queues[i] = e.QueueCount;
+
+                // And hp and the two status clocks (issue #206). Hp that rose
+                // with MaxHp where it was is a heal: a growth raises both, and
+                // a site's hp climbs with its construction, so neither counts.
+                // A burn clock that ran past a multiple of World.BurnPeriod is
+                // a burn's tick, StatusSystem's own test.
+                Vital last = vitals[i];
+                vitals[i] = VitalOf(e, last);
+                dropped[i] = e.Hp < last.Hp;
+                bool healed = e.Alive && e.Hp > last.Hp && e.MaxHp == last.MaxHp && last.Site == 0 && e.BuildTicksLeft == 0;
+                bool scorched = e.Alive && e.BurnTicksLeft < last.Burn && BurnPeriods(last.Burn) > BurnPeriods(e.BurnTicksLeft);
+
+                // A dead body that is not playing its death has nothing left to
+                // move; switched off, so a long match's dead cost no Update.
+                if (!e.Alive && !falls && !body.Dying && body.enabled) body.enabled = false;
+                if (!e.Alive && (falls || body.Dying))
+                {
+                    rings[i].Visible = false;
+                    rangeRings[i].Visible = false;
+                    hitFlashes[i].Visible = false;
+                    shadows[i].Visible = false;
+                    StatusesOff(i, body);
+                    Overlays(i);
+                    continue;
+                }
                 byte show = Fog.Show(i, e);
                 if (show == Fog.Hidden)
                 {
@@ -251,6 +520,7 @@ namespace WordCraft.View
                     rangeRings[i].Visible = false;
                     hitFlashes[i].Visible = false;
                     shadows[i].Visible = false;
+                    StatusesOff(i, body);
                     Overlays(i);
                     continue;
                 }
@@ -266,6 +536,7 @@ namespace WordCraft.View
                     rings[i].Visible = false;
                     rangeRings[i].Visible = false;
                     hitFlashes[i].Visible = false;
+                    StatusesOff(i, body);
                     Overlays(i);
                     continue;
                 }
@@ -276,7 +547,9 @@ namespace WordCraft.View
 
                 Vector2 p = runner.DrawPosition(i);
                 body.Place(Field.At(p));
-                Pose(world, i, e, body);
+                Pose(world, i, e, body, fired);
+                if (delivered) Deliver(world, e, p, body);
+                Statuses(world, i, e, p, body, picked, healed, scorched);
 
                 shadows[i].Visible = body.Flying;
                 if (body.Flying) shadows[i].Set(p, body.Footprint * ShadowRatio, 0f);
@@ -284,25 +557,29 @@ namespace WordCraft.View
                 rings[i].Visible = picked;
                 if (picked) rings[i].Set(p, body.Footprint * 0.5f + band, band);
 
-                // "이게 저걸 때릴 수 있나" is a question the roster already answers;
-                // this only ever reads it, never a re-typed number of its own, so
-                // the ring can never say something FactionData does not (issue #104).
+                // "이게 저걸 때릴 수 있나" is a question the simulation already
+                // answers; this only ever reads it, never a re-typed number of its
+                // own, so the ring can never say something the shot does not. It is
+                // World.RangeFor and not the roster's Range: a researched range
+                // upgrade moves the reach the shot is tested against, and a ring
+                // left at the base number would draw a boundary the unit hits past
+                // (issues #104, #182).
                 if (picked && world.Armed(e))
                 {
-                    RangeRing(rangeRings[i], FactionData.Stats(world.FactionOf(e.Owner), e.Role, e.Slot).Range, p);
+                    RangeRing(rangeRings[i], world.RangeFor(e), p);
                 }
                 else
                 {
                     rangeRings[i].Visible = false;
                 }
 
-                bool flashing = hitUntil[i] > Time.unscaledTime;
+                bool flashing = hitUntil[i] > ViewClock.Now;
                 hitFlashes[i].Visible = flashing;
                 if (flashing)
                 {
                     hitFlashes[i].Set(p, body.Footprint * 0.5f + band, band);
                     Color flash = UiStyle.Danger;
-                    flash.a = Mathf.Clamp01((hitUntil[i] - Time.unscaledTime) / HitFlashSeconds);
+                    flash.a = Mathf.Clamp01((hitUntil[i] - ViewClock.Now) / HitFlashSeconds);
                     hitFlashes[i].Colour = flash;
                 }
 
@@ -315,6 +592,8 @@ namespace WordCraft.View
             }
 
             for (int i = markers; i < rallyMarkers.Count; i++) rallyMarkers[i].enabled = false;
+            Chains(world);
+            Consequences(world);
             Remnants(world);
             Hover(world);
             Ghost(world);
@@ -328,10 +607,18 @@ namespace WordCraft.View
         /// reading of state the simulation already holds; nothing here is a
         /// second clock.
         /// </summary>
-        private void Pose(World world, int i, Entity e, BodyRig body)
+        private void Pose(World world, int i, Entity e, BodyRig body, bool fired)
         {
-            if (e.AttackCooldown > cooldowns[i]) body.Attack();
-            cooldowns[i] = e.AttackCooldown;
+            if (fired)
+            {
+                body.Attack();
+                float lands = Shoot(world, e, body);
+                if (lands >= 0f && ChainRow(world, e) >= 0)
+                {
+                    chained.Add(i);
+                    chainLands.Add(lands);
+                }
+            }
 
             if (e.TargetId >= 0 && e.TargetId < world.EntityCount && e.Target.Equals(e.Position))
             {
@@ -345,17 +632,415 @@ namespace WordCraft.View
 
             if (e.Kind != EntityKind.Building) return;
 
-            // A site under construction rises out of the ground as it is built, and
-            // reads as a ghost until it finishes — the same SiteAlpha idiom the
-            // sprite had, now carried by the model.
+            // A site under construction is put together part by part as it is
+            // built, and reads as a ghost until it finishes — the same SiteAlpha
+            // idiom the sprite had, now carried by the model.
             if (e.BuildTicksLeft > 0 && e.Owner >= 0)
             {
                 int ticks = FactionData.BuildTicks(world.FactionOf(e.Owner), e.Role, e.Slot);
                 body.Progress(ticks > 0 ? 1f - e.BuildTicksLeft / (float)ticks : 1f);
+                body.Work(false);
             }
             else
             {
                 body.Progress(1f);
+                // At work: a queue holds something or a level is being researched.
+                body.Work(e.QueueCount > 0 || e.ResearchIndex >= 0);
+            }
+        }
+
+        /// <summary>
+        /// Cells past a building's edge a unit it delivered can stand: a produced
+        /// unit stands up at the building's position plus World.RallyOffset, two
+        /// cells out, so anything further away came out of somewhere else.
+        /// </summary>
+        private const float DoorReach = 2f;
+
+        /// <summary>
+        /// A building's queue went down this frame. If a unit of the same owner
+        /// appeared at its door, it came out of here: the building leans toward
+        /// the nearest such unit (issue #186). Only at its door, so a queue that
+        /// went down because it was cancelled does not lean toward a unit another
+        /// building delivered on the same frame. A 차원 유랑종 통로 that sends its
+        /// unit to a far arrival point does not lean at all.
+        /// </summary>
+        private void Deliver(World world, Entity e, Vector2 p, BodyRig body)
+        {
+            if (e.Kind != EntityKind.Building) return;
+            float reach = Cells(e.Role) * 0.5f + DoorReach;
+            float nearest = reach * reach;
+            Vector2 toward = Vector2.zero;
+            for (int b = 0; b < born.Count; b++)
+            {
+                int id = born[b];
+                if (world.GetEntity(id).Owner != e.Owner) continue;
+                Vector2 to = runner.DrawPosition(id) - p;
+                if (to.sqrMagnitude >= nearest) continue;
+                nearest = to.sqrMagnitude;
+                toward = to;
+            }
+            if (toward.sqrMagnitude < 1e-6f) return;
+            body.Deliver(Mathf.Atan2(toward.x, toward.y) * Mathf.Rad2Deg);
+        }
+
+        /// <summary>
+        /// What the shot that just reset this cooldown looks like in the air. A
+        /// weapon that reaches past <see cref="TracerReach"/> throws a tracer from
+        /// the shooter to the target once the shooter's wind-up is over, bursts
+        /// where it lands, and the target flinches on the arrival. Anything
+        /// shorter is a blow: the target flinches now and the burst comes when
+        /// the lunge lands. The target is read off the entity on the tick it
+        /// fired, when TargetId still names the body it hit even if that body
+        /// died of it.
+        ///
+        /// Drawn after the damage, not before: the simulation's hit is instant,
+        /// so a tracer lands up to a third of a second after the bar has already
+        /// moved. That is the view's delay only; nothing here touches the world.
+        /// The delayed flinch replaces the one HitDetection gave the target
+        /// earlier in this frame, because Hit keeps only the latest start.
+        ///
+        /// Returns the seconds until the shot lands where the player can see it,
+        /// or -1 when nothing lands in sight: what a chain's jump waits for.
+        /// </summary>
+        private float Shoot(World world, Entity e, BodyRig body)
+        {
+            if (e.Owner < 0 || e.TargetId < 0 || e.TargetId >= bodies.Count) return -1f;
+
+            Faction faction = world.FactionOf(e.Owner);
+            Color colour = BodyPalette.Shot(faction);
+            BodyRig victim = bodies[e.TargetId];
+            Vector2 from = runner.DrawPosition(e.Id), to = runner.DrawPosition(e.TargetId);
+
+            // On the near face of the target rather than its middle, so the
+            // shards burst out of the side the shot came from and are not
+            // swallowed by the body they hit.
+            Vector2 toward = from - to;
+            if (toward.sqrMagnitude > 1e-6f) to += toward.normalized * (victim.Footprint * 0.35f);
+            Vector3 hit = Field.At(to, victim.ChestLift + (victim.Flying ? BodyRig.HoverHeight : 0f));
+
+            // Asked of a copy marked alive, because the shot that killed it is
+            // still a shot at something the player could see. The copy is the
+            // view's own; the world is not written.
+            Entity target = world.GetEntity(e.TargetId);
+            target.Alive = true;
+            bool seen = Fog.Show(e.TargetId, target) == Fog.Seen;
+
+            if (Throws(world.RangeFor(e)))
+            {
+                // A tower kicks the instant it fires and has no wind-up to wait for.
+                float leave = e.Kind == EntityKind.Building ? 0f : BodyRig.StrikeDelay;
+                if (seen) return effects.Shot(body.Muzzle, hit, colour, leave, e.TargetId);
+
+                // Into the fog: the tracer leaves, and is gone before it
+                // could say where the hidden body stands. No burst, no
+                // ring, no landing.
+                Vector3 muzzle = body.Muzzle;
+                effects.Shot(muzzle, Vector3.Lerp(muzzle, hit, HiddenShotReach), colour, leave, -1, bursts: false);
+                return -1f;
+            }
+
+            victim.Hit();
+            if (!seen) return -1f;
+            effects.Impact(hit, colour, BodyRig.LungeLandDelay);
+            return BodyRig.LungeLandDelay;
+        }
+
+        /// <summary>How far toward a target hidden in the fog its tracer is drawn before it vanishes.</summary>
+        private const float HiddenShotReach = 0.6f;
+
+        /// <summary>
+        /// 상태 이상과 오라 on one seen body (issue #206): the vine ring and the
+        /// smaller hull of a slow, the embers of a burn and a small burst on each
+        /// burn tick, the motes and ring of a heal, and the radius ring of an
+        /// aura source. All read off the entity and the ability table this
+        /// frame; nothing is kept but the last frame's numbers.
+        /// </summary>
+        private void Statuses(World world, int i, Entity e, Vector2 p, BodyRig body, bool picked, bool healed, bool scorched)
+        {
+            body.Burning(e.BurnTicksLeft > 0);
+            body.Slowed(e.SlowTicksLeft > 0);
+
+            if (e.SlowTicksLeft <= 0)
+            {
+                Off(slowRings, i);
+            }
+            else
+            {
+                Decal vine = Lazy(slowRings, i, "Slow", SlowColour);
+                vine.Visible = true;
+                vine.Set(p, body.Footprint * SlowRingRatio, SlowRingBand);
+                float left = Mathf.Clamp01(e.SlowTicksLeft / (float)Mathf.Max(vitals[i].SlowPeak, 1));
+                vine.Colour = WithAlpha(SlowColour, Mathf.Lerp(SlowAlphaLast, SlowAlphaFull, left));
+            }
+
+            if (scorched)
+            {
+                // On the side facing the camera, so the burst is not swallowed by the body.
+                Vector3 at = body.Chest - Cam.transform.forward * (body.Footprint * 0.35f);
+                effects.Impact(at, BodyPalette.Hellfire.Ember, 0f, BurnTickScale);
+            }
+
+            if (healed)
+            {
+                Vector3 side = Cam.transform.right * (body.Footprint * 0.25f);
+                Vector3 chest = body.Chest;
+                effects.Mend(chest + side, HealMote);
+                effects.Mend(chest - side + Vector3.up * 0.2f, HealMote);
+                effects.Dust(Field.At(p), body.Footprint * 0.5f, HealDust, 0f, HealDustAlpha);
+            }
+
+            int aura = auraRows[i];
+            bool ringed = false;
+            if (aura >= 0)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(aura);
+                bool burns = row.Kind == AbilityKind.BurnAura;
+                if ((picked || burns) && AuraWorks(world, e, row))
+                {
+                    float radius = world.AbilityRadius(e.Owner, row);
+                    Decal reach = Lazy(auraRings, i, "Aura", AuraRing);
+                    reach.Visible = true;
+                    reach.Set(p, radius, burns ? BurnAuraBand : radius * AuraBandRatio);
+                    reach.Colour = burns ? BurnAuraRing : row.Kind == AbilityKind.HealAura ? HealRing : AuraRing;
+                    ringed = true;
+                }
+            }
+            if (!ringed) Off(auraRings, i);
+        }
+
+        /// <summary>A body that is dead, unseen or only remembered: no status marks and no embers.</summary>
+        private void StatusesOff(int i, BodyRig body)
+        {
+            Off(slowRings, i);
+            Off(auraRings, i);
+            body.Burning(false);
+            body.Slowed(false);
+        }
+
+        /// <summary>
+        /// The status ring of entity <paramref name="i"/> in this list, made the
+        /// first time it is wanted: most entities are never slowed and hold no
+        /// aura, so a node or a wall of buildings carries none.
+        /// </summary>
+        private Decal Lazy(List<Decal> list, int i, string name, Color colour)
+        {
+            if (list[i] == null) list[i] = Decal.Make(transform, name, ring: true, colour);
+            return list[i];
+        }
+
+        private static void Off(List<Decal> list, int i)
+        {
+            if (list[i] != null) list[i].Visible = false;
+        }
+
+        /// <summary>
+        /// 연쇄 번개 and 연쇄 방전, guessed. The simulation keeps no record of where
+        /// a chain jumped (Sim/Combat.cs ChainFrom keeps its hit list on the stack
+        /// for one shot), so the view approximates it from what it can read: for
+        /// each body that fired this frame holding an unlocked ChainOnHit row, it
+        /// starts from the target the shot was at and, up to the row's hop count,
+        /// jumps to the nearest hostile body whose hp fell this frame within the
+        /// row's radius (plus <see cref="ChainSlack"/>) of the last one, as
+        /// ChainFrom picks nearest. A body hurt by something else on the same
+        /// frame can be taken for a hop, and a hop to a body that was already at
+        /// zero is missed; both are rare and both only move a bolt.
+        ///
+        /// The bolts wait for the shot's tracer to land, and each hop a moment
+        /// more. Only between two seen bodies. The body a bolt jumps to is the
+        /// bolt's target in Effects, so it flinches, flashes and falls when the
+        /// bolt appears, not at the tick, as the first target waits for its
+        /// tracer: Chains runs before Consequences reads Effects.Incoming.
+        ///
+        /// Lightning yellow (세계수's Bolt) whichever faction fires, 인간's
+        /// 전기 타워 included: issue #206 names the chain's colour, and a jump
+        /// in the shooter's own tracer colour would read as a second shot.
+        /// </summary>
+        private void Chains(World world)
+        {
+            for (int c = 0; c < chained.Count; c++)
+            {
+                Entity a = world.GetEntity(chained[c]);
+                int ability = ChainRow(world, a);
+                if (ability < 0 || a.TargetId < 0) continue;
+                AbilityRow row = FactionData.AbilityRowAt(ability);
+                float reach = world.AbilityRadius(a.Owner, row) + ChainSlack;
+                int limit = Mathf.Min(row.Limit, FactionData.MaxChainHops);
+
+                int count = 0;
+                hops[count++] = a.TargetId;
+                int from = a.TargetId;
+                for (int hop = 0; hop < limit; hop++)
+                {
+                    Vector2 at = MatchRunner.ToView(world.GetEntity(from).Position);
+                    int best = -1;
+                    float bestDistance = reach * reach;
+                    for (int j = 0; j < world.EntityCount; j++)
+                    {
+                        if (!dropped[j] || Used(j, count)) continue;
+                        Entity v = world.GetEntity(j);
+                        if (v.Owner < 0 || v.Owner == a.Owner || v.Kind == EntityKind.ResourceNode) continue;
+                        float d = (MatchRunner.ToView(v.Position) - at).sqrMagnitude;
+                        if (d > bestDistance) continue;
+                        best = j;
+                        bestDistance = d;
+                    }
+                    if (best < 0) break;
+
+                    if (Seen(world, from) && Seen(world, best))
+                    {
+                        effects.Jump(Chest(from), Chest(best), BodyPalette.TreeSpirits.Bolt,
+                                     chainLands[c] + (hop + 1) * ChainHopDelay, best);
+                    }
+                    hops[count++] = best;
+                    from = best;
+                }
+            }
+        }
+
+        private bool Used(int id, int count)
+        {
+            for (int h = 0; h < count; h++)
+            {
+                if (hops[h] == id) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Whether the fog shows this body, asked of a copy marked alive, as Shoot asks: a chain that killed it still jumped where the player could see.</summary>
+        private static bool Seen(World world, int id)
+        {
+            Entity e = world.GetEntity(id);
+            e.Alive = true;
+            return Fog.Show(id, e) == Fog.Seen;
+        }
+
+        /// <summary>The middle of a body where it is drawn: where a shot aims, and where a chain jumps from and to.</summary>
+        private Vector3 Chest(int id)
+        {
+            BodyRig body = bodies[id];
+            return Field.At(runner.DrawPosition(id), body.ChestLift + (body.Flying ? BodyRig.HoverHeight : 0f));
+        }
+
+        /// <summary>The ChainOnHit row this body can use right now, or -1: its roster entry holds one and its owner has unlocked it.</summary>
+        private static int ChainRow(World world, Entity e)
+        {
+            if (e.Owner < 0) return -1;
+            int row = FactionData.AbilityOf(world.FactionOf(e.Owner), e.Role, e.Slot, AbilityKind.ChainOnHit);
+            return row >= 0 && world.AbilityUnlocked(e.Owner, FactionData.AbilityRowAt(row)) ? row : -1;
+        }
+
+        /// <summary>
+        /// The aura row of the ability table this body's roster entry holds, or
+        /// -1. Every entry holds at most one: the type load refuses an entry with
+        /// two rows of one kind, and no entry today holds two aura kinds. The
+        /// first in table order wins if one ever does.
+        /// </summary>
+        private static int AuraRow(World world, Entity e)
+        {
+            if (e.Owner < 0) return -1;
+            Faction faction = world.FactionOf(e.Owner);
+            for (int r = 0; r < FactionData.AbilityRowCount; r++)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(r);
+                if (row.Faction == faction && row.Role == e.Role && row.Slot == e.Slot && FactionData.IsAura(row.Kind)) return r;
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// Whether this source's aura is on right now, the rule Sim/Auras.cs
+        /// CollectAuraSources applies: unlocked for its owner, not growing, and
+        /// a building finished.
+        /// </summary>
+        private static bool AuraWorks(World world, Entity e, AbilityRow row) =>
+            e.Alive && e.Owner >= 0 && world.AbilityUnlocked(e.Owner, row) && !World.IsGrowing(e) &&
+            (e.Kind != EntityKind.Building || e.BuildTicksLeft == 0);
+
+        /// <summary>This frame's reading of an entity, carrying the slow's peak over from <paramref name="was"/> unless the slow was set again.</summary>
+        private static Vital VitalOf(Entity e, Vital was) => new Vital
+        {
+            Hp = e.Hp,
+            MaxHp = e.MaxHp,
+            Site = e.BuildTicksLeft,
+            Burn = e.BurnTicksLeft,
+            Slow = e.SlowTicksLeft,
+            SlowPeak = e.SlowTicksLeft > was.Slow ? e.SlowTicksLeft : e.SlowTicksLeft == 0 ? 0 : was.SlowPeak,
+        };
+
+        /// <summary>
+        /// How many multiples of World.BurnPeriod lie below this burn clock,
+        /// zero included: a clock that ran from a to b passed a burn tick when
+        /// this differs between them. -1 for a clock at zero.
+        /// </summary>
+        private static int BurnPeriods(int ticks) => ticks <= 0 ? -1 : (ticks - 1) / World.BurnPeriod;
+
+        private static Color WithAlpha(Color colour, float alpha)
+        {
+            colour.a = alpha;
+            return colour;
+        }
+
+        /// <summary>
+        /// What follows from this frame's shots, after all of them are fired:
+        /// hits flinch and flash now, or when the tracer at them lands; the dead
+        /// fall now, or when the last tracer at them lands; and the tracers that
+        /// landed this frame start their targets' flinch. Order matters only
+        /// here, and here it is fixed, whatever order the entity ids ran in.
+        /// </summary>
+        private void Consequences(World world)
+        {
+            float now = ViewClock.Now;
+            for (int h = 0; h < struck.Count; h++)
+            {
+                int id = struck[h];
+                if (effects.Incoming(id) > 0f)
+                {
+                    flashOnLanding[id] = true;
+                    continue;
+                }
+                hitUntil[id] = now + HitFlashSeconds;
+                bodies[id].Hit();
+            }
+
+            for (int d = 0; d < fallen.Count; d++)
+            {
+                int id = fallen[d];
+                Entity e = world.GetEntity(id);
+                BodyRig body = bodies[id];
+                float wait = effects.Incoming(id);
+                bool rubble = e.Owner >= 0 && Rubble(world.FactionOf(e.Owner), e.Kind);
+                body.Die(rubble, wait);
+                if (rubble)
+                {
+                    effects.Crumble(Field.At(runner.DrawPosition(id)), body.Size, UiStyle.Remnant,
+                                    body.transform.eulerAngles.y, wait);
+                }
+            }
+
+            effects.Animate();
+            IReadOnlyList<int> landed = effects.Landed;
+            for (int l = 0; l < landed.Count; l++)
+            {
+                int id = landed[l];
+                if (id < 0 || id >= bodies.Count) continue;
+                bodies[id].Hit();
+                if (flashOnLanding[id])
+                {
+                    flashOnLanding[id] = false;
+                    hitUntil[id] = now + HitFlashSeconds;
+                }
+            }
+        }
+
+        /// <summary>Destroys the retiring bodies that have played out. Swap-removes, so nothing here allocates.</summary>
+        private void Retire()
+        {
+            for (int i = retiring.Count - 1; i >= 0; i--)
+            {
+                if (retiring[i] != null && !retiring[i].Spent) continue;
+                if (retiring[i] != null) Destroy(retiring[i].gameObject);
+                retiring[i] = retiring[retiring.Count - 1];
+                retiring.RemoveAt(retiring.Count - 1);
             }
         }
 
@@ -426,9 +1111,10 @@ namespace WordCraft.View
             // question, and a map wearing every anchor's circle for a whole match
             // is a map with a pattern on it.
             ArrivalOrder.Anchors(world, peer, anchors);
+            Fix radius = ArrivalOrder.RadiusFor(world, peer);
             for (int i = 0; i < anchors.Count; i++)
             {
-                RangeRing(AnchorRing(i), ArrivalOrder.Radius, runner.DrawPosition(anchors[i]));
+                RangeRing(AnchorRing(i), radius, runner.DrawPosition(anchors[i]));
             }
             for (int i = anchors.Count; i < arrivalRings.Count; i++) arrivalRings[i].Visible = false;
         }
@@ -488,6 +1174,7 @@ namespace WordCraft.View
         // cells the day a profile disagrees.
         private void Remnants(World world)
         {
+            int longest = RemnantFade.LongestTicks(world);
             int used = 0;
             for (int cell = 0; cell < World.GridCells; cell++)
             {
@@ -497,7 +1184,7 @@ namespace WordCraft.View
                 pile.Show(true);
                 pile.Place(Field.At(MatchRunner.ToView(World.CellCenter(cell))));
 
-                float left = (world.RemnantExpiry(cell) - world.Tick) / (float)World.RemnantTicks;
+                float left = (world.RemnantExpiry(cell) - world.Tick) / (float)longest;
                 pile.Alpha(Mathf.Lerp(UiStyle.RemnantFade, 1f, Mathf.Clamp01(left)));
             }
 
@@ -660,7 +1347,7 @@ namespace WordCraft.View
             // opponent being able to see them spent is the competition this
             // mechanic exists to create.
             float capture = e.Alive && e.Kind == EntityKind.Worker
-                ? CaptureOrder.Progress(e)
+                ? CaptureOrder.Progress(world, e)
                 : -1f;
 
             bool queue = e.Alive && picked && e.Kind == EntityKind.Building && e.QueueCount > 0;
@@ -723,18 +1410,27 @@ namespace WordCraft.View
         private BodyRig Create(World world, Entity e)
         {
             BodyRig body = Dress(world, e);
+            body.Use(effects);
 
             if (skins.Count <= e.Id)
             {
                 skins.Add(SkinOf(e));
                 cooldowns.Add(e.AttackCooldown);
+                queues.Add(e.QueueCount);
+                alive.Add(e.Alive);
+                flashOnLanding.Add(false);
                 hitUntil.Add(-1f);
+                vitals.Add(VitalOf(e, default));
+                dropped.Add(false);
+                auraRows.Add(AuraRow(world, e));
+                slowRings.Add(null); // made on first use: Lazy
+                auraRings.Add(null);
                 rings.Add(Decal.Make(transform, "Ring", ring: true, UiStyle.Ring));
                 rangeRings.Add(Decal.Make(transform, "Range", ring: true, UiStyle.RangeRing));
                 hitFlashes.Add(Decal.Make(transform, "HitFlash", ring: true, UiStyle.Danger));
                 shadows.Add(Decal.Make(transform, "Shadow", ring: false, UiStyle.Shadow));
                 barBacks.Add(Billboard.Make(transform, "HpBack", UiStyle.MeterBack));
-                barFills.Add(Billboard.Make(transform, "HpFill", Color.white));
+                barFills.Add(Billboard.Make(transform, "HpFill", Color.white, front: true));
                 queueFills.Add(Billboard.Make(transform, "Queue", UiStyle.Queue));
             }
 

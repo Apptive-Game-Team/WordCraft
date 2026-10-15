@@ -60,6 +60,32 @@ namespace WordCraft.View
             }
         }
 
+        /// <summary>
+        /// What a hit washes a body toward for a moment: the eye highlight's paper
+        /// white, so the flash is the lightest value already on the field rather
+        /// than a new one, and reads as light rather than as a colour.
+        /// </summary>
+        public static Color HitFlash => EyeShine;
+
+        /// <summary>
+        /// The colour of what a faction's weapon throws: a tracer, and the shards
+        /// of its impact. One per faction, taken from the faction's own swatches,
+        /// and each the lightest mid value that faction has with a hue in it, so a
+        /// shot reads on grass and on stone without leaving the palette.
+        /// </summary>
+        public static Color Shot(Faction faction)
+        {
+            switch (faction)
+            {
+                case Faction.TreeSpirits: return TreeSpirits.Bolt;
+                case Faction.Hellfire: return Hellfire.Ember;
+                case Faction.WaterSlimes: return WaterSlimes.Blue;
+                case Faction.RockGolems: return RockGolems.Tan;
+                case Faction.Driftworlds: return Driftworlds.TealLight;
+                default: return Humans.Mana;
+            }
+        }
+
         /// <summary>세계수 정령. Round, leafy, weightless; lightning, nature and wind.</summary>
         public static class TreeSpirits
         {
@@ -143,6 +169,10 @@ namespace WordCraft.View
             public static readonly Color StormWorld = Hex(0xEFCB45);
             /// <summary>Chosen. The extinct rock slime, from ExtinctRockSlime.png.</summary>
             public static readonly Color StoneWorld = Hex(0xD6CBAE);
+            /// <summary>Chosen. The nature world: the extinct nature slime and 덩쿨편's vine, an olive green sampled by eye from VineShard.png's vine.</summary>
+            public static readonly Color NatureWorld = Hex(0x9AAE4E);
+            /// <summary>Chosen. The wind world: the extinct wind slime's trailing wisps, <see cref="TealLight"/> lifted toward white as ExtinctWindSlime.png's tails are.</summary>
+            public static readonly Color WindWorld = Hex(0xA9DCE0);
         }
 
         /// <summary>
