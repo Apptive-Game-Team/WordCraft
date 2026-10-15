@@ -3,7 +3,7 @@
 - Date: 2026-10-16
 - GitHub Issue: #186
 - Base: `feat/182` (PR #184, 안에 #175·#176·#173·#171). 이 PR 은 #184 위에 쌓인다.
-- Status: In progress
+- Status: Implemented, awaiting review
 
 ## Goal
 
@@ -62,18 +62,22 @@
   `Work(true)`.
 - crown 이 스스로 도는 건물 (`CrownSpin != 0`) 은 회전이 0.4초에 걸쳐 3.5배로 빨라진다.
   각도를 시간에 곱하지 않고 누적해서 속도가 바뀌어도 튀지 않는다.
-- 나머지는 hull 이 1.5% 맥동하고 0.4초마다 진영색 입자 하나 (`Effects.Mote`) 가 지붕
-  근처에서 1초 동안 떠오르며 작아진다. 동시에 2~3개가 보인다.
+- 나머지는 hull 이 1.5% 맥동한다.
+- 둘 다 0.33초마다 진영색 입자 하나 (`Effects.Mote`, 0.3~0.5셀) 가 지붕 높이 85% 에서
+  1초 동안 1.3셀 떠오르며 작아진다. 동시에 3개가 보인다. 이슈는 crown 이 도는 건물에
+  입자를 두지 않았지만, 3.5배 빠른 회전은 정지 화면에서 보이지 않아서 모두에게 준다.
 - 생산 완료: `QueueCount` 가 줄어든 프레임에 같은 주인의 새 유닛이 생겼으면, 가장
-  가까운 새 유닛 쪽으로 `Deliver(yaw)`. hull 이 0.4초 동안 8% 부풀고 그쪽으로 7도
+  가까운 새 유닛 쪽으로 `Deliver(yaw)`. hull 이 0.45초 동안 10% 부풀고 그쪽으로 10도
   기운다. 취소로 줄어든 queue 는 새 유닛이 없으므로 반응하지 않는다.
 
 ### 파괴 (`BodyRig.Fall`, 건물 경로)
 
-0.8초. 0~0.2초 흔들림, 0.15초에 `Effects.Crumble` 이 진영색 덩어리 2~4개를 던지고,
-위쪽 tier 와 crown 이 서로 다른 방향으로 기울며 떨어지고, 0.3초에 먼지 ring, 0.45초
-부터 남은 것이 가라앉고 마지막 30% 에서 흐려진다. 지옥불과 유랑종은 첫 0.12초에
-`_Wash` 로 안쪽 빛 색이 번쩍이고, 그 뒤 어두운 색으로 꺼진다.
+0.8초 (아래 비율은 0.8초에 대한 비율). 0~30% 흔들림, 15% 에 `Effects.Crumble` 이
+진영색 덩어리 2~4개 (footprint 반올림: 본진 4, 생산 3, 방어 2) 를 던지고, crown 부터
+위쪽 tier 순서로 서로 다른 방향으로 기울며 떨어지고, 32% 에 먼지 ring (footprint 의
+45% 반지름), 45% 부터 남은 기초가 자기 높이만큼 가라앉고 마지막 30% 에서 흐려진다.
+지옥불과 유랑종은 3~27% 에 `_Wash` 로 안쪽 빛 색이 80% 까지 번쩍이고, 그 뒤 어두운
+잔해 색 55% 로 꺼진다. 다른 진영은 30% 만 어두워진다.
 
 ### Effects
 
@@ -86,6 +90,10 @@
 
 - `strip-<faction>-build`: 본진, 생산, 방어. 진행도를 0.77초에 0 → 1 로 밀고, 마지막
   프레임에 완공 ring 과 settle 이 보인다.
+- `strip-match-build`: 실제 `MatchView` 로 스크립트 매치에서 처음 완공되는 건물 (tick
+  250). `strip-match-raze` 는 스크립트 매치에서 건물이 처음 무너지는 tick 에 찍지만,
+  지금 로그에는 그런 tick 이 없어 찍히지 않는다.
+- `-shotsOnly build,work,...`: 한 종류만 다시 찍는 필터.
 - `strip-<faction>-work`: 본진, 생산, 기술. 방어 건물은 생산도 연구도 하지 않아서
   기술 건물로 바꾼다. 0.45초에 본진과 생산 건물이 유닛을 내보낸다 (`Deliver` 와
   유닛 `Spawn`).
@@ -94,12 +102,32 @@
 
 ## Approach (Checklist)
 
-- [ ] **Step 1** — `ViewShots` 에 build, work, destroy strip (지금 코드 그대로 찍어 기준 확보)
-- [ ] **Step 2** — `Models` tier 와 `Design` 필드, `BodyRig` 조립
-- [ ] **Step 3** — `Effects.Dust`, 완공 ring 과 settle
-- [ ] **Step 4** — 활동: `Work`, `Deliver`, `Effects.Mote`, `MatchView` 연결
-- [ ] **Step 5** — 파괴: tier 붕괴, `Crumble` 확장, 안쪽 빛
-- [ ] **Step 6** — strip 을 보며 세 번 이상 다듬기 (64px 축소본으로 판단)
+- [x] **Step 1** — `ViewShots` 에 build, work, destroy strip (지금 코드 그대로 찍어 기준 확보)
+- [x] **Step 2** — `Models` tier 와 `Design` 필드, `BodyRig` 조립
+- [x] **Step 3** — `Effects.Dust`, 완공 ring 과 settle
+- [x] **Step 4** — 활동: `Work`, `Deliver`, `Effects.Mote`, `MatchView` 연결
+- [x] **Step 5** — 파괴: tier 붕괴, `Crumble` 확장, 안쪽 빛
+- [x] **Step 6** — strip 을 보며 세 번 이상 다듬기 (64px 축소본으로 판단)
+
+## 반복 기록
+
+strip 18장을 0.4배로 줄여 진영 6개를 한 장에 쌓은 montage 로 판단했다. 이 크기에서
+본진이 약 55px 이다.
+
+0. 기준: 지금 코드의 build strip 은 건물이 y 로 늘어나며 반투명하게 솟을 뿐이다.
+1. 첫 렌더: 여섯 방식이 모두 구별된다. 카메라가 멀고 건물이 프레임 아래쪽에 몰려
+   있었다. 돌 골렘의 떨어지는 돌이 프레임 위로 나갔다 (낙하 높이 1.6 + 0.6h → 1.2 + 0.4h).
+2. 파괴: 기초가 낮은 건물 (지옥불 본진의 0.3 판) 이 0.5초에 이미 땅속에 있었다. 가라앉는
+   깊이를 건물 높이에서 기초 높이로 바꾸고 시작을 0.4 → 0.45 로 늦췄다. 안쪽 빛은 frame 1
+   에 34% 만 잡혀 정점을 0.07 → 0.15 로 옮겼다. 먼지 ring 이 본진 둘레 3셀까지 퍼져 45% 로
+   줄이고 색을 더 밝게 (0.35 → 0.55) 했다. 유랑종 본진의 첫 부품이 1.7배로 펼쳐져 보여
+   돌 골렘처럼 기초는 y 로만 쌓이게 했다.
+3. 활동: 입자가 64px 에서 점 하나였다. 0.3~0.5셀로 키우고 0.4 → 0.33초 간격, 지붕 높이
+   70% → 85% 에서 시작하게 했다. 도는 crown 의 가속은 정지 화면에서 보이지 않아 입자를
+   모든 일하는 건물에 줬다. 생산 완료의 부풂과 기울기를 8%, 7도에서 10%, 10도로 올렸다.
+4. 실제 경로: `strip-match-spawn` 에서 생명의 나무가 일꾼을 내보내며 입자를 내고 그쪽으로
+   기울고, `strip-match-build` 에서 풀씨 둥지가 frame 1 에 불투명해지고 frame 3~5 에 먼지
+   ring 이 퍼진다.
 
 ## Validation
 
@@ -107,11 +135,12 @@
 - `Unity -batchmode -quit -projectPath Client -executeMethod WordCraft.View.ViewSelfCheck.Run`
   → `OK: all view determinism checks passed`
 - `Unity -batchmode -quit -projectPath Client -executeMethod WordCraft.View.ViewShots.Run -shotsOutput shots -shotsTicks 900`
-  → 기존 57장 + strip 18장 = 75장
+  → 기존 57장 + strip 18장 + match strip 1장 = 76장
 
 ## Risks & Rollback
 
-- **Risks:** builder 를 tier 로 나누면서 primitive 순서를 바꾸지 않아도, `Solids` 의 grain
+- **Risks:** 생산 취소로 queue 가 줄어든 같은 프레임에 같은 주인의 다른 건물이 유닛을
+  내보내면, 취소한 건물도 그 유닛 쪽으로 기운다. builder 를 tier 로 나누면서 primitive 순서를 바꾸지 않아도, `Solids` 의 grain
   난수열이 tier 마다 새로 시작해 면의 명암이 조금 바뀐다. 건설 중인 건물의 체력바 높이는
   완성 높이(`Top`) 를 그대로 쓴다. 완공 ring 은 직전 관측이 0.5초 안일 때만 나므로 안개
   밖에서 완공된 건물은 조용히 완성 모습으로 나온다.
