@@ -1211,10 +1211,12 @@ namespace WordCraft.Sim
         /// A tier and a prerequisite are two different questions and an entry
         /// passes both. A tier is what a peer has reached and a building that
         /// grants it can be any of several; a prerequisite is one named building,
-        /// and only that one answers. Today the two coincide for most rows below,
-        /// because the one building that opens tier 3 is also the one the tier-3
-        /// units name, and they part the day docs/TECH-TREE.md adds a second
-        /// research building that opens no tier and is still what a unit needs.
+        /// and only that one answers. They already part in play: tier is derived
+        /// from what stands, and a finished 기술 건물 holds tier 3 by itself, so a
+        /// peer whose production building is gone is still at tier 3 and is
+        /// refused a second 기술 건물 and a 고목 수호자 by the prerequisite alone.
+        /// They part further the day docs/TECH-TREE.md adds a second research
+        /// building that opens no tier and is still what a unit needs.
         ///
         /// Keyed by Faction, Role and Slot, and walked in declaration order, never
         /// through a keyed collection, for the reason <see cref="growthTargets"/> is.
@@ -1280,7 +1282,7 @@ namespace WordCraft.Sim
         ///
         /// The four rows below are the four existing entries the document puts on
         /// the base as well as on the production building. Second is NoBuilding
-        /// where an entry has one.
+        /// where an entry has only one.
         /// </summary>
         // ponytail: docs/TECH-TREE.md also lists 지옥불 군단장, 구름 용 and 고대 골렘
         // under a second production building (큰 균열, 구름 둥지, 각성의 원), 공수
@@ -1450,9 +1452,10 @@ namespace WordCraft.Sim
 
         /// <summary>
         /// What the owner's tier must reach before this entry can be produced,
-        /// placed or grown into. A slot this faction does not field answers a tier
-        /// above <see cref="MaxTier"/>, which no peer reaches: the gate fails
-        /// closed, the way Production does for an entry nobody wrote.
+        /// placed or grown into. An entry this faction does not field, entry 0 of
+        /// a slot it leaves blank included, answers a tier above
+        /// <see cref="MaxTier"/>, which no peer reaches: the gate fails closed,
+        /// the way Production does for an entry nobody wrote.
         ///
         /// There is deliberately no role-keyed overload. The one there was answered
         /// one tier for every entry of a role, and docs/TECH-TREE.md opens two
@@ -1461,9 +1464,9 @@ namespace WordCraft.Sim
         /// </summary>
         public static int Tier(Faction faction, Role role, int slot)
         {
+            if (!Has(faction, role, slot)) return MaxTier + 1;
             if (slot == 0) return tiers[Index(faction, role)];
-            int extra = ExtraIndex(faction, role, slot);
-            return extra < 0 ? MaxTier + 1 : extraTiers[extra];
+            return extraTiers[ExtraIndex(faction, role, slot)];
         }
 
         /// <summary>

@@ -64,9 +64,9 @@ namespace WordCraft.Sim
     /// same distance and requiring it to bleed one reload after the growth lands.
     /// On the completion tick the body is a Unit on its new row, and it fights that
     /// tick, exactly as a 자손 emitted this tick fights this tick and a 징발 that
-    /// lands this tick shoots this tick. VolleyBonus reads Kind and Role to
-    /// count 물 슬라임 archers and answers zero here for the same faction reason
-    /// IsWarlord does. AcquireTarget reads Kind only to skip resource nodes: a
+    /// lands this tick shoots this tick. VolleyBonus reads Kind, Role and Slot
+    /// to count 물 슬라임 archers and answers zero here for the same faction
+    /// reason IsWarlord does. AcquireTarget reads Kind only to skip resource nodes: a
     /// growing worker is a legal target throughout, which is the whole of 성장 중
     /// 죽으면 그냥 죽는다.
     ///
