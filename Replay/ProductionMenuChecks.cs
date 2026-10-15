@@ -28,6 +28,7 @@ namespace WordCraft.Replay
             DriftworldsIsTheTightFit();
             PageCountBoundaries();
             EveryEntryIsOnExactlyOnePage();
+            MoreWrapsToTheFirstPage();
         }
 
         /// <summary>
@@ -103,7 +104,9 @@ namespace WordCraft.Replay
                 int expected = 0;
                 for (int page = 0; page < pages; page++)
                 {
-                    ProductionMenu.PageRange(count, page, out int first, out int length);
+                    int drawn = ProductionMenu.PageRange(count, page, out int first, out int length);
+                    Check(drawn == page,
+                        count + " entries: page " + page + " came back as page " + drawn);
                     Check(first == expected,
                         count + " entries: page " + page + " starts at " + first + ", expected " + expected);
                     int room = pages > 1 ? ProductionMenu.PageSize : ProductionMenu.Cells;
@@ -113,11 +116,28 @@ namespace WordCraft.Replay
                 }
                 Check(expected == count, count + " entries: the pages cover " + expected);
 
-                ProductionMenu.PageRange(count, pages + 5, out int lastFirst, out int lastLength);
-                ProductionMenu.PageRange(count, pages - 1, out int wantFirst, out int wantLength);
-                Check(lastFirst == wantFirst && lastLength == wantLength,
+                int past = ProductionMenu.PageRange(count, pages + 5, out int lastFirst, out int lastLength);
+                int want = ProductionMenu.PageRange(count, pages - 1, out int wantFirst, out int wantLength);
+                Check(past == want && lastFirst == wantFirst && lastLength == wantLength,
                     count + " entries: a page past the end did not clamp to the last page");
+                int below = ProductionMenu.PageRange(count, -3, out int firstFirst, out _);
+                Check(below == 0 && firstFirst == 0,
+                    count + " entries: a negative page did not clamp to the first page");
             }
+        }
+
+        /// <summary>
+        /// What More does: the next page, and from the last page the first. A single
+        /// page has nowhere to turn to, and a stale page past the end still lands on
+        /// a page that exists.
+        /// </summary>
+        private static void MoreWrapsToTheFirstPage()
+        {
+            Check(ProductionMenu.NextPage(0, 1) == 0, "one page: More should stay on page 0");
+            Check(ProductionMenu.NextPage(0, 3) == 1, "page 0 of 3: More should go to page 1");
+            Check(ProductionMenu.NextPage(1, 3) == 2, "page 1 of 3: More should go to page 2");
+            Check(ProductionMenu.NextPage(2, 3) == 0, "last page of 3: More should wrap to page 0");
+            Check(ProductionMenu.NextPage(9, 3) == 0, "stale page 9 of 3: More should land on page 0");
         }
 
         private static void ExpectPages(int count, int pages)

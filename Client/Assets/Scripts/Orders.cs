@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using WordCraft.Net;
 using WordCraft.Sim;
@@ -68,10 +69,10 @@ namespace WordCraft.View
         /// simulation, and it goes back to 0 whenever the selection changes, so a
         /// new building always opens on its first entries.
         /// </summary>
-        public int Page { get; private set; }
+        private int Page { get; set; }
 
-        /// <summary>What the selection looked like when Page was last valid. See SyncPage.</summary>
-        private int pageSignature;
+        /// <summary>The selection Page was last valid for, id by id. See SyncPage.</summary>
+        private readonly List<int> pageSelection = new List<int>();
 
         private MatchRunner runner;
         private Selection selection;
@@ -114,6 +115,11 @@ namespace WordCraft.View
         /// </summary>
         public CardSlot[] Card()
         {
+            // The HUD can draw a frame before Start has found the runner.
+            if (runner == null || selection == null)
+            {
+                return CommandCard.Of(CardKind.None, default(Faction), Role.None, 0);
+            }
             SyncPage();
             return CommandCard.Of(Kind(), runner.World.FactionOf(runner.LocalPeer), LeadRole(), Page);
         }
@@ -136,23 +142,21 @@ namespace WordCraft.View
         /// by whoever reads the card first each frame (Update or the HUD), so a
         /// frame never draws a new building at the old one's page.
         ///
-        /// The signature is every selected id in order, not just the representative:
+        /// Compared id by id against a copy, in order, not by representative alone:
         /// "the selection changed" means the player picked something else, and a
         /// representative alone would miss swapping one building for another of the
-        /// same kind. A hash, because only equality is asked.
+        /// same kind. Exact rather than hashed, because a collision would keep a
+        /// stale page.
         /// </summary>
         private void SyncPage()
         {
-            int signature = selection == null ? 0 : selection.Selected.Count;
-            if (selection != null)
-            {
-                for (int i = 0; i < selection.Selected.Count; i++)
-                {
-                    signature = unchecked(signature * 31 + selection.Selected[i]);
-                }
-            }
-            if (signature == pageSignature) return;
-            pageSignature = signature;
+            IReadOnlyList<int> now = selection.Selected;
+            bool same = now.Count == pageSelection.Count;
+            for (int i = 0; same && i < now.Count; i++) same = now[i] == pageSelection[i];
+            if (same) return;
+
+            pageSelection.Clear();
+            for (int i = 0; i < now.Count; i++) pageSelection.Add(now[i]);
             Page = 0;
         }
 
@@ -300,7 +304,7 @@ namespace WordCraft.View
                 // Wraps, so the last page's More is the way back to the first and
                 // the player never has to find another key for it. Nothing is
                 // sent: the page is this component's own.
-                Page = (Page + 1) % CommandCard.PageCount(runner.World.FactionOf(runner.LocalPeer));
+                Page = ProductionMenu.NextPage(Page, CommandCard.PageCount(runner.World.FactionOf(runner.LocalPeer)));
                 return;
             }
 

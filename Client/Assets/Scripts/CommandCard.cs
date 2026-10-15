@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using UnityEngine;
 using WordCraft.Sim;
@@ -234,8 +233,7 @@ namespace WordCraft.View
 
             List<ProductionMenu.Entry> entries = ProductionMenu.For(faction);
             int pages = ProductionMenu.Pages(entries.Count);
-            page = Math.Max(0, Math.Min(page, pages - 1));
-            ProductionMenu.PageRange(entries.Count, page, out int first, out int length);
+            page = ProductionMenu.PageRange(entries.Count, page, out int first, out int length);
 
             int cell = Cols; // rows 1-2: one cell per producible roster entry
             for (int i = first; i < first + length; i++)

@@ -55,22 +55,33 @@ namespace WordCraft.View
             count <= Cells ? 1 : (count + PageSize - 1) / PageSize;
 
         /// <summary>
-        /// Which entries of the list sit on this page. The page is clamped into
-        /// range, so a stale page number from a selection that has since changed
-        /// shows the nearest real page rather than an empty card.
+        /// Which entries of the list sit on this page, and the page that is. The
+        /// page is clamped into range, so a stale page number from a selection that
+        /// has since changed shows the nearest real page rather than an empty card.
+        /// Returned so the caller labels the page it actually drew: the entry range
+        /// and a "2/3" read off the same number cannot disagree.
         /// </summary>
-        public static void PageRange(int count, int page, out int first, out int length)
+        public static int PageRange(int count, int page, out int first, out int length)
         {
             if (count <= Cells)
             {
                 first = 0;
                 length = count;
-                return;
+                return 0;
             }
             page = Math.Max(0, Math.Min(page, Pages(count) - 1));
             first = page * PageSize;
             length = Math.Min(PageSize, count - first);
+            return page;
         }
+
+        /// <summary>
+        /// The page More turns to: the next one, and the first after the last. Here
+        /// rather than in Orders so the wrap is checked headless like the rest. A
+        /// stale page is clamped first, so More always lands on a page that exists.
+        /// </summary>
+        public static int NextPage(int page, int pages) =>
+            pages <= 1 ? 0 : (Math.Max(0, Math.Min(page, pages - 1)) + 1) % pages;
 
         /// <summary>One roster entry the card can turn into a button.</summary>
         public readonly struct Entry

@@ -53,7 +53,8 @@ public const int Cells = 8;       // 1·2행 전체
 public const int PageSize = 7;    // 넘칠 때 마지막 칸이 More 라서
 public const int MaxPages = 4;
 public static int Pages(int count);                  // count <= 8 이면 1, 아니면 ceil(count / 7)
-public static void PageRange(int count, int page, out int first, out int length);
+public static int PageRange(int count, int page, out int first, out int length); // 고정된 page 를 돌려준다
+public static int NextPage(int page, int pages);     // 마지막이면 0 으로 wrap
 
 // CommandCard.cs
 public const int Cols = 4, Rows = 3;                 // Cells = 12
@@ -61,7 +62,7 @@ public static CardSlot[] Of(CardKind kind, Faction faction, Role lead, int page)
 public static string Title(CardKind kind, Role lead);
 
 // Orders.cs
-public int Page { get; }          // 뷰 상태. 시뮬레이션에 보내지 않는다
+private int Page;                 // 뷰 상태. 시뮬레이션에 보내지 않는다
 public CardSlot[] Card();         // 키가 누르는 카드 = HUD 가 그리는 카드
 ```
 
@@ -71,7 +72,7 @@ public CardSlot[] Card();         // 키가 누르는 카드 = HUD 가 그리는
 - 9개 이상이면 page 당 7개 + 11번 칸(키 `M`)이 `More`. 마지막 page 에서 누르면
   첫 page 로 돌아간다. `More` 의 라벨에 `2/3` 처럼 현재 page 를 쓴다.
 - `Role.Tech` 건물은 0행(Rally, Cancel, Arrive)만 두고 1·2행은 빈 칸, 제목 `research`.
-- 선택 목록(id 순서까지)이 바뀌면 `Page = 0`.
+- 선택 목록(id 순서까지, 복사본과 원소별 비교)이 바뀌면 `Page = 0`.
 
 ## Validation
 
@@ -86,7 +87,9 @@ public CardSlot[] Card();         // 키가 누르는 카드 = HUD 가 그리는
 
 ## Risks & Rollback
 
-- **Risks:** 선택 목록 폭이 58px 줄어 창 폭 868px 미만에서 목록이 사라진다
+- **Risks:** 건물 카드의 생산 키가 바뀐다. 전에는 `F G H V B N`, 이제는
+  `F G H J V B N M` 이라 4번째 항목부터 한 칸씩 밀리고, 차원 유랑종의 뒤 세
+  항목은 `V B N` 에서 `J V B` 가 된다. 선택 목록 폭이 58px 줄어 창 폭 868px 미만에서 목록이 사라진다
   (`List` 가 `ChipWidth` 미만이면 그리지 않는다). 네 번째 열이 미니맵·선택
   목록과 겹치지 않는지, `M` 키가 More 를 누르는지는 눈으로 봐야 한다.
 - **Rollback steps:** `git revert`. 시뮬레이션과 hash 에 닿지 않는다.
