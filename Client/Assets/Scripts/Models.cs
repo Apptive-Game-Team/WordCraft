@@ -1968,7 +1968,9 @@ namespace WordCraft.View
                     hull.Prism(Point(0f, 2.08f, 0f), 4, 1.5f, 0f, 0.9f, steel);
                     hull.Prism(Point(0f, 2.9f, 0f), 6, 0.06f, 0.06f, 0.3f, bronze);
                     hull.Ball(Point(0f, 3.3f, 0f), 0.13f, mana);
-                    Pennant(b, b.Tiers[0], Point(1.55f, 0f, 0.9f), 2.7f, wood);
+                    // On the foundation, not the posts: a banner planted with the
+                    // first stone, rather than one that floats while posts go up.
+                    Pennant(b, b.Hull, Point(1.55f, 0f, 0.9f), 2.7f, wood);
                     break;
 
                 case Role.Production:
