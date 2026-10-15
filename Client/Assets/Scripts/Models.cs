@@ -442,6 +442,57 @@ namespace WordCraft.View
             }
         }
 
+        /// <summary>One leg of a crawler, drawn at (x, z) into the limb part it belongs to.</summary>
+        private delegate void LegAt(Solids part, float x, float z);
+
+        /// <summary>
+        /// Four legs in diagonal pairs: left front and right back on the left
+        /// limb, right front and left back on the right, so a stepping crawler
+        /// lifts one diagonal while the other is planted.
+        /// </summary>
+        private static void FourLegs(Blueprint b, float x, float front, float back, LegAt leg)
+        {
+            leg(b.LimbLeft, -x, front);
+            leg(b.LimbLeft, x, back);
+            leg(b.LimbRight, x, front);
+            leg(b.LimbRight, -x, back);
+        }
+
+        /// <summary>
+        /// Six legs in two tripods: left front, right middle and left back step
+        /// together, and the other three together.
+        /// </summary>
+        private static void SixLegs(Blueprint b, Color color, float front, float middle, float back)
+        {
+            float[] rows = { front, middle, back };
+            for (int i = 0; i < rows.Length; i++)
+            {
+                bool first = i % 2 == 0;
+                MarksmanLeg(first ? b.LimbLeft : b.LimbRight, -1f, rows[i], color);
+                MarksmanLeg(first ? b.LimbRight : b.LimbLeft, 1f, rows[i], color);
+            }
+        }
+
+        /// <summary>
+        /// A chain of prisms, each pitched <paramref name="bend"/> degrees further
+        /// about x than the last and <paramref name="taper"/> times as thick: a
+        /// vine, a curling wave. Returns where the last one ends.
+        /// </summary>
+        private static Vector3 Curl(Solids part, Vector3 start, int count, int sides, float radius, float taper, float length,
+                                    float advance, float pitch, float bend, Color first, Color second)
+        {
+            Vector3 position = start;
+            for (int i = 0; i < count; i++)
+            {
+                Quaternion rotation = Turn(pitch, 0f, 0f);
+                part.Prism(position, sides, radius, radius * taper, length, i % 2 == 0 ? first : second, rotation);
+                position += rotation * Point(0f, advance, 0f);
+                pitch += bend;
+                radius *= taper;
+            }
+            return position;
+        }
+
         /// <summary>
         /// One wing, fin or vane, lying near flat so it beats about the body's
         /// long axis and reads from a camera above. <paramref name="side"/> is -1
@@ -675,19 +726,11 @@ namespace WordCraft.View
             hull.Box(Point(0f, 0.6f, -0.56f), Extent(0.07f, 0.16f, 0.07f), light, Turn(-35f, 0f, 0f));
             Strap(b, hull, Point(0f, 0.3f, 0.1f), Extent(0.42f, 0.34f, 0.05f));
 
-            MouseFoot(b.LimbLeft, -0.15f, 0.16f, deep);
-            MouseFoot(b.LimbLeft, 0.15f, -0.24f, deep);
-            MouseFoot(b.LimbRight, 0.15f, 0.16f, deep);
-            MouseFoot(b.LimbRight, -0.15f, -0.24f, deep);
+            FourLegs(b, 0.15f, 0.16f, -0.24f, (part, x, z) => part.Ball(Point(x, 0.06f, z), Extent(0.07f, 0.06f, 0.09f), deep));
 
             b.Arm.Origin = Point(0f, 0.3f, 0.36f);
             b.Arm.Box(Point(0.17f, 0.3f, 0.44f), Extent(0.03f, 0.12f, 0.03f), light, Turn(0f, 0f, -35f));
             b.Arm.Box(Point(-0.17f, 0.3f, 0.44f), Extent(0.03f, 0.12f, 0.03f), light, Turn(0f, 0f, 35f));
-        }
-
-        private static void MouseFoot(Solids part, float x, float z, Color color)
-        {
-            part.Ball(Point(x, 0.06f, z), Extent(0.07f, 0.06f, 0.09f), color);
         }
 
         /// <summary>폭풍 기수: a small yellow spirit riding a cloud colt, a long bolt for a lance. No armour, per STYLE.md. Slot 3.</summary>
@@ -791,16 +834,7 @@ namespace WordCraft.View
             Eyes(hull, position + Point(0f, 0.1f, 0.14f), 0.11f, 0.045f);
 
             b.Arm.Origin = position + Point(0f, 0.12f, 0f);
-            Vector3 tip = position + Point(0f, 0.16f, -0.02f);
-            float pitch = -10f, width = 0.06f;
-            for (int i = 0; i < 4; i++)
-            {
-                Quaternion rotation = Turn(pitch, 0f, 0f);
-                b.Arm.Prism(tip, 5, width, width * 0.8f, 0.16f, i % 2 == 0 ? leaf : shade, rotation);
-                tip += rotation * Point(0f, 0.15f, 0f);
-                pitch += 45f;
-                width *= 0.8f;
-            }
+            Curl(b.Arm, position + Point(0f, 0.16f, -0.02f), 4, 5, 0.06f, 0.8f, 0.16f, 0.15f, -10f, 45f, leaf, shade);
         }
 
         /// <summary>도깨비불: a pale blue flame with eyes, its tongues streaming back. Airborne, weaponless; the side tongues beat like fins.</summary>
@@ -900,15 +934,16 @@ namespace WordCraft.View
             hull.Lump(Point(0f, 0.62f, -0.18f), Extent(0.11f, 0.09f, 0.11f), BodyPalette.Hellfire.Ash, Turn(0f, 30f, 0f));
             Strap(b, hull, Point(0f, 0.39f, 0.18f), Extent(0.33f, 0.31f, 0.06f));
 
-            CrawlerLeg(b.LimbLeft, -0.18f, 0.1f, charcoal, facet);
-            CrawlerLeg(b.LimbLeft, 0.18f, -0.28f, charcoal, facet);
-            CrawlerLeg(b.LimbRight, 0.18f, 0.1f, charcoal, facet);
-            CrawlerLeg(b.LimbRight, -0.18f, -0.28f, charcoal, facet);
+            FourLegs(b, 0.18f, 0.1f, -0.28f, (part, x, z) => CrawlerLeg(part, x, z, charcoal, facet));
         }
 
-        private static void CrawlerLeg(Solids part, float x, float z, Color leg, Color claw)
+        private static void CrawlerLeg(Solids part, float x, float z, Color leg, Color claw) =>
+            CrawlerLeg(part, x, z, leg, claw, Pair(0.1f, 0.13f), Pair(0.08f, 0.08f), 0.3f);
+
+        /// <summary>A crawler's leg of a given foot, knee and height, with a claw at its toe.</summary>
+        private static void CrawlerLeg(Solids part, float x, float z, Color leg, Color claw, Vector2 foot, Vector2 knee, float height)
         {
-            part.Taper(Point(x, 0f, z), Pair(0.1f, 0.13f), Pair(0.08f, 0.08f), 0.3f, leg);
+            part.Taper(Point(x, 0f, z), foot, knee, height, leg);
             part.Prism(Point(x, 0.02f, z + 0.05f), 4, 0.03f, 0f, 0.08f, claw, Turn(80f, 0f, 0f));
         }
 
@@ -1074,21 +1109,12 @@ namespace WordCraft.View
             hull.Taper(Point(0f, 0.44f, -0.32f), Pair(0.07f, 0.07f), Pair(0.01f, 0.01f), 0.42f, charcoal, Turn(-125f, 0f, 0f));
             Strap(b, hull, Point(0f, 0.46f, 0.18f), Extent(0.26f, 0.26f, 0.05f));
 
-            HoundLeg(b.LimbLeft, -0.13f, 0.14f, charcoal, facet);
-            HoundLeg(b.LimbLeft, 0.13f, -0.26f, charcoal, facet);
-            HoundLeg(b.LimbRight, 0.13f, 0.14f, charcoal, facet);
-            HoundLeg(b.LimbRight, -0.13f, -0.26f, charcoal, facet);
+            FourLegs(b, 0.13f, 0.14f, -0.26f, (part, x, z) => CrawlerLeg(part, x, z, charcoal, facet, Pair(0.08f, 0.1f), Pair(0.1f, 0.12f), 0.4f));
 
             b.Arm.Origin = Point(0f, 0.44f, 0.3f);
             b.Arm.Taper(Point(0f, 0.42f, 0.28f), Pair(0.14f, 0.05f), Pair(0.07f, 0.03f), 0.24f, shell, Lying);
             b.Arm.Prism(Point(-0.04f, 0.44f, 0.46f), 4, 0.02f, 0f, 0.06f, BodyPalette.Hellfire.Ash);
             b.Arm.Prism(Point(0.04f, 0.44f, 0.46f), 4, 0.02f, 0f, 0.06f, BodyPalette.Hellfire.Ash);
-        }
-
-        private static void HoundLeg(Solids part, float x, float z, Color leg, Color claw)
-        {
-            part.Taper(Point(x, 0f, z), Pair(0.08f, 0.1f), Pair(0.1f, 0.12f), 0.4f, leg);
-            part.Prism(Point(x, 0.02f, z + 0.05f), 4, 0.03f, 0f, 0.08f, claw, Turn(80f, 0f, 0f));
         }
 
         /// <summary>잿불 새끼: a small two-legged imp, two stub horns, a cracked chest with one small light. Hatched, not bought.</summary>
@@ -1134,10 +1160,7 @@ namespace WordCraft.View
             Slits(hull, Point(0f, 0.28f, 0.43f), 0.09f, 0.04f);
             Strap(b, hull, Point(0f, 0.27f, 0.24f), Extent(0.46f, 0.3f, 0.05f));
 
-            CrawlerLeg(b.LimbLeft, -0.22f, 0.14f, charcoal, facet);
-            CrawlerLeg(b.LimbLeft, 0.22f, -0.28f, charcoal, facet);
-            CrawlerLeg(b.LimbRight, 0.22f, 0.14f, charcoal, facet);
-            CrawlerLeg(b.LimbRight, -0.22f, -0.28f, charcoal, facet);
+            FourLegs(b, 0.22f, 0.14f, -0.28f, (part, x, z) => CrawlerLeg(part, x, z, charcoal, facet));
 
             b.Arm.Origin = Point(0f, 0.44f, -0.34f);
             Vector3 position = Point(0f, 0.42f, -0.34f);
@@ -2000,15 +2023,7 @@ namespace WordCraft.View
             hull.Ball(Point(0.1f, 0.38f, 0.4f), 0.03f, BodyPalette.Driftworlds.TealLight);
             Strap(b, hull, Point(0f, 0.465f, 0.24f), Extent(0.3f, 0.03f, 0.22f));
 
-            float[] rows = { 0.24f, -0.06f, -0.36f };
-            for (int i = 0; i < rows.Length; i++)
-            {
-                // Two tripods, alternating: left-front, right-middle, left-back
-                // step together, and the other three together.
-                bool first = i % 2 == 0;
-                MarksmanLeg(first ? b.LimbLeft : b.LimbRight, -1f, rows[i], deep);
-                MarksmanLeg(first ? b.LimbRight : b.LimbLeft, 1f, rows[i], deep);
-            }
+            SixLegs(b, deep, 0.24f, -0.06f, -0.36f);
         }
 
         private static void MarksmanLeg(Solids part, float side, float z, Color color)
@@ -2061,25 +2076,11 @@ namespace WordCraft.View
             hull.Ball(Point(0.07f, 0.3f, 0.42f), 0.03f, BodyPalette.Driftworlds.TealLight);
             Strap(b, hull, Point(0f, 0.32f, 0.3f), Extent(0.3f, 0.2f, 0.04f));
 
-            float[] rows = { 0.16f, -0.04f, -0.24f };
-            for (int i = 0; i < rows.Length; i++)
-            {
-                bool first = i % 2 == 0;
-                MarksmanLeg(first ? b.LimbLeft : b.LimbRight, -1f, rows[i], deep);
-                MarksmanLeg(first ? b.LimbRight : b.LimbLeft, 1f, rows[i], deep);
-            }
+            SixLegs(b, deep, 0.16f, -0.04f, -0.24f);
 
             b.Arm.Origin = Point(0f, 0.26f, 0.42f);
-            Vector3 position = Point(0f, 0.26f, 0.4f);
-            float pitch = 80f, width = 0.045f;
-            for (int i = 0; i < 4; i++)
-            {
-                Quaternion rotation = Turn(pitch, 0f, 0f);
-                b.Arm.Prism(position, 5, width, width * 0.85f, 0.13f, BodyPalette.TreeSpirits.LeafShade, rotation);
-                position += rotation * Point(0f, 0.12f, 0f);
-                pitch -= 32f;
-                width *= 0.85f;
-            }
+            Color vine = BodyPalette.TreeSpirits.LeafShade;
+            Vector3 position = Curl(b.Arm, Point(0f, 0.26f, 0.4f), 4, 5, 0.045f, 0.85f, 0.13f, 0.12f, 80f, -32f, vine, vine);
             b.Arm.Ball(position, Extent(0.06f, 0.025f, 0.04f), BodyPalette.TreeSpirits.LeafLight);
             b.Arm.Ball(Point(0.08f, 0.32f, 0.54f), Extent(0.05f, 0.02f, 0.04f), BodyPalette.TreeSpirits.Leaf);
         }
@@ -2170,13 +2171,7 @@ namespace WordCraft.View
             Eyes(hull, Point(0f, 0.28f, 0.33f), 0.14f, 0.04f);
             Strap(b, hull, Point(0f, 0.25f, 0.18f), Extent(0.36f, 0.12f, 0.04f));
 
-            float[] rows = { 0.12f, -0.1f, -0.32f };
-            for (int i = 0; i < rows.Length; i++)
-            {
-                bool first = i % 2 == 0;
-                MarksmanLeg(first ? b.LimbLeft : b.LimbRight, -1f, rows[i], deep);
-                MarksmanLeg(first ? b.LimbRight : b.LimbLeft, 1f, rows[i], deep);
-            }
+            SixLegs(b, deep, 0.12f, -0.1f, -0.32f);
         }
 
         /// <summary>멸종한 자연 슬라임: a leaf-green slime peeking out of a shell of plates, a broad leaf-shaped plate on top. Weaponless healer.</summary>
@@ -2402,10 +2397,7 @@ namespace WordCraft.View
                 hull.Box(Point(side * 0.2f, 0.5f, 0.335f), Extent(0.05f, 0.05f, 0.02f), bronze);
             Strap(b, hull, Point(0f, 0.32f, -0.04f), Extent(0.58f, 0.05f, 0.62f));
 
-            WalkerLeg(b.LimbLeft, -0.2f, 0.16f);
-            WalkerLeg(b.LimbLeft, 0.2f, -0.24f);
-            WalkerLeg(b.LimbRight, 0.2f, 0.16f);
-            WalkerLeg(b.LimbRight, -0.2f, -0.24f);
+            FourLegs(b, 0.2f, 0.16f, -0.24f, WalkerLeg);
 
             b.Arm.Origin = Point(0f, 0.6f, -0.06f);
             b.Arm.Box(Point(0f, 0.64f, -0.06f), Extent(0.34f, 0.14f, 0.34f), steel);
@@ -2491,10 +2483,7 @@ namespace WordCraft.View
             hull.Box(Point(0f, 0.83f, 0.01f), Extent(0.12f, 0.09f, 0.03f), BodyPalette.Humans.Hood);
             Strap(b, hull, Point(0f, 0.72f, -0.06f), Extent(0.24f, 0.05f, 0.18f));
 
-            RiderLeg(b.LimbLeft, -0.16f, 0.2f);
-            RiderLeg(b.LimbLeft, 0.16f, -0.22f);
-            RiderLeg(b.LimbRight, 0.16f, 0.2f);
-            RiderLeg(b.LimbRight, -0.16f, -0.22f);
+            FourLegs(b, 0.16f, 0.2f, -0.22f, RiderLeg);
 
             b.Arm.Origin = Point(0.14f, 0.66f, 0f);
             b.Arm.Box(Point(0.15f, 0.64f, 0.04f), Extent(0.07f, 0.08f, 0.12f), steel);
@@ -2583,7 +2572,7 @@ namespace WordCraft.View
                 case Faction.WaterSlimes: WaterSlimeBuilding(b, role); return;
                 case Faction.RockGolems: RockGolemBuilding(b, role); return;
                 case Faction.Driftworlds: DriftworldBuilding(b, role); return;
-                default: HumanBuilding(b, role, slot); return;
+                default: HumanBuilding(b, role); return;
             }
         }
 
@@ -3301,17 +3290,8 @@ namespace WordCraft.View
 
                     Solids crown = b.Crown;
                     crown.Origin = Point(0f, 0.22f, 0f);
-                    Vector3 position = Point(0f, 0.2f, -0.2f);
-                    float pitch = -10f, radius = 0.2f;
-                    for (int i = 0; i < 5; i++)
-                    {
-                        Quaternion rotation = Turn(pitch, 0f, 0f);
-                        crown.Prism(position, 7, radius, radius * 0.8f, 0.36f, i % 2 == 0 ? sky : blue, rotation);
-                        position += rotation * Point(0f, 0.33f, 0f);
-                        pitch += 36f;
-                        radius *= 0.8f;
-                    }
-                    crown.Ball(position, 0.08f, foam);
+                    Vector3 crest = Curl(crown, Point(0f, 0.2f, -0.2f), 5, 7, 0.2f, 0.8f, 0.36f, 0.33f, -10f, 36f, sky, blue);
+                    crown.Ball(crest, 0.08f, foam);
                     b.CrownSpin = 30f;
                     return true;
                 }
@@ -3730,7 +3710,7 @@ namespace WordCraft.View
 
         // ---- 인간 마법 문명 ----
 
-        private static void HumanBuilding(Blueprint b, Role role, int slot)
+        private static void HumanBuilding(Blueprint b, Role role)
         {
             Solids hull = b.Hull;
             Color stone = BodyPalette.Humans.Stone, stoneMid = BodyPalette.Humans.StoneMid, stoneDark = BodyPalette.Humans.StoneDark;
@@ -3797,8 +3777,29 @@ namespace WordCraft.View
                     break;
 
                 case Role.Defense:
-                    HumanDefense(b, slot);
+                {
+                    // 대포: a stone emplacement with a long barrel. 전기 타워 and
+                    // 돌 포탑 are entries 1 and 2, in HumanExtraBuilding: three
+                    // silhouettes, so a glance tells which.
+                    Solids crown = b.Crown;
+                    hull.Box(Point(0f, 0.4f, 0f), Extent(1.5f, 0.8f, 1.5f), stone);
+                    Strap(b, hull, Point(0f, 0.72f, 0f), Extent(1.54f, 0.1f, 1.54f));
+                    hull = b.Tier(Point(0f, 0.8f, 0f));
+                    hull.Box(Point(0f, 0.9f, 0f), Extent(1.2f, 0.2f, 1.2f), stoneMid);
+                    for (int i = 0; i < 4; i++)
+                    {
+                        float yaw = 45f + i * 90f;
+                        hull.Box(Around(yaw) * 0.85f + Point(0f, 1.08f, 0f), Extent(0.22f, 0.18f, 0.22f), stoneMid);
+                    }
+
+                    crown.Origin = Point(0f, 1.0f, 0f);
+                    crown.Box(Point(0f, 1.2f, -0.05f), Extent(0.7f, 0.4f, 0.6f), stoneDark);
+                    crown.Prism(Point(0f, 1.3f, -0.25f), 10, 0.3f, 0.25f, 1.15f, stoneMid, Turn(78f, 0f, 0f));
+                    crown.Prism(Point(0f, 1.52f, 0.85f), 10, 0.3f, 0.3f, 0.1f, bronze, Turn(78f, 0f, 0f));
+                    b.CrownAims = true;
+                    b.CrownKick = -12f;
                     break;
+                }
 
                 case Role.Tech:
                     // 공방: a long stone workshop framed in timber, a slanted steel roof, a chimney.
@@ -3831,6 +3832,53 @@ namespace WordCraft.View
             // Fronts face -z here, the camera's side: a building stands unturned.
             switch (role)
             {
+                case Role.Defense when slot == 1:
+                {
+                    // 전기 타워: a steel pillar with a spinning orb.
+                    Solids crown = b.Crown;
+                    hull.Prism(Vector3.zero, 8, 1.1f, 1.0f, 0.35f, stone);
+                    hull.Prism(Point(0f, 0.35f, 0f), 8, 0.85f, 0.8f, 0.3f, stoneMid);
+                    Band(b, hull, Point(0f, 0.16f, 0f), 8, 1.08f, 0.1f);
+                    hull = b.Tier(Point(0f, 0.65f, 0f));
+                    hull.Prism(Point(0f, 0.65f, 0f), 8, 0.42f, 0.36f, 1.6f, steel);
+                    hull.Prism(Point(0f, 1.0f, 0f), 8, 0.45f, 0.45f, 0.08f, bronze);
+                    hull.Prism(Point(0f, 1.8f, 0f), 8, 0.4f, 0.4f, 0.08f, bronze);
+                    hull.Prism(Point(0f, 2.22f, 0f), 8, 0.3f, 0.36f, 0.12f, stoneMid);
+                    hull.Box(Point(0f, 1.4f, 0.4f), Extent(0.1f, 0.3f, 0.03f), BodyPalette.Humans.Mana, Turn(0f, 0f, 20f));
+
+                    crown.Origin = Point(0f, 2.34f, 0f);
+                    crown.Ball(Point(0f, 2.62f, 0f), 0.3f, BodyPalette.Humans.Mana);
+                    crown.Box(Point(-0.44f, 2.62f, 0f), Extent(0.06f, 0.42f, 0.06f), bronze, Turn(0f, 0f, -18f));
+                    crown.Box(Point(0.44f, 2.62f, 0f), Extent(0.06f, 0.42f, 0.06f), bronze, Turn(0f, 0f, 18f));
+                    crown.Box(Point(0f, 2.36f, 0f), Extent(0.94f, 0.05f, 0.06f), bronze);
+                    b.CrownSpin = 60f;
+                    return true;
+                }
+
+                case Role.Defense when slot == 2:
+                {
+                    // 돌 포탑: a round turret with a timber throwing arm.
+                    Solids crown = b.Crown;
+                    hull.Prism(Vector3.zero, 10, 0.95f, 0.9f, 0.7f, stone);
+                    Band(b, hull, Point(0f, 0.5f, 0f), 10, 0.93f, 0.1f);
+                    hull = b.Tier(Point(0f, 0.68f, 0f));
+                    hull.Prism(Point(0f, 0.7f, 0f), 10, 0.9f, 0.85f, 0.7f, stone);
+                    hull.Prism(Point(0f, 0.7f, 0f), 10, 0.92f, 0.92f, 0.05f, stoneMid);
+                    for (int i = 0; i < 8; i++)
+                    {
+                        float yaw = i * 45f + 22.5f;
+                        hull.Box(Around(yaw) * 0.78f + Point(0f, 1.5f, 0f), Extent(0.22f, 0.2f, 0.16f), stoneMid, Quaternion.Euler(0f, yaw, 0f));
+                    }
+
+                    crown.Origin = Point(0f, 1.42f, 0f);
+                    crown.Box(Point(0f, 1.52f, 0f), Extent(0.5f, 0.2f, 0.5f), wood);
+                    crown.Box(Point(0f, 1.82f, -0.2f), Extent(0.12f, 0.12f, 0.9f), wood, Turn(-35f, 0f, 0f));
+                    crown.Box(Point(0f, 2.08f, -0.58f), Extent(0.24f, 0.08f, 0.24f), bronze, Turn(-35f, 0f, 0f));
+                    b.CrownAims = true;
+                    b.CrownKick = 40f;
+                    return true;
+                }
+
                 case Role.Production when slot == 1:
                     // 석조 병영: a long low hall under a steel roof, a gatehouse in front, a fenced yard either side.
                     hull.Box(Point(0f, 0.06f, 0f), Extent(2.6f, 0.12f, 1.9f), stoneMid);
@@ -3965,80 +4013,6 @@ namespace WordCraft.View
 
                 default:
                     return false;
-            }
-        }
-
-        /// <summary>
-        /// 인간's three defensive structures, the only faction with more than one:
-        /// 대포 (slot 0) a stone emplacement with a long barrel, 전기 타워 (slot 1)
-        /// a steel pillar with a spinning orb, 돌 포탑 (slot 2) a round turret with
-        /// a timber throwing arm. Three silhouettes, so a glance tells which.
-        /// </summary>
-        private static void HumanDefense(Blueprint b, int slot)
-        {
-            Solids hull = b.Hull, crown = b.Crown;
-            Color stone = BodyPalette.Humans.Stone, stoneMid = BodyPalette.Humans.StoneMid, stoneDark = BodyPalette.Humans.StoneDark;
-            Color steel = BodyPalette.Humans.Steel, wood = BodyPalette.Humans.Wood, bronze = BodyPalette.Humans.Bronze;
-
-            switch (slot)
-            {
-                case 1:
-                    hull.Prism(Vector3.zero, 8, 1.1f, 1.0f, 0.35f, stone);
-                    hull.Prism(Point(0f, 0.35f, 0f), 8, 0.85f, 0.8f, 0.3f, stoneMid);
-                    Band(b, hull, Point(0f, 0.16f, 0f), 8, 1.08f, 0.1f);
-                    hull = b.Tier(Point(0f, 0.65f, 0f));
-                    hull.Prism(Point(0f, 0.65f, 0f), 8, 0.42f, 0.36f, 1.6f, steel);
-                    hull.Prism(Point(0f, 1.0f, 0f), 8, 0.45f, 0.45f, 0.08f, bronze);
-                    hull.Prism(Point(0f, 1.8f, 0f), 8, 0.4f, 0.4f, 0.08f, bronze);
-                    hull.Prism(Point(0f, 2.22f, 0f), 8, 0.3f, 0.36f, 0.12f, stoneMid);
-                    hull.Box(Point(0f, 1.4f, 0.4f), Extent(0.1f, 0.3f, 0.03f), BodyPalette.Humans.Mana, Turn(0f, 0f, 20f));
-
-                    crown.Origin = Point(0f, 2.34f, 0f);
-                    crown.Ball(Point(0f, 2.62f, 0f), 0.3f, BodyPalette.Humans.Mana);
-                    crown.Box(Point(-0.44f, 2.62f, 0f), Extent(0.06f, 0.42f, 0.06f), bronze, Turn(0f, 0f, -18f));
-                    crown.Box(Point(0.44f, 2.62f, 0f), Extent(0.06f, 0.42f, 0.06f), bronze, Turn(0f, 0f, 18f));
-                    crown.Box(Point(0f, 2.36f, 0f), Extent(0.94f, 0.05f, 0.06f), bronze);
-                    b.CrownSpin = 60f;
-                    break;
-
-                case 2:
-                    hull.Prism(Vector3.zero, 10, 0.95f, 0.9f, 0.7f, stone);
-                    Band(b, hull, Point(0f, 0.5f, 0f), 10, 0.93f, 0.1f);
-                    hull = b.Tier(Point(0f, 0.68f, 0f));
-                    hull.Prism(Point(0f, 0.7f, 0f), 10, 0.9f, 0.85f, 0.7f, stone);
-                    hull.Prism(Point(0f, 0.7f, 0f), 10, 0.92f, 0.92f, 0.05f, stoneMid);
-                    for (int i = 0; i < 8; i++)
-                    {
-                        float yaw = i * 45f + 22.5f;
-                        hull.Box(Around(yaw) * 0.78f + Point(0f, 1.5f, 0f), Extent(0.22f, 0.2f, 0.16f), stoneMid, Quaternion.Euler(0f, yaw, 0f));
-                    }
-
-                    crown.Origin = Point(0f, 1.42f, 0f);
-                    crown.Box(Point(0f, 1.52f, 0f), Extent(0.5f, 0.2f, 0.5f), wood);
-                    crown.Box(Point(0f, 1.82f, -0.2f), Extent(0.12f, 0.12f, 0.9f), wood, Turn(-35f, 0f, 0f));
-                    crown.Box(Point(0f, 2.08f, -0.58f), Extent(0.24f, 0.08f, 0.24f), bronze, Turn(-35f, 0f, 0f));
-                    b.CrownAims = true;
-                    b.CrownKick = 40f;
-                    break;
-
-                default:
-                    hull.Box(Point(0f, 0.4f, 0f), Extent(1.5f, 0.8f, 1.5f), stone);
-                    Strap(b, hull, Point(0f, 0.72f, 0f), Extent(1.54f, 0.1f, 1.54f));
-                    hull = b.Tier(Point(0f, 0.8f, 0f));
-                    hull.Box(Point(0f, 0.9f, 0f), Extent(1.2f, 0.2f, 1.2f), stoneMid);
-                    for (int i = 0; i < 4; i++)
-                    {
-                        float yaw = 45f + i * 90f;
-                        hull.Box(Around(yaw) * 0.85f + Point(0f, 1.08f, 0f), Extent(0.22f, 0.18f, 0.22f), stoneMid);
-                    }
-
-                    crown.Origin = Point(0f, 1.0f, 0f);
-                    crown.Box(Point(0f, 1.2f, -0.05f), Extent(0.7f, 0.4f, 0.6f), stoneDark);
-                    crown.Prism(Point(0f, 1.3f, -0.25f), 10, 0.3f, 0.25f, 1.15f, stoneMid, Turn(78f, 0f, 0f));
-                    crown.Prism(Point(0f, 1.52f, 0.85f), 10, 0.3f, 0.3f, 0.1f, bronze, Turn(78f, 0f, 0f));
-                    b.CrownAims = true;
-                    b.CrownKick = -12f;
-                    break;
             }
         }
 
