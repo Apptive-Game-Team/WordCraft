@@ -870,6 +870,29 @@ namespace WordCraft.Sim
             (Faction.TreeSpirits, Role.Production, 1, Structure(300)),
             // 회복 토템
             (Faction.TreeSpirits, Role.Defense, 1, Structure(250)),
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            // Fighter: 이동, 체력, 방어, 속도, 피해, 사거리, 주기, 대공, 대지. Support: 이동, 체력, 방어, 속도.
+            // 화염 악마
+            (Faction.Hellfire, Role.Melee, 1, Fighter(Walks, 140, 1, Fix.Ratio(1, 4), 9, 2, 15, false, true)),
+            // 균열 사냥개
+            (Faction.Hellfire, Role.Melee, 2, Fighter(Walks, 110, 0, Fix.Ratio(3, 8), 8, 2, 12, false, true)),
+            // 잿불 새끼
+            (Faction.Hellfire, Role.Melee, 3, Fighter(Walks, 45, 0, Fix.Ratio(1, 4), 5, 2, 15, false, true)),
+            // 용암 투석 악마
+            (Faction.Hellfire, Role.Ranged, 2, Fighter(Walks, 200, 2, Fix.Ratio(1, 6), 16, 9, 45, false, true)),
+            // 재날개 악마
+            (Faction.Hellfire, Role.Ranged, 3, Fighter(Flies, 140, 1, Fix.Ratio(3, 8), 9, 6, 15, true, false)),
+            // 산란 악마
+            (Faction.Hellfire, Role.Signature, 1, Fighter(Walks, 320, 2, Fix.Ratio(1, 6), 6, 2, 20, false, true)),
+            // 운석 술사
+            (Faction.Hellfire, Role.Signature, 2, Support(Walks, 160, 1, Fix.Ratio(1, 4))),
+            // 큰 균열
+            (Faction.Hellfire, Role.Production, 1, Structure(450)),
+            // 집결의 횃불
+            (Faction.Hellfire, Role.Defense, 1, Structure(200)),
+            // 화염 첨탑
+            (Faction.Hellfire, Role.Defense, 2, Turret(260, 12, 7, 20, true, false)),
         };
 
         /// <summary>
@@ -1039,6 +1062,15 @@ namespace WordCraft.Sim
             (Faction.TreeSpirits, Role.Ranged, 3, new ProductionCost()), // 거대 덩쿨
             (Faction.TreeSpirits, Role.Signature, 1, new ProductionCost()), // 도깨비불
             (Faction.TreeSpirits, Role.Signature, 2, new ProductionCost()), // 덩굴 군집
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            (Faction.Hellfire, Role.Melee, 1, Produce(50, 50)), // 화염 악마
+            (Faction.Hellfire, Role.Melee, 2, Produce(60, 50)), // 균열 사냥개
+            (Faction.Hellfire, Role.Melee, 3, new ProductionCost()), // 잿불 새끼
+            (Faction.Hellfire, Role.Ranged, 2, Produce(150, 120)), // 용암 투석 악마
+            (Faction.Hellfire, Role.Ranged, 3, Produce(110, 90)), // 재날개 악마
+            (Faction.Hellfire, Role.Signature, 1, Produce(160, 120)), // 산란 악마
+            (Faction.Hellfire, Role.Signature, 2, Produce(180, 130)), // 운석 술사
         };
 
         private static ProductionCost Produce(int resources, int ticks) =>
@@ -1194,6 +1226,11 @@ namespace WordCraft.Sim
             (Faction.TreeSpirits, ResearchRow("거대 덩쿨 사거리", 150, 200, 3, UpgradeEffect.GiantVineRange, (Role.Tech, 0), NoBuilding)),
             (Faction.TreeSpirits, ResearchRow("번개새 공격 주기", 100, 160, 3, UpgradeEffect.ThunderBirdAttackTicks, (Role.Tech, 1), NoBuilding)),
             (Faction.TreeSpirits, ResearchRow("잎날 속도", 100, 160, 2, UpgradeEffect.LeafbladeSpeed, (Role.Tech, 2), NoBuilding)),
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            (Faction.Hellfire, ResearchRow("용암 투석 사거리", 150, 200, 3, UpgradeEffect.LavaCatapultRange, (Role.Tech, 0), NoBuilding)),
+            (Faction.Hellfire, ResearchRow("재날개 공격 주기", 100, 160, 3, UpgradeEffect.AshWingAttackTicks, (Role.Tech, 0), NoBuilding)),
+            (Faction.Hellfire, ResearchRow("갑각 경화", 150, 200, 3, UpgradeEffect.HardenedCarapace, (Role.Tech, 1), (Role.Tech, 0))),
         };
 
         /// <summary>
@@ -1284,6 +1321,16 @@ namespace WordCraft.Sim
             (Faction.TreeSpirits, Role.Ranged, 2, UpgradeEffect.ThunderBirdAttackTicks, UpgradedStat.AttackTicks, Fix.FromInt(8)),
             // 잎날 정령 속도 1/4 → 5/16.
             (Faction.TreeSpirits, Role.Melee, 0, UpgradeEffect.LeafbladeSpeed, UpgradedStat.Speed, Fix.Ratio(5, 16)),
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            // 용암 투석 악마 사거리 9 → 10.
+            (Faction.Hellfire, Role.Ranged, 2, UpgradeEffect.LavaCatapultRange, UpgradedStat.Range, Fix.FromInt(10)),
+            // 재날개 악마 주기 15 → 12틱.
+            (Faction.Hellfire, Role.Ranged, 3, UpgradeEffect.AshWingAttackTicks, UpgradedStat.AttackTicks, Fix.FromInt(12)),
+            // 용암 갑각 악마 방어 +2.
+            (Faction.Hellfire, Role.Melee, 0, UpgradeEffect.HardenedCarapace, UpgradedStat.Armor, Fix.FromInt(2)),
+            // 산란 악마 방어 +2.
+            (Faction.Hellfire, Role.Signature, 1, UpgradeEffect.HardenedCarapace, UpgradedStat.Armor, Fix.FromInt(2)),
         };
 
         /// <summary>How many rows the entry upgrade table holds, for the harness.</summary>
@@ -1572,6 +1619,19 @@ namespace WordCraft.Sim
             (Faction.TreeSpirits, Role.Signature, "덩굴 군집", "VineColony"),
             (Faction.TreeSpirits, Role.Tech, "바람 토템", "WindTotem"),
             (Faction.TreeSpirits, Role.Tech, "광란의 토템", "FrenzyTotem"),
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            (Faction.Hellfire, Role.Production, "큰 균열", "GrandRift"),
+            (Faction.Hellfire, Role.Defense, "집결의 횃불", "RallyingTorch"),
+            (Faction.Hellfire, Role.Defense, "화염 첨탑", "FlameSpire"),
+            (Faction.Hellfire, Role.Melee, "화염 악마", "FireSpirit"),
+            (Faction.Hellfire, Role.Melee, "균열 사냥개", "RiftHound"),
+            (Faction.Hellfire, Role.Melee, "잿불 새끼", "EmberWhelp"),
+            (Faction.Hellfire, Role.Ranged, "용암 투석 악마", "LavaCatapultDemon"),
+            (Faction.Hellfire, Role.Ranged, "재날개 악마", "AshWingDemon"),
+            (Faction.Hellfire, Role.Signature, "산란 악마", "BroodDemon"),
+            (Faction.Hellfire, Role.Signature, "운석 술사", "MeteorInvoker"),
+            (Faction.Hellfire, Role.Tech, "재 분화구", "AshCaldera"),
         };
 
         /// <summary>
@@ -1662,6 +1722,16 @@ namespace WordCraft.Sim
             (Faction.TreeSpirits, Role.Signature, 1, 2), // 도깨비불
             (Faction.TreeSpirits, Role.Signature, 2, 2), // 덩굴 군집
             (Faction.TreeSpirits, Role.Tech, 1, 3), // 바람 토템
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            (Faction.Hellfire, Role.Production, 1, 3), // 큰 균열
+            (Faction.Hellfire, Role.Defense, 1, 2), // 집결의 횃불
+            (Faction.Hellfire, Role.Defense, 2, 2), // 화염 첨탑
+            (Faction.Hellfire, Role.Melee, 2, 2), // 균열 사냥개
+            (Faction.Hellfire, Role.Melee, 3, 2), // 잿불 새끼
+            (Faction.Hellfire, Role.Ranged, 2, 3), // 용암 투석 악마
+            (Faction.Hellfire, Role.Ranged, 3, 3), // 재날개 악마
+            (Faction.Hellfire, Role.Signature, 1, 2), // 산란 악마
         };
 
         /// <summary>
@@ -1735,6 +1805,13 @@ namespace WordCraft.Sim
             (Faction.TreeSpirits, Role.Signature, 2, (Role.Production, 0)), // 덩굴 군집
             (Faction.TreeSpirits, Role.Tech, 1, (Role.Tech, 0)), // 바람 토템
             (Faction.TreeSpirits, Role.Tech, 2, (Role.Production, 0)), // 광란의 토템
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            (Faction.Hellfire, Role.Production, 1, (Role.Tech, 0)), // 큰 균열
+            (Faction.Hellfire, Role.Defense, 1, (Role.Production, 0)), // 집결의 횃불
+            (Faction.Hellfire, Role.Defense, 2, (Role.Production, 0)), // 화염 첨탑
+            (Faction.Hellfire, Role.Signature, 1, (Role.Tech, 1)), // 산란 악마
+            (Faction.Hellfire, Role.Tech, 1, (Role.Production, 0)), // 재 분화구
         };
 
         /// <summary>
@@ -1772,6 +1849,13 @@ namespace WordCraft.Sim
             (Faction.RockGolems, Role.Melee, 0, (Role.Base, 0), (Role.Production, 0)),
             // 차원 유랑종 폭풍편: 정박한 세계 and 통로.
             (Faction.Driftworlds, Role.Melee, 0, (Role.Base, 0), (Role.Production, 0)),
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            (Faction.Hellfire, Role.Signature, 0, (Role.Production, 0), (Role.Production, 1)), // 지옥불 군단장
+            (Faction.Hellfire, Role.Melee, 1, (Role.Base, 0), (Role.Production, 0)), // 화염 악마
+            (Faction.Hellfire, Role.Ranged, 2, (Role.Production, 1), NoBuilding), // 용암 투석 악마
+            (Faction.Hellfire, Role.Ranged, 3, (Role.Production, 1), NoBuilding), // 재날개 악마
+            (Faction.Hellfire, Role.Signature, 2, (Role.Production, 1), NoBuilding), // 운석 술사
         };
 
         /// <summary>
@@ -1874,6 +1958,12 @@ namespace WordCraft.Sim
             // 세계수 정령, docs/TECH-TREE.md 묶음 3.
             (Faction.TreeSpirits, Role.Tech, 1, 150, 100), // 바람 토템
             (Faction.TreeSpirits, Role.Tech, 2, 125, 80), // 광란의 토템
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            (Faction.Hellfire, Role.Production, 1, 250, 140), // 큰 균열
+            (Faction.Hellfire, Role.Defense, 1, 90, 50), // 집결의 횃불
+            (Faction.Hellfire, Role.Defense, 2, 110, 70), // 화염 첨탑
+            (Faction.Hellfire, Role.Tech, 1, 150, 100), // 재 분화구
         };
 
         /// <summary>
