@@ -73,10 +73,11 @@ namespace WordCraft.View
                 int lineups = Wanted("lineup") ? Lineups(output) : 0;
                 int strips = Strips(output);
                 int matches = Wanted("match") ? MatchStrips(output) : 0;
-                int statuses = (Wanted("status") ? StatusStrips(output) : 0) + (Wanted("chain") ? ChainStrips(output) : 0);
-                Debug.Log("OK: " + (fields + lineups + strips + matches + statuses) + " shots written to " + Path.GetFullPath(output) +
+                int statuses = Wanted("status") ? StatusStrips(output) : 0;
+                int chains = Wanted("chain") ? ChainStrips(output) : 0;
+                Debug.Log("OK: " + (fields + lineups + strips + matches + statuses + chains) + " shots written to " + Path.GetFullPath(output) +
                           " (" + fields + " field, " + lineups + " lineup, " + strips + " strip, " + matches + " match strip, " +
-                          statuses + " status strip)");
+                          statuses + " status strip, " + chains + " chain strip)");
                 EditorApplication.Exit(0);
             }
             catch (Exception e)
@@ -1017,13 +1018,14 @@ namespace WordCraft.View
 
             var runnerObject = new GameObject("MatchRunner (shots)");
             MatchRunner runner = runnerObject.AddComponent<MatchRunner>();
-            GameObject selectionObject = picked != null ? Pick(picked) : null;
+            GameObject selectionObject = null;
             MatchView view = null;
             var target = new RenderTexture(FrameWidth, FrameHeight, 24) { antiAliasing = 4 };
             var image = new Texture2D(FrameWidth * Frames, FrameHeight, TextureFormat.RGB24, mipChain: false);
 
             try
             {
+                if (picked != null) selectionObject = Pick(picked);
                 var seam = new RunnerSeam(runner);
                 seam.Start(world);
                 view = MatchView.Detached(runner);
@@ -1270,7 +1272,7 @@ namespace WordCraft.View
             {
                 AbilityRow row = FactionData.Ability(faction, i);
                 if (row.Kind == AbilityKind.HealAura && heal < 0) heal = i;
-                else if (row.Radius > 0 && aura < 0 && IsAuraKind(row.Kind) && row.Kind != AbilityKind.BurnAura) aura = i;
+                else if (row.Radius > 0 && aura < 0 && FactionData.IsAura(row.Kind) && row.Kind != AbilityKind.BurnAura) aura = i;
             }
             Vector2 source = StatusAt + new Vector2(-3f, 2.5f);
             if (heal >= 0)
@@ -1314,11 +1316,6 @@ namespace WordCraft.View
             picked = selected.ToArray();
             return world;
         }
-
-        private static bool IsAuraKind(AbilityKind kind) =>
-            kind == AbilityKind.ArmorAura || kind == AbilityKind.MarkAura || kind == AbilityKind.RateAura ||
-            kind == AbilityKind.HealAura || kind == AbilityKind.BurnAura || kind == AbilityKind.GrowthAura ||
-            kind == AbilityKind.SlowAura;
 
         /// <summary>Cells across a chain strip's frame: the shooter and its three targets.</summary>
         private const float ChainCells = 12f;
