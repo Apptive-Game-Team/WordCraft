@@ -17,7 +17,8 @@ namespace WordCraft.View
     ///   left click         completes an armed command, Esc cancels it
     ///   build key          opens the submenu; a second key picks the building
     ///   arrive key         names 차원 유랑종's 도착 지점; sends nothing by itself
-    ///   more key           turns the production list to its next page; sends nothing
+    ///   more key           turns the production or research list to its next page; sends nothing
+    ///   research cell      Research to the one representative 기술 건물, row in Arg
     /// </summary>
     public sealed class Orders : MonoBehaviour
     {
@@ -64,7 +65,7 @@ namespace WordCraft.View
         public bool HasArrivalPoint { get; private set; }
 
         /// <summary>
-        /// Which page of the production list the building card shows. View state
+        /// Which page of the production or research list the building card shows. View state
         /// like <see cref="BuildMenuOpen"/>: nothing about it reaches the
         /// simulation, and it goes back to 0 whenever the selection changes, so a
         /// new building always opens on its first entries.
@@ -118,17 +119,17 @@ namespace WordCraft.View
             // The HUD can draw a frame before Start has found the runner.
             if (runner == null || selection == null)
             {
-                return CommandCard.Of(CardKind.None, default(Faction), Role.None, 0);
+                return CommandCard.Of(CardKind.None, null, 0, Role.None, 0);
             }
             SyncPage();
-            return CommandCard.Of(Kind(), runner.World.FactionOf(runner.LocalPeer), LeadRole(), Page);
+            return CommandCard.Of(Kind(), runner.World, runner.LocalPeer, LeadRole(), Page);
         }
 
         /// <summary>
         /// The role of the entity the card speaks for, Role.None when nothing
-        /// qualifies. Only the building card reads it (Tech has its own title and
-        /// rows); the entity is the same one Kind() ranks, so title and cells are
-        /// about one building.
+        /// qualifies. Only the building card reads it (Tech lists research and has
+        /// its own title); the entity is the same one Kind() ranks, so title and
+        /// cells are about one building.
         /// </summary>
         public Role LeadRole()
         {
@@ -304,7 +305,14 @@ namespace WordCraft.View
                 // Wraps, so the last page's More is the way back to the first and
                 // the player never has to find another key for it. Nothing is
                 // sent: the page is this component's own.
-                Page = ProductionMenu.NextPage(Page, CommandCard.PageCount(runner.World.FactionOf(runner.LocalPeer)));
+                Page = ProductionMenu.NextPage(Page,
+                    CommandCard.PageCount(runner.World.FactionOf(runner.LocalPeer), LeadRole()));
+                return;
+            }
+
+            if (slot.Type == CommandType.Research)
+            {
+                Research(slot);
                 return;
             }
 
@@ -357,6 +365,27 @@ namespace WordCraft.View
                 ? ArrivalPoint
                 : FixVec2.Zero;
             ToSelection(slot.Type, target, arg);
+        }
+
+        /// <summary>
+        /// Research, to exactly one building: the representative, the same body
+        /// the card was drawn for. Not to the selection the way Cancel goes. Naming
+        /// every selected 기술 건물 would start the row on the first and have the
+        /// simulation refuse it on the rest (a peer buys one level of a row at a
+        /// time), which is a command on the wire for nothing. Arg is the row of the
+        /// upgrade table, which is what the card cell carries in Slot.
+        ///
+        /// A maxed cell is refused here for the reason a dead 징발 cell is: the
+        /// card draws it on a Void face, and the key has to mean what the button
+        /// does. Tier and resources are not asked. The simulation is what decides
+        /// those, which is the rule the build menu follows.
+        /// </summary>
+        private void Research(CardSlot slot)
+        {
+            if (slot.Maxed) return;
+            int id = CommandCard.Representative(runner.World, selection.Selected, runner.LocalPeer);
+            if (id < 0 || runner.World.GetEntity(id).Role != Role.Tech) return;
+            Issue(CommandType.Research, id, FixVec2.Zero, slot.Slot);
         }
 
         /// <summary>

@@ -653,9 +653,13 @@ namespace WordCraft.View
                 // 도착 is the same shape of answer one cell over, and it is dead in
                 // one more case than 징발 is: 차원 유랑종's Base produces too, and
                 // only its 통로 keeps a point (Sim/Driftworlds.cs AimArrival).
+                //
+                // A research row at its last level is the same sentence a third
+                // time: the cell exists and there is nothing left in it to buy.
                 bool live = card[i].Aim
                     ? orders.Aims()
-                    : card[i].Type != CommandType.Capture || CaptureOrder.Available(faction);
+                    : !card[i].Maxed &&
+                      (card[i].Type != CommandType.Capture || CaptureOrder.Available(faction));
 
                 // Armed is the cell inverting, and the aim cell is armed by its own
                 // state rather than by Pending: nothing is pending, because pressing
