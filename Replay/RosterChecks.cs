@@ -36,6 +36,9 @@ namespace WordCraft.Replay
             TheResearchRowsAreTheDocumentedOnes();
             EachResearchMovesOnlyItsEntry();
             FleeSpeedIsReadOnlyWhileFleeing();
+            AStandingBodyNeverChases();
+            AResearchedReachAcquiresAtThatReach();
+            EveryFlyingRowFlies();
             TheAiPutsANewRowOnTheField();
             NoSoloAiSitsAtThePopulationCap();
         }
@@ -560,33 +563,40 @@ namespace WordCraft.Replay
                 int index = IndexOf(f, research.Effect);
                 World world = ResearchWorld(f, research, out int building);
 
-                // Every new entry and every entry a row names, so a row that
-                // reached one entry too many shows up on a neighbour.
-                var bodies = new List<int>();
-                var before = new List<int[]>();
+                // Every new entry of the faction and every entry a row names, so
+                // a row that reached one entry too many shows up on a neighbour.
+                var entries = new List<(Role Role, int Slot, string Name)>();
+                foreach (Row row in NewRows)
+                {
+                    if (row.Faction == f) entries.Add((row.Role, row.Slot, row.Name));
+                }
                 foreach (var move in Moves)
                 {
-                    if (move.Faction != f) continue;
-                    int id = Spawn(world, move.Role, move.Slot, bodies.Count);
+                    if (move.Faction == f && !entries.Contains((move.Role, move.Slot, move.Name)))
+                        entries.Add((move.Role, move.Slot, move.Name));
+                }
+                var bodies = new List<int>();
+                var before = new List<int[]>();
+                foreach (var entry in entries)
+                {
+                    int id = Spawn(world, entry.Role, entry.Slot, bodies.Count);
                     bodies.Add(id);
                     before.Add(Readings(world, world.GetEntity(id)));
                 }
 
                 ResearchToCompletion(world, building, index);
 
-                int k = 0;
-                foreach (var move in Moves)
+                for (int k = 0; k < entries.Count; k++)
                 {
-                    if (move.Faction != f) continue;
+                    var entry = entries[k];
                     int[] now = Readings(world, world.GetEntity(bodies[k]));
                     int[] was = before[k];
-                    k++;
                     for (int stat = 0; stat < 4; stat++)
                     {
                         // What this research names on this body's entry, which
-                        // is not only this body's own row: Towerback carries two.
-                        var named = Named(f, move.Role, move.Slot, research.Effect, (UpgradedStat)(stat + 1));
-                        string what = f + " " + research.Name + " on " + move.Name + " " + (UpgradedStat)(stat + 1);
+                        // is not only one row: Towerback carries two.
+                        var named = Named(f, entry.Role, entry.Slot, research.Effect, (UpgradedStat)(stat + 1));
+                        string what = f + " " + research.Name + " on " + entry.Name + " " + (UpgradedStat)(stat + 1);
                         if (named.Stat == UpgradedStat.None)
                         {
                             Check(now[stat] == was[stat], what + " moved from " + was[stat] + " to " + now[stat]);
@@ -650,6 +660,93 @@ namespace WordCraft.Replay
             return (UpgradedStat.None, Fix.Zero);
         }
 
+        /// <summary>
+        /// 거대 덩쿨 has no speed. With a hostile inside the distance it acquires
+        /// at (10) and outside its reach (9), it takes the target and does not
+        /// chase: Target, which is hashed, and Position stay where they were.
+        /// The chase branch's Speed test is what holds Target; without it the
+        /// branch writes the hostile's position into Target every tick.
+        /// </summary>
+        private static void AStandingBodyNeverChases()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.TreeSpirits);
+            world.SetPeerFaction(1, Faction.Hellfire);
+            int vine = world.SpawnUnit(0, Role.Ranged, 3, At(30, 30));
+            int prey = world.SpawnBuilding(1, Role.Supply, At(40, 30), complete: true);
+            Entity start = world.GetEntity(vine);
+            Check(start.Speed.Raw == 0, "거대 덩쿨 walks, so this proves nothing");
+            for (int t = 0; t < 30; t++) world.Step(Idle);
+            Entity now = world.GetEntity(vine);
+            Check(now.TargetId == prey, "거대 덩쿨 did not take the hostile ten cells away");
+            Check(now.Target.Equals(start.Target), "거대 덩쿨's Target moved toward a hostile it cannot walk to");
+            Check(now.Position.Equals(start.Position), "거대 덩쿨 moved");
+            Check(world.GetEntity(prey).Hp == world.GetEntity(prey).MaxHp, "거대 덩쿨 hit something outside its reach");
+        }
+
+        /// <summary>
+        /// A reach past AcquireRange is a reach the body acquires at. 거대 덩쿨
+        /// with 거대 덩쿨 사거리 reaches 11, one past the 10 every body notices a
+        /// hostile at; it takes and hits a building 11 cells away on its own. The
+        /// control is the same world unresearched, where the building stands
+        /// untouched and untaken.
+        /// </summary>
+        private static void AResearchedReachAcquiresAtThatReach()
+        {
+            ResearchRow row = default;
+            foreach (ResearchRow r in NewResearch)
+            {
+                if (r.Effect == UpgradeEffect.GiantVineRange) row = r;
+            }
+            foreach (bool researched in new[] { false, true })
+            {
+                World world = ResearchWorld(Faction.TreeSpirits, row, out int building);
+                if (researched) ResearchToCompletion(world, building, IndexOf(Faction.TreeSpirits, UpgradeEffect.GiantVineRange));
+                int vine = world.SpawnUnit(0, Role.Ranged, 3, At(30, 30));
+                int prey = world.SpawnBuilding(1, Role.Supply, At(41, 30), complete: true);
+                for (int t = 0; t < 60; t++) world.Step(Idle);
+                Entity v = world.GetEntity(vine);
+                Entity p = world.GetEntity(prey);
+                if (researched)
+                {
+                    Check(world.AcquisitionRange(v) == Fix.FromInt(11), "researched 거대 덩쿨 acquires at " + world.AcquisitionRange(v).ToInt());
+                    Check(v.TargetId == prey, "researched 거대 덩쿨 did not take a building 11 cells away");
+                    Check(p.Hp < p.MaxHp, "researched 거대 덩쿨 never hit a building 11 cells away");
+                }
+                else
+                {
+                    Check(v.TargetId != prey && p.Hp == p.MaxHp, "unresearched 거대 덩쿨 reached 11 cells");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Every row whose roster stats say it flies is a body the world flies:
+        /// World.Flies reads the body's own entry, so 지옥불 자손 flies and 균열
+        /// 파수병 behind it walks. Pins the data side of what the fog, movement
+        /// and every reach rule ask through Flies.
+        /// </summary>
+        private static void EveryFlyingRowFlies()
+        {
+            int fliers = 0;
+            ForEveryEntry((f, role, slot) =>
+            {
+                if (FactionData.IsBuilding(role)) return;
+                var world = new World(Seed);
+                world.SetPeerFaction(0, f);
+                int id = role == Role.Worker ? world.SpawnWorker(0, At(30, 30)) : world.SpawnUnit(0, role, slot, At(30, 30));
+                bool air = FactionData.Stats(f, role, slot).Air;
+                Check(world.Flies(world.GetEntity(id)) == air,
+                    f + "." + role + "[" + slot + "] " + FactionData.Name(f, role, slot) + " flies: " +
+                    world.Flies(world.GetEntity(id)) + ", its row says " + air);
+                if (air) fliers++;
+            });
+            // docs/TECH-TREE.md 규모 요약 counts 14 fliers. 마도 정찰기 is the
+            // one it counts that still walks: its 공중 is a proposal the roster
+            // has not taken.
+            Check(fliers == 13, fliers + " roster entries fly, expected 13");
+        }
+
         /// <summary>The four lookups, as raw numbers: range raw, rate, speed raw, armor.</summary>
         private static int[] Readings(World world, Entity e) =>
             new[] { (int)world.RangeFor(e).Raw, world.AttackTicksFor(e), (int)world.SpeedFor(e).Raw, world.ArmorFor(e) };
@@ -685,7 +782,7 @@ namespace WordCraft.Replay
 
         private static int Spawn(World world, Role role, int slot, int n)
         {
-            FixVec2 at = At(30 + (n % 5) * 3, 40 + (n / 5) * 3);
+            FixVec2 at = At(20 + (n % 8) * 3, 30 + (n / 8) * 3);
             return FactionData.IsBuilding(role)
                 ? world.SpawnBuilding(0, role, slot, at, complete: true)
                 : world.SpawnUnit(0, role, slot, at);
