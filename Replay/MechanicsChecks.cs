@@ -270,7 +270,9 @@ namespace WordCraft.Replay
         /// <summary>
         /// A 잎날 정령 killed 8 cells from a 씨앗 요람 puts one free 풀씨 정령 on
         /// its queue, which comes off 30 ticks later; one killed 9 cells out puts
-        /// nothing. The queue refuses a CancelProduction. A dead worker puts nothing.
+        /// nothing, and so does one killed beside an unfinished 요람 or beside
+        /// another peer's. The queue refuses a CancelProduction. A dead worker puts
+        /// nothing.
         /// </summary>
         private static void TheSeedCradleReturnsDeathsInsideItsRadius()
         {
@@ -302,6 +304,29 @@ namespace WordCraft.Replay
             outside.Step(Idle);
             Check(outside.GetEntity(far).QueueCount == 0, "a death 9 cells from 씨앗 요람 was queued");
 
+            // An unfinished 요람 returns nothing, however close.
+            World rising = TreeWorld();
+            int site = rising.SpawnBuilding(0, Role.Production, 1, At(30, 30), complete: false);
+            Victim(rising, At(34, 30));
+            rising.Step(Idle);
+            Check(rising.GetEntity(site).BuildTicksLeft > 0, "the 요람 finished, so the next line proves nothing");
+            Check(rising.GetEntity(site).QueueCount == 0, "an unfinished 씨앗 요람 queued a body");
+
+            // Another peer's 세계수 정령 dying beside this peer's 요람 returns nothing.
+            // Peer 1 has a 생명의 나무, so its cap is not what drops the body.
+            var mixed = new World(Seed);
+            mixed.SetPeerFaction(0, Faction.TreeSpirits);
+            mixed.SetPeerFaction(1, Faction.TreeSpirits);
+            mixed.SetPeerFaction(2, Faction.Hellfire);
+            mixed.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);
+            mixed.SpawnBuilding(1, Role.Base, At(58, 58), complete: true);
+            int theirs = mixed.SpawnBuilding(0, Role.Production, 1, At(30, 30), complete: true);
+            int stranger = mixed.SpawnUnit(1, Role.Melee, 0, At(34, 30), 1);
+            mixed.SpawnUnit(2, Role.Melee, 0, At(34, 31));
+            mixed.Step(Idle);
+            Check(!mixed.GetEntity(stranger).Alive, "peer 1's 잎날 정령 survived, so the next line proves nothing");
+            Check(mixed.GetEntity(theirs).QueueCount == 0, "peer 0's 씨앗 요람 queued peer 1's dead 잎날 정령");
+
             World worker = TreeWorld();
             int quiet = worker.SpawnBuilding(0, Role.Production, 1, At(30, 30), complete: true);
             int seed = worker.SpawnWorker(0, At(34, 30));
@@ -313,7 +338,8 @@ namespace WordCraft.Replay
 
         /// <summary>
         /// Two 요람 the same distance off: the lower id takes the body. A full
-        /// queue of 5 drops the sixth, and a peer at its population cap drops it.
+        /// queue of 5 drops the sixth. A death that leaves the peer under its cap is
+        /// queued; one that leaves it at the cap is dropped.
         /// </summary>
         private static void TheSeedCradleTakesTheNearestAndDropsWhatItCannotHold()
         {
@@ -345,13 +371,30 @@ namespace WordCraft.Replay
             Check(full.GetEntity(cradle).QueueCount == World.MaxQueue,
                 "six deaths left " + full.GetEntity(cradle).QueueCount + " on the queue, not " + World.MaxQueue);
 
-            World capped = TreeWorld();
-            cradle = capped.SpawnBuilding(0, Role.Production, 1, At(30, 30), complete: true);
-            for (int i = 0; i < 11; i++) capped.SpawnWorker(0, At(5 + i, 60));
-            Victim(capped, At(34, 30));
-            capped.Step(Idle);
-            Check(capped.GetPopulation(0) >= capped.PopulationCap(0), "the peer is under its cap, so the next line proves nothing");
-            Check(capped.GetEntity(cradle).QueueCount == 0, "씨앗 요람 queued a body over the population cap");
+            // The cap is 10 (one 생명의 나무). Nine workers and the victim are 10:
+            // the death gives one back before the cap is asked, so 9 < 10 and the
+            // body is queued. Ten workers and the victim are 11: after the death
+            // the peer stands at exactly 10, which is the cap, and it is dropped.
+            Check(QueuedAtPopulation(9) == 1,
+                "a death at exactly the cap was dropped: the cap was asked before the body's population was given back");
+            Check(QueuedAtPopulation(10) == 0,
+                "씨앗 요람 queued a body with the peer at its population cap after the death");
+        }
+
+        /// <summary>
+        /// One 잎날 정령 killed 4 cells from a 씨앗 요람 with this many 풀씨 정령
+        /// standing beside it under a cap of 10; what the 요람's queue holds after.
+        /// </summary>
+        private static int QueuedAtPopulation(int workers)
+        {
+            World world = TreeWorld();
+            int cradle = world.SpawnBuilding(0, Role.Production, 1, At(30, 30), complete: true);
+            for (int i = 0; i < workers; i++) world.SpawnWorker(0, At(5 + i, 60));
+            Victim(world, At(34, 30));
+            Check(world.PopulationCap(0) == 10 && world.GetPopulation(0) == workers + 1,
+                "the population fixture is " + world.GetPopulation(0) + " of " + world.PopulationCap(0));
+            world.Step(Idle);
+            return world.GetEntity(cradle).QueueCount;
         }
 
         /// <summary>씨앗 요람 반경: a death 12 cells out is returned only once researched.</summary>
