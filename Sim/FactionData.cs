@@ -288,6 +288,13 @@ namespace WordCraft.Sim
         public const int DefaultProduceTicks = 40;
 
         /// <summary>
+        /// 차원 유랑종 도착: 통로에서 60틱, per docs/FACTION-MECHANICS.md. A named
+        /// constant rather than a number in the row below, because 도착 가속
+        /// shortens exactly the entries priced at it; see World.ProduceTicksOf.
+        /// </summary>
+        public const int PassageArrivalTicks = 60;
+
+        /// <summary>
         /// Stats for entry 0 of every slot, subscripted by <see cref="Index"/>
         /// exactly like names and sprites, so one index answers every roster
         /// question. Entries past the first live in <see cref="extraStats"/>.
@@ -655,7 +662,7 @@ namespace WordCraft.Sim
             // 층위 관측대 unlocks, and this table's own rule is that a number
             // arrives with the mechanic that needs it rather than ahead of it.
             // Priced at the shared cost, because the document gives it none.
-            (Faction.Driftworlds, Role.Ranged, 0, Produce(DefaultProduceCost, 60)),
+            (Faction.Driftworlds, Role.Ranged, 0, Produce(DefaultProduceCost, PassageArrivalTicks)),
             // 경계 운반자 130자원 90틱. The second most expensive body in the game
             // and it kills nothing, which is the same bargain 지옥불 군단장 is: what
             // it is worth is the 반경 6칸 that walks with it.

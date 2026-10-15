@@ -140,7 +140,7 @@ namespace WordCraft.Sim
 
             if (w.CaptureTicksLeft == 0)
             {
-                w.CaptureTicksLeft = CaptureTicks;
+                w.CaptureTicksLeft = CaptureTicksFor(w.Owner);
                 // 그동안 일꾼은 이동하지 않는다. Dropped here rather than expressed
                 // as a mode of its own: the walk is what would have moved it, so
                 // taking the walk away is the whole rule, and MoveSystem needs to
@@ -155,6 +155,14 @@ namespace WordCraft.Sim
             ClearCapture(ref w);
             Conscript(rock.Id, w.Owner);
         }
+
+        /// <summary>
+        /// 포획 가속: how long this peer's workers stand beside a 꼬마돌. Read when
+        /// the clock starts, so a capture already counting finishes on the clock
+        /// it started with.
+        /// </summary>
+        public int CaptureTicksFor(int peer) =>
+            UpgradeLevel(peer, UpgradeEffect.CaptureTicks) > 0 ? CaptureTicksResearched : CaptureTicks;
 
         /// <summary>
         /// The transfer itself, and the only place a body changes hands.

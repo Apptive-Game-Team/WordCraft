@@ -48,7 +48,7 @@ namespace WordCraft.Sim
         {
             Entity e = entities[id];
             if (!IsWarlord(e)) return;
-            e.SpawnCooldown = WarlordSpawnTicks;
+            e.SpawnCooldown = WarlordSpawnTicksFor(e.Owner);
             entities[id] = e;
         }
 
@@ -72,8 +72,8 @@ namespace WordCraft.Sim
                     // The period restarts whether or not there was room. A clock
                     // that stopped at the cap would refill a killed offspring on
                     // the next tick, and killing one would buy nothing at all.
-                    w.SpawnCooldown = WarlordSpawnTicks;
-                    emits = w.OffspringCount < WarlordOffspring;
+                    w.SpawnCooldown = WarlordSpawnTicksFor(w.Owner);
+                    emits = w.OffspringCount < WarlordOffspringCap(w.Owner);
                     if (emits) w.OffspringCount++;
                 }
 
@@ -83,6 +83,24 @@ namespace WordCraft.Sim
                 if (emits) SpawnOffspring(w);
             }
         }
+
+        /// <summary>
+        /// 군단 확장: the most offspring one of this peer's warlords keeps alive,
+        /// WarlordOffspring or, researched, WarlordOffspringResearched. Read on
+        /// the emitting tick, so a level that lands raises the cap of every
+        /// warlord already standing on its next period.
+        /// </summary>
+        public int WarlordOffspringCap(int peer) =>
+            UpgradeLevel(peer, UpgradeEffect.OffspringCap) > 0 ? WarlordOffspringResearched : WarlordOffspring;
+
+        /// <summary>
+        /// 산란 가속: the period between offspring for this peer's warlords. Read
+        /// when a clock is armed or restarted, never mid-count: a level that lands
+        /// shortens the next period, and the one already running finishes as it
+        /// was set.
+        /// </summary>
+        public int WarlordSpawnTicksFor(int peer) =>
+            UpgradeLevel(peer, UpgradeEffect.OffspringPeriod) > 0 ? WarlordSpawnTicksResearched : WarlordSpawnTicks;
 
         /// <summary>
         /// 자손 comes out free, at a fixed offset from its parent so the spawn point

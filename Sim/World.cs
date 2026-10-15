@@ -317,6 +317,9 @@ namespace WordCraft.Sim
         /// </summary>
         public const int RemnantTicks = 400;
 
+        /// <summary>How long debris stands once 오래 남는 잔해 is researched.</summary>
+        public const int RemnantTicksResearched = 600;
+
         /// <summary>
         /// 지옥불 군단장: whole ticks between one offspring and the next, per
         /// docs/FACTION-MECHANICS.md. The clock runs whether or not there is room,
@@ -328,6 +331,12 @@ namespace WordCraft.Sim
         /// <summary>Most offspring one 지옥불 군단장 keeps alive at once.</summary>
         public const int WarlordOffspring = 5;
 
+        /// <summary>The cap once 군단 확장 is researched. See WarlordOffspringCap.</summary>
+        public const int WarlordOffspringResearched = 7;
+
+        /// <summary>The period once 산란 가속 is researched. See WarlordSpawnTicksFor.</summary>
+        public const int WarlordSpawnTicksResearched = 70;
+
         /// <summary>
         /// 인간 마법 문명 징발: whole ticks an 인간 worker stands beside a neutral
         /// 꼬마돌 before it is taken, per docs/FACTION-MECHANICS.md. Three seconds
@@ -335,6 +344,9 @@ namespace WordCraft.Sim
         /// costs on top of walking there.
         /// </summary>
         public const int CaptureTicks = 60;
+
+        /// <summary>How long a capture takes once 포획 가속 is researched.</summary>
+        public const int CaptureTicksResearched = 40;
 
         /// <summary>
         /// What a neutral 꼬마돌 stands on the map with, per
@@ -485,8 +497,16 @@ namespace WordCraft.Sim
             if (factions[e.Owner] != Faction.RockGolems) return;
             // Overwrites rather than stacks: a second body on one cell resets the
             // clock, and a count nobody can see is a count nobody can play around.
-            remnantExpiry[CellOf(e.Position)] = Tick + RemnantTicks;
+            remnantExpiry[CellOf(e.Position)] = Tick + RemnantTicksFor(e.Owner);
         }
+
+        /// <summary>
+        /// 오래 남는 잔해: how long debris this peer's dead leave stands. Read when
+        /// the body falls, so debris already on the map keeps the expiry it was
+        /// dropped with and only what falls after the level lands lasts longer.
+        /// </summary>
+        public int RemnantTicksFor(int peer) =>
+            UpgradeLevel(peer, UpgradeEffect.RemnantTicks) > 0 ? RemnantTicksResearched : RemnantTicks;
 
         public TileKind TerrainAt(int cell) => (TileKind)terrain[cell];
 

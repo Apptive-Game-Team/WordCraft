@@ -182,9 +182,35 @@ namespace WordCraft.Sim
 
             w.MorphRole = role;
             w.MorphSlot = slot;
-            w.MorphTicksLeft = cost.Ticks;
+            w.MorphTicksLeft = GrowthTicksFor(peer, role, slot);
             entities[id] = w;
         }
+
+        /// <summary>
+        /// 성장 가속: how many ticks a growth into this entry takes this peer, the
+        /// table's number less a quarter of it once researched. 덩쿨 정령 40 → 30,
+        /// 고목 수호자 60 → 45. Integer and exact for both rows the table has.
+        ///
+        /// Asked twice per growth: once when the clock is set, and every tick by
+        /// the ramp, which needs the whole length to know how far along the body
+        /// is. A level landing between the two is the one case where they differ,
+        /// and GrowStep's floor is what it costs.
+        /// </summary>
+        public int GrowthTicksFor(int peer, Role role, int slot)
+        {
+            if (peer < 0 || peer >= MaxPeers) return 0;
+            int ticks = FactionData.Growth(factions[peer], role, slot).Ticks;
+            return UpgradeLevel(peer, UpgradeEffect.GrowthTime) > 0 ? ticks - ticks / 4 : ticks;
+        }
+
+        /// <summary>
+        /// 성장 체력: how many times faster the hp ramp climbs, 1 or 2. Twice as
+        /// fast is a ramp that reaches the target at the halfway tick and holds
+        /// there: the growth still takes as long, but the body is at full
+        /// strength for the second half of it.
+        /// </summary>
+        public int GrowthRampFor(int peer) =>
+            UpgradeLevel(peer, UpgradeEffect.GrowthHpRamp) > 0 ? 2 : 1;
 
         /// <summary>
         /// Runs beside the other two worker loops and immediately after them,
@@ -240,14 +266,27 @@ namespace WordCraft.Sim
         {
             UnitStats from = RosterStats(e);
             UnitStats s = FactionData.Stats(factions[e.Owner], e.MorphRole, e.MorphSlot);
-            int total = FactionData.Growth(factions[e.Owner], e.MorphRole, e.MorphSlot).Ticks;
+            int total = GrowthTicksFor(e.Owner, e.MorphRole, e.MorphSlot);
+            int ramp = GrowthRampFor(e.Owner);
 
             e.MorphTicksLeft--;
+            // How much of the line is still to climb, in ticks of the whole. With
+            // ramp 1 it is the ticks left; with 성장 체력 it runs out at the
+            // halfway tick and stays at zero.
+            int behind = ramp * e.MorphTicksLeft - (ramp - 1) * total;
+            if (behind < 0) behind = 0;
             // Integer division, truncating toward zero, which C# defines and both
             // runtimes therefore do the same way. The last tick multiplies by a
             // remaining count of zero, so the line lands on the target exactly
             // rather than near it.
-            int ceiling = s.Hp - ((s.Hp - from.Hp) * e.MorphTicksLeft) / total;
+            int ceiling = s.Hp - ((s.Hp - from.Hp) * behind) / total;
+            // Never back down the line. Unresearched, the line only climbs and
+            // this changes nothing. It is for 성장 가속 landing mid-growth: the
+            // clock was set against the longer total, so for a few ticks it
+            // reads further from the end than the new total allows, and the
+            // formula would hand back a lower ceiling — a body losing hp to its
+            // own owner's research.
+            if (ceiling < e.MaxHp && s.Hp >= from.Hp) ceiling = e.MaxHp;
             e.Hp += ceiling - e.MaxHp;
             e.MaxHp = ceiling;
             // Both rows in the growth table stand above a worker, so the line only

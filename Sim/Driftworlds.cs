@@ -100,6 +100,48 @@ namespace WordCraft.Sim
         /// </summary>
         public static readonly Fix ArrivalRadius = Fix.FromInt(6);
 
+        /// <summary>The radius once 도착 반경 is researched.</summary>
+        public static readonly Fix ArrivalRadiusResearched = Fix.FromInt(8);
+
+        /// <summary>
+        /// 도착 가속: the 통로's own clock once researched. The unresearched clock is
+        /// FactionData.PassageArrivalTicks, which is where the table prices it.
+        /// </summary>
+        public const int ArrivalTicksResearched = 40;
+
+        /// <summary>
+        /// 도착 반경: the arrival radius this peer's anchors lend. Asked by both of
+        /// the mechanic's checks through ArrivalValid, so a level that lands while
+        /// a body is crossing widens the second check and never narrows it.
+        /// </summary>
+        public Fix ArrivalRadiusFor(int peer) =>
+            UpgradeLevel(peer, UpgradeEffect.ArrivalRadius) > 0 ? ArrivalRadiusResearched : ArrivalRadius;
+
+        /// <summary>
+        /// 도착 가속: the 통로's clock, 도착 | 통로에서 60틱 in the document's table,
+        /// for this peer.
+        /// </summary>
+        public int ArrivalTicksFor(int peer) =>
+            UpgradeLevel(peer, UpgradeEffect.ArrivalTicks) > 0 ? ArrivalTicksResearched : FactionData.PassageArrivalTicks;
+
+        /// <summary>
+        /// How long the body at the head of this building's queue takes. The
+        /// table's clock for everything, except what a 통로 makes at the 통로's own
+        /// clock: those entries cross at ArrivalTicksFor instead, which is the
+        /// number 도착 가속 moves. 틈새 사수 is the one such entry today; the
+        /// table says which by pricing it at PassageArrivalTicks rather than by a
+        /// list kept here.
+        /// </summary>
+        // ponytail: the 통로 clock is recognised by its value. An entry that one
+        // day crosses in exactly 60 ticks for some other reason would be sped up
+        // too. Give the production table a flag the day that happens.
+        private int ProduceTicksOf(Entity b)
+        {
+            int ticks = FactionData.Production(factions[b.Owner], b.ProduceRole, b.ProduceSlot).Ticks;
+            if (IsPassage(b) && ticks == FactionData.PassageArrivalTicks) return ArrivalTicksFor(b.Owner);
+            return ticks;
+        }
+
         /// <summary>
         /// True for a standing 통로 and nothing else. Faction, kind, role and entry
         /// are read off the body rather than carried on it, for the reason IsWarlord
@@ -198,11 +240,12 @@ namespace WordCraft.Sim
             if (point.X < Fix.Zero || point.Y < Fix.Zero) return false;
             if (point.X >= Fix.FromInt(GridSize) || point.Y >= Fix.FromInt(GridSize)) return false;
 
+            Fix radius = ArrivalRadiusFor(peer);
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
                 if (!ProvidesArrival(e, peer)) continue;
-                if (WithinRange(point, e.Position, ArrivalRadius)) return true;
+                if (WithinRange(point, e.Position, radius)) return true;
             }
             return false;
         }

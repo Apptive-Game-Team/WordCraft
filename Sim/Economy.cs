@@ -359,8 +359,9 @@ namespace WordCraft.Sim
 
                 if (b.ProduceTicksLeft == 0)
                 {
-                    b.ProduceTicksLeft =
-                        FactionData.Production(factions[b.Owner], b.ProduceRole, b.ProduceSlot).Ticks;
+                    // Through ProduceTicksOf rather than the table directly, so a
+                    // 통로 under 도착 가속 crosses on its researched clock.
+                    b.ProduceTicksLeft = ProduceTicksOf(b);
                 }
                 b.ProduceTicksLeft--;
                 // At or past zero rather than exactly zero: a role priced at no
