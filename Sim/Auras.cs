@@ -263,14 +263,20 @@ namespace WordCraft.Sim
         /// id, and Kill for each it brings to 0. Neutral bodies are nobody's
         /// enemy. What 화상 오라 and the bursts share; the caller has already
         /// decided the amount, so no armor or level is asked here.
+        ///
+        /// An area hit (묶음 7) passes the shooter and the body its shot struck:
+        /// the struck body is skipped, it took the full hit already, and only
+        /// what the shooter's weapon can reach is hit, per docs/TECH-TREE.md 광역.
         /// </summary>
-        private void DamageHostileBodies(int owner, AbilityTargets targets, FixVec2 from, Fix radius, int damage)
+        private void DamageHostileBodies(int owner, AbilityTargets targets, FixVec2 from, Fix radius, int damage,
+            int shooterId = -1, int struckId = -1)
         {
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity t = entities[i];
-                if (!t.Alive || t.Owner < 0 || t.Owner == owner) continue;
+                if (!t.Alive || t.Owner < 0 || t.Owner == owner || i == struckId) continue;
                 if (!AuraTargets(targets, t)) continue;
+                if (shooterId >= 0 && !CanHit(entities[shooterId], t)) continue;
                 if (!WithinRange(from, t.Position, radius)) continue;
                 t.Hp -= damage;
                 if (t.Hp <= 0) Kill(ref t);

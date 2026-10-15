@@ -92,6 +92,7 @@ namespace WordCraft.Sim
                         else ApplyHitStatus(a, ref t);
                         entities[t.Id] = t;
                         ChainFrom(a, t.Id, hitAt, dealt);
+                        SplashFrom(a, t.Id, hitAt, dealt, ActiveAbility(a, AbilityKind.SplashOnHit));
                         // 질풍: every attack sets the clock back to its full length.
                         int gale = ActiveAbility(a, AbilityKind.GaleAfterAttack);
                         if (gale >= 0) a.AbilityTicksLeft = AbilityTicks(a.Owner, FactionData.AbilityRowAt(gale));
@@ -181,6 +182,23 @@ namespace WordCraft.Sim
                 entities[best] = v;
                 hit[count++] = best;
             }
+        }
+
+        /// <summary>
+        /// 용암 폭발, 폭격 and the splash of 잔해 투척, docs/TECH-TREE.md 피해 계산
+        /// 광역: every other hostile body of the row's targets within its radius
+        /// of where the struck body stood when it was hit, and that this weapon
+        /// can reach, takes half the shot's final damage, floor, at least 1, by
+        /// ascending id. Fixed off the shot like a chain hop: the bodies it lands
+        /// on are not asked for armor again. No friendly damage. Nothing when
+        /// row is -1.
+        /// </summary>
+        private void SplashFrom(Entity a, int struckId, FixVec2 hitAt, int dealt, int row)
+        {
+            if (row < 0) return;
+            AbilityRow r = FactionData.AbilityRowAt(row);
+            int half = dealt / 2 < 1 ? 1 : dealt / 2;
+            DamageHostileBodies(a.Owner, r.Targets, hitAt, Fix.FromInt(AbilityRadius(a.Owner, r)), half, a.Id, struckId);
         }
 
         /// <summary>
