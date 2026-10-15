@@ -140,12 +140,6 @@ namespace WordCraft.View
         private bool primed;
 
         /// <summary>
-        /// How long after a melee strike begins its impact bursts: about where
-        /// BodyRig's lunge reaches furthest, so the shards fly when the blow lands.
-        /// </summary>
-        private const float MeleeImpactDelay = 0.17f;
-
-        /// <summary>
         /// The reach above which a weapon fires something visible. FactionData
         /// gives melee a reach of exactly two cells; the issue draws a tracer for
         /// anything that reaches further.
@@ -316,7 +310,9 @@ namespace WordCraft.View
                 alive[i] = e.Alive;
                 if (was && !e.Alive && body.Shown && !body.Remembered)
                 {
-                    body.Die(Rubble(world, e));
+                    bool rubble = Rubble(world, e);
+                    body.Die(rubble);
+                    if (rubble) effects.Crumble(Field.At(runner.DrawPosition(i)), body.Size, UiStyle.Remnant, body.transform.eulerAngles.y);
                 }
                 // A dead body that is not playing its death has nothing left to
                 // move; switched off, so a long match's dead cost no Update.
@@ -454,13 +450,18 @@ namespace WordCraft.View
         /// <summary>
         /// What the shot that just reset this cooldown looks like in the air. A
         /// weapon that reaches past <see cref="TracerReach"/> throws a tracer from
-        /// the shooter to the target and bursts where it lands; anything shorter
-        /// is a blow, and bursts on the target when the lunge lands. The target is
-        /// read off the entity on the tick it fired, when TargetId still names
-        /// the body it hit even if that body died of it.
+        /// the shooter to the target once the shooter's wind-up is over, bursts
+        /// where it lands, and the target flinches on the arrival. Anything
+        /// shorter is a blow: the target flinches now and the burst comes when
+        /// the lunge lands. The target is read off the entity on the tick it
+        /// fired, when TargetId still names the body it hit even if that body
+        /// died of it.
         ///
         /// Drawn after the damage, not before: the simulation's hit is instant,
-        /// so the tracer lands up to MaxFlight after the bar has already moved.
+        /// so a tracer lands up to a third of a second after the bar has already
+        /// moved. That is the view's delay only; nothing here touches the world.
+        /// The delayed flinch replaces the one HitDetection gave the target
+        /// earlier in this frame, because Hit keeps only the latest start.
         /// </summary>
         private void Shoot(World world, Entity e, BodyRig body)
         {
@@ -478,8 +479,17 @@ namespace WordCraft.View
             if (toward.sqrMagnitude > 1e-6f) to += toward.normalized * (victim.Footprint * 0.35f);
             Vector3 hit = Field.At(to, victim.ChestLift + (victim.Flying ? BodyRig.HoverHeight : 0f));
 
-            if (FactionData.Stats(faction, e.Role, e.Slot).Range > TracerReach) effects.Shot(body.Muzzle, hit, colour);
-            else effects.Impact(hit, colour, MeleeImpactDelay);
+            if (FactionData.Stats(faction, e.Role, e.Slot).Range > TracerReach)
+            {
+                // A tower kicks the instant it fires and has no wind-up to wait for.
+                float leave = e.Kind == EntityKind.Building ? 0f : BodyRig.StrikeDelay;
+                victim.Hit(effects.Shot(body.Muzzle, hit, colour, leave));
+            }
+            else
+            {
+                victim.Hit();
+                effects.Impact(hit, colour, BodyRig.LungeLandDelay);
+            }
         }
 
         /// <summary>돌 골렘 부족's combat unit leaves rubble where it falls (Sim/World.cs DropRemnant), so it dies into rubble.</summary>
