@@ -156,13 +156,33 @@ namespace WordCraft.View
         /// <summary>The lake bed. Dark wet earth, seen through the water, which is what makes a lake a hollow.</summary>
         public static readonly Color Bed = Rgb(0x48433A);
 
+        /// <summary>
+        /// The shelf of bed along a lake's edge, the cells with ground beside them.
+        /// Sandier and lighter than the deep bed, so through the water a lake
+        /// reads in two steps: shallow at the edge, deep in the middle.
+        /// </summary>
+        public static readonly Color BedShallow = Rgb(0x6B6450);
+
+        /// <summary>The bed in a lake's middle, where it drops away. Darker and cooler than the shelf.</summary>
+        public static readonly Color BedDeep = Rgb(0x3A3934);
+
+        /// <summary>
+        /// A lake's bank above the water: the earth between the grass edge and
+        /// the waterline. Darker than a dry cliff's lip because it is wet.
+        /// </summary>
+        public static readonly Color Bank = Rgb(0x7A6A50);
+
         /// <summary>Open water between the shore band and the middle.</summary>
         public static readonly Color Water = Rgb(0x4A7894);
 
         /// <summary>The middle of a lake: every cell around it is water. Gives a lake depth, as WaterDeep did in the 2D bake.</summary>
         public static readonly Color WaterDeep = Rgb(0x3A6482);
 
-        /// <summary>The band where water meets anything else. Pale, and going all the way round because foam has no light direction.</summary>
+        /// <summary>
+        /// The foam where water meets the bank. Pale, and going all the way round
+        /// because foam has no light direction. Water.shader draws it from each
+        /// vertex's shore distance; FieldMesh hands it this colour on the material.
+        /// </summary>
         public static readonly Color Foam = Rgb(0xA6C4D0);
 
         // ---------------------------------------------------------------- map rim
@@ -201,6 +221,12 @@ namespace WordCraft.View
 
         /// <summary>A loose stone's top.</summary>
         public static readonly Color PebbleTop = Rgb(0x96919E);
+
+        /// <summary>A reed's stem. Olive, a step away from the grass, so a clump at the shore reads as water plants and not as a tuft that wandered in.</summary>
+        public static readonly Color Reed = Rgb(0x66713F);
+
+        /// <summary>A reed's tip. Dry straw, the light end of the blade.</summary>
+        public static readonly Color ReedTip = Rgb(0xA89C68);
 
         // ---------------------------------------------------------------- rules
 

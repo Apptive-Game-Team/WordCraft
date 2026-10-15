@@ -58,7 +58,13 @@ namespace WordCraft.View
         internal static void Add(Facets f, int cx, int cy)
         {
             int cell = cy * Field.Cells + cx;
-            if (Field.Kind(cell) != TileKind.Open) return;
+            TileKind kind = Field.Kind(cell);
+            if (kind == TileKind.Water)
+            {
+                Reeds(f, cx, cy);
+                return;
+            }
+            if (kind != TileKind.Open) return;
             if (Cleared(cx, cy)) return;
 
             int roll = FieldMesh.Hash(cx * 31 + 7, cy * 17 + 3) % 100;
@@ -279,6 +285,67 @@ namespace WordCraft.View
         {
             f.Triangle(a, b, c, colour, facing);
             f.Triangle(a, c, d, colour, facing);
+        }
+
+        // ------------------------------------------------------------------ reeds
+
+        /// <summary>Odds per hundred shore water cells of a clump of reeds.</summary>
+        private const int ReedOdds = 55;
+
+        private static readonly int[] SideX = { 1, -1, 0, 0 };
+        private static readonly int[] SideZ = { 0, 0, 1, -1 };
+
+        /// <summary>
+        /// A clump of reeds in the shallows of a water cell that has ground on at
+        /// least one side: four to six thin blades rooted in the bed, standing a
+        /// short way out from the bank and up through the surface, olive at the
+        /// root and straw at the tip. Under 0.3 of a cell across, and in water,
+        /// which no body walks.
+        /// </summary>
+        private static void Reeds(Facets f, int cx, int cy)
+        {
+            if (FieldMesh.Hash(cx * 13 + 5, cy * 29 + 11) % 100 >= ReedOdds) return;
+
+            int first = (int)(FieldMesh.Unit(cx, cy, 50) * 4f) % 4;
+            int side = -1;
+            for (int i = 0; i < 4; i++)
+            {
+                int s = (first + i) % 4;
+                int nx = cx + SideX[s];
+                int nz = cy + SideZ[s];
+                if (nx < 0 || nz < 0 || nx >= Field.Cells || nz >= Field.Cells) continue;
+                if (FieldMesh.IsWater(nx, nz)) continue;
+                side = s;
+                break;
+            }
+            if (side < 0) return;
+
+            // The bank edge is the cell's border on that side; stand in from it.
+            float inset = 0.32f + 0.14f * FieldMesh.Unit(cx, cy, 51);
+            float along = 0.2f + 0.6f * FieldMesh.Unit(cx, cy, 52);
+            float px = cx + 0.5f + SideX[side] * (0.5f - inset) + (SideX[side] == 0 ? along - 0.5f : 0f);
+            float pz = cy + 0.5f + SideZ[side] * (0.5f - inset) + (SideZ[side] == 0 ? along - 0.5f : 0f);
+
+            int cell = cy * Field.Cells + cx;
+            float root = Field.Bed(cell);
+            float water = Field.Flat(cell);
+            int blades = 4 + (int)(FieldMesh.Unit(cx, cy, 53) * 3f);
+            float turn = FieldMesh.Unit(cx, cy, 54) * 360f;
+            for (int b = 0; b < blades; b++)
+            {
+                Vector3 outward = Spoke(b, blades, turn);
+                float spread = 0.03f + 0.07f * FieldMesh.Unit(cx + b, cy, 55);
+                var foot = new Vector3(px + outward.x * spread, root, pz + outward.z * spread);
+                float tall = water - root + 0.24f + 0.24f * FieldMesh.Unit(cx, cy + b, 56);
+                Vector3 tip = foot + outward * 0.06f + Vector3.up * tall;
+                for (int s = 0; s < 3; s++)
+                {
+                    Vector3 r0 = foot + Spoke(s, 3, turn + b * 50f) * 0.03f;
+                    Vector3 r1 = foot + Spoke(s + 1, 3, turn + b * 50f) * 0.03f;
+                    f.Triangle(r0, r1, tip, FieldPalette.Reed, FieldPalette.Reed, FieldPalette.ReedTip,
+                               Spoke(s + 0.5f, 3, turn + b * 50f));
+                }
+            }
         }
 
         // ------------------------------------------------------------------ tuft

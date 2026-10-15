@@ -218,7 +218,8 @@ namespace WordCraft.View
             switch (kind)
             {
                 case TileKind.Water:
-                    solid.Quad(p0, p1, p3, p2, FieldPalette.Grained(FieldPalette.Bed, grain), Vector3.up);
+                    Color bed = Shore(cx, cy) ? FieldPalette.BedShallow : FieldPalette.BedDeep;
+                    Surface(solid, p0, p1, p2, p3, FieldPalette.Grained(bed, grain));
                     WaterSurface(surface, cell, cx, cy);
                     break;
                 case TileKind.Rock:
@@ -256,18 +257,20 @@ namespace WordCraft.View
         /// The height of a cell's solid top at one corner. Open ground is Field's
         /// own corners. Rock is Field's flat top with a little jitter, taken per
         /// grid point rather than per cell so two rock cells side by side still
-        /// meet without a crack. Water's solid top is its bed; the water itself is
-        /// a separate surface and not something a wall stops at.
+        /// meet without a crack. Water's solid top is its bed, also per grid point:
+        /// shallow wherever ground touches the point, <see cref="DeepDrop"/> lower
+        /// where only water does. The water itself is a separate surface and not
+        /// something a wall stops at.
         /// </summary>
         private static float Top(int cell, int corner)
         {
+            int gx = cell % Field.Cells + (corner & 1);
+            int gy = cell / Field.Cells + (corner >> 1);
             switch (Field.Kind(cell))
             {
                 case TileKind.Water:
-                    return Field.Bed(cell);
+                    return ShorePoint(gx, gy) ? Field.Bed(cell) : Field.Bed(cell) - DeepDrop;
                 case TileKind.Rock:
-                    int gx = cell % Field.Cells + (corner & 1);
-                    int gy = cell / Field.Cells + (corner >> 1);
                     return Field.Flat(cell) + (Unit(gx, gy, 11) * 2f - 1f) * RockJitter;
                 default:
                     return Field.Corner(cell, corner);
@@ -514,6 +517,12 @@ namespace WordCraft.View
                 towardB = -towardB;
             }
 
+            if (lowKind == TileKind.Water && highKind != TileKind.Water)
+            {
+                Bank(f, e0, e1, a0, a1, b0, b1, towardB, Field.Flat(low));
+                return;
+            }
+
             float rise = Mathf.Max(a0 - b0, a1 - b1);
             if (rise >= StrataMin && highKind != TileKind.Water && lowKind != TileKind.Water)
             {
@@ -612,7 +621,7 @@ namespace WordCraft.View
         /// — one end of a wall taller than the other — still close without a gap.
         /// </summary>
         private static void Zip(Facets f, List<Vector3> l, List<Vector3> r, Vector3 outward, float crest,
-                                Color lip, Color footColour, Color rim)
+                                Color lip, Color footColour, Color rim, bool strata = true)
         {
             int i = 0;
             int j = 0;
@@ -626,7 +635,9 @@ namespace WordCraft.View
 
                 Vector3 a = l[i];
                 Vector3 b = r[j];
-                Color colour = lipBand ? rim : Band((a.y + b.y + next.y) / 3f, crest, lip, footColour);
+                Color colour = lipBand ? rim
+                             : strata ? Band((a.y + b.y + next.y) / 3f, crest, lip, footColour)
+                             : footColour;
                 f.Triangle(a, b, next, colour, outward);
 
                 if (stepLeft) i++;
@@ -725,48 +736,172 @@ namespace WordCraft.View
         // ------------------------------------------------------------------ water
 
         /// <summary>
-        /// A water cell's surface, at Field.Flat. Coloured per grid point rather
-        /// than per cell so neighbouring water cells blend into one sheet: foam at
-        /// every point that touches something other than water, the deep tone at
-        /// points whose every cell is surrounded by water, and open water between.
-        /// The same two-band idea the 2D bake had, now a soft ring rather than a
-        /// stripe of texels.
+        /// How much deeper the bed lies at grid points with water on every side.
+        /// The lake becomes a shallow shelf round a deeper middle, which is what
+        /// lets the bed show in two steps through the water.
         /// </summary>
-        private static void WaterSurface(Facets f, int cell, int cx, int cy)
+        private const float DeepDrop = 0.25f;
+
+        /// <summary>Water surface quads per cell side. Three, so the foam line the shader draws from shore distance curves within a cell instead of running cell edge to cell edge.</summary>
+        private const int WaterSteps = 3;
+
+        /// <summary>
+        /// The shore distance, in cells, that vertex alpha 1 stands for. Water.shader
+        /// multiplies it back out, so the two must agree: it is the shader's
+        /// _ShoreSpan, set on the material in <see cref="Materials"/>.
+        /// </summary>
+        public const float ShoreSpan = 2.5f;
+
+        /// <summary>
+        /// A lake's bank: earth that slopes from the grass edge down into the
+        /// water instead of a wall standing in it. Three columns per edge, each
+        /// with three rows — the grass edge, the waterline, the bed — and the
+        /// lower two pushed into the lake by a hashed amount, so where the water
+        /// surface meets the bank it draws a wandering line and not the cell's
+        /// straight edge. Corners push along <see cref="Inward"/>, which two banks
+        /// meeting at a lake corner compute alike.
+        /// </summary>
+        private static void Bank(Facets f, Vector2 e0, Vector2 e1, float top0, float top1, float foot0, float foot1,
+                                 Vector3 towardWater, float waterline)
         {
-            float y = Field.Flat(cell);
-            var p0 = new Vector3(cx, y, cy);
-            var p1 = new Vector3(cx + 1, y, cy);
-            var p2 = new Vector3(cx, y, cy + 1);
-            var p3 = new Vector3(cx + 1, y, cy + 1);
-            f.Quad(p0, p1, p3, p2,
-                   WaterTone(cx, cy), WaterTone(cx + 1, cy), WaterTone(cx + 1, cy + 1), WaterTone(cx, cy + 1),
-                   Vector3.up);
+            Vector2 mid = (e0 + e1) * 0.5f;
+            Shelf(columnA, e0, top0, foot0, waterline, Inward(e0));
+            Shelf(columnB, mid, (top0 + top1) * 0.5f, (foot0 + foot1) * 0.5f, waterline, towardWater);
+            Shelf(columnC, e1, top1, foot1, waterline, Inward(e1));
+
+            float crest = Mathf.Max(top0, top1);
+            Zip(f, columnA, columnB, towardWater, crest, FieldPalette.Bank, FieldPalette.ShoreFoot, FieldPalette.Bank, strata: false);
+            Zip(f, columnB, columnC, towardWater, crest, FieldPalette.Bank, FieldPalette.ShoreFoot, FieldPalette.Bank, strata: false);
         }
 
-        /// <summary>The water colour at grid point (gx, gy), from the up to four cells that meet there.</summary>
-        private static Color WaterTone(int gx, int gy)
+        /// <summary>One column of a bank, foot first: the bed, the waterline, the grass edge.</summary>
+        private static void Shelf(List<Vector3> into, Vector2 at, float top, float foot, float waterline, Vector3 inward)
         {
-            bool deep = true;
+            int gx = Mathf.RoundToInt(at.x * 2f);
+            int gz = Mathf.RoundToInt(at.y * 2f);
+            float line = 0.10f + 0.20f * Unit(gx, gz, 40);
+            float bed = line + 0.12f + 0.12f * Unit(gx, gz, 41);
+
+            into.Clear();
+            into.Add(new Vector3(at.x, foot, at.y) + inward * bed);
+            if (waterline < top - Epsilon && waterline > foot + Epsilon)
+            {
+                into.Add(new Vector3(at.x, waterline, at.y) + inward * line);
+            }
+            into.Add(new Vector3(at.x, top, at.y));
+        }
+
+        /// <summary>
+        /// Which way is into the lake from grid point (x, z), axis by axis: +1 or
+        /// -1 on an axis where every water cell touching the point lies on that
+        /// side, 0 where they lie on both. A point on a lake's straight side gets
+        /// the side's normal, a lake's corner gets the diagonal, and every bank
+        /// that reaches that point gets the same answer.
+        /// </summary>
+        private static Vector3 Inward(Vector2 at)
+        {
+            int gx = Mathf.RoundToInt(at.x);
+            int gz = Mathf.RoundToInt(at.y);
+            int lowX = 0, highX = 0, lowZ = 0, highZ = 0;
             for (int dy = -1; dy <= 0; dy++)
             {
                 for (int dx = -1; dx <= 0; dx++)
                 {
-                    int x = gx + dx;
-                    int y = gy + dy;
-                    if (!IsWater(x, y)) return FieldPalette.Foam;
-                    if (!Enclosed(x, y)) deep = false;
+                    if (!IsWater(gx + dx, gz + dy)) continue;
+                    if (dx < 0) lowX++; else highX++;
+                    if (dy < 0) lowZ++; else highZ++;
                 }
             }
-            return deep ? FieldPalette.WaterDeep : FieldPalette.Water;
+            float x = lowX == 0 && highX > 0 ? 1f : highX == 0 && lowX > 0 ? -1f : 0f;
+            float z = lowZ == 0 && highZ > 0 ? 1f : highZ == 0 && lowZ > 0 ? -1f : 0f;
+            return new Vector3(x, 0f, z);
         }
 
-        /// <summary>Whether a cell is water. Off the map is not: the plinth is there, and the water meets it with foam.</summary>
-        private static bool IsWater(int x, int y) =>
-            x >= 0 && y >= 0 && x < Field.Cells && y < Field.Cells && Field.Kind(y * Field.Cells + x) == TileKind.Water;
+        /// <summary>
+        /// A water cell's surface, at Field.Flat, cut into WaterSteps squared quads.
+        /// Every vertex carries the water's colour, open water shading into the
+        /// deep tone away from the shore, and in alpha its distance to the
+        /// nearest ground as a fraction of <see cref="ShoreSpan"/>. Water.shader
+        /// draws the foam from that distance, which is what lets the foam line
+        /// wander instead of following the cells.
+        /// </summary>
+        private static void WaterSurface(Facets f, int cell, int cx, int cy)
+        {
+            float y = Field.Flat(cell);
+            float step = 1f / WaterSteps;
+            for (int j = 0; j < WaterSteps; j++)
+            {
+                for (int i = 0; i < WaterSteps; i++)
+                {
+                    float x0 = cx + i * step;
+                    float z0 = cy + j * step;
+                    float x1 = x0 + step;
+                    float z1 = z0 + step;
+                    f.Quad(new Vector3(x0, y, z0), new Vector3(x1, y, z0), new Vector3(x1, y, z1), new Vector3(x0, y, z1),
+                           WaterTone(x0, z0), WaterTone(x1, z0), WaterTone(x1, z1), WaterTone(x0, z1), Vector3.up);
+                }
+            }
+        }
 
-        private static bool Enclosed(int x, int y) =>
-            IsWater(x - 1, y) && IsWater(x + 1, y) && IsWater(x, y - 1) && IsWater(x, y + 1);
+        /// <summary>The water at a plane point: its colour by depth, and its shore distance in alpha.</summary>
+        private static Color WaterTone(float x, float z)
+        {
+            float shore = ShoreDistance(x, z);
+            float deep = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.6f, 2.0f, shore));
+            Color colour = Color.Lerp(FieldPalette.Water, FieldPalette.WaterDeep, deep);
+            colour.a = Mathf.Clamp01(shore / ShoreSpan);
+            return colour;
+        }
+
+        /// <summary>How far a plane point is from the nearest cell that is not water, in cells. Searched out to the span, past which it does not matter.</summary>
+        private static float ShoreDistance(float x, float z)
+        {
+            int reach = Mathf.CeilToInt(ShoreSpan) + 1;
+            int px = Mathf.FloorToInt(x);
+            int pz = Mathf.FloorToInt(z);
+            float best = ShoreSpan * ShoreSpan;
+            for (int y = pz - reach; y <= pz + reach; y++)
+            {
+                for (int xx = px - reach; xx <= px + reach; xx++)
+                {
+                    if (IsWater(xx, y)) continue;
+                    float dx = Mathf.Max(xx - x, 0f, x - (xx + 1));
+                    float dz = Mathf.Max(y - z, 0f, z - (y + 1));
+                    best = Mathf.Min(best, dx * dx + dz * dz);
+                }
+            }
+            return Mathf.Sqrt(best);
+        }
+
+        /// <summary>Whether a water cell has anything but water among its eight neighbours: the shelf, whose bed is the shallow colour.</summary>
+        private static bool Shore(int cx, int cy)
+        {
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    if (!IsWater(cx + dx, cy + dy)) return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>Whether any cell touching grid point (gx, gy) is not water. The bed stays shallow there, so it meets the bank.</summary>
+        private static bool ShorePoint(int gx, int gy)
+        {
+            for (int dy = -1; dy <= 0; dy++)
+            {
+                for (int dx = -1; dx <= 0; dx++)
+                {
+                    if (!IsWater(gx + dx, gy + dy)) return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>Whether a cell is water. Off the map is not: a lake that reached the edge would get a bank there.</summary>
+        internal static bool IsWater(int x, int y) =>
+            x >= 0 && y >= 0 && x < Field.Cells && y < Field.Cells && Field.Kind(y * Field.Cells + x) == TileKind.Water;
 
         // ------------------------------------------------------------------ plumbing
 
@@ -780,6 +915,10 @@ namespace WordCraft.View
         {
             if (groundMaterial == null) groundMaterial = new Material(Load("Shaders/Ground")) { name = "Ground" };
             if (waterMaterial == null) waterMaterial = new Material(Load("Shaders/Water")) { name = "Water" };
+            // The foam is drawn by the shader, but its colour is the palette's like
+            // every other colour on the field.
+            waterMaterial.SetColor("_Foam", FieldPalette.Foam);
+            waterMaterial.SetFloat("_ShoreSpan", ShoreSpan);
         }
 
         private static Shader Load(string path)
