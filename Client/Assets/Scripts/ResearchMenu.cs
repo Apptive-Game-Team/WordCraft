@@ -65,12 +65,10 @@ namespace WordCraft.View
         /// own CanResearch takes. docs/TECH-TREE.md 묶음 3 moves rows onto second
         /// and third research buildings (바람 토템, 재 분화구, 결속대 and the
         /// rest), and their card lists what they run rather than every row.
-        /// Role.None is no building in particular and answers the whole list.
         /// </summary>
         public static List<Entry> For(Faction faction, Role buildingRole, int buildingSlot)
         {
             List<Entry> all = For(faction);
-            if (buildingRole == Role.None) return all;
             var entries = new List<Entry>();
             for (int i = 0; i < all.Count; i++)
             {
@@ -80,12 +78,6 @@ namespace WordCraft.View
             return entries;
         }
 
-        /// <summary>
-        /// How many pages the research list takes. Same arithmetic as the
-        /// production list's: the research cells are the same eight and More turns
-        /// them the same way (ProductionMenu.Pages).
-        /// </summary>
-        public static int Pages(Faction faction) => ProductionMenu.Pages(For(faction).Count);
 
         /// <summary>
         /// True when this peer has bought every level of the row. Asked of the

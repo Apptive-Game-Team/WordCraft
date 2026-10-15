@@ -88,17 +88,26 @@ namespace WordCraft.Sim
 
             // 2. Supply before the cap, not after it. A cap reached is production
             //    stopped, and a supply building takes 50 ticks to stand up. Ahead
-            //    of research and production, and while one is due and none stands
-            //    under construction the ladder spends on nothing else: since
-            //    docs/TECH-TREE.md 묶음 3 the base makes fighters as well as
-            //    workers for five factions out of six, research and production
-            //    spent the bank every think, and the 75 a supply building costs
-            //    was never there. Saving is decided afresh every think, so nothing
-            //    here is state.
-            bool saving = population[peer] + AiSupplyLead >= PopulationCap(peer) &&
-                          PopulationCap(peer) < PopulationHardCap &&
-                          !AiHolds(peer, Role.Supply, unfinishedOnly: true);
-            if (saving) AiBuild(peer, Role.Supply);
+            //    of research and production, and while one is due, none stands
+            //    under construction and the bank is short of its price, the
+            //    ladder saves rather than spends: since docs/TECH-TREE.md 묶음 3
+            //    the base makes fighters as well as workers for five factions out
+            //    of six, research and production spent the bank every think, and
+            //    the 75 a supply building costs was never there.
+            //
+            //    Only while short of the price and with a worker to earn it. A
+            //    bank that already holds the price is not saving for anything: if
+            //    AiBuild found no cell for the building, holding production would
+            //    freeze the peer for nothing. A peer with no worker earns nothing,
+            //    and saving would freeze it for good. Decided afresh every think,
+            //    so nothing here is state.
+            int workers = AiCountWorkers(peer);
+            bool supplyDue = population[peer] + AiSupplyLead >= PopulationCap(peer) &&
+                             PopulationCap(peer) < PopulationHardCap &&
+                             !AiHolds(peer, Role.Supply, unfinishedOnly: true);
+            if (supplyDue) AiBuild(peer, Role.Supply);
+            bool saving = supplyDue && workers > 0 &&
+                          resources[peer] < FactionData.BuildCost(factions[peer], Role.Supply, 0);
 
             // 3. Research, ahead of production. The ladder spends every coin it
             //    has on bodies every think, so research asked after production
@@ -113,7 +122,6 @@ namespace WordCraft.Sim
             //    what is on its list and nothing else, so workers come out of the
             //    building that makes workers and fighters out of the ones that
             //    make fighters.
-            int workers = AiCountWorkers(peer);
             for (int i = 0; i < entities.Count && !saving; i++)
             {
                 Entity b = entities[i];
@@ -155,7 +163,10 @@ namespace WordCraft.Sim
         /// starts the lowest-index row it can start and afford, where afford
         /// means the bank holds more than that level costs. Index order is the
         /// whole of the plan: 공격력, then 방어력, then the two rows that are its
-        /// faction's own. A row it cannot pay for yet is skipped, not waited on:
+        /// faction's own, then the docs/TECH-TREE.md 묶음 3 rows. Most of those
+        /// are researched in a second or third research building (Tech 1 and
+        /// after) that the ladder never builds, so CanResearch refuses them and
+        /// the loop moves on. A row it cannot pay for yet is skipped, not waited on:
         /// with 75 banked it buys 방어력 level 1 for 50 rather than hold out for
         /// 공격력 level 2 at 100, so the levels climb unevenly.
         ///

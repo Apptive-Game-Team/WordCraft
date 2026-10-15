@@ -1273,8 +1273,10 @@ namespace WordCraft.Sim
 
         /// <summary>
         /// The most rows any faction's upgrade table holds. Sizes the per-peer
-        /// level array World hashes, so a faction given a fifth row has to move
-        /// this too, and the harness refuses a table that outgrows it.
+        /// level array World hashes, so a faction given a ninth row has to move
+        /// this too, and the type load refuses a table that outgrows it. Eight
+        /// since docs/TECH-TREE.md 묶음 3: 세계수 정령, 차원 유랑종 and 인간 hold
+        /// eight rows each.
         /// </summary>
         public const int MaxUpgrades = 8;
 
@@ -1299,15 +1301,18 @@ namespace WordCraft.Sim
         public const int UniqueUpgradeTicks = 200;
 
         /// <summary>
-        /// Every faction's research, in index order: 공격력, 방어력, then the two
-        /// rows that are the faction's own. Keyed by faction and walked in
-        /// declaration order, never through a keyed collection, for the reason
-        /// <see cref="growthTargets"/> is. Numbers are the starting values issue
-        /// #164 names, written down in docs/FACTION-MECHANICS.md 업그레이드.
+        /// Every faction's research, in index order: 공격력, 방어력, the two rows
+        /// that are the faction's own, then the docs/TECH-TREE.md 묶음 3 rows
+        /// appended behind them. Keyed by faction and walked in declaration
+        /// order, never through a keyed collection, for the reason
+        /// <see cref="growthTargets"/> is. The first four rows carry the starting
+        /// values issue #164 names, written down in docs/FACTION-MECHANICS.md
+        /// 업그레이드; the 묶음 3 rows carry the document's own prices.
         ///
-        /// Tier 3 on every row, which is what a finished 기술 건물 already is:
-        /// TierOf answers 3 the moment one stands. The column is there so a row
-        /// that is meant to open later can say so in one number, and the command
+        /// The Tier column is 2 or 3. The first four rows are tier 3, which a
+        /// finished 기술 건물 already is. A 묶음 3 row researched in a building
+        /// that opens no tier says its tier here: 잎날 속도 at the 광란의 토템 opens
+        /// at tier 2, 번개새 공격 주기 at the 바람 토템 at tier 3, and the command
         /// checks it in the order Produce checks its own tier.
         /// </summary>
         private static readonly (Faction Faction, UpgradeRow Row)[] upgrades =
@@ -1388,8 +1393,9 @@ namespace WordCraft.Sim
         };
 
         /// <summary>
-        /// Where every row on the table today is researched: the 기술 건물, entry
-        /// 0 of the Tech slot, per docs/TECH-TREE.md 업그레이드 (연구 건물 열).
+        /// Where the four #164 rows of every faction are researched: the 기술
+        /// 건물, entry 0 of the Tech slot, per docs/TECH-TREE.md 업그레이드
+        /// (연구 건물 열). The 묶음 3 rows name their own building in ResearchRow.
         ///
         /// A property rather than a readonly field, and that is load-bearing: the
         /// upgrade table above is a field initializer that calls StatRow, and
