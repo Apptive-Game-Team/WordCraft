@@ -29,6 +29,7 @@
     <Compile Include="../Client/Assets/Scripts/SelectionMatch.cs" />
     <Compile Include="../Client/Assets/Scripts/CaptureOrder.cs" />
     <Compile Include="../Client/Assets/Scripts/ArrivalOrder.cs" />
+    <Compile Include="../Client/Assets/Scripts/RemnantFade.cs" />
   </ItemGroup>
 
 </Project>

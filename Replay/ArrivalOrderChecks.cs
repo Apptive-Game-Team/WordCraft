@@ -126,10 +126,10 @@ namespace WordCraft.Replay
 
             Check(world.ArrivalValid(0, onTheRing),
                 "a point on the ring the view draws around the " + what + " is refused by the " +
-                "simulation: ArrivalOrder.RadiusFor reaches further than World.ArrivalRadius");
+                "simulation: ArrivalOrder.RadiusFor reaches further than World.ArrivalRadiusFor");
             Check(!world.ArrivalValid(0, justOutside),
                 "a point a sixteenth of a cell outside the ring the view draws around the " + what +
-                " is still arrived at: ArrivalOrder.RadiusFor falls short of World.ArrivalRadius");
+                " is still arrived at: ArrivalOrder.RadiusFor falls short of World.ArrivalRadiusFor");
         }
 
         // 차원 유랑종 조준 픽스처. Both peers arrive, so the enemy's own 통로 is a
