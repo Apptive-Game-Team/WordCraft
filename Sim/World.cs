@@ -1344,6 +1344,12 @@ namespace WordCraft.Sim
             int to = CellOf(q);
             int fx = from % GridSize, fy = from / GridSize;
             int tx = to % GridSize, ty = to / GridSize;
+            // A step inside the cell the body already stands on is always
+            // taken. The only way a walker stands on a blocked cell is debris
+            // laid under it, by 굳기 (docs/TECH-TREE.md 묶음 8: 그 몸은 나가는
+            // 걸음만 할 수 있다) or by a golem falling beside it, and a body at a
+            // cell's centre needs several such steps to reach the edge it leaves by.
+            if (from == to) return true;
             if (!StepPassable(from, to, air)) return false;
             // Same cell, an orthogonal neighbour, or a step longer than a cell,
             // which no roster Speed takes today; for that last one the two ends
