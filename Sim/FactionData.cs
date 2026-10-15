@@ -777,8 +777,12 @@ namespace WordCraft.Sim
         /// 찌릿쥐, 멸종한 화염 슬라임 and 멸종한 번개 슬라임 burst. A peer on 36
         /// keeps a 멸종한 화염 슬라임 on the field that a peer on 37 removed on
         /// its 600th tick, and the population the two count differs by one.
+        /// 38 is docs/TECH-TREE.md 묶음 7: autocasts, area hits and the water
+        /// field. A 용암 투석 악마 shot splashes half its damage 2 cells round, so
+        /// a peer on 37 and a peer on 38 disagree about the hp of every body
+        /// standing beside the one it hits.
         /// </summary>
-        public const uint ContentVersion = 37;
+        public const uint ContentVersion = 38;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
