@@ -338,5 +338,17 @@ namespace WordCraft.Sim
         /// need: a 바위 술사 beside debris and nothing dead on the field.
         /// </summary>
         public void SetRemnantForScenario(int cell, int expiry) => remnantExpiry[cell] = expiry;
+
+        /// <summary>
+        /// Scenario setup only. Never call this from a system. Wounds a body to
+        /// this hp without a fight, which the healing checks need: a body that
+        /// has lost hp and nothing standing near it that took it.
+        /// </summary>
+        public void SetHpForScenario(int id, int hp)
+        {
+            Entity e = entities[id];
+            e.Hp = hp;
+            entities[id] = e;
+        }
     }
 }
