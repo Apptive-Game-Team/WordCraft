@@ -2,7 +2,7 @@
 
 - Date: 2026-10-15
 - GitHub Issue: #164
-- Status: Draft
+- Status: Implemented, awaiting review
 
 ## Goal
 
@@ -81,10 +81,13 @@ public int CaptureTicksFor(int peer);
 
 | index | 이름 | 자원 | 틱 | 최대 | Tier |
 |---|---|---|---|---|---|
-| 0 | 공격력 | 100 (2단계 200, 3단계 300) | 160 | 3 | 3 |
-| 1 | 방어력 | 100 (2단계 200, 3단계 300) | 160 | 3 | 3 |
-| 2 | 고유 연구 1 | 150 | 200 | 1 | 3 |
-| 3 | 고유 연구 2 | 150 | 200 | 1 | 3 |
+| 0 | 공격력 | 50 (2단계 100, 3단계 150) | 160 | 3 | 3 |
+| 1 | 방어력 | 50 (2단계 100, 3단계 150) | 160 | 3 | 3 |
+| 2 | 고유 연구 1 | 100 | 200 | 1 | 3 |
+| 3 | 고유 연구 2 | 100 | 200 | 1 | 3 |
+
+처음 계획은 100·150 이었다. 솔로 매치 AI 가 기술 건물을 세운 뒤 보유 자원이 90 을
+넘지 않아서 100 에서는 연구를 한 번도 못 했고, 그래서 50·100 으로 내렸다.
 
 고유 연구는 이슈 표를 따른다. 세계수 정령 성장 시간 25% 단축(40→30, 60→45),
 성장 중 체력 상승 폭 2배(절반 시점에 목표 도달), 지옥불 자손 상한 5→7, 방출 주기
@@ -95,16 +98,19 @@ public int CaptureTicksFor(int peer);
 
 ## Approach (Checklist)
 
-- [ ] **Step 0: Recon** — Combat, Economy, World, 진영 파일, Ai, Replay 하네스, ScriptedLog.
-- [ ] **Step 1: Armor 와 피해 공식** — `UnitStats.Armor`, `DamageAfterArmor`.
-- [ ] **Step 2: 업그레이드 표** — `UpgradeRow`, `UpgradeEffect`, 조회 두 개.
-- [ ] **Step 3: Research 명령과 시스템** — 명령, 엔티티 필드, `upgradeLevels`, hash, Kill.
-- [ ] **Step 4: 고유 효과** — 각 메커니즘이 읽는 상수를 `World` 메서드로.
-- [ ] **Step 5: 취소 환불**.
-- [ ] **Step 6: AI** — 기술 건물 건설과 index 오름차순 연구.
-- [ ] **Step 7: 하네스** — `Replay/UpgradeChecks.cs`, Program.cs 한 줄 등록.
-- [ ] **Step 8: 골든 해시** — ScriptedLog 에 연구 명령 한 번, CoreCLR 와 Mono 값 확인.
-- [ ] **Step 9: 문서** — `docs/FACTION-MECHANICS.md` 의 `## 업그레이드` 절.
+- [x] **Step 0: Recon** — Combat, Economy, World, 진영 파일, Ai, Replay 하네스, ScriptedLog.
+- [x] **Step 1: Armor 와 피해 공식** — `UnitStats.Armor`, `DamageAfterArmor`.
+- [x] **Step 2: 업그레이드 표** — `UpgradeRow`, `UpgradeEffect`, 조회 두 개.
+- [x] **Step 3: Research 명령과 시스템** — 명령, 엔티티 필드, `upgradeLevels`, hash, Kill.
+- [x] **Step 4: 고유 효과** — 각 메커니즘이 읽는 상수를 `World` 메서드로.
+- [x] **Step 5: 취소 환불**.
+- [x] **Step 6: AI** — 기술 건물 건설과 index 오름차순 연구. 연구는 생산보다 먼저
+      건다. 생산 뒤에 두면 매 think 마다 보유 자원이 생산에 다 쓰여서 연구비를 넘는
+      순간이 없다.
+- [x] **Step 7: 하네스** — `Replay/UpgradeChecks.cs`, Program.cs 한 줄 등록.
+- [x] **Step 8: 골든 해시** — ScriptedLog 에 연구 명령 한 번(tick 505, 엔티티 24,
+      index 0), CoreCLR 와 Mono 모두 `0xC9E3B6CFC16E4BA9`.
+- [x] **Step 9: 문서** — `docs/FACTION-MECHANICS.md` 의 `## 업그레이드` 절.
 
 ## Validation
 
