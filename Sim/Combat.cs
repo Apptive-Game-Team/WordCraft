@@ -60,7 +60,10 @@ namespace WordCraft.Sim
                     if (a.AttackCooldown == 0)
                     {
                         a.AttackCooldown = s.AttackTicks;
-                        t.Hp -= DamageAfterArmor(s.Damage + VolleyBonus(a), 0, TargetArmor(t), 0);
+                        // 공격력 belongs to the shooter's owner and 방어력 to the
+                        // target's. A neutral target has no owner, so no level.
+                        t.Hp -= DamageAfterArmor(s.Damage + VolleyBonus(a), AttackBonus(a.Owner),
+                            TargetArmor(t), ArmorBonus(t.Owner));
                         if (t.Hp <= 0) Kill(ref t);
                         entities[t.Id] = t;
                     }

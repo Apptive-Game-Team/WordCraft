@@ -269,9 +269,12 @@ namespace WordCraft.Sim
         /// 29 is separation: walkers that share ground push each other apart by
         /// the footprint their roster row carries. A peer on 28 stacks ten bodies
         /// on one point where a peer on 29 spreads them, and every range test
-        /// after that reads different positions.
+        /// after that reads different positions. 30 is research: a 기술 건물 takes
+        /// a Research order and a finished level changes damage, armor and six
+        /// factions' mechanic numbers, so a peer on 29 refuses an order a peer on
+        /// 30 charges for, and the two banks differ from that tick on.
         /// </summary>
-        public const uint ContentVersion = 29;
+        public const uint ContentVersion = 30;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;

@@ -254,6 +254,26 @@ namespace WordCraft.Sim
         /// flight — see FleeSystem for what that buys and what it costs.
         /// </summary>
         public bool Fleeing;
+
+        // 업그레이드 연구. Both live on the 기술 건물 running the research and
+        // nowhere else, the one-sidedness the capture and growth fields have, and
+        // for the same payoff: a building that dies takes its research with it,
+        // because there was never a second copy to clear. What a finished level
+        // leaves behind is a per-peer number in World, not anything on a body.
+
+        /// <summary>
+        /// The row of the owner's upgrade table this building is researching, or
+        /// -1 for everything that is not researching, which is every entity but
+        /// a busy 기술 건물. -1 rather than 0 because row 0 is 공격력.
+        /// </summary>
+        public int ResearchIndex;
+
+        /// <summary>
+        /// Ticks left before that level lands. Set in full when the order is
+        /// accepted, unlike ProduceTicksLeft, because research has no queue for a
+        /// clock to wait behind.
+        /// </summary>
+        public int ResearchTicksLeft;
     }
 
     /// <summary>
@@ -441,6 +461,10 @@ namespace WordCraft.Sim
             // corpse never carries one a second way of killing something could
             // forget to stop.
             ClearGrowth(ref e);
+            // 건물이 죽으면 진행 중 연구는 사라지고 환불하지 않는다. Same shape as
+            // the growth line above: the clock goes with the body, and nothing
+            // here pays anything back.
+            ClearResearch(ref e);
         }
 
         /// <summary>
@@ -653,6 +677,7 @@ namespace WordCraft.Sim
                 TargetId = -1,
                 ParentId = -1,
                 CaptureTargetId = -1,
+                ResearchIndex = -1,
             };
             entities.Add(e);
             paths.Add(new List<int>());
@@ -690,6 +715,7 @@ namespace WordCraft.Sim
                 GrowthSystem();
                 ConstructionSystem();
                 ProductionSystem();
+                ResearchSystem();
                 WarlordSpawnSystem();
                 CombatSystem();
                 FleeSystem();
@@ -754,7 +780,7 @@ namespace WordCraft.Sim
             // make. A player who wants the worker back does not get it.
             //
             // Commands that name a building rather than the body being ordered —
-            // Produce, CancelProduction, SetRallyPoint — pass through untouched: a
+            // Produce, CancelProduction, SetRallyPoint, Research — pass through untouched: a
             // building never grows, so the test can only ever answer false for them.
             // Build names no entity at all and carries -1, which the range test drops.
             if (c.EntityId >= 0 && c.EntityId < entities.Count && IsGrowing(entities[c.EntityId])) return;
@@ -985,6 +1011,13 @@ namespace WordCraft.Sim
                 case CommandType.CancelProduction:
                     TryCancelQueuedUnit(c.PeerId, c.EntityId);
                     break;
+
+                case CommandType.Research:
+                    // Arg is the row index as it stands. No unpacking and no
+                    // default: every rule lives in CanResearch, and an index
+                    // outside the table fails there like any other refusal.
+                    TryResearch(c.PeerId, c.EntityId, c.Arg);
+                    break;
             }
         }
 
@@ -1182,6 +1215,13 @@ namespace WordCraft.Sim
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)population[p]);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, aiPeers[p] ? 1UL : 0UL);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)aiSeq[p]);
+            // Upgrade levels, peer major and row minor, every slot whether the
+            // faction fields that row or not: a fixed walk of a fixed array, so
+            // two peers cannot disagree about which numbers were mixed.
+            for (int p = 0; p < MaxPeers; p++)
+            {
+                for (int i = 0; i < FactionData.MaxUpgrades; i++) Mix(ref h, (ulong)upgradeLevels[p, i]);
+            }
             // Terrain never changes after the map is built, but it is hashed every
             // tick anyway: two peers that generated different maps have to diverge
             // on tick 1, not twenty seconds later when a unit first walks into
@@ -1267,6 +1307,8 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.ArrivalPoint.Y.Raw);
                 Mix(ref h, e.HasArrivalPoint ? 1UL : 0UL);
                 Mix(ref h, e.Fleeing ? 1UL : 0UL);
+                Mix(ref h, (ulong)e.ResearchIndex);
+                Mix(ref h, (ulong)e.ResearchTicksLeft);
 
                 List<int> path = paths[i];
                 Mix(ref h, (ulong)path.Count);
