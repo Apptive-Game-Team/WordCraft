@@ -345,7 +345,11 @@ namespace WordCraft.Replay
             var into = new List<int>();
             ArrivalOrder.Anchors(world, 0, into);
             bool drawn = into.Contains(id);
-            bool covers = world.ArrivalValid(0, world.GetEntity(id).Position);
+            // One cell east of the body rather than on it: since #197 a walking
+            // body may not stand up on a cell a building stands on, so the anchor's
+            // own cell answers no for a 굴절 기둥 whatever its ring says.
+            FixVec2 beside = world.GetEntity(id).Position + new FixVec2(Fix.FromInt(1), Fix.Zero);
+            bool covers = world.ArrivalValid(0, beside);
 
             Check(drawn == covers,
                 what + ": the client draws a ring = " + drawn +

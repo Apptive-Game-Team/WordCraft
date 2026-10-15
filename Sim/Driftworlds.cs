@@ -262,7 +262,23 @@ namespace WordCraft.Sim
         /// one taken inside the simulation; a view that asked a moment earlier is
         /// looking at a world one tick stale, which is the caveat CanBuild carries.
         /// </summary>
-        public bool ArrivalValid(int peer, FixVec2 point)
+        public bool ArrivalValid(int peer, FixVec2 point) => ArrivalValid(peer, point, air: false);
+
+        /// <summary>
+        /// The rule itself, for a body that flies or walks. Everything above, and
+        /// one more clause from docs/TECH-TREE.md 도착 규칙: a walking body needs a
+        /// cell it could stand on. A cell of water or rock, a cell under debris, or a
+        /// cell a building or a resource node stands on is refused, and the body
+        /// stands up at the 통로 instead, the same ending every other invalid point
+        /// gets. A flying body is not asked, for the reason IsPassable lets air
+        /// through: terrain, debris and buildings stop nothing in the air.
+        ///
+        /// The cell is asked here rather than beside the call in ArrivalOf, so both
+        /// moments ask it through this one method: a body aimed at debris is refused
+        /// when the order is given, and one aimed at a cell that debris covered while
+        /// it crossed lands at the 통로.
+        /// </summary>
+        public bool ArrivalValid(int peer, FixVec2 point, bool air)
         {
             if (peer < 0 || peer >= MaxPeers) return false;
             // 아군 굴절 기둥이나 경계 운반자. Only 차원 유랑종 fields either, so the
@@ -278,6 +294,8 @@ namespace WordCraft.Sim
             if (point.X < Fix.Zero || point.Y < Fix.Zero) return false;
             if (point.X >= Fix.FromInt(GridSize) || point.Y >= Fix.FromInt(GridSize)) return false;
 
+            if (!air && !ArrivalCellOpen(CellOf(point))) return false;
+
             // Each anchor by its own row's radius. Still a bool and still the first
             // anchor in range: a radius per anchor changes how far each one reaches
             // and nothing about which one answers.
@@ -289,6 +307,31 @@ namespace WordCraft.Sim
             }
             return false;
         }
+
+        /// <summary>
+        /// Whether a walking body may stand up on this cell: IsPassable for the
+        /// ground, and no building or resource node standing on it — the cells
+        /// CanBuild refuses and the pathfinder blocks, by the same test.
+        /// </summary>
+        private bool ArrivalCellOpen(int cell)
+        {
+            if (!IsPassable(cell, air: false)) return false;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (!e.Alive) continue;
+                if (e.Kind != EntityKind.Building && e.Kind != EntityKind.ResourceNode) continue;
+                if (CellOf(e.Position) == cell) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Whether the entry on this building's queue flies, which decides whether
+        /// its arrival cell is asked at all. Off the roster, like Flies.
+        /// </summary>
+        private bool QueuedBodyFlies(Entity b) =>
+            FactionData.Stats(factions[b.Owner], b.ProduceRole, b.ProduceSlot).Air;
 
         /// <summary>
         /// The first of the two checks: what the queue keeps of the point the order
@@ -317,7 +360,9 @@ namespace WordCraft.Sim
         {
             if (!IsPassage(b)) return;
 
-            b.HasArrivalPoint = ArrivalValid(peer, point);
+            // Asked for the body this order queued. A queue holds one entry, so
+            // every body on it flies or walks alike.
+            b.HasArrivalPoint = ArrivalValid(peer, point, QueuedBodyFlies(b));
             // Cleared rather than left standing when the point is refused, for the
             // reason ClearGrowth clears what a finished growth was becoming: the
             // field is hashed, and a refused point kept on the building would put a
@@ -339,7 +384,7 @@ namespace WordCraft.Sim
         /// nothing plays exactly as everyone else does.
         /// </summary>
         private FixVec2 ArrivalOf(Entity b) =>
-            b.HasArrivalPoint && ArrivalValid(b.Owner, b.ArrivalPoint)
+            b.HasArrivalPoint && ArrivalValid(b.Owner, b.ArrivalPoint, QueuedBodyFlies(b))
                 ? b.ArrivalPoint
                 : b.Position + RallyOffset;
     }
