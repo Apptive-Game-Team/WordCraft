@@ -346,6 +346,9 @@ namespace WordCraft.Sim
 
         // 차원 유랑종: 위상 닻 도착 반경 3 → 4칸.
         PhaseAnchorRadius = 36,
+
+        // 세계수 정령: 씨앗 요람 반경 8 → 12칸.
+        SeedCradleRadius = 37,
     }
 
     /// <summary>
@@ -1448,7 +1451,7 @@ namespace WordCraft.Sim
         /// Every roster entry that is a 통로 or an anchor, docs/TECH-TREE.md M9 and
         /// 도착 규칙. 통로 and 깊은 통로 keep an arrival point; 굴절 기둥 and 경계
         /// 운반자 lend 6 cells (8 under 도착 반경, the #164 row, which reaches these
-        /// two and no other), 위상 닻 3, 떠도는 섬 4, and 틈새
+        /// two and no other), 위상 닻 3 (4 under its own row), 떠도는 섬 4, and 틈새
         /// 포대 is written down at 0 so the table says it lends nothing. Walked in
         /// declaration order, for the reason <see cref="growthTargets"/> is.
         /// </summary>
@@ -1462,8 +1465,8 @@ namespace WordCraft.Sim
             Arrival(Faction.Driftworlds, Role.Defense, 0, false, 6, UpgradeEffect.ArrivalRadius, 8),
             // 경계 운반자. 이동식 6칸, 도착 반경 8칸.
             Arrival(Faction.Driftworlds, Role.Signature, 0, false, 6, UpgradeEffect.ArrivalRadius, 8),
-            // 위상 닻. 3칸.
-            Arrival(Faction.Driftworlds, Role.Defense, 1, false, 3, UpgradeEffect.None, 0),
+            // 위상 닻. 3칸, 위상 닻 반경 4칸.
+            Arrival(Faction.Driftworlds, Role.Defense, 1, false, 3, UpgradeEffect.PhaseAnchorRadius, 4),
             // 떠도는 섬. 공중 4칸.
             Arrival(Faction.Driftworlds, Role.Signature, 1, false, 4, UpgradeEffect.None, 0),
             // 틈새 포대. 도착 반경 없음.
@@ -1502,7 +1505,7 @@ namespace WordCraft.Sim
         /// <summary>
         /// Every building with a free queue, docs/TECH-TREE.md M10 and 씨앗 귀환:
         /// 씨앗 요람 gives back a 풀씨 정령 for a 세계수 정령 unit that dies within 8
-        /// cells. The body comes off the queue on 풀씨 정령's own production clock
+        /// cells, 12 under 씨앗 요람 반경. The body comes off the queue on 풀씨 정령's own production clock
         /// (30 ticks), the number the document's 씨앗 귀환 row gives. Walked in
         /// declaration order, for the reason <see cref="growthTargets"/> is.
         /// </summary>
@@ -1513,7 +1516,7 @@ namespace WordCraft.Sim
             {
                 Faction = Faction.TreeSpirits, Role = Role.Production, Slot = 1,
                 GiveRole = Role.Worker, GiveSlot = 0,
-                Radius = 8, RadiusEffect = UpgradeEffect.None, RadiusResearched = 0,
+                Radius = 8, RadiusEffect = UpgradeEffect.SeedCradleRadius, RadiusResearched = 12,
                 Free = true,
             },
         };
@@ -1576,9 +1579,10 @@ namespace WordCraft.Sim
         /// level array World hashes, so a faction given a ninth row has to move
         /// this too, and the type load refuses a table that outgrows it. Eight
         /// since docs/TECH-TREE.md 묶음 3: 세계수 정령, 차원 유랑종 and 인간 hold
-        /// eight rows each.
+        /// eight rows each. Nine since 묶음 4 (#197): 씨앗 요람 반경 and 위상 닻
+        /// 반경 are the ninth rows of 세계수 정령 and 차원 유랑종.
         /// </summary>
-        public const int MaxUpgrades = 8;
+        public const int MaxUpgrades = 9;
 
         /// <summary>
         /// What level 1 of 공격력 and 방어력 costs and how long a level takes. The
@@ -1664,6 +1668,9 @@ namespace WordCraft.Sim
             (Faction.TreeSpirits, ResearchRow("거대 덩쿨 사거리", 150, 200, 3, UpgradeEffect.GiantVineRange, (Role.Tech, 0), NoBuilding)),
             (Faction.TreeSpirits, ResearchRow("번개새 공격 주기", 100, 160, 3, UpgradeEffect.ThunderBirdAttackTicks, (Role.Tech, 1), NoBuilding)),
             (Faction.TreeSpirits, ResearchRow("잎날 속도", 100, 160, 2, UpgradeEffect.LeafbladeSpeed, (Role.Tech, 2), NoBuilding)),
+            // docs/TECH-TREE.md 묶음 4. 씨앗 귀환 반경 8 → 12칸, read off the free
+            // queue table. Needs a 씨앗 요람 standing.
+            (Faction.TreeSpirits, ResearchRow("씨앗 요람 반경", 100, 160, 3, UpgradeEffect.SeedCradleRadius, (Role.Tech, 0), (Role.Production, 1))),
 
             // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
             (Faction.Hellfire, ResearchRow("용암 투석 사거리", 150, 200, 3, UpgradeEffect.LavaCatapultRange, (Role.Tech, 0), NoBuilding)),
@@ -1686,6 +1693,8 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, ResearchRow("덩쿨편 사거리", 75, 120, 2, UpgradeEffect.VineShardRange, (Role.Tech, 1), NoBuilding)),
             (Faction.Driftworlds, ResearchRow("틈새 포대 사거리", 100, 160, 2, UpgradeEffect.RiftBatteryRange, (Role.Tech, 1), NoBuilding)),
             (Faction.Driftworlds, ResearchRow("도주 가속", 100, 160, 2, UpgradeEffect.FleeSpeed, (Role.Tech, 1), NoBuilding)),
+            // docs/TECH-TREE.md 묶음 4. 위상 닻 도착 반경 3 → 4칸, read off the arrival table.
+            (Faction.Driftworlds, ResearchRow("위상 닻 반경", 100, 160, 2, UpgradeEffect.PhaseAnchorRadius, (Role.Tech, 1), NoBuilding)),
 
             // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
             (Faction.Humans, ResearchRow("석궁 사거리", 75, 120, 3, UpgradeEffect.CrossbowRange, (Role.Tech, 0), NoBuilding)),

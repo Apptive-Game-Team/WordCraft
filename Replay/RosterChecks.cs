@@ -462,6 +462,8 @@ namespace WordCraft.Replay
             Research(Faction.TreeSpirits, "거대 덩쿨 사거리", 150, 200, 3, UpgradeEffect.GiantVineRange, Role.Tech, 0, Role.None, 0),
             Research(Faction.TreeSpirits, "번개새 공격 주기", 100, 160, 3, UpgradeEffect.ThunderBirdAttackTicks, Role.Tech, 1, Role.None, 0),
             Research(Faction.TreeSpirits, "잎날 속도", 100, 160, 2, UpgradeEffect.LeafbladeSpeed, Role.Tech, 2, Role.None, 0),
+            // 묶음 4 (#197): read off the free queue table, not an entry.
+            Research(Faction.TreeSpirits, "씨앗 요람 반경", 100, 160, 3, UpgradeEffect.SeedCradleRadius, Role.Tech, 0, Role.Production, 1),
             // 지옥불 군단
             Research(Faction.Hellfire, "용암 투석 사거리", 150, 200, 3, UpgradeEffect.LavaCatapultRange, Role.Tech, 0, Role.None, 0),
             Research(Faction.Hellfire, "재날개 공격 주기", 100, 160, 3, UpgradeEffect.AshWingAttackTicks, Role.Tech, 0, Role.None, 0),
@@ -480,6 +482,8 @@ namespace WordCraft.Replay
             Research(Faction.Driftworlds, "덩쿨편 사거리", 75, 120, 2, UpgradeEffect.VineShardRange, Role.Tech, 1, Role.None, 0),
             Research(Faction.Driftworlds, "틈새 포대 사거리", 100, 160, 2, UpgradeEffect.RiftBatteryRange, Role.Tech, 1, Role.None, 0),
             Research(Faction.Driftworlds, "도주 가속", 100, 160, 2, UpgradeEffect.FleeSpeed, Role.Tech, 1, Role.None, 0),
+            // 묶음 4 (#197): read off the arrival table, not an entry.
+            Research(Faction.Driftworlds, "위상 닻 반경", 100, 160, 2, UpgradeEffect.PhaseAnchorRadius, Role.Tech, 1, Role.None, 0),
             // 인간 마법 문명
             Research(Faction.Humans, "석궁 사거리", 75, 120, 3, UpgradeEffect.CrossbowRange, Role.Tech, 0, Role.None, 0),
             Research(Faction.Humans, "마도 기수 속도", 100, 160, 3, UpgradeEffect.ArcaneRiderSpeed, Role.Tech, 0, Role.None, 0),
@@ -489,7 +493,7 @@ namespace WordCraft.Replay
 
         private static void TheResearchRowsAreTheDocumentedOnes()
         {
-            int[] counts = { 8, 8, 7, 6, 8, 8 };
+            int[] counts = { 9, 8, 7, 6, 9, 8 };
             for (int f = 0; f < FactionData.FactionCount; f++)
             {
                 var faction = (Faction)f;

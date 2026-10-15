@@ -95,7 +95,7 @@ namespace WordCraft.Replay
                 Check(FactionData.Upgrade(faction, count).MaxLevel == 0, faction + ": a row past the end can be researched");
                 Check(FactionData.Upgrade(faction, -1).MaxLevel == 0, faction + ": row -1 can be researched");
             }
-            Check(seen.Count == 33, "the six factions own " + seen.Count + " rows, not 33 (twelve from #164, twenty from 묶음 3, one from 묶음 4)");
+            Check(seen.Count == 35, "the six factions own " + seen.Count + " rows, not 35 (twelve from #164, twenty from 묶음 3, three from 묶음 4)");
         }
 
         // ---------------------------------------------------------------------
