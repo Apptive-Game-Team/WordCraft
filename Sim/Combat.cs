@@ -74,11 +74,16 @@ namespace WordCraft.Sim
                         a.AttackCooldown = AttackTicksFor(a);
                         // 공격력 belongs to the shooter's owner and 방어력 to the
                         // target's. A neutral target has no owner, so no level.
-                        t.Hp -= DamageAfterArmor(s.Damage + VolleyBonus(a), AttackBonus(a.Owner),
+                        int dealt = DamageAfterArmor(s.Damage + VolleyBonus(a), AttackBonus(a.Owner),
                             ArmorFor(t), ArmorBonus(t.Owner));
+                        // Where the hit landed, kept before Kill so a chain
+                        // starts from the body even when the body is gone.
+                        FixVec2 hitAt = t.Position;
+                        t.Hp -= dealt;
                         if (t.Hp <= 0) Kill(ref t);
                         else ApplyHitStatus(a, ref t);
                         entities[t.Id] = t;
+                        ChainFrom(a, t.Id, hitAt, dealt);
                     }
                 }
                 else if (a.Kind != EntityKind.Building && a.Mode != OrderMode.Hold && a.Speed.Raw != 0 &&
@@ -109,6 +114,61 @@ namespace WordCraft.Sim
                 }
 
                 entities[i] = a;
+            }
+        }
+
+        /// <summary>
+        /// 연쇄 번개 and 연쇄 방전, docs/TECH-TREE.md 피해 계산 연쇄: after the
+        /// shot, the damage jumps to the nearest hostile body within the row's
+        /// radius that this weapon can hit and that this shot has not hit yet,
+        /// halving each hop (floor, at least 1). The first hop is measured from
+        /// where the first target stood when it was hit, each later hop from
+        /// the body hit last. Nearest is the smallest squared distance, the lower
+        /// id on a tie, as in AcquireTarget.
+        ///
+        /// The ids already hit sit in an array on the stack, sized for the most
+        /// hops any row takes, and live for this one shot: nothing about a chain
+        /// is state. The hop's damage is fixed off the first hit's final damage,
+        /// so the bodies it jumps to are not asked for armor again.
+        /// </summary>
+        private void ChainFrom(Entity a, int firstId, FixVec2 hitAt, int dealt)
+        {
+            int ability = ActiveAbility(a, AbilityKind.ChainOnHit);
+            if (ability < 0) return;
+            AbilityRow row = FactionData.AbilityRowAt(ability);
+            Fix reach = Fix.FromInt(AbilityRadius(a.Owner, row));
+
+            System.Span<int> hit = stackalloc int[FactionData.MaxChainHops + 1];
+            hit[0] = firstId;
+            int count = 1;
+            FixVec2 from = hitAt;
+            int damage = dealt;
+            for (int hop = 0; hop < row.Limit; hop++)
+            {
+                damage = damage / 2 < 1 ? 1 : damage / 2;
+                int best = -1;
+                Fix bestDist = Fix.Zero;
+                for (int i = 0; i < entities.Count; i++)
+                {
+                    Entity c = entities[i];
+                    if (!c.Alive || c.Kind == EntityKind.ResourceNode) continue;
+                    if (c.Owner < 0 || c.Owner == a.Owner) continue;
+                    if (!CanHit(a, c)) continue;
+                    bool already = false;
+                    for (int h = 0; h < count; h++) if (hit[h] == i) already = true;
+                    if (already) continue;
+                    Fix d = (c.Position - from).SqrMagnitude;
+                    if (d > reach * reach) continue;
+                    if (best < 0 || d < bestDist) { best = i; bestDist = d; }
+                }
+                if (best < 0) return;
+
+                Entity v = entities[best];
+                from = v.Position;
+                v.Hp -= damage;
+                if (v.Hp <= 0) Kill(ref v);
+                entities[best] = v;
+                hit[count++] = best;
             }
         }
 
