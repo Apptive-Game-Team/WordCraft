@@ -132,12 +132,10 @@ namespace WordCraft.View
         /// takes). docs/TECH-TREE.md 묶음 3 gives every faction ten or more
         /// producible entries spread over two or three buildings, and the card
         /// lists what the selected building can make rather than everything.
-        /// Role.None is no building in particular and answers the whole list.
         /// </summary>
         public static List<Entry> For(Faction faction, Role buildingRole, int buildingSlot)
         {
             List<Entry> all = For(faction);
-            if (buildingRole == Role.None) return all;
             var entries = new List<Entry>();
             for (int i = 0; i < all.Count; i++)
             {

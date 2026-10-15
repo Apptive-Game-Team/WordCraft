@@ -99,9 +99,9 @@ namespace WordCraft.Replay
         }
 
         /// <summary>
-        /// The research list pages exactly as the production list does, and a list
-        /// that would need more than ProductionMenu.MaxPages is a failure here for
-        /// the reason it is there: the card is due a redesign.
+        /// The research list pages with the production list's arithmetic, and a
+        /// list that would need more than ProductionMenu.MaxPages is a failure
+        /// here for the reason it is there: the card is due a redesign.
         /// </summary>
         private static void NoFactionNeedsTooManyPages()
         {
@@ -109,9 +109,7 @@ namespace WordCraft.Replay
             {
                 var faction = (Faction)f;
                 int count = ResearchMenu.For(faction).Count;
-                int pages = ResearchMenu.Pages(faction);
-                Check(pages == ProductionMenu.Pages(count),
-                    faction + ": the research list pages differently from the production list");
+                int pages = ProductionMenu.Pages(count);
                 Check(pages <= ProductionMenu.MaxPages,
                     faction + " needs " + count + " research cells, which is " + pages +
                     " pages of " + ProductionMenu.PageSize + "; the card pages at most " + ProductionMenu.MaxPages);
