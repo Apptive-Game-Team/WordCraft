@@ -360,14 +360,18 @@ namespace WordCraft.View
         private static Quaternion Outward(float yawDegrees, float tilt) =>
             Quaternion.Euler(0f, yawDegrees, 0f) * Quaternion.Euler(tilt, 0f, 0f);
 
-        /// <summary>STYLE.md's eye: a dark oval with one tiny highlight, upper left. Looks down +z.</summary>
-        private static void Eyes(Solids part, Vector3 middle, float spacing, float size)
+        /// <summary>
+        /// STYLE.md's eye: a dark oval with one tiny highlight, upper left. Looks
+        /// down +z, or down -z when <paramref name="facing"/> is -1: a building
+        /// stands unturned, so a face on it looks at the camera's side, -z.
+        /// </summary>
+        private static void Eyes(Solids part, Vector3 middle, float spacing, float size, float facing = 1f)
         {
             for (int side = -1; side <= 1; side += 2)
             {
                 Vector3 eye = middle + new Vector3(side * spacing * 0.5f, 0f, 0f);
                 part.Ball(eye, Extent(size * 0.62f, size, size * 0.45f), BodyPalette.Eye, Quaternion.identity, 0);
-                part.Ball(eye + Extent(-size * 0.2f, size * 0.38f, size * 0.36f), Vector3.one * size * 0.24f,
+                part.Ball(eye + Extent(-size * 0.2f, size * 0.38f, facing * size * 0.36f), Vector3.one * size * 0.24f,
                           BodyPalette.EyeShine, Quaternion.identity, 0);
             }
         }
@@ -494,9 +498,23 @@ namespace WordCraft.View
             switch (role)
             {
                 case Role.Worker: SeedSpirit(b); break;
-                case Role.Melee: if (slot == 1) TreeGuardian(b); else LeafBlade(b); break;
-                case Role.Ranged: if (slot == 1) VineSpirit(b); else ThunderSpirit(b); break;
-                case Role.Signature: WindSpirit(b); break;
+                case Role.Melee:
+                    if (slot == 1) TreeGuardian(b);
+                    else if (slot == 2) ZapMouse(b);
+                    else if (slot == 3) StormRider(b);
+                    else LeafBlade(b);
+                    break;
+                case Role.Ranged:
+                    if (slot == 1) VineSpirit(b);
+                    else if (slot == 2) ThunderBirds(b);
+                    else if (slot == 3) GiantVine(b);
+                    else ThunderSpirit(b);
+                    break;
+                case Role.Signature:
+                    if (slot == 1) WillOWisp(b);
+                    else if (slot == 2) VineColony(b);
+                    else WindSpirit(b);
+                    break;
                 default: GenericUnit(b, Faction.TreeSpirits); break;
             }
         }
@@ -633,6 +651,204 @@ namespace WordCraft.View
 
             b.Arm.Origin = Point(0.27f, 0.58f, 0f);
             b.Arm.Ball(Point(0.36f, 0.52f, 0.1f), Extent(0.07f, 0.05f, 0.18f), BodyPalette.TreeSpirits.WindDeep, Turn(-20f, 20f, 0f), 1);
+        }
+
+        /// <summary>찌릿쥐: a round yellow mouse scurrying on four stub feet, spiky fur down its back, a zigzag tail. Slot 2.</summary>
+        private static void ZapMouse(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Step;
+            b.Strike = Strike.Lunge;
+            Solids hull = b.Hull;
+            Color bolt = BodyPalette.TreeSpirits.Bolt, deep = BodyPalette.TreeSpirits.BoltDeep, light = BodyPalette.TreeSpirits.BoltLight;
+
+            hull.Ball(Point(0f, 0.28f, -0.06f), Extent(0.28f, 0.22f, 0.36f), bolt);
+            hull.Ball(Point(0f, 0.34f, 0.24f), Extent(0.22f, 0.2f, 0.2f), bolt);
+            hull.Ball(Point(0f, 0.3f, 0.38f), Extent(0.09f, 0.07f, 0.08f), light);
+            hull.Ball(Point(0f, 0.32f, 0.46f), 0.03f, BodyPalette.Eye);
+            for (int k = 0; k < 5; k++)
+                hull.Prism(Point(0f, 0.44f, -0.32f + k * 0.12f), 4, 0.07f, 0f, 0.15f, k % 2 == 0 ? deep : bolt, Turn(-45f, 0f, 0f));
+            hull.Ball(Point(-0.15f, 0.54f, 0.2f), Extent(0.08f, 0.09f, 0.035f), deep, Turn(0f, 0f, 22f), 1);
+            hull.Ball(Point(0.15f, 0.54f, 0.2f), Extent(0.08f, 0.09f, 0.035f), deep, Turn(0f, 0f, -22f), 1);
+            Eyes(hull, Point(0f, 0.4f, 0.41f), 0.17f, 0.05f);
+            hull.Box(Point(0f, 0.36f, -0.44f), Extent(0.05f, 0.16f, 0.05f), deep, Turn(-35f, 0f, 0f));
+            hull.Box(Point(0f, 0.48f, -0.5f), Extent(0.05f, 0.16f, 0.05f), deep, Turn(35f, 0f, 0f));
+            hull.Box(Point(0f, 0.6f, -0.56f), Extent(0.07f, 0.16f, 0.07f), light, Turn(-35f, 0f, 0f));
+            Strap(b, hull, Point(0f, 0.3f, 0.1f), Extent(0.42f, 0.34f, 0.05f));
+
+            MouseFoot(b.LimbLeft, -0.15f, 0.16f, deep);
+            MouseFoot(b.LimbLeft, 0.15f, -0.24f, deep);
+            MouseFoot(b.LimbRight, 0.15f, 0.16f, deep);
+            MouseFoot(b.LimbRight, -0.15f, -0.24f, deep);
+
+            b.Arm.Origin = Point(0f, 0.3f, 0.36f);
+            b.Arm.Box(Point(0.17f, 0.3f, 0.44f), Extent(0.03f, 0.12f, 0.03f), light, Turn(0f, 0f, -35f));
+            b.Arm.Box(Point(-0.17f, 0.3f, 0.44f), Extent(0.03f, 0.12f, 0.03f), light, Turn(0f, 0f, 35f));
+        }
+
+        private static void MouseFoot(Solids part, float x, float z, Color color)
+        {
+            part.Ball(Point(x, 0.06f, z), Extent(0.07f, 0.06f, 0.09f), color);
+        }
+
+        /// <summary>폭풍 기수: a small yellow spirit riding a cloud colt, a long bolt for a lance. No armour, per STYLE.md. Slot 3.</summary>
+        private static void StormRider(Blueprint b)
+        {
+            b.Gait = Gait.Float;
+            b.Strike = Strike.Lunge;
+            Solids hull = b.Hull;
+            Color light = BodyPalette.TreeSpirits.WindLight, wind = BodyPalette.TreeSpirits.Wind, deep = BodyPalette.TreeSpirits.WindDeep;
+
+            hull.Ball(Point(0f, 0.32f, 0f), Extent(0.3f, 0.2f, 0.4f), light);
+            hull.Ball(Point(-0.2f, 0.25f, -0.16f), 0.17f, wind);
+            hull.Ball(Point(0.2f, 0.24f, -0.12f), 0.16f, light);
+            hull.Ball(Point(0f, 0.24f, -0.42f), 0.14f, wind);
+            hull.Ball(Point(0.05f, 0.32f, -0.56f), 0.08f, deep);
+            hull.Ball(Point(0f, 0.44f, 0.38f), Extent(0.17f, 0.15f, 0.17f), light);
+            hull.Prism(Point(0f, 0.56f, 0.4f), 4, 0.04f, 0f, 0.15f, deep, Turn(-30f, 0f, 0f));
+            Eyes(hull, Point(0f, 0.47f, 0.53f), 0.14f, 0.045f);
+            Band(b, hull, Point(0f, 0.3f, 0f), 10, 0.31f, 0.05f, 1.3f);
+
+            hull.Ball(Point(0f, 0.66f, -0.04f), Extent(0.17f, 0.17f, 0.16f), BodyPalette.TreeSpirits.Bolt);
+            hull.Prism(Point(0f, 0.8f, -0.08f), 4, 0.07f, 0f, 0.2f, BodyPalette.TreeSpirits.BoltLight, Turn(-35f, 0f, 0f));
+            hull.Prism(Point(-0.06f, 0.79f, -0.06f), 4, 0.05f, 0f, 0.14f, BodyPalette.TreeSpirits.BoltDeep, Turn(-25f, 0f, 25f));
+            Eyes(hull, Point(0f, 0.68f, 0.13f), 0.1f, 0.04f);
+
+            b.Arm.Origin = Point(0.16f, 0.64f, 0f);
+            b.Arm.Prism(Point(0.18f, 0.6f, -0.14f), 5, 0.025f, 0.018f, 0.66f, BodyPalette.TreeSpirits.BoltLight, Turn(80f, 0f, 0f));
+            b.Arm.Prism(Point(0.18f, 0.71f, 0.5f), 4, 0.05f, 0f, 0.14f, BodyPalette.TreeSpirits.Bolt, Turn(80f, 0f, 0f));
+        }
+
+        /// <summary>번개새 무리: three yellow birds flying as one, the lead one beating its wings. Airborne, slot 2.</summary>
+        private static void ThunderBirds(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Flap;
+            b.LimbsRideHull = true;
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color bolt = BodyPalette.TreeSpirits.Bolt, deep = BodyPalette.TreeSpirits.BoltDeep;
+
+            Bird(hull, Point(0f, 0.46f, 0.08f), 1.25f);
+            Bird(hull, Point(-0.36f, 0.3f, -0.32f), 0.75f);
+            Bird(hull, Point(0.36f, 0.62f, -0.34f), 0.75f);
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Vector3 small = side < 0 ? Point(-0.36f, 0.33f, -0.34f) : Point(0.36f, 0.65f, -0.36f);
+                hull.Taper(small + Point(-0.06f, 0f, 0f), Pair(0.02f, 0.13f), Pair(0.02f, 0.05f), 0.2f, bolt, Turn(0f, 0f, 70f));
+                hull.Taper(small + Point(0.06f, 0f, 0f), Pair(0.02f, 0.13f), Pair(0.02f, 0.05f), 0.2f, deep, Turn(0f, 0f, -70f));
+            }
+            Band(b, hull, Point(0f, 0.42f, 0.06f), 8, 0.18f, 0.05f, 1.3f);
+
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Solids wing = side < 0 ? b.LimbLeft : b.LimbRight;
+                Wing(wing, side, Point(0.12f, 0.5f, 0.04f), 0.42f, 0.24f, 0.08f, -0.12f, 18f, bolt);
+                wing.Box(Point(side * 0.44f, 0.6f, -0.04f), Extent(0.14f, 0.03f, 0.08f), BodyPalette.TreeSpirits.WindDeep, Turn(0f, 0f, -side * 18f));
+            }
+        }
+
+        /// <summary>One of 번개새 무리's birds: a yellow body, a beak, a zigzag crest, round eyes. Faces +z.</summary>
+        private static void Bird(Solids hull, Vector3 at, float scale)
+        {
+            Color bolt = BodyPalette.TreeSpirits.Bolt, deep = BodyPalette.TreeSpirits.BoltDeep;
+            hull.Ball(at, Extent(0.13f, 0.11f, 0.19f) * scale, bolt);
+            Vector3 head = at + Point(0f, 0.08f, 0.15f) * scale;
+            hull.Ball(head, 0.1f * scale, BodyPalette.TreeSpirits.BoltLight);
+            hull.Prism(head + Point(0f, -0.01f, 0.08f) * scale, 4, 0.04f * scale, 0f, 0.09f * scale, deep, Lying);
+            hull.Prism(head + Point(0f, 0.08f, -0.02f) * scale, 4, 0.035f * scale, 0f, 0.1f * scale, deep, Turn(-40f, 0f, 0f));
+            hull.Prism(at + Point(0f, 0.02f, -0.16f) * scale, 4, 0.06f * scale, 0f, 0.16f * scale, BodyPalette.TreeSpirits.WindDeep, Turn(-110f, 0f, 0f));
+            Eyes(hull, head + Point(0f, 0.02f, 0.08f) * scale, 0.1f * scale, 0.035f * scale);
+        }
+
+        /// <summary>거대 덩쿨: a vine column twisting up from its roots to a budded head, rooted where it grew. Slot 3, the siege.</summary>
+        private static void GiantVine(Blueprint b)
+        {
+            b.Gait = Gait.Float;
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color leaf = BodyPalette.TreeSpirits.Leaf, shade = BodyPalette.TreeSpirits.LeafShade, light = BodyPalette.TreeSpirits.LeafLight;
+
+            for (int i = 0; i < 4; i++)
+            {
+                float yaw = 45f + i * 90f;
+                hull.Taper(Around(yaw) * 0.08f, Pair(0.12f, 0.12f), Pair(0.04f, 0.04f), 0.32f, BodyPalette.TreeSpirits.LeafDeep, Outward(yaw, 68f));
+            }
+            Band(b, hull, Point(0f, 0.04f, 0f), 7, 0.2f, 0.06f);
+
+            Vector3 position = Point(0f, 0.02f, 0f);
+            float radius = 0.17f;
+            for (int i = 0; i < 6; i++)
+            {
+                float yaw = i * 70f;
+                Quaternion rotation = Quaternion.FromToRotation(Vector3.up, (Vector3.up * 0.22f + Around(yaw) * 0.07f).normalized);
+                hull.Prism(position, 6, radius, radius * 0.88f, 0.25f, i % 2 == 0 ? leaf : shade, rotation);
+                position += rotation * Point(0f, 0.22f, 0f);
+                radius *= 0.88f;
+                if (i % 2 == 1)
+                    hull.Ball(position + Around(yaw + 90f) * 0.13f, Extent(0.13f, 0.03f, 0.07f), light,
+                              Quaternion.Euler(0f, yaw, 0f) * Turn(0f, 0f, 22f), 1);
+            }
+            hull.Ball(position + Point(0f, 0.08f, 0f), Extent(0.16f, 0.15f, 0.16f), light);
+            Eyes(hull, position + Point(0f, 0.1f, 0.14f), 0.11f, 0.045f);
+
+            b.Arm.Origin = position + Point(0f, 0.12f, 0f);
+            Vector3 tip = position + Point(0f, 0.16f, -0.02f);
+            float pitch = -10f, width = 0.06f;
+            for (int i = 0; i < 4; i++)
+            {
+                Quaternion rotation = Turn(pitch, 0f, 0f);
+                b.Arm.Prism(tip, 5, width, width * 0.8f, 0.16f, i % 2 == 0 ? leaf : shade, rotation);
+                tip += rotation * Point(0f, 0.15f, 0f);
+                pitch += 45f;
+                width *= 0.8f;
+            }
+        }
+
+        /// <summary>도깨비불: a pale blue flame with eyes, its tongues streaming back. Airborne, weaponless; the side tongues beat like fins.</summary>
+        private static void WillOWisp(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Flap;
+            b.LimbsRideHull = true;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color light = BodyPalette.TreeSpirits.WindLight, wind = BodyPalette.TreeSpirits.Wind, deep = BodyPalette.TreeSpirits.WindDeep;
+
+            hull.Ball(Point(0f, 0.36f, 0f), Extent(0.2f, 0.2f, 0.2f), wind);
+            hull.Ball(Point(0f, 0.34f, 0.08f), 0.14f, light);
+            hull.Prism(Point(0f, 0.42f, -0.06f), 6, 0.17f, 0f, 0.46f, wind, Turn(-48f, 0f, 0f));
+            hull.Prism(Point(-0.08f, 0.4f, -0.06f), 5, 0.1f, 0f, 0.32f, deep, Turn(-58f, 0f, 32f));
+            hull.Prism(Point(0.08f, 0.4f, -0.06f), 5, 0.1f, 0f, 0.32f, deep, Turn(-58f, 0f, -32f));
+            hull.Prism(Point(0f, 0.3f, -0.12f), 5, 0.08f, 0f, 0.3f, deep, Turn(-100f, 0f, 0f));
+            Eyes(hull, Point(0f, 0.37f, 0.2f), 0.13f, 0.05f);
+            Band(b, hull, Point(0f, 0.22f, 0f), 10, 0.17f, 0.04f);
+
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Solids fin = side < 0 ? b.LimbLeft : b.LimbRight;
+                Wing(fin, side, Point(0.15f, 0.36f, -0.04f), 0.2f, 0.16f, 0.03f, -0.14f, 30f, wind);
+            }
+        }
+
+        /// <summary>덩굴 군집: a ball of knotted vines with eyes peeking out, leaves on top. Bounces along slowly; weaponless.</summary>
+        private static void VineColony(Blueprint b)
+        {
+            b.Gait = Gait.Hop;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color leaf = BodyPalette.TreeSpirits.Leaf, shade = BodyPalette.TreeSpirits.LeafShade, deep = BodyPalette.TreeSpirits.LeafDeep;
+
+            hull.Ball(Point(0f, 0.42f, 0f), Extent(0.42f, 0.38f, 0.4f), shade);
+            for (int i = 0; i < 5; i++)
+                hull.Ball(Point(0f, 0.42f, 0f), Extent(0.45f, 0.07f, 0.43f), i % 2 == 0 ? leaf : deep,
+                          Turn(30f + i * 31f, i * 47f, i * 19f), 1);
+            hull.Lump(Point(0.02f, 0.8f, 0.02f), Extent(0.12f, 0.08f, 0.12f), leaf, Turn(0f, 30f, 0f));
+            hull.Ball(Point(-0.12f, 0.88f, 0f), Extent(0.15f, 0.035f, 0.08f), BodyPalette.TreeSpirits.LeafLight, Turn(0f, 0f, -30f), 1);
+            hull.Ball(Point(0.13f, 0.86f, -0.04f), Extent(0.13f, 0.035f, 0.07f), BodyPalette.TreeSpirits.LeafLight, Turn(0f, 0f, 28f), 1);
+            Eyes(hull, Point(0f, 0.48f, 0.4f), 0.18f, 0.06f);
+            Band(b, hull, Point(0f, 0.1f, 0f), 10, 0.29f, 0.05f);
+
+            b.Arm.Origin = Point(0.36f, 0.42f, 0f);
+            b.Arm.Prism(Point(0.38f, 0.4f, 0.02f), 5, 0.04f, 0.02f, 0.3f, leaf, Turn(50f, 0f, -20f));
+            b.Arm.Ball(Point(0.44f, 0.6f, 0.24f), Extent(0.07f, 0.03f, 0.05f), BodyPalette.TreeSpirits.LeafLight);
         }
 
         // ---- 지옥불 군단 ----
@@ -1345,6 +1561,7 @@ namespace WordCraft.View
         private static void Building(Blueprint b, Faction faction, Role role, int slot)
         {
             Dress(b, faction);
+            if (slot > 0 && ExtraBuilding(b, faction, role, slot)) return;
             switch (faction)
             {
                 case Faction.TreeSpirits: TreeSpiritBuilding(b, role); return;
@@ -1353,6 +1570,20 @@ namespace WordCraft.View
                 case Faction.RockGolems: RockGolemBuilding(b, role); return;
                 case Faction.Driftworlds: DriftworldBuilding(b, role); return;
                 default: HumanBuilding(b, role, slot); return;
+            }
+        }
+
+        /// <summary>
+        /// The buildings behind entry 0 of a slot (issue #195): one builder per
+        /// roster row, each in its faction's shape language. False for a row no
+        /// builder was written for, which then stands as entry 0 of its slot.
+        /// </summary>
+        private static bool ExtraBuilding(Blueprint b, Faction faction, Role role, int slot)
+        {
+            switch (faction)
+            {
+                case Faction.TreeSpirits: return TreeSpiritExtraBuilding(b, role, slot);
+                default: return false;
             }
         }
 
@@ -1524,6 +1755,139 @@ namespace WordCraft.View
                 default:
                     GenericBuilding(b, Faction.TreeSpirits, Cells(role));
                     break;
+            }
+        }
+
+        private static bool TreeSpiritExtraBuilding(Blueprint b, Role role, int slot)
+        {
+            Solids hull = b.Hull;
+            Color bark = BodyPalette.TreeSpirits.Bark, barkShade = BodyPalette.TreeSpirits.BarkShade;
+            Color leaf = BodyPalette.TreeSpirits.Leaf, leafLight = BodyPalette.TreeSpirits.LeafLight;
+            Color leafShade = BodyPalette.TreeSpirits.LeafShade, leafDeep = BodyPalette.TreeSpirits.LeafDeep;
+
+            switch (role)
+            {
+                case Role.Production when slot == 1:
+                    // 씨앗 요람: root arcs curling up and out round a bowl of leaves, one cream seed in it.
+                    hull.Prism(Vector3.zero, 9, 1.1f, 1.05f, 0.14f, leafDeep);
+                    Band(b, hull, Point(0f, 0.02f, 0f), 12, 1.12f, 0.08f);
+                    hull = b.Tier(Vector3.zero);
+                    for (int i = 0; i < 6; i++)
+                    {
+                        float yaw = 30f + i * 60f;
+                        Vector3 foot = Around(yaw) * 0.62f;
+                        Quaternion lower = Outward(yaw, 30f);
+                        hull.Taper(foot, Pair(0.3f, 0.32f), Pair(0.18f, 0.2f), 0.85f, i % 2 == 0 ? bark : barkShade, lower);
+                        Vector3 knee = foot + lower * Point(0f, 0.85f, 0f);
+                        hull.Taper(knee, Pair(0.18f, 0.2f), Pair(0.08f, 0.1f), 0.45f, bark, Outward(yaw, 80f));
+                        hull.Ball(knee + Around(yaw) * 0.45f + Point(0f, -0.08f, 0f), 0.1f, barkShade);
+                    }
+                    hull = b.Tier(Point(0f, 0.4f, 0f));
+                    for (int i = 0; i < 8; i++)
+                    {
+                        float yaw = i * 45f;
+                        hull.Ball(Around(yaw) * 0.5f + Point(0f, 0.72f, 0f), Extent(0.16f, 0.06f, 0.42f), i % 2 == 0 ? leaf : leafLight,
+                                  Quaternion.Euler(0f, yaw, 0f) * Turn(-32f, 0f, 0f), 1);
+                    }
+                    hull = b.Tier(Point(0f, 0.7f, 0f));
+                    hull.Ball(Point(0f, 1.08f, 0f), Extent(0.4f, 0.48f, 0.4f), BodyPalette.TreeSpirits.BoltLight);
+                    hull.Prism(Point(0f, 1.45f, 0f), 6, 0.17f, 0f, 0.3f, BodyPalette.TreeSpirits.BoltLight);
+                    return true;
+
+                case Role.Defense when slot == 1:
+                    // 회복 토템: a carved trunk opening into a cup of wooden petals round a green orb. Unarmed, so no crown.
+                    hull.Dome(Vector3.zero, Extent(0.62f, 0.2f, 0.56f), 8, 2, leafDeep);
+                    Band(b, hull, Point(0f, 0.04f, 0f), 8, 0.63f, 0.08f);
+                    hull = b.Tier(Vector3.zero);
+                    for (int i = 0; i < 3; i++)
+                    {
+                        float yaw = 60f + i * 120f;
+                        hull.Taper(Around(yaw) * 0.18f, Pair(0.22f, 0.26f), Pair(0.08f, 0.1f), 0.5f, barkShade, Outward(yaw, -55f));
+                    }
+                    hull.Prism(Vector3.zero, 7, 0.28f, 0.2f, 1.75f, bark, Turn(0f, 0f, -3f));
+                    hull.Prism(Point(0f, 0.7f, 0f), 7, 0.27f, 0.27f, 0.08f, barkShade);
+                    hull = b.Tier(Point(0f, 1.65f, 0f));
+                    for (int i = 0; i < 5; i++)
+                    {
+                        float yaw = i * 72f;
+                        hull.Taper(Around(yaw) * 0.1f + Point(0f, 1.62f, 0f), Pair(0.3f, 0.08f), Pair(0.4f, 0.05f), 0.6f,
+                                   i % 2 == 0 ? bark : barkShade, Outward(yaw, 52f));
+                    }
+                    hull = b.Tier(Point(0f, 1.75f, 0f));
+                    hull.Ball(Point(0f, 2.05f, 0f), 0.33f, leafLight);
+                    hull.Ball(Point(-0.12f, 2.18f, 0.2f), 0.08f, BodyPalette.TreeSpirits.BoltLight);
+                    return true;
+
+                case Role.Tech when slot == 1:
+                {
+                    // 바람 토템: a ringed post with two wind-coloured leaf wings, a pinwheel of vanes turning on top.
+                    hull.Prism(Vector3.zero, 8, 0.62f, 0.6f, 0.12f, leafDeep);
+                    Band(b, hull, Point(0f, 0.03f, 0f), 8, 0.63f, 0.08f);
+                    hull = b.Tier(Vector3.zero);
+                    hull.Prism(Point(0f, 0.1f, 0f), 8, 0.3f, 0.26f, 1.45f, bark);
+                    hull.Prism(Point(0f, 0.45f, 0f), 8, 0.32f, 0.32f, 0.08f, barkShade);
+                    hull.Prism(Point(0f, 1.15f, 0f), 8, 0.29f, 0.29f, 0.08f, barkShade);
+                    hull.Ball(Point(0f, 0.85f, -0.28f), Extent(0.08f, 0.11f, 0.05f), BodyPalette.TreeSpirits.WindDeep);
+                    hull = b.Tier(Point(0f, 1.2f, 0f));
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        hull.Taper(Point(side * 0.24f, 1.22f, 0f), Pair(0.05f, 0.42f), Pair(0.04f, 0.22f), 0.72f,
+                                   side < 0 ? BodyPalette.TreeSpirits.Wind : BodyPalette.TreeSpirits.WindLight, Turn(0f, 0f, -side * 62f));
+                        hull.Ball(Point(side * 0.62f, 1.25f, 0.05f), Extent(0.04f, 0.1f, 0.04f), BodyPalette.TreeSpirits.WindDeep);
+                        hull.Ball(Point(side * 0.45f, 1.15f, 0.05f), Extent(0.04f, 0.09f, 0.04f), leafLight);
+                    }
+
+                    Solids crown = b.Crown;
+                    crown.Origin = Point(0f, 1.55f, 0f);
+                    crown.Prism(Point(0f, 1.55f, 0f), 6, 0.09f, 0.06f, 0.42f, barkShade);
+                    for (int i = 0; i < 4; i++)
+                    {
+                        float yaw = i * 90f;
+                        crown.Box(Around(yaw) * 0.22f + Point(0f, 1.9f, 0f), Extent(0.06f, 0.2f, 0.34f),
+                                  i % 2 == 0 ? BodyPalette.TreeSpirits.WindLight : BodyPalette.TreeSpirits.Wind,
+                                  Quaternion.Euler(0f, yaw, 0f) * Turn(0f, 0f, 35f));
+                    }
+                    crown.Ball(Point(0f, 1.98f, 0f), 0.08f, BodyPalette.TreeSpirits.WindDeep);
+                    b.CrownSpin = 70f;
+                    return true;
+                }
+
+                case Role.Tech when slot == 2:
+                {
+                    // 광란의 토템: three carved drums stacked into a pole of faces, a ring of bolts crackling round the top.
+                    hull.Prism(Vector3.zero, 8, 0.6f, 0.58f, 0.1f, leafDeep);
+                    Band(b, hull, Point(0f, 0.03f, 0f), 8, 0.61f, 0.08f);
+                    float[] bottoms = { 0.1f, 0.62f, 1.1f };
+                    float[] radii = { 0.42f, 0.36f, 0.3f };
+                    float[] heights = { 0.5f, 0.46f, 0.42f };
+                    for (int i = 0; i < 3; i++)
+                    {
+                        hull = b.Tier(Point(0f, bottoms[i], 0f));
+                        hull.Prism(Point(0f, bottoms[i], 0f), 6, radii[i], radii[i] * 0.9f, heights[i], i == 1 ? barkShade : bark, Turn(0f, i * 12f, 0f));
+                        // On the camera's side, -z, so the faces are seen.
+                        float face = -radii[i] * 0.86f;
+                        Eyes(hull, Point(0f, bottoms[i] + heights[i] * 0.62f, face), radii[i] * 0.55f, 0.06f, -1f);
+                        hull.Box(Point(0f, bottoms[i] + heights[i] * 0.26f, face), Extent(radii[i] * 0.6f, 0.05f, 0.05f), BodyPalette.Eye);
+                    }
+                    hull.Prism(Point(-0.36f, 0.85f, 0f), 4, 0.06f, 0f, 0.3f, BodyPalette.TreeSpirits.BoltDeep, Turn(0f, 0f, 55f));
+                    hull.Prism(Point(0.36f, 0.85f, 0f), 4, 0.06f, 0f, 0.3f, BodyPalette.TreeSpirits.BoltDeep, Turn(0f, 0f, -55f));
+
+                    Solids crown = b.Crown;
+                    crown.Origin = Point(0f, 1.52f, 0f);
+                    crown.Ball(Point(0f, 1.7f, 0f), 0.12f, BodyPalette.TreeSpirits.BoltDeep);
+                    for (int i = 0; i < 6; i++)
+                    {
+                        float yaw = i * 60f;
+                        crown.Box(Around(yaw) * 0.3f + Point(0f, 1.72f, 0f), Extent(0.06f, 0.24f, 0.06f),
+                                  i % 2 == 0 ? BodyPalette.TreeSpirits.Bolt : BodyPalette.TreeSpirits.BoltLight,
+                                  Quaternion.Euler(0f, yaw, 0f) * Turn(0f, 0f, i % 2 == 0 ? 28f : -28f));
+                    }
+                    b.CrownSpin = 90f;
+                    return true;
+                }
+
+                default:
+                    return false;
             }
         }
 
