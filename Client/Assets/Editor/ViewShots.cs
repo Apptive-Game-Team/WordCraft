@@ -10,8 +10,14 @@ namespace WordCraft.View
     /// <summary>
     /// Renders the field to PNG files from the command line, so that what the
     /// player will see can be looked at without a player, a window or a second
-    /// person. Four shots a run: the home base, the lane and its high ground, the
-    /// whole map, and a close-up of bodies.
+    /// person. Three kinds of shot a run:
+    ///
+    ///   - five of the scripted match: the home base, the lane and its high
+    ///     ground, the whole map, a close-up of bodies, the flank;
+    ///   - lineup-&lt;faction&gt;: every roster entry of one faction in a row;
+    ///   - strip-&lt;faction&gt;-&lt;motion&gt;: up to four bodies doing one motion,
+    ///     eight frames across 0.9 seconds side by side, so an animation can be
+    ///     judged from one still image.
     ///
     ///   Unity -batchmode -quit -projectPath Client \
     ///         -executeMethod WordCraft.View.ViewShots.Run \
@@ -52,13 +58,20 @@ namespace WordCraft.View
                 Directory.CreateDirectory(output);
                 World world = Advance(ticks);
                 Shoot(world, output);
-                Debug.Log("OK: " + Shots.Length + " shots written to " + Path.GetFullPath(output));
+                int lineups = Lineups(output);
+                int strips = Strips(output);
+                Debug.Log("OK: " + (Shots.Length + lineups + strips) + " shots written to " + Path.GetFullPath(output) +
+                          " (" + Shots.Length + " field, " + lineups + " lineup, " + strips + " strip)");
                 EditorApplication.Exit(0);
             }
             catch (Exception e)
             {
                 Debug.LogError("FAIL: " + e);
                 EditorApplication.Exit(1);
+            }
+            finally
+            {
+                ViewClock.Release();
             }
         }
 
@@ -75,55 +88,14 @@ namespace WordCraft.View
 
         private static void Shoot(World world, string output)
         {
-            var root = new GameObject("Shots");
-            var cam = new GameObject("ShotCamera").AddComponent<Camera>();
-            cam.orthographic = false;
-            cam.fieldOfView = CameraRig.FieldOfView;
-            cam.nearClipPlane = 0.5f;
-            cam.farClipPlane = 400f;
-
-            var target = new RenderTexture(Width, Height, 24) { antiAliasing = 4 };
-            var image = new Texture2D(Width, Height, TextureFormat.RGB24, mipChain: false);
-
-            try
+            using (var studio = new Studio(world, Width, Height))
             {
-                Sky.Build(cam);
-                Field.Build(world);
-                FieldMesh.Build(world, root.transform);
-                Bodies(world, root.transform);
-
-                // No fog in a shot: the point is to see the field, not one peer's
-                // view of it. The texture is still bound, because the shaders sample
-                // it whatever the parameter says.
-                Shader.SetGlobalTexture("_WcFog", Fog.Texture);
-                Shader.SetGlobalVector("_WcFogParams", new Vector4(1f / World.GridSize, 0f, 0f, 0f));
-                Sky.Update(cam);
-
-                cam.targetTexture = target;
+                Bodies(world, studio.Root.transform);
                 foreach (var shot in Shots)
                 {
-                    CameraRig.Aim(cam, shot.Frame, shot.Distance, shot.Yaw, hud: false);
-                    cam.Render();
-
-                    RenderTexture.active = target;
-                    image.ReadPixels(new Rect(0, 0, Width, Height), 0, 0);
-                    image.Apply();
-                    RenderTexture.active = null;
-
-                    File.WriteAllBytes(Path.Combine(output, shot.Name + ".png"), image.EncodeToPNG());
-                }
-            }
-            finally
-            {
-                cam.targetTexture = null;
-                FieldMesh.Drop();
-                UnityEngine.Object.DestroyImmediate(target);
-                UnityEngine.Object.DestroyImmediate(image);
-                UnityEngine.Object.DestroyImmediate(root);
-                UnityEngine.Object.DestroyImmediate(cam.gameObject);
-                foreach (Light light in UnityEngine.Object.FindObjectsOfType<Light>())
-                {
-                    UnityEngine.Object.DestroyImmediate(light.gameObject);
+                    CameraRig.Aim(studio.Cam, shot.Frame, shot.Distance, shot.Yaw, hud: false);
+                    studio.Render(0);
+                    studio.Write(Path.Combine(output, shot.Name + ".png"));
                 }
             }
         }
@@ -149,6 +121,449 @@ namespace WordCraft.View
                 // Nothing moved, so nothing faces anywhere: turn each body a little
                 // by id, or a whole army stands in parade formation facing north.
                 body.Face((i * 47) % 360);
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Lineups: every roster entry of one faction standing in a row
+        // ------------------------------------------------------------------
+
+        private const int LineupWidth = 2560;
+        private const int LineupHeight = 1080;
+
+        /// <summary>Cells left empty between two neighbours in a lineup.</summary>
+        private const float LineupGap = 0.8f;
+
+        /// <summary>The sim row everything stands on, in cells. Mid map, so the camera never looks off the edge.</summary>
+        private const float Row = 32f;
+
+        /// <summary>
+        /// One shot per faction of every roster entry it fields — units, the
+        /// worker, buildings, the extras behind entry 0 — in Role order and slot
+        /// order within a role, on an empty flat map. Not the scenario: a
+        /// scenario only shows what its script happens to build, and this is the
+        /// whole cast. Buildings stand finished.
+        /// </summary>
+        private static int Lineups(string output)
+        {
+            int written = 0;
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                World world = Empty(faction);
+
+                var entries = new List<(Role Role, int Slot)>();
+                for (int r = 1; r < FactionData.RoleCount; r++)
+                {
+                    var role = (Role)r;
+                    int slots = FactionData.SlotCount(faction, role);
+                    for (int slot = 0; slot < slots; slot++)
+                    {
+                        if (FactionData.Has(faction, role, slot)) entries.Add((role, slot));
+                    }
+                }
+
+                float span = -LineupGap;
+                foreach (var entry in entries) span += MatchView.Cells(entry.Role) + LineupGap;
+                float x = World.GridSize * 0.5f - span * 0.5f;
+                foreach (var entry in entries)
+                {
+                    float width = MatchView.Cells(entry.Role);
+                    Spawn(world, entry.Role, entry.Slot, new Vector2(x + width * 0.5f, Row));
+                    x += width + LineupGap;
+                }
+
+                using (var studio = new Studio(world, LineupWidth, LineupHeight))
+                {
+                    List<BodyRig> rigs = Dress(world, studio.Root.transform);
+                    for (int i = 0; i < rigs.Count; i++)
+                    {
+                        if (world.GetEntity(i).Kind != EntityKind.Building) Turn(rigs[i], FacingYaw);
+                    }
+                    Settle(rigs);
+
+                    Frame(studio, new Vector2(World.GridSize * 0.5f, Row + 1.2f), span + 4f, 0f);
+                    studio.Render(0);
+                    studio.Write(Path.Combine(output, "lineup-" + Slug(faction) + ".png"));
+                    written++;
+                }
+            }
+            return written;
+        }
+
+        // ------------------------------------------------------------------
+        // Strips: one motion, eight frames, side by side
+        // ------------------------------------------------------------------
+
+        private const int FrameWidth = 560;
+        private const int FrameHeight = 400;
+        private const int Frames = 8;
+
+        /// <summary>The issue's window: every strip covers this many seconds from the moment the motion starts.</summary>
+        private const float StripSeconds = 0.9f;
+
+        /// <summary>How often the rigs are stepped between two frames. A player's frame, so smoothing behaves as it does in a match.</summary>
+        private const float StepSeconds = 1f / 60f;
+
+        /// <summary>Idle time run before a motion starts, so speed, facing and breath are settled rather than at their first frame.</summary>
+        private const float PrerollSeconds = 1f;
+
+        /// <summary>When the motion starts on the held clock. Far from zero, so nothing reads a start time of zero as "never".</summary>
+        private const float StartSeconds = 100f;
+
+        /// <summary>Cells between two bodies in a strip.</summary>
+        private const float StripSpacing = 3f;
+
+        /// <summary>
+        /// Three quarters to the right: STYLE.md's "characters face right" seen
+        /// through a camera that looks along +z. Pure profile (90) hides the
+        /// face; this keeps the face and still shows a lunge as sideways motion.
+        /// </summary>
+        private const float FacingYaw = 110f;
+
+        /// <summary>How long the walk keeps walking before it stops, so the strip shows a start, a turn and a stop.</summary>
+        private const float WalkSeconds = 0.75f;
+
+        /// <summary>The motions every faction gets a strip of. The first five are the issue's; the rest are this change's own checks.</summary>
+        private static readonly string[] Motions = { "walk", "attack", "hit", "death", "idle", "spawn", "tower" };
+
+        private static int Strips(string output)
+        {
+            int written = 0;
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                List<(Role Role, int Slot)> walkers = Walkers(faction);
+                List<(Role Role, int Slot)> towers = Towers(faction);
+
+                foreach (string motion in Motions)
+                {
+                    List<(Role Role, int Slot)> cast = motion == "tower" ? towers : walkers;
+                    if (cast.Count == 0) continue;
+                    Strip(output, faction, motion, cast);
+                    written++;
+                }
+            }
+            return written;
+        }
+
+        /// <summary>
+        /// Up to four bodies that walk, for the motion strips: entry 0 of every
+        /// fighting role first, so the strip shows as many gaits and strikes as
+        /// the faction has, then the extras, then the worker.
+        /// </summary>
+        private static List<(Role Role, int Slot)> Walkers(Faction faction)
+        {
+            var list = new List<(Role Role, int Slot)>();
+            Role[] fighting = { Role.Melee, Role.Ranged, Role.Signature };
+            foreach (Role role in fighting)
+            {
+                if (FactionData.Has(faction, role, 0)) list.Add((role, 0));
+            }
+            foreach (Role role in fighting)
+            {
+                int slots = FactionData.SlotCount(faction, role);
+                for (int slot = 1; slot < slots; slot++)
+                {
+                    if (FactionData.Has(faction, role, slot)) list.Add((role, slot));
+                }
+            }
+            if (FactionData.Has(faction, Role.Worker, 0)) list.Add((Role.Worker, 0));
+            if (list.Count > 4) list.RemoveRange(4, list.Count - 4);
+            return list;
+        }
+
+        /// <summary>Every defense entry: the buildings that turn, fire and kick.</summary>
+        private static List<(Role Role, int Slot)> Towers(Faction faction)
+        {
+            var list = new List<(Role Role, int Slot)>();
+            int slots = FactionData.SlotCount(faction, Role.Defense);
+            for (int slot = 0; slot < slots; slot++)
+            {
+                if (FactionData.Has(faction, Role.Defense, slot)) list.Add((Role.Defense, slot));
+            }
+            return list;
+        }
+
+        private static void Strip(string output, Faction faction, string motion, List<(Role Role, int Slot)> cast)
+        {
+            World world = Empty(faction);
+            bool towers = motion == "tower";
+            float spacing = towers ? 4.5f : StripSpacing;
+            float left = World.GridSize * 0.5f - (cast.Count - 1) * spacing * 0.5f;
+            var homes = new List<Vector2>(cast.Count);
+            for (int i = 0; i < cast.Count; i++)
+            {
+                var home = new Vector2(left + i * spacing, Row);
+                Spawn(world, cast[i].Role, cast[i].Slot, home);
+                homes.Add(home);
+            }
+
+            using (var studio = new Studio(world, FrameWidth * Frames, FrameHeight, FrameWidth, FrameHeight))
+            {
+                List<BodyRig> rigs = Dress(world, studio.Root.transform);
+                var speeds = new float[rigs.Count];
+                for (int i = 0; i < rigs.Count; i++)
+                {
+                    if (!towers) Turn(rigs[i], FacingYaw);
+                    // Fix is cells a tick; a strip walks at the roster's own pace.
+                    speeds[i] = FactionData.Stats(faction, cast[i].Role, cast[i].Slot).Speed.Raw / 65536f * World.TicksPerSecond;
+                }
+
+                float now = StartSeconds - PrerollSeconds;
+                Step(rigs, homes, motion, speeds, ref now, StartSeconds);
+                Begin(rigs, motion);
+
+                for (int frame = 0; frame < Frames; frame++)
+                {
+                    float at = StartSeconds + frame * StripSeconds / (Frames - 1);
+                    Step(rigs, homes, motion, speeds, ref now, at);
+                    if (frame == 0) Frame(studio, Framing(homes, motion, speeds, out float width), width, 0f);
+                    studio.Render(frame * FrameWidth);
+                }
+
+                studio.Write(Path.Combine(output, "strip-" + Slug(faction) + "-" + motion + ".png"));
+            }
+        }
+
+        /// <summary>The one-shot start of a motion, at <see cref="StartSeconds"/>.</summary>
+        private static void Begin(List<BodyRig> rigs, string motion)
+        {
+            for (int i = 0; i < rigs.Count; i++)
+            {
+                switch (motion)
+                {
+                    case "attack": rigs[i].Attack(); break;
+                    case "hit": rigs[i].Hit(); break;
+                    case "tower": rigs[i].Attack(); break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Steps every rig from the clock's current time to <paramref name="until"/>
+        /// in player-sized frames: places it where the motion has it, turns a
+        /// tower toward its moving target, and animates.
+        /// </summary>
+        private static void Step(List<BodyRig> rigs, List<Vector2> homes, string motion, float[] speeds,
+                                ref float now, float until)
+        {
+            while (now < until - 1e-4f)
+            {
+                float step = Mathf.Min(StepSeconds, until - now);
+                now += step;
+                ViewClock.Hold(now, step);
+                float since = now - StartSeconds;
+
+                for (int i = 0; i < rigs.Count; i++)
+                {
+                    Vector2 at = homes[i];
+                    if (motion == "walk" && since > 0f) at += Walk(since, speeds[i]);
+                    rigs[i].Place(Field.At(at));
+
+                    if (motion == "tower")
+                    {
+                        // A target circling the tower, a quarter turn a strip, so
+                        // the crown has to keep turning to follow it.
+                        float yaw = 150f + Mathf.Max(since, 0f) * 100f;
+                        rigs[i].Face(yaw);
+                        if (since >= StripSeconds * 0.5f && since - step < StripSeconds * 0.5f) rigs[i].Attack();
+                    }
+                    rigs[i].Animate();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Where a walker is <paramref name="since"/> seconds into the walk strip,
+        /// relative to home: a third of the walk straight right, a third on a
+        /// quarter circle turning toward the camera, a third straight at it, then
+        /// a stop. A start, a turn and a stop are the three things a gait has to
+        /// get right.
+        /// </summary>
+        private static Vector2 Walk(float since, float speed)
+        {
+            float leg = WalkSeconds / 3f;
+            float travelled = Mathf.Min(since, WalkSeconds) * speed;
+            float straight = leg * speed;
+            float radius = straight / (Mathf.PI * 0.5f);
+
+            if (travelled <= straight) return new Vector2(travelled, 0f);
+            float turned = travelled - straight;
+            if (turned <= straight)
+            {
+                float angle = turned / radius;
+                return new Vector2(straight + Mathf.Sin(angle) * radius, -(1f - Mathf.Cos(angle)) * radius);
+            }
+            return new Vector2(straight + radius, -radius - (turned - straight));
+        }
+
+        /// <summary>Where to point the camera so the whole motion stays in frame, and how many cells wide that is.</summary>
+        private static Vector2 Framing(List<Vector2> homes, string motion, float[] speeds, out float width)
+        {
+            var min = new Vector2(float.MaxValue, float.MaxValue);
+            var max = new Vector2(float.MinValue, float.MinValue);
+            for (int i = 0; i < homes.Count; i++)
+            {
+                Include(ref min, ref max, homes[i]);
+                if (motion == "walk") Include(ref min, ref max, homes[i] + Walk(WalkSeconds, speeds[i]));
+            }
+            float margin = motion == "tower" ? 3f : 1.4f;
+            width = max.x - min.x + margin * 2f;
+            // Pushed away from the camera by about a body's height, so the frame
+            // centres on the bodies rather than on the ground at their feet.
+            return new Vector2((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f + 1.2f);
+        }
+
+        private static void Include(ref Vector2 min, ref Vector2 max, Vector2 p)
+        {
+            min = Vector2.Min(min, p);
+            max = Vector2.Max(max, p);
+        }
+
+        // ------------------------------------------------------------------
+        // Shared
+        // ------------------------------------------------------------------
+
+        /// <summary>A fresh flat map with one faction on both seats and nothing on it.</summary>
+        private static World Empty(Faction faction)
+        {
+            var world = new World(new WordCraft.Net.MatchConfig().Seed);
+            world.SetPeerFaction(0, faction);
+            world.SetPeerFaction(1, faction);
+            return world;
+        }
+
+        private static int Spawn(World world, Role role, int slot, Vector2 at)
+        {
+            FixVec2 p = MatchRunner.ToSim(at);
+            if (FactionData.IsBuilding(role)) return world.SpawnBuilding(0, role, slot, p, complete: true);
+            if (role == Role.Worker && slot == 0) return world.SpawnWorker(0, p);
+            return world.SpawnUnit(0, role, slot, p);
+        }
+
+        /// <summary>Every entity's body, finished and placed, in id order.</summary>
+        private static List<BodyRig> Dress(World world, Transform parent)
+        {
+            var rigs = new List<BodyRig>(world.EntityCount);
+            for (int i = 0; i < world.EntityCount; i++)
+            {
+                Entity e = world.GetEntity(i);
+                BodyRig body = Models.Build(parent, world.FactionOf(e.Owner), e.Role, e.Slot, e.Kind, e.Owner, neutral: false);
+                body.Show(true);
+                body.Progress(1f);
+                body.Place(Field.At(MatchRunner.ToView(e.Position)));
+                rigs.Add(body);
+            }
+            return rigs;
+        }
+
+        /// <summary>Faces a body at once rather than over the turn rate, which a still shot has no frames for.</summary>
+        private static void Turn(BodyRig rig, float yaw)
+        {
+            rig.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+            rig.Face(yaw);
+        }
+
+        /// <summary>A second of idle on the held clock, so every rig shows a pose rather than its assembly.</summary>
+        private static void Settle(List<BodyRig> rigs)
+        {
+            for (float t = StartSeconds - PrerollSeconds; t < StartSeconds; t += StepSeconds)
+            {
+                ViewClock.Hold(t, StepSeconds);
+                for (int i = 0; i < rigs.Count; i++) rigs[i].Animate();
+            }
+        }
+
+        /// <summary>
+        /// Points the camera at <paramref name="centre"/> from the player's own
+        /// pose math, pulled back until <paramref name="cells"/> fit across the
+        /// frame.
+        /// </summary>
+        private static void Frame(Studio studio, Vector2 centre, float cells, float yaw)
+        {
+            float aspect = studio.FrameAspect;
+            float halfAcross = Mathf.Tan(CameraRig.FieldOfView * 0.5f * Mathf.Deg2Rad) * aspect;
+            float distance = Mathf.Max(8f, cells / (2f * halfAcross));
+            CameraRig.Aim(studio.Cam, centre, distance, yaw, hud: false);
+        }
+
+        private static string Slug(Faction faction) => faction.ToString().ToLowerInvariant();
+
+        /// <summary>
+        /// The scene every shot is taken in: the field built from one world, the
+        /// sky over it, no fog, and a camera rendering into an image that is
+        /// written out frame by frame. Torn down completely on dispose, so the
+        /// next shot's world starts from nothing.
+        /// </summary>
+        private sealed class Studio : IDisposable
+        {
+            public readonly GameObject Root;
+            public readonly Camera Cam;
+            private readonly RenderTexture target;
+            private readonly Texture2D image;
+            private readonly int frameWidth, frameHeight;
+
+            public float FrameAspect => frameWidth / (float)frameHeight;
+
+            public Studio(World world, int width, int height) : this(world, width, height, width, height) { }
+
+            public Studio(World world, int width, int height, int frameWidth, int frameHeight)
+            {
+                this.frameWidth = frameWidth;
+                this.frameHeight = frameHeight;
+                Root = new GameObject("Shots");
+                Cam = new GameObject("ShotCamera").AddComponent<Camera>();
+                Cam.orthographic = false;
+                Cam.fieldOfView = CameraRig.FieldOfView;
+                Cam.nearClipPlane = 0.5f;
+                Cam.farClipPlane = 400f;
+
+                target = new RenderTexture(frameWidth, frameHeight, 24) { antiAliasing = 4 };
+                image = new Texture2D(width, height, TextureFormat.RGB24, mipChain: false);
+
+                Sky.Build(Cam);
+                Field.Build(world);
+                FieldMesh.Build(world, Root.transform);
+
+                // No fog in a shot: the point is to see the field, not one peer's
+                // view of it. The texture is still bound, because the shaders sample
+                // it whatever the parameter says.
+                Shader.SetGlobalTexture("_WcFog", Fog.Texture);
+                Shader.SetGlobalVector("_WcFogParams", new Vector4(1f / World.GridSize, 0f, 0f, 0f));
+                Sky.Update(Cam);
+
+                Cam.targetTexture = target;
+                Cam.ResetAspect();
+            }
+
+            /// <summary>Renders one frame and copies it into the image at <paramref name="x"/> pixels from the left.</summary>
+            public void Render(int x)
+            {
+                Cam.Render();
+                RenderTexture.active = target;
+                image.ReadPixels(new Rect(0, 0, frameWidth, frameHeight), x, 0);
+                RenderTexture.active = null;
+            }
+
+            public void Write(string path)
+            {
+                image.Apply();
+                File.WriteAllBytes(path, image.EncodeToPNG());
+            }
+
+            public void Dispose()
+            {
+                Cam.targetTexture = null;
+                FieldMesh.Drop();
+                UnityEngine.Object.DestroyImmediate(target);
+                UnityEngine.Object.DestroyImmediate(image);
+                UnityEngine.Object.DestroyImmediate(Root);
+                UnityEngine.Object.DestroyImmediate(Cam.gameObject);
+                foreach (Light light in UnityEngine.Object.FindObjectsOfType<Light>())
+                {
+                    UnityEngine.Object.DestroyImmediate(light.gameObject);
+                }
             }
         }
 
