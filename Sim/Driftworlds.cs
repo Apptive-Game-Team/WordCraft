@@ -115,14 +115,14 @@ namespace WordCraft.Sim
         /// a body is crossing widens the second check and never narrows it.
         /// </summary>
         public Fix ArrivalRadiusFor(int peer) =>
-            UpgradeLevel(peer, UpgradeEffect.ArrivalRadius) > 0 ? ArrivalRadiusResearched : ArrivalRadius;
+            UpgradeLevelOf(peer, UpgradeEffect.ArrivalRadius) > 0 ? ArrivalRadiusResearched : ArrivalRadius;
 
         /// <summary>
         /// 도착 가속: the 통로's clock, 도착 | 통로에서 60틱 in the document's table,
         /// for this peer.
         /// </summary>
         public int ArrivalTicksFor(int peer) =>
-            UpgradeLevel(peer, UpgradeEffect.ArrivalTicks) > 0 ? ArrivalTicksResearched : FactionData.PassageArrivalTicks;
+            UpgradeLevelOf(peer, UpgradeEffect.ArrivalTicks) > 0 ? ArrivalTicksResearched : FactionData.PassageArrivalTicks;
 
         /// <summary>
         /// How long the body at the head of this building's queue takes. The

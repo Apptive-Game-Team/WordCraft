@@ -200,7 +200,7 @@ namespace WordCraft.Sim
         {
             if (peer < 0 || peer >= MaxPeers) return 0;
             int ticks = FactionData.Growth(factions[peer], role, slot).Ticks;
-            return UpgradeLevel(peer, UpgradeEffect.GrowthTime) > 0 ? ticks - ticks / 4 : ticks;
+            return UpgradeLevelOf(peer, UpgradeEffect.GrowthTime) > 0 ? ticks - ticks / 4 : ticks;
         }
 
         /// <summary>
@@ -210,7 +210,7 @@ namespace WordCraft.Sim
         /// strength for the second half of it.
         /// </summary>
         public int GrowthRampFor(int peer) =>
-            UpgradeLevel(peer, UpgradeEffect.GrowthHpRamp) > 0 ? 2 : 1;
+            UpgradeLevelOf(peer, UpgradeEffect.GrowthHpRamp) > 0 ? 2 : 1;
 
         /// <summary>
         /// Runs beside the other two worker loops and immediately after them,

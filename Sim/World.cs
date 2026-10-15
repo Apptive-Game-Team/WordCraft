@@ -506,7 +506,7 @@ namespace WordCraft.Sim
         /// dropped with and only what falls after the level lands lasts longer.
         /// </summary>
         public int RemnantTicksFor(int peer) =>
-            UpgradeLevel(peer, UpgradeEffect.RemnantTicks) > 0 ? RemnantTicksResearched : RemnantTicks;
+            UpgradeLevelOf(peer, UpgradeEffect.RemnantTicks) > 0 ? RemnantTicksResearched : RemnantTicks;
 
         public TileKind TerrainAt(int cell) => (TileKind)terrain[cell];
 
