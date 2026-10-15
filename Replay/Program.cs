@@ -121,6 +121,7 @@ namespace WordCraft.Replay
                 CaptureOrderChecks.Check();
                 ArrivalOrderChecks.Check();
                 TerrainChecks.Check();
+                SeparationChecks.Check();
                 SimAssemblyIsClean();
             }
             catch (Exception ex)
@@ -4911,7 +4912,11 @@ namespace WordCraft.Replay
                 world.Step(t == 1 ? order : idle);
                 Entity e = world.GetEntity(mover);
                 if (e.Position.X > furthest) furthest = e.Position.X;
-                if (e.Position.Equals(At(30, RemnantGapY))) arrived = true;
+                // Within a cell rather than exactly on the point: in the control
+                // run the golem is alive and idle in the gap, the mover shoves it
+                // along ahead of itself, and separation parks the two a footprint
+                // apart, which puts the mover short of the point by that much.
+                if ((e.Position - At(30, RemnantGapY)).SqrMagnitude <= Fix.OneF) arrived = true;
             }
             return furthest;
         }

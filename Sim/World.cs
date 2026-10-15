@@ -1089,6 +1089,11 @@ namespace WordCraft.Sim
                 if (arrives && e.PathIndex < path.Count) e.PathIndex++;
                 entities[i] = e;
             }
+
+            // After every body has taken its step, and before anything reads
+            // where it stands. See Sim/Separation.cs for why it is a pass here
+            // rather than a system of its own.
+            SeparationSystem();
         }
 
         /// <summary>
