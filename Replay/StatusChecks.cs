@@ -25,6 +25,7 @@ namespace WordCraft.Replay
             EntangleRefreshesAndNeverStacks();
             ASlowedBodyWalksAtHalfSpeed();
             TheVineFieldSlowsHostileGroundBodiesOnce();
+            AWalkingVineFieldSlowsByWhereItStoodAtTheStart();
             NoSpeedReachesTheCap();
             FireShotNeedsItsResearch();
             ABurnDealsSixOverSixtyTicks();
@@ -42,7 +43,9 @@ namespace WordCraft.Replay
             HealingResearchRaisesTheAmount();
             TheBurnAuraStacksPerSource();
             OvergrowthSpeedsAlliedGrowthOnce();
+            KillClearsBothClocks();
             TwoWorldsAgree();
+            FourFactionWorldsAgree();
             TheHashSeesBothClocks();
         }
 
@@ -280,6 +283,41 @@ namespace WordCraft.Replay
             Fix near = air.GetEntity(flier).Position.X - At(31, 40).X;
             Fix away = air.GetEntity(far).Position.X - At(31, 52).X;
             Check(away > Fix.Zero && near == away, "a flier inside the field walked " + near.Raw + " raw against " + away.Raw);
+        }
+
+        /// <summary>
+        /// A walking 덩굴 군집 is measured from where it stood when MoveSystem
+        /// began, whatever its id. Two hostile workers stand mirrored about it,
+        /// one spawned before it and one after, and walk out of the field east
+        /// and west while it walks north: they are slowed on the same ticks. Read
+        /// live, the lower id would measure the 군집 before its step and the
+        /// higher id after it.
+        /// </summary>
+        private static void AWalkingVineFieldSlowsByWhereItStoodAtTheStart()
+        {
+            World world = Two(Faction.TreeSpirits, Faction.Hellfire);
+            int west = world.SpawnWorker(1, At(28, 41));
+            int colony = world.SpawnUnit(0, Role.Signature, 2, At(30, 40));
+            int east = world.SpawnWorker(1, At(32, 41));
+            world.Step(new List<Command>
+            {
+                Move(0, 1, colony, At(30, 60)),
+                Move(1, 1, west, At(10, 41)),
+                Move(1, 2, east, At(50, 41)),
+            });
+            int slowed = 0, freed = 0;
+            for (int t = 0; t < 40; t++)
+            {
+                Fix westX = world.GetEntity(west).Position.X, eastX = world.GetEntity(east).Position.X;
+                world.Step(Idle);
+                Fix westRun = westX - world.GetEntity(west).Position.X;
+                Fix eastRun = world.GetEntity(east).Position.X - eastX;
+                Check(westRun == eastRun, "on tick " + world.Tick + " the worker before the 군집 walked " + westRun.Raw +
+                    " raw and the worker after it " + eastRun.Raw);
+                if (eastRun * 2 == FactionData.Stats(Faction.Hellfire, Role.Worker).Speed) slowed++;
+                else freed++;
+            }
+            Check(slowed > 0 && freed > 0, "the workers never left the field (" + slowed + " slowed, " + freed + " free), so the check proves nothing");
         }
 
         /// <summary>
@@ -765,27 +803,142 @@ namespace WordCraft.Replay
         // ---------------------------------------------------------------------
         // Determinism
 
-        /// <summary>Every status and aura above in one world, twice from scratch. Same hash at the end.</summary>
-        private static void TwoWorldsAgree()
+        /// <summary>
+        /// A body that dies slowed and burning keeps neither clock: a 용암 아가리
+        /// kills a 1-hp 덩굴 군집 carrying 50 of each, and both read 0.
+        /// </summary>
+        private static void KillClearsBothClocks()
         {
-            ulong a = Mixed(), b = Mixed();
-            Check(a == b, "two runs of the batch 5 statuses hash apart: 0x" + a.ToString("X16") + " against 0x" + b.ToString("X16"));
+            World world = Two(Faction.TreeSpirits, Faction.Hellfire);
+            world.SpawnBuilding(1, Role.Defense, 0, At(20, 40), complete: true);
+            int victim = world.SpawnUnit(0, Role.Signature, 2, At(22, 40), 1);
+            world.SetStatusForScenario(victim, 50, 50);
+            world.Step(Idle);
+            Entity e = world.GetEntity(victim);
+            Check(!e.Alive, "the 용암 아가리 did not kill the victim, so the check proves nothing");
+            Check(e.SlowTicksLeft == 0 && e.BurnTicksLeft == 0,
+                "a dead body still carries slow " + e.SlowTicksLeft + " and burn " + e.BurnTicksLeft);
         }
 
-        private static ulong Mixed()
+        /// <summary>
+        /// 세계수 정령 against 지옥불 군단 with 휘감기, 연쇄 번개, 덩굴 지대, 회복,
+        /// 화상 오라, 화염탄, 피 냄새 and 집결 all in one world, twice from
+        /// scratch. Same hash at the end, and the run is not vacuous: a slow, a
+        /// burn and a chain each happened at least once in it.
+        /// </summary>
+        private static void TwoWorldsAgree()
+        {
+            ulong a = Mixed(out int slows, out int burns, out int chains), b = Mixed(out _, out _, out _);
+            Check(a == b, "two runs of the batch 5 statuses hash apart: 0x" + a.ToString("X16") + " against 0x" + b.ToString("X16"));
+            Check(slows > 0 && burns > 0 && chains > 0,
+                "the mixed world saw " + slows + " slowed, " + burns + " burning and " + chains + " chains, so the check proves little");
+        }
+
+        /// <summary>
+        /// Runs the mixed world 400 ticks. Counts ticks some 지옥불 body ended
+        /// slowed, ticks some 세계수 body ended burning, and chains: ticks the
+        /// 번개 정령 fired, the 덩쿨 정령 did not, and more than one 지옥불 entity
+        /// lost hp, which only a hop can do, since nothing else on the 세계수 side
+        /// carries a weapon.
+        /// </summary>
+        private static ulong Mixed(out int slows, out int burns, out int chains)
         {
             World world = Two(Faction.TreeSpirits, Faction.Hellfire);
             Research(world, 0, UpgradeEffect.ChainLightning);
             Research(world, 1, UpgradeEffect.FireShot);
-            world.SpawnUnit(0, Role.Ranged, 1, At(28, 40));
-            world.SpawnUnit(0, Role.Ranged, 0, At(28, 42));
+            Research(world, 1, UpgradeEffect.BloodScent);
+            int vine = world.SpawnUnit(0, Role.Ranged, 1, At(28, 40));
+            int lightning = world.SpawnUnit(0, Role.Ranged, 0, At(28, 42));
             world.SpawnUnit(0, Role.Signature, 2, At(27, 41));
             world.SpawnBuilding(0, Role.Defense, 1, At(25, 41), complete: true);
             world.SpawnUnit(1, Role.Melee, 0, At(36, 40));
             world.SpawnUnit(1, Role.Ranged, 1, At(36, 42));
             world.SpawnUnit(1, Role.Melee, 2, At(37, 41));
+            world.SpawnUnit(1, Role.Melee, 2, At(37, 43));
             world.SpawnBuilding(1, Role.Defense, 1, At(39, 41), complete: true);
-            Run(world, 400);
+            int vinePeriod = FactionData.Stats(Faction.TreeSpirits, Role.Ranged, 1).AttackTicks;
+            int lightningPeriod = FactionData.Stats(Faction.TreeSpirits, Role.Ranged, 0).AttackTicks;
+            slows = burns = chains = 0;
+            for (int t = 0; t < 400; t++)
+            {
+                var hp = new int[world.EntityCount];
+                for (int i = 0; i < hp.Length; i++) hp[i] = world.GetEntity(i).Hp;
+                world.Step(Idle);
+                bool slowed = false, burning = false;
+                int lost = 0;
+                for (int i = 0; i < hp.Length; i++)
+                {
+                    Entity e = world.GetEntity(i);
+                    if (e.Owner == 1 && e.SlowTicksLeft > 0) slowed = true;
+                    if (e.Owner == 0 && e.BurnTicksLeft > 0) burning = true;
+                    if (e.Owner == 1 && e.Hp < hp[i]) lost++;
+                }
+                if (slowed) slows++;
+                if (burning) burns++;
+                bool lightningFired = world.GetEntity(lightning).Alive && world.GetEntity(lightning).AttackCooldown == lightningPeriod;
+                bool vineFired = world.GetEntity(vine).Alive && world.GetEntity(vine).AttackCooldown == vinePeriod;
+                if (lightningFired && !vineFired && lost > 1) chains++;
+            }
+            return world.Hash();
+        }
+
+        /// <summary>
+        /// The other four factions on one map, peers 0 to 3, each hostile to the
+        /// rest: 물막이, 거품 벽, 회복의 비, 이끼 재생, 굳은 몸, 생명 기록, 표식, 증폭 and
+        /// 연쇄 방전. Twice from scratch, same hash at the end, and the run is not
+        /// vacuous: some body died and some body was healed.
+        /// </summary>
+        private static void FourFactionWorldsAgree()
+        {
+            ulong a = FourFactions(out int deaths, out int heals), b = FourFactions(out _, out _);
+            Check(a == b, "two runs of the four-faction world hash apart: 0x" + a.ToString("X16") + " against 0x" + b.ToString("X16"));
+            Check(deaths > 0 && heals > 0, "the four-faction world saw " + deaths + " deaths and " + heals + " heals, so the check proves little");
+        }
+
+        private static ulong FourFactions(out int deaths, out int heals)
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.WaterSlimes);
+            world.SetPeerFaction(1, Faction.RockGolems);
+            world.SetPeerFaction(2, Faction.Driftworlds);
+            world.SetPeerFaction(3, Faction.Humans);
+            Research(world, 0, UpgradeEffect.BubbleWall);
+            Research(world, 3, UpgradeEffect.ChainDischarge);
+            Research(world, 3, UpgradeEffect.MarkAmount);
+
+            world.SpawnUnit(0, Role.Ranged, 0, At(27, 30));
+            world.SpawnUnit(0, Role.Melee, 1, At(26, 31));
+            world.SpawnUnit(0, Role.Melee, 0, At(28, 31));
+            world.SpawnUnit(0, Role.Melee, 0, At(28, 29));
+            world.SpawnUnit(0, Role.Signature, 1, At(26, 29));
+
+            world.SpawnUnit(1, Role.Melee, 0, At(37, 30));
+            world.SpawnUnit(1, Role.Ranged, 0, At(38, 31));
+            world.SpawnUnit(1, Role.Signature, 2, At(38, 29));
+
+            world.SpawnUnit(2, Role.Melee, 2, At(27, 38));
+            world.SpawnUnit(2, Role.Melee, 0, At(28, 37));
+            world.SpawnUnit(2, Role.Signature, 3, At(26, 39));
+
+            world.SpawnBuilding(3, Role.Defense, 1, At(37, 38), complete: true);
+            world.SpawnBuilding(3, Role.Defense, 0, At(38, 37), complete: true);
+            world.SpawnUnit(3, Role.Signature, 3, At(36, 39));
+            world.SpawnUnit(3, Role.Signature, 1, At(35, 37));
+            world.SpawnUnit(3, Role.Ranged, 1, At(36, 37));
+
+            deaths = heals = 0;
+            for (int t = 0; t < 400; t++)
+            {
+                var before = new Entity[world.EntityCount];
+                for (int i = 0; i < before.Length; i++) before[i] = world.GetEntity(i);
+                world.Step(Idle);
+                for (int i = 0; i < before.Length; i++)
+                {
+                    Entity e = world.GetEntity(i);
+                    if (before[i].Alive && !e.Alive) deaths++;
+                    if (e.Alive && e.Hp > before[i].Hp) heals++;
+                }
+            }
             return world.Hash();
         }
 
