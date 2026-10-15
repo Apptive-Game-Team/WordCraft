@@ -1838,7 +1838,7 @@ namespace WordCraft.Sim
             (Faction.RockGolems, Role.Ranged, "돌팔매 꼬마돌", "PebbleSlinger"),
             (Faction.RockGolems, Role.Ranged, "부유석 파수", "FloatingStoneSentinel"),
             (Faction.RockGolems, Role.Ranged, "모래 술사", "SandShaper"),
-            (Faction.RockGolems, Role.Signature, "이끼 현자", ""),
+            (Faction.RockGolems, Role.Signature, "이끼 현자", "MossSage"),
             (Faction.RockGolems, Role.Signature, "이끼 포자 무리", "MossSporeCluster"),
             (Faction.RockGolems, Role.Tech, "이끼 정원", "MossGarden"),
 

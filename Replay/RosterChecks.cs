@@ -111,7 +111,7 @@ namespace WordCraft.Replay
         /// Every additional column of docs/TECH-TREE.md 슬롯 대조, in faction then
         /// role order, with its unit or building table row. The sprite is the
         /// English resource name .art/TECH-TREE-ART.md gives the entry, or the
-        /// existing file name, or "" where neither document names one.
+        /// existing file name.
         /// </summary>
         private static readonly Row[] NewRows =
         {
@@ -160,7 +160,7 @@ namespace WordCraft.Replay
             Unit(Faction.RockGolems, Role.Ranged, 1, "돌팔매 꼬마돌", "PebbleSlinger", 1, Role.None, 0, Got.Produced, 35, 35, 70, 0, 5, 5, 18, 1, 4, false, "지·공", Role.Base, 0, Role.Production, 0),
             Unit(Faction.RockGolems, Role.Ranged, 2, "부유석 파수", "FloatingStoneSentinel", 3, Role.Tech, 1, Got.Produced, 140, 120, 220, 2, 10, 6, 22, 1, 6, true, "지·공", Role.Production, 1, Role.None, 0),
             Unit(Faction.RockGolems, Role.Ranged, 3, "모래 술사", "SandShaper", 3, Role.None, 0, Got.Produced, 130, 110, 110, 0, 5, 5, 20, 1, 4, false, "지·공", Role.Production, 1, Role.None, 0),
-            Unit(Faction.RockGolems, Role.Signature, 1, "이끼 현자", "", 3, Role.None, 0, Got.Produced, 150, 120, 140, 1, 0, 0, 0, 1, 5, false, "", Role.Production, 1, Role.None, 0),
+            Unit(Faction.RockGolems, Role.Signature, 1, "이끼 현자", "MossSage", 3, Role.None, 0, Got.Produced, 150, 120, 140, 1, 0, 0, 0, 1, 5, false, "", Role.Production, 1, Role.None, 0),
             Unit(Faction.RockGolems, Role.Signature, 2, "이끼 포자 무리", "MossSporeCluster", 2, Role.Tech, 1, Got.Produced, 70, 60, 80, 0, 0, 0, 0, 1, 4, true, "", Role.Production, 0, Role.None, 0),
             Building(Faction.RockGolems, Role.Tech, 1, "이끼 정원", "MossGarden", 2, Role.Production, 0, 150, 100, 250, 0, 0, 0, ""),
             // 차원 유랑종
