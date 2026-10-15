@@ -207,6 +207,18 @@ namespace WordCraft.View
         /// <summary>Seconds between two motes rising off a working building. A mote lives a second, so three are up at once.</summary>
         private const float MoteInterval = 0.33f;
 
+        /// <summary>
+        /// Seconds between two embers off a burning body (issue #206). An ember
+        /// lives 0.8 s, so two or three are up at once, as the issue asks.
+        /// </summary>
+        private const float EmberInterval = 0.3f;
+
+        /// <summary>An ember's size, in cells: big enough to survive the downscale to a 64 px body.</summary>
+        private const float EmberSize = 0.26f;
+
+        /// <summary>The issue's 1.5 percent: how much smaller a slowed body's hull stands.</summary>
+        private const float SlowShrink = 0.015f;
+
         /// <summary>The swell and lean of a building as a unit it made comes out.</summary>
         private const float DeliverSeconds = 0.45f;
         private const float DeliverSwell = 0.1f;
@@ -280,6 +292,9 @@ namespace WordCraft.View
         private float spin;
         private float nextMote;
         private int motes;
+        private bool burning, slowed;
+        private float nextEmber;
+        private int embers;
         private float deliverAt = float.NegativeInfinity;
         private Vector3 deliverToward = Vector3.forward;
         private bool crumbled, dusted;
@@ -629,6 +644,18 @@ namespace WordCraft.View
         public void Work(bool on) => working = on;
 
         /// <summary>
+        /// Whether the body is burning (Entity.BurnTicksLeft above zero): embers
+        /// rise off it while it is seen (issue #206).
+        /// </summary>
+        public void Burning(bool on) => burning = on;
+
+        /// <summary>
+        /// Whether the body is slowed (Entity.SlowTicksLeft above zero): its hull
+        /// stands <see cref="SlowShrink"/> smaller, as if held down (issue #206).
+        /// </summary>
+        public void Slowed(bool on) => slowed = on;
+
+        /// <summary>
         /// A unit just came out of this building toward <paramref name="yawDegrees"/>:
         /// the hull swells once and leans that way, as if it had pushed it out.
         /// </summary>
@@ -776,6 +803,7 @@ namespace WordCraft.View
             if (remembered) return;
 
             transform.localScale = Pop(now);
+            if (burning) Embers(now);
 
             if (design.Building) Stand(now, deltaTime);
             else Move(now, deltaTime);
@@ -952,6 +980,8 @@ namespace WordCraft.View
             }
             Look(BodyPalette.HitFlash, washToward, 1f);
 
+            if (slowed) scale *= 1f - SlowShrink;
+
             hull.localPosition = hullRest + offset;
             hull.localRotation = Quaternion.Euler(pitch, twist, roll);
             hull.localScale = scale;
@@ -1111,6 +1141,26 @@ namespace WordCraft.View
             Vector3 at = transform.position + Vector3.up * roof +
                          new Vector3(Mathf.Sin(around), 0f, Mathf.Cos(around)) * (design.Footprint * 0.2f);
             effects.Mote(at, design.Mote, design.Footprint);
+        }
+
+        /// <summary>
+        /// An ember every <see cref="EmberInterval"/> off a burning body, from
+        /// around its upper half, each from a different side. Only while it is
+        /// seen, as a working building's motes are.
+        /// </summary>
+        private void Embers(float now)
+        {
+            if (effects == null || !shown || now < nextEmber) return;
+            if (now - nextEmber > EmberInterval) nextEmber = now;
+            nextEmber += EmberInterval;
+            embers++;
+            float around = seed * 1.7f + embers * 2.4f;
+            // Top counts a flier's hover, and its root is already up there.
+            float top = design.Building ? (design.Top - 0.25f) * 0.85f
+                      : (design.Top - (design.Flying ? HoverHeight : 0f)) * 0.7f;
+            Vector3 at = transform.position + Vector3.up * top +
+                         new Vector3(Mathf.Sin(around), 0f, Mathf.Cos(around)) * (design.Footprint * 0.22f);
+            effects.Ember(at, BodyPalette.Hellfire.Ember, EmberSize);
         }
 
         // ------------------------------------------------------------------
