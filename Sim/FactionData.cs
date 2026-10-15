@@ -476,9 +476,13 @@ namespace WordCraft.Sim
         /// opening fighters are the faction's first named, armed roster
         /// entries instead of Melee 0 and Ranged 0. A peer on 33 starts 인간
         /// with a nameless body that a peer on 34 replaces, and a site shot at
-        /// stands at different hp on the next tick.
+        /// stands at different hp on the next tick. 35 is docs/TECH-TREE.md 묶음
+        /// 4: growth, spawners, arrival anchors, the 씨앗 요람 queue and debris
+        /// read tables instead of entry 0 constants, and three research rows land.
+        /// A peer on 34 refuses a Grow from 잎날 정령 into 폭풍 기수 that a peer on
+        /// 35 charges 60 for, and the banks differ by 60 on the tick it is given.
         /// </summary>
-        public const uint ContentVersion = 34;
+        public const uint ContentVersion = 35;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
