@@ -1206,7 +1206,7 @@ namespace WordCraft.View
         private static readonly Vector2 StatusAt = new Vector2(32f, 32f);
 
         /// <summary>Cells across a status strip's frame: the walkers' lane, the heal group and an aura's ring.</summary>
-        private const float StatusCells = 17f;
+        private const float StatusCells = 18f;
 
         /// <summary>
         /// Ticks between two frames of a status strip: eight frames cover 1.4 s,
@@ -1246,7 +1246,7 @@ namespace WordCraft.View
                 World probe = StatusScene(faction, out int[] picked, out List<Command>[] log);
                 // The scene starts where the wounding left it, so the strip counts from there.
                 int start = probe.Tick;
-                MatchStrip(output, "status", log, start + MatchPreroll + StatusTicksPerFrame, StatusAt + new Vector2(0f, 0.5f),
+                MatchStrip(output, "status", log, start + MatchPreroll + StatusTicksPerFrame, StatusAt + new Vector2(0f, -0.2f),
                            () => StatusScene(faction, out _, out _), StatusCells, StatusTicksPerFrame,
                            "strip-" + Slug(faction) + "-status", picked);
                 Debug.Log("status strip " + Slug(faction) + ": " + probe.EntityCount + " bodies, " + picked.Length + " selected");
@@ -1297,22 +1297,23 @@ namespace WordCraft.View
             int start = world.Tick;
 
             // The walkers' lane, in front.
-            Vector2 lane = StatusAt + new Vector2(-5.5f, -2.2f);
+            Vector2 lane = StatusAt + new Vector2(-4.5f, -1.8f);
             int slowed = world.SpawnUnit(0, Role.Melee, 0, MatchRunner.ToSim(lane));
-            int fresh = world.SpawnUnit(0, Role.Melee, 0, MatchRunner.ToSim(lane + new Vector2(0f, -1.8f)));
+            int fresh = world.SpawnUnit(0, Role.Melee, 0, MatchRunner.ToSim(lane + new Vector2(0f, -1.6f)));
             world.SetStatusForScenario(slowed, StatusSlowTicks, 0);
 
             // The burning body, in front on the right.
-            int burning = world.SpawnUnit(0, Role.Ranged, 0, MatchRunner.ToSim(StatusAt + new Vector2(4.5f, -3f)));
+            int burning = world.SpawnUnit(0, Role.Ranged, 0, MatchRunner.ToSim(StatusAt + new Vector2(5f, -2.4f)));
             world.SetStatusForScenario(burning, 0, StatusBurnTicks);
 
             // The log is indexed by tick, and the scene starts where the wounding left it.
             int walk = start + StatusWalkTick;
             log = new List<Command>[walk + 1];
             for (int t = 0; t < log.Length; t++) log[t] = new List<Command>();
-            Vector2 goal = lane + new Vector2(9f, 0f);
+            // Short of the burning body, so the fresh walker stops before it.
+            Vector2 goal = lane + new Vector2(6f, 0f);
             log[walk].Add(new Command(walk, 0, 1, CommandType.Move, slowed, MatchRunner.ToSim(goal)));
-            log[walk].Add(new Command(walk, 0, 2, CommandType.Move, fresh, MatchRunner.ToSim(goal + new Vector2(0f, -1.8f))));
+            log[walk].Add(new Command(walk, 0, 2, CommandType.Move, fresh, MatchRunner.ToSim(goal + new Vector2(0f, -1.6f))));
             picked = selected.ToArray();
             return world;
         }
@@ -1381,6 +1382,10 @@ namespace WordCraft.View
             // Hops under the rows' two cells: 1.87 and 1.79.
             Vector2[] targets = { first, first + new Vector2(1.8f, 0.5f), first + new Vector2(3.4f, -0.3f) };
             foreach (Vector2 at in targets) world.SpawnBuilding(1, Role.Supply, MatchRunner.ToSim(at), complete: true);
+            // A worker of peer 0 behind the targets, for its sight: a tower sees
+            // less far than it shoots, and peer 0's fog is on. A worker never
+            // attacks, so it changes nothing about the shot.
+            world.SpawnWorker(0, MatchRunner.ToSim(targets[1] + new Vector2(0f, 2.6f)));
             focus = (from + targets[2]) * 0.5f;
             return world;
         }
