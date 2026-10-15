@@ -160,6 +160,104 @@ namespace WordCraft.Sim
         /// rather than by a faction test written somewhere else.
         /// </summary>
         public bool Grown;
+
+        /// <summary>
+        /// The entry a body has to be to grow into this one, docs/TECH-TREE.md
+        /// M6: (Worker, 0) for the rows a 풀씨 정령 grows into, a unit entry for
+        /// 폭풍 기수, 번개새 무리 and 거대 덩쿨.
+        /// </summary>
+        public Role FromRole;
+        public int FromSlot;
+    }
+
+    /// <summary>
+    /// One roster entry that emits free bodies on a clock: docs/TECH-TREE.md
+    /// 데이터 모델 확장 M8. What it emits, how often, how many it keeps alive,
+    /// and which research rows move the clock and the cap. Default on the
+    /// struct has Spawns false, so an entry nobody wrote emits nothing.
+    ///
+    /// Static, like every table in FactionData. What a spawner has done so far
+    /// is the state it already carries — SpawnCooldown, OffspringCount, and
+    /// each child's ParentId — so a second spawner costs no hashed field.
+    /// </summary>
+    public struct SpawnerRow
+    {
+        public Faction Faction;
+        public Role Role;
+        public int Slot;
+
+        /// <summary>The entry each emission is, owned by the spawner's owner.</summary>
+        public Role ChildRole;
+        public int ChildSlot;
+
+        /// <summary>Whole ticks between one emission and the next.</summary>
+        public int Ticks;
+
+        /// <summary>Most children of one spawner alive at once.</summary>
+        public int Cap;
+
+        /// <summary>The research row that shortens Ticks, or None.</summary>
+        public UpgradeEffect TicksEffect;
+        public int TicksResearched;
+
+        /// <summary>The research row that raises Cap, or None.</summary>
+        public UpgradeEffect CapEffect;
+        public int CapResearched;
+
+        /// <summary>Whether this is a row at all. False on the default struct.</summary>
+        public bool Spawns;
+    }
+
+    /// <summary>
+    /// One roster entry that takes part in 차원 유랑종 도착: docs/TECH-TREE.md
+    /// 데이터 모델 확장 M9. A 통로 is a building whose queue arrives at a point
+    /// (Passage); an anchor is a building or a body that lends a radius around
+    /// itself (Radius, in whole cells, 0 for none). Default on the struct is
+    /// neither, so an entry nobody wrote takes no part.
+    /// </summary>
+    public struct ArrivalRow
+    {
+        public Faction Faction;
+        public Role Role;
+        public int Slot;
+
+        /// <summary>Whether this building keeps an arrival point for its queue.</summary>
+        public bool Passage;
+
+        /// <summary>The radius this entry lends, in whole cells. 0 lends none.</summary>
+        public int Radius;
+
+        /// <summary>The research row that widens Radius, or None.</summary>
+        public UpgradeEffect RadiusEffect;
+        public int RadiusResearched;
+    }
+
+    /// <summary>
+    /// A building whose queue is filled for free by deaths around it rather than
+    /// by Produce: docs/TECH-TREE.md M10 FreeQueue, 세계수 정령 씨앗 요람. When one
+    /// of its owner's units dies within Radius, one Give body joins its queue at
+    /// no cost. A queue that was never paid for is never refunded, so
+    /// CancelProduction is refused on it. Default on the struct has Free false.
+    /// </summary>
+    public struct FreeQueueRow
+    {
+        public Faction Faction;
+        public Role Role;
+        public int Slot;
+
+        /// <summary>The entry each death puts on the queue.</summary>
+        public Role GiveRole;
+        public int GiveSlot;
+
+        /// <summary>How far from the building a death still counts, in whole cells.</summary>
+        public int Radius;
+
+        /// <summary>The research row that widens Radius, or None.</summary>
+        public UpgradeEffect RadiusEffect;
+        public int RadiusResearched;
+
+        /// <summary>Whether this is a row at all. False on the default struct.</summary>
+        public bool Free;
     }
 
     /// <summary>
@@ -238,6 +336,46 @@ namespace WordCraft.Sim
         ArcaneRiderSpeed = 32,
         BindingRange = 33,
         BindingArmor = 34,
+
+        // docs/TECH-TREE.md 연구 행 배치, 묶음 4: one number of a mechanic
+        // table row. Which row and what value is the table itself
+        // (FactionData.spawners, arrivals, freeQueues).
+
+        // 지옥불 군단: 잿불 새끼 상한 3 → 4.
+        BroodCap = 35,
+
+        // 차원 유랑종: 위상 닻 도착 반경 3 → 4칸.
+        PhaseAnchorRadius = 36,
+
+        // 세계수 정령: 씨앗 요람 반경 8 → 12칸.
+        SeedCradleRadius = 37,
+
+        // docs/TECH-TREE.md 연구 행 배치, 묶음 5: a row that unlocks an
+        // ability or changes one of its numbers. Which ability and which
+        // number is the ability table in FactionData (abilities), which names
+        // these effects as its Unlock and Boost.
+
+        // 세계수 정령: 휘감기 감속 40 → 60틱, 연쇄 번개 해금.
+        EntangleDuration = 38,
+        ChainLightning = 39,
+
+        // 지옥불 군단: 화염탄 해금, 피 냄새 해금, 화상 오라 2 → 3, 집결 반경 5 → 7칸.
+        FireShot = 40,
+        BloodScent = 41,
+        BurnAuraDamage = 42,
+        RallyRadius = 43,
+
+        // 물 슬라임: 회복의 비 2 → 3, 거품 벽 해금.
+        HealingRainAmount = 44,
+        BubbleWall = 45,
+
+        // 돌 골렘 부족: 이끼 재생 3 → 5.
+        MossRegrowthAmount = 46,
+
+        // 인간 마법 문명: 연쇄 방전 해금, 증폭 반경 4 → 6칸, 표식 +1 → +2.
+        ChainDischarge = 47,
+        AmplifyRadius = 48,
+        MarkAmount = 49,
     }
 
     /// <summary>
@@ -301,6 +439,131 @@ namespace WordCraft.Sim
     }
 
     /// <summary>
+    /// What one row of the ability table does, docs/TECH-TREE.md M11. One value
+    /// per behaviour rather than per ability, because two abilities that behave
+    /// alike share the code that runs them: 연쇄 번개 and 연쇄 방전 are one
+    /// ChainOnHit with different hop counts, and the four healing auras are one
+    /// HealAura with different radii, amounts and targets. Not hashed: the
+    /// table is static and an entity never carries which row it is running.
+    /// </summary>
+    public enum AbilityKind
+    {
+        None = 0,
+
+        /// <summary>휘감기: a hit on a ground body sets its SlowTicksLeft to Ticks.</summary>
+        SlowOnHit = 1,
+
+        /// <summary>화염탄: a hit sets the target's BurnTicksLeft to Ticks.</summary>
+        BurnOnHit = 2,
+
+        /// <summary>연쇄 번개, 연쇄 방전: Limit hops of Radius cells, halving each hop.</summary>
+        ChainOnHit = 3,
+
+        /// <summary>피 냄새: the attack period is Amount while the target is under half hp.</summary>
+        WoundedRate = 4,
+
+        /// <summary>물막이: allied bodies of Targets within Radius take Amount more armor.</summary>
+        ArmorAura = 5,
+
+        /// <summary>거품 벽: Amount armor per other body of the same entry within Radius, at most Limit.</summary>
+        ArmorPerAlly = 6,
+
+        /// <summary>굳은 몸: Amount armor while the body is not walking.</summary>
+        ArmorWhileStill = 7,
+
+        /// <summary>표식: hostile bodies within Radius take Amount more from the owner's weapons.</summary>
+        MarkAura = 8,
+
+        /// <summary>집결, 증폭: allied Targets within Radius fire Amount ticks sooner, never under Limit.</summary>
+        RateAura = 9,
+
+        /// <summary>회복, 회복의 비, 이끼 재생, 생명 기록: Amount hp every Period ticks to allied Targets within Radius.</summary>
+        HealAura = 10,
+
+        /// <summary>화상 오라: Amount fixed damage every Period ticks to hostile Targets within Radius, per source.</summary>
+        BurnAura = 11,
+
+        /// <summary>과생장: allied growing bodies within Radius grow one tick more every Period ticks.</summary>
+        GrowthAura = 12,
+
+        /// <summary>덩굴 지대: hostile Targets within Radius walk at the slowed speed.</summary>
+        SlowAura = 13,
+    }
+
+    /// <summary>
+    /// Which bodies an aura reaches, before the question of whose side they are
+    /// on, which the kind answers. A body is a Unit or a Worker: 회복의 비 heals a
+    /// worker and 화상 오라 burns one, because the documents say 유닛 and a worker
+    /// walks the same field.
+    /// </summary>
+    public enum AbilityTargets
+    {
+        None = 0,
+        Bodies = 1,
+        BodiesAndBuildings = 2,
+        RangedBodies = 3,
+        DefenseBuildings = 4,
+        GroundBodies = 5,
+    }
+
+    /// <summary>
+    /// One row of a faction's ability table, docs/TECH-TREE.md M11: the entry
+    /// that holds it, what it does, the research that unlocks it, and its
+    /// numbers. Static, like every other table here; what a level changes is
+    /// read through World at the moment a system needs the number.
+    ///
+    /// Unlock and Boost are indexes into the faction's upgrade table, -1 for
+    /// none. The table is written with the UpgradeEffect of the row and the
+    /// static constructor resolves it, so an index can never point at a row
+    /// that was moved. A boosted number of 0 is a number the boost leaves alone.
+    /// </summary>
+    public struct AbilityRow
+    {
+        /// <summary>View-only. Nothing in the simulation reads it.</summary>
+        public string Name;
+
+        public Faction Faction;
+        public Role Role;
+        public int Slot;
+
+        public AbilityKind Kind;
+        public AbilityTargets Targets;
+
+        /// <summary>The upgrade row that unlocks this ability, or -1 when it works from the start.</summary>
+        public int Unlock;
+
+        /// <summary>Ticks between casts. Zero on every row of 묶음 5, which are all passive; 묶음 7 reads it.</summary>
+        public int Cooldown;
+
+        /// <summary>Cells. An aura's reach, or a chain's hop.</summary>
+        public int Radius;
+
+        /// <summary>Hp healed or burnt, armor or damage added, ticks taken off a period, or the period itself (WoundedRate).</summary>
+        public int Amount;
+
+        /// <summary>How long a status lasts once set.</summary>
+        public int Ticks;
+
+        /// <summary>Every how many ticks a periodic aura acts: on ticks where Tick % Period == 0.</summary>
+        public int Period;
+
+        /// <summary>Chain hops, the armor cap of 거품 벽, or the floor a rate aura stops at.</summary>
+        public int Limit;
+
+        /// <summary>The upgrade row that changes a number of this ability, or -1.</summary>
+        public int Boost;
+
+        public int BoostedRadius;
+        public int BoostedAmount;
+        public int BoostedTicks;
+
+        // What Unlock and Boost are written as. The static constructor turns
+        // them into indexes and refuses one the faction cannot research.
+        internal UpgradeEffect UnlockEffect;
+        internal UpgradeEffect BoostEffect;
+    }
+
+    /// <summary>
     /// The roster: stats per role, identity per faction and role. A role holds a
     /// list of entries rather than one, because the six factions do not field the
     /// same units. Plain constants on purpose. A parsed file or a ScriptableObject
@@ -359,9 +622,23 @@ namespace WordCraft.Sim
         /// one entry's reach, rate, speed or armor, and second production
         /// buildings for five existing entries. A peer on 32 refuses a Build of a
         /// 석조 병영 that a peer on 33 charges 120 for, and the banks differ by 120
-        /// on the tick the order is given.
+        /// on the tick the order is given. 34 is two rules the map and the clock
+        /// read: a building under construction keeps the damage it takes instead
+        /// of having its hp rewritten from progress every tick, and the two
+        /// opening fighters are the faction's first named, armed roster
+        /// entries instead of Melee 0 and Ranged 0. A peer on 33 starts 인간
+        /// with a nameless body that a peer on 34 replaces, and a site shot at
+        /// stands at different hp on the next tick. 35 is docs/TECH-TREE.md 묶음
+        /// 4: growth, spawners, arrival anchors, the 씨앗 요람 queue and debris
+        /// read tables instead of entry 0 constants, and three research rows land.
+        /// A peer on 34 refuses a Grow from 잎날 정령 into 폭풍 기수 that a peer on
+        /// 35 charges 60 for, and the banks differ by 60 on the tick it is given.
+        /// 36 is docs/TECH-TREE.md 묶음 5: statuses and auras. A 용암 갑각 악마
+        /// burns enemy ground bodies within 2 cells for 2 every 20 ticks, so a
+        /// peer on 35 and a peer on 36 disagree about a 잎날 정령's hp on the
+        /// first twentieth tick the two stand that close.
         /// </summary>
-        public const uint ContentVersion = 33;
+        public const uint ContentVersion = 36;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -612,7 +889,7 @@ namespace WordCraft.Sim
 
             // 지옥불 군단장의 자손. Airborne, shorter reach and lighter hit than the
             // shared ranged row. Free and spawned rather than produced, which is
-            // what productionOverrides below says and World.WarlordSpawnSystem does.
+            // what productionOverrides below says and World.SpawnerSystem does.
             // Entry 0 only: 균열 파수병 is entry 1 and holds the ground on the
             // shared ranged row, which is the whole reason this key names a slot.
             (Faction.Hellfire, Role.Ranged, 0,
@@ -1204,8 +1481,8 @@ namespace WordCraft.Sim
             new ProductionCost { Resources = resources, Ticks = ticks, Produced = true };
 
         /// <summary>
-        /// 세계수 정령 성장: every roster entry a worker of some faction may grow
-        /// into, and what it costs. A whole table rather than a shared row and a
+        /// 세계수 정령 성장: every roster entry a body of some faction may grow
+        /// into, what it grows from, and what it costs. A whole table rather than a shared row and a
         /// list of overrides, because growth is not a thing every faction does a
         /// little differently — it is a thing one faction does at all. A shared row
         /// would have to say "no" fifty-eight times to say "yes" twice.
@@ -1218,21 +1495,29 @@ namespace WordCraft.Sim
         private static readonly (Faction Faction, Role Role, int Slot, GrowthCost Cost)[] growthTargets =
         {
             // 덩쿨 정령. 30자원, 40틱.
-            (Faction.TreeSpirits, Role.Ranged, 1, Grow(30, 40)),
+            (Faction.TreeSpirits, Role.Ranged, 1, Grow(30, 40, Role.Worker, 0)),
             // 고목 수호자. 50자원, 60틱.
-            (Faction.TreeSpirits, Role.Melee, 1, Grow(50, 60)),
+            (Faction.TreeSpirits, Role.Melee, 1, Grow(50, 60, Role.Worker, 0)),
 
             // 세계수 정령, docs/TECH-TREE.md 묶음 3.
             // 찌릿쥐. 15자원, 20틱.
-            (Faction.TreeSpirits, Role.Melee, 2, Grow(15, 20)),
+            (Faction.TreeSpirits, Role.Melee, 2, Grow(15, 20, Role.Worker, 0)),
             // 도깨비불. 40자원, 50틱.
-            (Faction.TreeSpirits, Role.Signature, 1, Grow(40, 50)),
+            (Faction.TreeSpirits, Role.Signature, 1, Grow(40, 50, Role.Worker, 0)),
             // 덩굴 군집. 45자원, 60틱.
-            (Faction.TreeSpirits, Role.Signature, 2, Grow(45, 60)),
+            (Faction.TreeSpirits, Role.Signature, 2, Grow(45, 60, Role.Worker, 0)),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 4 (M6): a unit growing into a unit.
+            // 잎날 정령 → 폭풍 기수. 60자원, 60틱.
+            (Faction.TreeSpirits, Role.Melee, 3, Grow(60, 60, Role.Melee, 0)),
+            // 번개 정령 → 번개새 무리. 60자원, 50틱.
+            (Faction.TreeSpirits, Role.Ranged, 2, Grow(60, 50, Role.Ranged, 0)),
+            // 덩쿨 정령 → 거대 덩쿨. 100자원, 120틱. Speed 0, so it roots where it grew.
+            (Faction.TreeSpirits, Role.Ranged, 3, Grow(100, 120, Role.Ranged, 1)),
         };
 
-        private static GrowthCost Grow(int resources, int ticks) =>
-            new GrowthCost { Resources = resources, Ticks = ticks, Grown = true };
+        private static GrowthCost Grow(int resources, int ticks, Role fromRole, int fromSlot) =>
+            new GrowthCost { Resources = resources, Ticks = ticks, Grown = true, FromRole = fromRole, FromSlot = fromSlot };
 
         /// <summary>
         /// What growing into one entry costs and how long it takes. An entry no
@@ -1266,13 +1551,182 @@ namespace WordCraft.Sim
             growthTargets[index];
 
         /// <summary>
+        /// Every roster entry that emits free bodies on a clock, docs/TECH-TREE.md
+        /// M8. 지옥불 군단장 carries the numbers it has always had — 100 ticks and
+        /// five 자손, the two World constants — and 산란 악마 is the second row:
+        /// a 잿불 새끼 every 120 ticks, three alive. Walked in declaration order,
+        /// never through a keyed collection, for the reason
+        /// <see cref="growthTargets"/> is.
+        ///
+        /// Each row names its own research. 군단 확장 and 산란 가속 move the
+        /// warlord's row and nothing else; 산란 상한 moves the 산란 악마's cap.
+        /// </summary>
+        private static readonly SpawnerRow[] spawners =
+        {
+            // 지옥불 군단장 → 자손. 100틱, 5기. 연구: 70틱, 7기.
+            Spawner(Faction.Hellfire, Role.Signature, 0, Role.Ranged, 0,
+                World.WarlordSpawnTicks, World.WarlordOffspring,
+                UpgradeEffect.OffspringPeriod, World.WarlordSpawnTicksResearched,
+                UpgradeEffect.OffspringCap, World.WarlordOffspringResearched),
+            // 산란 악마 → 잿불 새끼. 120틱, 3기. 연구: 산란 상한 4기.
+            Spawner(Faction.Hellfire, Role.Signature, 1, Role.Melee, 3,
+                120, 3,
+                UpgradeEffect.None, 0,
+                UpgradeEffect.BroodCap, 4),
+        };
+
+        private static SpawnerRow Spawner(Faction faction, Role role, int slot, Role childRole, int childSlot,
+            int ticks, int cap, UpgradeEffect ticksEffect, int ticksResearched, UpgradeEffect capEffect, int capResearched) =>
+            new SpawnerRow
+            {
+                Faction = faction, Role = role, Slot = slot,
+                ChildRole = childRole, ChildSlot = childSlot,
+                Ticks = ticks, Cap = cap,
+                TicksEffect = ticksEffect, TicksResearched = ticksResearched,
+                CapEffect = capEffect, CapResearched = capResearched,
+                Spawns = true,
+            };
+
+        /// <summary>
+        /// The spawner row of one entry, or a default row with Spawns false. A
+        /// linear scan in declaration order.
+        /// </summary>
+        public static SpawnerRow Spawner(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < spawners.Length; i++)
+            {
+                SpawnerRow row = spawners[i];
+                if (row.Faction == faction && row.Role == role && row.Slot == slot) return row;
+            }
+            return new SpawnerRow();
+        }
+
+        /// <summary>
+        /// Every roster entry that is a 통로 or an anchor, docs/TECH-TREE.md M9 and
+        /// 도착 규칙. 통로 and 깊은 통로 keep an arrival point; 굴절 기둥 and 경계
+        /// 운반자 lend 6 cells (8 under 도착 반경, the #164 row, which reaches these
+        /// two and no other), 위상 닻 3 (4 under its own row), 떠도는 섬 4, and 틈새
+        /// 포대 is written down at 0 so the table says it lends nothing. Walked in
+        /// declaration order, for the reason <see cref="growthTargets"/> is.
+        /// </summary>
+        private static readonly ArrivalRow[] arrivals =
+        {
+            // 통로
+            Arrival(Faction.Driftworlds, Role.Production, 0, true, 0, UpgradeEffect.None, 0),
+            // 깊은 통로
+            Arrival(Faction.Driftworlds, Role.Production, 1, true, 0, UpgradeEffect.None, 0),
+            // 굴절 기둥. 6칸, 도착 반경 8칸.
+            Arrival(Faction.Driftworlds, Role.Defense, 0, false, 6, UpgradeEffect.ArrivalRadius, 8),
+            // 경계 운반자. 이동식 6칸, 도착 반경 8칸.
+            Arrival(Faction.Driftworlds, Role.Signature, 0, false, 6, UpgradeEffect.ArrivalRadius, 8),
+            // 위상 닻. 3칸, 위상 닻 반경 4칸.
+            Arrival(Faction.Driftworlds, Role.Defense, 1, false, 3, UpgradeEffect.PhaseAnchorRadius, 4),
+            // 떠도는 섬. 공중 4칸.
+            Arrival(Faction.Driftworlds, Role.Signature, 1, false, 4, UpgradeEffect.None, 0),
+            // 틈새 포대. 도착 반경 없음.
+            Arrival(Faction.Driftworlds, Role.Defense, 2, false, 0, UpgradeEffect.None, 0),
+        };
+
+        private static ArrivalRow Arrival(Faction faction, Role role, int slot, bool passage, int radius,
+            UpgradeEffect radiusEffect, int radiusResearched) =>
+            new ArrivalRow
+            {
+                Faction = faction, Role = role, Slot = slot,
+                Passage = passage, Radius = radius,
+                RadiusEffect = radiusEffect, RadiusResearched = radiusResearched,
+            };
+
+        /// <summary>
+        /// The arrival row of one entry, or a default row that is neither a 통로
+        /// nor an anchor. A linear scan in declaration order.
+        /// </summary>
+        public static ArrivalRow Arrival(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < arrivals.Length; i++)
+            {
+                ArrivalRow row = arrivals[i];
+                if (row.Faction == faction && row.Role == role && row.Slot == slot) return row;
+            }
+            return new ArrivalRow();
+        }
+
+        /// <summary>
+        /// Every building with a free queue, docs/TECH-TREE.md M10 and 씨앗 귀환:
+        /// 씨앗 요람 gives back a 풀씨 정령 for a 세계수 정령 unit that dies within 8
+        /// cells, 12 under 씨앗 요람 반경. The body comes off the queue on 풀씨 정령's own production clock
+        /// (30 ticks), the number the document's 씨앗 귀환 row gives. Walked in
+        /// declaration order, for the reason <see cref="growthTargets"/> is.
+        /// </summary>
+        private static readonly FreeQueueRow[] freeQueues =
+        {
+            // 씨앗 요람 → 풀씨 정령. 반경 8칸.
+            new FreeQueueRow
+            {
+                Faction = Faction.TreeSpirits, Role = Role.Production, Slot = 1,
+                GiveRole = Role.Worker, GiveSlot = 0,
+                Radius = 8, RadiusEffect = UpgradeEffect.SeedCradleRadius, RadiusResearched = 12,
+                Free = true,
+            },
+        };
+
+        /// <summary>
+        /// The free queue row of one building entry, or a default row with Free
+        /// false. A linear scan in declaration order.
+        /// </summary>
+        public static FreeQueueRow FreeQueue(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < freeQueues.Length; i++)
+            {
+                FreeQueueRow row = freeQueues[i];
+                if (row.Faction == faction && row.Role == role && row.Slot == slot) return row;
+            }
+            return new FreeQueueRow();
+        }
+
+        /// <summary>
+        /// The cells a fallen 돌 골렘 unit leaves debris on, as offsets from the cell
+        /// it fell on, for the entries that leave more than that one cell:
+        /// docs/TECH-TREE.md 잔해 규칙. 고대 골렘 blocks its own cell and the cells
+        /// either side of it on x (거대 잔해, 3칸). Every other entry is
+        /// <see cref="OneRemnantCell"/>. Walked in declaration order.
+        /// </summary>
+        private static readonly (Faction Faction, Role Role, int Slot, (int Dx, int Dy)[] Cells)[] remnantShapes =
+        {
+            // 고대 골렘: 자기 셀과 x−1, x+1.
+            (Faction.RockGolems, Role.Signature, 0, new[] { (-1, 0), (0, 0), (1, 0) }),
+        };
+
+        private static readonly (int Dx, int Dy)[] OneRemnantCell = { (0, 0) };
+
+        /// <summary>How many cells this entry's debris covers.</summary>
+        public static int RemnantCellCount(Faction faction, Role role, int slot) =>
+            RemnantShape(faction, role, slot).Length;
+
+        /// <summary>One cell of this entry's debris, as an offset from the cell it fell on.</summary>
+        public static (int Dx, int Dy) RemnantCell(Faction faction, Role role, int slot, int index) =>
+            RemnantShape(faction, role, slot)[index];
+
+        private static (int Dx, int Dy)[] RemnantShape(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < remnantShapes.Length; i++)
+            {
+                var row = remnantShapes[i];
+                if (row.Faction == faction && row.Role == role && row.Slot == slot) return row.Cells;
+            }
+            return OneRemnantCell;
+        }
+
+        /// <summary>
         /// The most rows any faction's upgrade table holds. Sizes the per-peer
         /// level array World hashes, so a faction given a ninth row has to move
         /// this too, and the type load refuses a table that outgrows it. Eight
         /// since docs/TECH-TREE.md 묶음 3: 세계수 정령, 차원 유랑종 and 인간 hold
-        /// eight rows each.
+        /// eight rows each. Nine since 묶음 4 (#197): 씨앗 요람 반경 and 위상 닻
+        /// 반경 are the ninth rows of 세계수 정령 and 차원 유랑종. Twelve since 묶음 5
+        /// (#200): 지옥불 군단 gains four rows (화염탄, 피 냄새, 화상 오라 강화, 집결
+        /// 반경) on top of its eight.
         /// </summary>
-        public const int MaxUpgrades = 8;
+        public const int MaxUpgrades = 12;
 
         /// <summary>
         /// What level 1 of 공격력 and 방어력 costs and how long a level takes. The
@@ -1358,11 +1812,16 @@ namespace WordCraft.Sim
             (Faction.TreeSpirits, ResearchRow("거대 덩쿨 사거리", 150, 200, 3, UpgradeEffect.GiantVineRange, (Role.Tech, 0), NoBuilding)),
             (Faction.TreeSpirits, ResearchRow("번개새 공격 주기", 100, 160, 3, UpgradeEffect.ThunderBirdAttackTicks, (Role.Tech, 1), NoBuilding)),
             (Faction.TreeSpirits, ResearchRow("잎날 속도", 100, 160, 2, UpgradeEffect.LeafbladeSpeed, (Role.Tech, 2), NoBuilding)),
+            // docs/TECH-TREE.md 묶음 4. 씨앗 귀환 반경 8 → 12칸, read off the free
+            // queue table. Needs a 씨앗 요람 standing.
+            (Faction.TreeSpirits, ResearchRow("씨앗 요람 반경", 100, 160, 3, UpgradeEffect.SeedCradleRadius, (Role.Tech, 0), (Role.Production, 1))),
 
             // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
             (Faction.Hellfire, ResearchRow("용암 투석 사거리", 150, 200, 3, UpgradeEffect.LavaCatapultRange, (Role.Tech, 0), NoBuilding)),
             (Faction.Hellfire, ResearchRow("재날개 공격 주기", 100, 160, 3, UpgradeEffect.AshWingAttackTicks, (Role.Tech, 0), NoBuilding)),
             (Faction.Hellfire, ResearchRow("갑각 경화", 150, 200, 3, UpgradeEffect.HardenedCarapace, (Role.Tech, 1), (Role.Tech, 0))),
+            // docs/TECH-TREE.md 묶음 4. 잿불 새끼 상한 3 → 4, read off the spawner table.
+            (Faction.Hellfire, ResearchRow("산란 상한", 100, 160, 2, UpgradeEffect.BroodCap, (Role.Tech, 1), NoBuilding)),
 
             // 물 슬라임, docs/TECH-TREE.md 묶음 3.
             (Faction.WaterSlimes, ResearchRow("물결 궁수 사거리", 125, 200, 2, UpgradeEffect.ArcherRange, (Role.Tech, 1), NoBuilding)),
@@ -1378,12 +1837,30 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, ResearchRow("덩쿨편 사거리", 75, 120, 2, UpgradeEffect.VineShardRange, (Role.Tech, 1), NoBuilding)),
             (Faction.Driftworlds, ResearchRow("틈새 포대 사거리", 100, 160, 2, UpgradeEffect.RiftBatteryRange, (Role.Tech, 1), NoBuilding)),
             (Faction.Driftworlds, ResearchRow("도주 가속", 100, 160, 2, UpgradeEffect.FleeSpeed, (Role.Tech, 1), NoBuilding)),
+            // docs/TECH-TREE.md 묶음 4. 위상 닻 도착 반경 3 → 4칸, read off the arrival table.
+            (Faction.Driftworlds, ResearchRow("위상 닻 반경", 100, 160, 2, UpgradeEffect.PhaseAnchorRadius, (Role.Tech, 1), NoBuilding)),
 
             // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
             (Faction.Humans, ResearchRow("석궁 사거리", 75, 120, 3, UpgradeEffect.CrossbowRange, (Role.Tech, 0), NoBuilding)),
             (Faction.Humans, ResearchRow("마도 기수 속도", 100, 160, 3, UpgradeEffect.ArcaneRiderSpeed, (Role.Tech, 0), NoBuilding)),
             (Faction.Humans, ResearchRow("결속 강화", 125, 200, 2, UpgradeEffect.BindingRange, (Role.Tech, 2), NoBuilding)),
             (Faction.Humans, ResearchRow("결속 갑주", 125, 200, 2, UpgradeEffect.BindingArmor, (Role.Tech, 2), NoBuilding)),
+
+            // docs/TECH-TREE.md 묶음 5 (#200): the rows that unlock an ability or
+            // change one of its numbers. Read through the ability table.
+            (Faction.TreeSpirits, ResearchRow("휘감기 지속", 100, 160, 3, UpgradeEffect.EntangleDuration, (Role.Tech, 0), NoBuilding)),
+            (Faction.TreeSpirits, ResearchRow("연쇄 번개", 150, 200, 3, UpgradeEffect.ChainLightning, (Role.Tech, 1), NoBuilding)),
+            (Faction.Hellfire, ResearchRow("화염탄", 100, 160, 2, UpgradeEffect.FireShot, (Role.Tech, 1), NoBuilding)),
+            (Faction.Hellfire, ResearchRow("피 냄새", 100, 160, 2, UpgradeEffect.BloodScent, (Role.Tech, 1), NoBuilding)),
+            (Faction.Hellfire, ResearchRow("화상 오라 강화", 100, 160, 2, UpgradeEffect.BurnAuraDamage, (Role.Tech, 1), NoBuilding)),
+            // 집결 반경 needs 집결의 횃불 standing, the building the aura comes from.
+            (Faction.Hellfire, ResearchRow("집결 반경", 75, 120, 2, UpgradeEffect.RallyRadius, (Role.Tech, 1), (Role.Defense, 1))),
+            (Faction.WaterSlimes, ResearchRow("회복의 비 강화", 100, 160, 3, UpgradeEffect.HealingRainAmount, (Role.Tech, 0), NoBuilding)),
+            (Faction.WaterSlimes, ResearchRow("거품 벽", 100, 160, 2, UpgradeEffect.BubbleWall, (Role.Tech, 1), NoBuilding)),
+            (Faction.RockGolems, ResearchRow("이끼 재생 강화", 100, 160, 2, UpgradeEffect.MossRegrowthAmount, (Role.Tech, 1), NoBuilding)),
+            (Faction.Humans, ResearchRow("연쇄 방전", 125, 200, 2, UpgradeEffect.ChainDischarge, (Role.Tech, 1), NoBuilding)),
+            (Faction.Humans, ResearchRow("증폭 반경", 100, 160, 2, UpgradeEffect.AmplifyRadius, (Role.Tech, 1), NoBuilding)),
+            (Faction.Humans, ResearchRow("표식 강화", 100, 160, 2, UpgradeEffect.MarkAmount, (Role.Tech, 1), NoBuilding)),
         };
 
         /// <summary>
@@ -1527,6 +2004,157 @@ namespace WordCraft.Sim
         /// <summary>One row of the entry upgrade table, in declaration order.</summary>
         public static (Faction Faction, Role Role, int Slot, UpgradeEffect Effect, UpgradedStat Stat, Fix Value) EntryUpgrade(int index) =>
             entryUpgrades[index];
+
+        /// <summary>
+        /// Every faction's ability table, docs/TECH-TREE.md M11: the passive and
+        /// aura rows 묶음 5 (#200) brings in, faction by faction. A faction's
+        /// ability index is its row's position among that faction's rows, the
+        /// way an upgrade index is. Walked in declaration order, never through a
+        /// keyed collection, for the reason <see cref="growthTargets"/> is.
+        ///
+        /// Each row names the research that unlocks it (UnlockEffect) and the one
+        /// that changes one of its numbers (BoostEffect) by effect; the static
+        /// constructor resolves both into upgrade table indexes and refuses a row
+        /// whose holder the roster does not field.
+        /// </summary>
+        private static readonly AbilityRow[] abilities =
+        {
+            // 세계수 정령
+            // 휘감기: 덩쿨 정령, 지상 대상 40틱 감속. 휘감기 지속 60틱.
+            Ability("휘감기", Faction.TreeSpirits, Role.Ranged, 1, AbilityKind.SlowOnHit, AbilityTargets.GroundBodies,
+                UpgradeEffect.None, ticks: 40, boost: UpgradeEffect.EntangleDuration, boostedTicks: 60),
+            // 연쇄 번개: 번개 정령, 2번 튐, 2칸.
+            Ability("연쇄 번개", Faction.TreeSpirits, Role.Ranged, 0, AbilityKind.ChainOnHit, AbilityTargets.None,
+                UpgradeEffect.ChainLightning, radius: 2, limit: 2),
+            // 과생장: 도깨비불, 3칸, 짝수 틱.
+            Ability("과생장", Faction.TreeSpirits, Role.Signature, 1, AbilityKind.GrowthAura, AbilityTargets.Bodies,
+                UpgradeEffect.None, radius: 3, period: 2),
+            // 덩굴 지대: 덩굴 군집, 3칸 적 지상.
+            Ability("덩굴 지대", Faction.TreeSpirits, Role.Signature, 2, AbilityKind.SlowAura, AbilityTargets.GroundBodies,
+                UpgradeEffect.None, radius: 3),
+            // 회복: 회복 토템, 4칸 아군 유닛과 완공 건물, 20틱마다 +2.
+            Ability("회복", Faction.TreeSpirits, Role.Defense, 1, AbilityKind.HealAura, AbilityTargets.BodiesAndBuildings,
+                UpgradeEffect.None, radius: 4, amount: 2, period: 20),
+
+            // 지옥불 군단
+            // 화상 오라: 용암 갑각 악마, 2칸 적 지상, 20틱마다 고정 2. 화상 오라 강화 3.
+            Ability("화상 오라", Faction.Hellfire, Role.Melee, 0, AbilityKind.BurnAura, AbilityTargets.GroundBodies,
+                UpgradeEffect.None, radius: 2, amount: 2, period: 20, boost: UpgradeEffect.BurnAuraDamage, boostedAmount: 3),
+            // 화염탄: 균열 파수병, 화상 60틱.
+            Ability("화염탄", Faction.Hellfire, Role.Ranged, 1, AbilityKind.BurnOnHit, AbilityTargets.None,
+                UpgradeEffect.FireShot, ticks: 60),
+            // 피 냄새: 균열 사냥개, 대상이 절반 아래면 주기 12 → 8.
+            Ability("피 냄새", Faction.Hellfire, Role.Melee, 2, AbilityKind.WoundedRate, AbilityTargets.None,
+                UpgradeEffect.BloodScent, amount: 8),
+            // 집결: 집결의 횃불, 5칸 아군 유닛 주기 −3, 하한 5. 집결 반경 7칸.
+            Ability("집결", Faction.Hellfire, Role.Defense, 1, AbilityKind.RateAura, AbilityTargets.Bodies,
+                UpgradeEffect.None, radius: 5, amount: 3, limit: 5, boost: UpgradeEffect.RallyRadius, boostedRadius: 7),
+
+            // 물 슬라임
+            // 물막이: 물막이 슬라임, 2칸 아군 Role.Ranged 유닛 방어 +1.
+            Ability("물막이", Faction.WaterSlimes, Role.Melee, 1, AbilityKind.ArmorAura, AbilityTargets.RangedBodies,
+                UpgradeEffect.None, radius: 2, amount: 1),
+            // 거품 벽: 거품 정령, 2칸 다른 거품 정령 1기당 +1, 최대 +2.
+            Ability("거품 벽", Faction.WaterSlimes, Role.Melee, 0, AbilityKind.ArmorPerAlly, AbilityTargets.None,
+                UpgradeEffect.BubbleWall, radius: 2, amount: 1, limit: 2),
+            // 회복의 비: 비구름, 3칸 아군 유닛, 20틱마다 +2. 회복의 비 강화 3.
+            Ability("회복의 비", Faction.WaterSlimes, Role.Signature, 1, AbilityKind.HealAura, AbilityTargets.Bodies,
+                UpgradeEffect.None, radius: 3, amount: 2, period: 20, boost: UpgradeEffect.HealingRainAmount, boostedAmount: 3),
+
+            // 돌 골렘 부족
+            // 이끼 재생: 이끼 포자 무리, 3칸 아군 유닛, 20틱마다 +3. 이끼 재생 강화 5.
+            Ability("이끼 재생", Faction.RockGolems, Role.Signature, 2, AbilityKind.HealAura, AbilityTargets.Bodies,
+                UpgradeEffect.None, radius: 3, amount: 3, period: 20, boost: UpgradeEffect.MossRegrowthAmount, boostedAmount: 5),
+
+            // 차원 유랑종
+            // 굳은 몸: 멸종한 바위 슬라임, 걷지 않는 동안 방어 +3.
+            Ability("굳은 몸", Faction.Driftworlds, Role.Melee, 2, AbilityKind.ArmorWhileStill, AbilityTargets.None,
+                UpgradeEffect.None, amount: 3),
+            // 생명 기록: 멸종한 자연 슬라임, 3칸 아군 유닛, 20틱마다 +3.
+            Ability("생명 기록", Faction.Driftworlds, Role.Signature, 3, AbilityKind.HealAura, AbilityTargets.Bodies,
+                UpgradeEffect.None, radius: 3, amount: 3, period: 20),
+
+            // 인간 마법 문명
+            // 표식: 마도 정찰기, 5칸 적 유닛이 인간의 일반 공격에서 +1. 표식 강화 +2.
+            Ability("표식", Faction.Humans, Role.Signature, 1, AbilityKind.MarkAura, AbilityTargets.Bodies,
+                UpgradeEffect.None, radius: 5, amount: 1, boost: UpgradeEffect.MarkAmount, boostedAmount: 2),
+            // 증폭: 마나 증폭기, 4칸 아군 완공 방어 건물 주기 −5, 하한 8. 증폭 반경 6칸.
+            Ability("증폭", Faction.Humans, Role.Signature, 3, AbilityKind.RateAura, AbilityTargets.DefenseBuildings,
+                UpgradeEffect.None, radius: 4, amount: 5, limit: 8, boost: UpgradeEffect.AmplifyRadius, boostedRadius: 6),
+            // 연쇄 방전: 전기 타워, 1번 튐, 2칸.
+            Ability("연쇄 방전", Faction.Humans, Role.Defense, 1, AbilityKind.ChainOnHit, AbilityTargets.None,
+                UpgradeEffect.ChainDischarge, radius: 2, limit: 1),
+        };
+
+        private static AbilityRow Ability(string name, Faction faction, Role role, int slot, AbilityKind kind,
+            AbilityTargets targets, UpgradeEffect unlock, int radius = 0, int amount = 0, int ticks = 0,
+            int period = 0, int limit = 0, UpgradeEffect boost = UpgradeEffect.None,
+            int boostedRadius = 0, int boostedAmount = 0, int boostedTicks = 0) =>
+            new AbilityRow
+            {
+                Name = name,
+                Faction = faction, Role = role, Slot = slot,
+                Kind = kind, Targets = targets,
+                Unlock = -1, Boost = -1,
+                UnlockEffect = unlock, BoostEffect = boost,
+                Radius = radius, Amount = amount, Ticks = ticks, Period = period, Limit = limit,
+                BoostedRadius = boostedRadius, BoostedAmount = boostedAmount, BoostedTicks = boostedTicks,
+            };
+
+        /// <summary>
+        /// The most hops any chain row takes. Sizes the hit list ChainOnHit keeps
+        /// for one shot, and the type load refuses a row past it.
+        /// </summary>
+        public const int MaxChainHops = 2;
+
+        /// <summary>How many rows this faction's ability table holds.</summary>
+        public static int AbilityCount(Faction faction)
+        {
+            int count = 0;
+            for (int i = 0; i < abilities.Length; i++)
+            {
+                if (abilities[i].Faction == faction) count++;
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// One row of this faction's ability table, by index. An index outside
+        /// the table answers a default row with Kind None, which does nothing.
+        /// </summary>
+        public static AbilityRow Ability(Faction faction, int index)
+        {
+            if (index >= 0)
+            {
+                for (int i = 0; i < abilities.Length; i++)
+                {
+                    if (abilities[i].Faction != faction) continue;
+                    if (index-- == 0) return abilities[i];
+                }
+            }
+            return new AbilityRow { Name = "", Unlock = -1, Boost = -1 };
+        }
+
+        /// <summary>How many rows the whole ability table holds, every faction together.</summary>
+        public static int AbilityRowCount => abilities.Length;
+
+        /// <summary>One row of the whole ability table, in declaration order.</summary>
+        public static AbilityRow AbilityRowAt(int index) => abilities[index];
+
+        /// <summary>
+        /// The row of the whole table this entry holds with this kind, or -1. A
+        /// linear scan in declaration order; an entry holds at most one row of a
+        /// kind, which the type load checks.
+        /// </summary>
+        public static int AbilityOf(Faction faction, Role role, int slot, AbilityKind kind)
+        {
+            for (int i = 0; i < abilities.Length; i++)
+            {
+                AbilityRow row = abilities[i];
+                if (row.Kind == kind && row.Faction == faction && row.Role == role && row.Slot == slot) return i;
+            }
+            return -1;
+        }
 
         /// <summary>How many rows this faction's upgrade table holds.</summary>
         public static int UpgradeCount(Faction faction)
@@ -1706,6 +2334,170 @@ namespace WordCraft.Sim
                         "entryUpgrades gives " + faction + " " + role + " " + slot + " two " + stat + " values");
                 }
             }
+
+            RequireMechanicTables();
+            ResolveAbilities();
+        }
+
+        /// <summary>
+        /// Turns each ability row's Unlock and Boost effects into upgrade table
+        /// indexes, and refuses at type load a row whose holder the roster does
+        /// not field, whose research the faction cannot do, whose numbers cannot
+        /// act, or that gives one entry two rows of one kind.
+        /// </summary>
+        private static void ResolveAbilities()
+        {
+            for (int i = 0; i < abilities.Length; i++)
+            {
+                AbilityRow row = abilities[i];
+                string where = "abilities row " + i + " (" + row.Name + ")";
+                RequireFielded(row.Faction, row.Role, row.Slot, "abilities");
+                Require(row.Kind != AbilityKind.None, where + " does nothing");
+                Require(row.Cooldown == 0, where + " has a cooldown nothing counts down yet");
+                abilities[i].Unlock = UpgradeIndexOf(row.Faction, row.UnlockEffect, where);
+                abilities[i].Boost = UpgradeIndexOf(row.Faction, row.BoostEffect, where);
+                Require((row.BoostEffect == UpgradeEffect.None) ==
+                        (row.BoostedRadius == 0 && row.BoostedAmount == 0 && row.BoostedTicks == 0),
+                    where + " has a boost that changes nothing, or a boosted number nothing raises");
+                bool aura = row.Kind != AbilityKind.SlowOnHit && row.Kind != AbilityKind.BurnOnHit &&
+                            row.Kind != AbilityKind.WoundedRate && row.Kind != AbilityKind.ArmorWhileStill;
+                Require(!aura || row.Radius > 0, where + " reaches nothing");
+                if (row.Kind == AbilityKind.SlowOnHit || row.Kind == AbilityKind.BurnOnHit)
+                    Require(row.Ticks > 0, where + " lasts no ticks");
+                if (row.Kind == AbilityKind.ChainOnHit)
+                    Require(row.Limit > 0 && row.Limit <= MaxChainHops, where + " hops " + row.Limit + " times");
+                if (row.Kind == AbilityKind.HealAura || row.Kind == AbilityKind.BurnAura || row.Kind == AbilityKind.GrowthAura)
+                    Require(row.Period > 0 && row.Amount >= 0, where + " has no period");
+                if (row.Kind == AbilityKind.HealAura || row.Kind == AbilityKind.BurnAura ||
+                    row.Kind == AbilityKind.SlowAura || row.Kind == AbilityKind.RateAura ||
+                    row.Kind == AbilityKind.ArmorAura || row.Kind == AbilityKind.MarkAura ||
+                    row.Kind == AbilityKind.GrowthAura)
+                    Require(row.Targets != AbilityTargets.None, where + " names no targets");
+                for (int j = 0; j < i; j++)
+                {
+                    Require(abilities[j].Faction != row.Faction || abilities[j].Role != row.Role ||
+                            abilities[j].Slot != row.Slot || abilities[j].Kind != row.Kind,
+                        where + " gives " + row.Faction + " " + row.Role + " " + row.Slot + " a second " + row.Kind);
+                }
+            }
+        }
+
+        /// <summary>The index of this faction's upgrade row with this effect, -1 for None; refuses a missing row.</summary>
+        private static int UpgradeIndexOf(Faction faction, UpgradeEffect effect, string where)
+        {
+            if (effect == UpgradeEffect.None) return -1;
+            for (int u = 0; u < UpgradeCount(faction); u++)
+            {
+                if (Upgrade(faction, u).Effect == effect) return u;
+            }
+            Require(false, where + " names " + effect + ", which " + faction + " cannot research");
+            return -1;
+        }
+
+        /// <summary>
+        /// The mechanic tables of docs/TECH-TREE.md 묶음 4, checked the way the
+        /// tech tree tables above are: every entry they name is fielded, and every
+        /// research row they read is one the faction can research. Called from the
+        /// static constructor.
+        /// </summary>
+        private static void RequireMechanicTables()
+        {
+            for (int i = 0; i < spawners.Length; i++)
+            {
+                SpawnerRow row = spawners[i];
+                RequireFielded(row.Faction, row.Role, row.Slot, "spawners");
+                RequireFielded(row.Faction, row.ChildRole, row.ChildSlot, "spawners");
+                Require(!IsBuilding(row.Role) && !IsBuilding(row.ChildRole), "spawners row " + i + " names a building");
+                Require(row.Ticks > 0 && row.Cap > 0, "spawners row " + i + " never emits");
+                RequireResearchable(row.Faction, row.TicksEffect, "spawners");
+                RequireResearchable(row.Faction, row.CapEffect, "spawners");
+                for (int j = 0; j < i; j++)
+                {
+                    Require(spawners[j].Faction != row.Faction || spawners[j].Role != row.Role || spawners[j].Slot != row.Slot,
+                        "spawners lists " + row.Faction + " " + row.Role + " " + row.Slot + " twice");
+                }
+            }
+            RequireArrivals();
+            RequireGrowthSources();
+            RequireFreeQueues();
+            for (int i = 0; i < remnantShapes.Length; i++)
+            {
+                var row = remnantShapes[i];
+                RequireFielded(row.Faction, row.Role, row.Slot, "remnantShapes");
+                Require(!IsBuilding(row.Role) && row.Cells.Length > 0, "remnantShapes row " + i + " drops nothing");
+            }
+        }
+
+        private static void RequireGrowthSources()
+        {
+            for (int i = 0; i < growthTargets.Length; i++)
+            {
+                var (faction, role, slot, cost) = growthTargets[i];
+                RequireFielded(faction, role, slot, "growthTargets");
+                RequireFielded(faction, cost.FromRole, cost.FromSlot, "growthTargets");
+                Require(!IsBuilding(role) && !IsBuilding(cost.FromRole), "growthTargets row " + i + " names a building");
+                Require(cost.FromRole != role || cost.FromSlot != slot, "growthTargets row " + i + " grows into itself");
+                // A spawner's clock is armed in SpawnUnit, which a growth never
+                // passes through, so a body that grew into one would never emit.
+                Require(!Spawner(faction, role, slot).Spawns, "growthTargets row " + i + " grows into a spawner");
+            }
+        }
+
+        private static void RequireFreeQueues()
+        {
+            for (int i = 0; i < freeQueues.Length; i++)
+            {
+                FreeQueueRow row = freeQueues[i];
+                RequireFielded(row.Faction, row.Role, row.Slot, "freeQueues");
+                RequireFielded(row.Faction, row.GiveRole, row.GiveSlot, "freeQueues");
+                Require(IsBuilding(row.Role) && !IsBuilding(row.GiveRole), "freeQueues row " + i + " is not a building giving a body");
+                Require(Production(row.Faction, row.GiveRole, row.GiveSlot).Ticks > 0, "freeQueues row " + i + " gives an untimed body");
+                Require(row.Radius > 0, "freeQueues row " + i + " has no radius");
+                // Nothing may be produced at a free-queue building: its queue holds
+                // only the free body, so a cancel never has a paid order to refund
+                // and ReturnSeed never meets a queue of another entry.
+                for (int r = 0; r < RoleCount; r++)
+                {
+                    var role = (Role)r;
+                    if (IsBuilding(role)) continue;
+                    for (int slot = 0; slot < SlotCount(row.Faction, role); slot++)
+                    {
+                        Require(!IsProducedAt(row.Faction, role, slot, row.Role, row.Slot),
+                            "freeQueues row " + i + " is a building " + role + " " + slot + " is produced at");
+                    }
+                }
+                RequireResearchable(row.Faction, row.RadiusEffect, "freeQueues");
+            }
+        }
+
+        private static void RequireArrivals()
+        {
+            for (int i = 0; i < arrivals.Length; i++)
+            {
+                ArrivalRow row = arrivals[i];
+                RequireFielded(row.Faction, row.Role, row.Slot, "arrivals");
+                Require(!row.Passage || IsBuilding(row.Role), "arrivals makes a body a 통로 at row " + i);
+                Require(!row.Passage || row.Radius == 0, "arrivals row " + i + " is a 통로 and an anchor");
+                Require(row.Radius >= 0 && (row.RadiusEffect == UpgradeEffect.None || row.RadiusResearched > row.Radius),
+                    "arrivals row " + i + " has a radius research that does not widen it");
+                RequireResearchable(row.Faction, row.RadiusEffect, "arrivals");
+                for (int j = 0; j < i; j++)
+                {
+                    Require(arrivals[j].Faction != row.Faction || arrivals[j].Role != row.Role || arrivals[j].Slot != row.Slot,
+                        "arrivals lists " + row.Faction + " " + row.Role + " " + row.Slot + " twice");
+                }
+            }
+        }
+
+        private static void RequireResearchable(Faction faction, UpgradeEffect effect, string table)
+        {
+            if (effect == UpgradeEffect.None) return;
+            bool listed = false;
+            for (int u = 0; u < UpgradeCount(faction); u++)
+            {
+                if (Upgrade(faction, u).Effect == effect) listed = true;
+            }
+            Require(listed, table + " names " + effect + ", which " + faction + " cannot research");
         }
 
         private static void Require(bool holds, string what)
@@ -2546,6 +3338,54 @@ namespace WordCraft.Sim
                 if (extras[i].Faction == faction && extras[i].Role == role) count++;
             }
             return count;
+        }
+
+        private static readonly Role[] OpeningMeleeFirst = { Role.Melee, Role.Ranged, Role.Signature };
+        private static readonly Role[] OpeningRangedFirst = { Role.Ranged, Role.Melee, Role.Signature };
+
+        /// <summary>
+        /// The body the map places for one of the two opening fighters of this
+        /// faction, asked of the roster instead of assumed to be entry 0 of Melee
+        /// (issue #154). Index 0 is the melee-first opener and index 1 the
+        /// ranged-first one. Each takes the first entry of its role order that
+        /// the faction fields and that carries a weapon, walking Melee, Ranged,
+        /// Signature for index 0 and Ranged, Melee, Signature for index 1,
+        /// lowest slot first within a role.
+        ///
+        /// Named and armed are the two skips. A blank row, which is what 인간's
+        /// melee entry 0 is, has no name and no art, and an unarmed row such as
+        /// 지옥불 군단장 would start the match with a body that never fights.
+        ///
+        /// Whether a building produces the row is deliberately not asked. The
+        /// only unproduced row that is also first in its role is 지옥불 자손,
+        /// Ranged entry 0, which is free and spawned rather than produced and is
+        /// the ranged body 지옥불 has always opened with. Skipping it would hand
+        /// 지옥불 a 균열 파수병 instead and move an opening the roster already
+        /// spells out. Every other unproduced armed row sits behind a produced
+        /// entry 0 of its role, so a produced-only rule and this one answer the
+        /// same for the five other factions.
+        ///
+        /// 세계수 정령 and 지옥불 resolve to Melee 0 and Ranged 0, the two rows the
+        /// map spawned before this existed, so ScriptedLog's entity ids keep
+        /// their bodies. Nothing here is state: a pure function of the faction
+        /// and the index, the same on every peer. A faction with no armed named
+        /// entry at all answers Melee 0, a real row rather than a dead one, and
+        /// the harness is what asserts that never happens.
+        /// </summary>
+        public static (Role Role, int Slot) OpeningFighter(Faction faction, int index)
+        {
+            Role[] order = index == 0 ? OpeningMeleeFirst : OpeningRangedFirst;
+            for (int r = 0; r < order.Length; r++)
+            {
+                int count = SlotCount(faction, order[r]);
+                for (int s = 0; s < count; s++)
+                {
+                    if (!Has(faction, order[r], s)) continue;
+                    if (!Stats(faction, order[r], s).HasWeapon) continue;
+                    return (order[r], s);
+                }
+            }
+            return (Role.Melee, 0);
         }
 
         /// <summary>View-only metadata. Nothing in the simulation reads it, so it is not hashed.</summary>

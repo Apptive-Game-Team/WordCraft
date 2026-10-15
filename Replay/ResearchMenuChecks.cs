@@ -69,23 +69,22 @@ namespace WordCraft.Replay
         /// A research building's card lists the rows researched in it and no
         /// other, since docs/TECH-TREE.md 묶음 3 (#180) put rows on second and
         /// third research buildings: every row is on exactly one building's list,
-        /// the building its ResearchAt names, and that list fits MaxPages. With
-        /// MaxUpgrades at 8 the whole table of the widest faction is one page, and
-        /// a split list can only be shorter.
+        /// the building its ResearchAt names, and that list fits one page. Since
+        /// MaxUpgrades went to 9 (#197) the whole table of 세계수 정령 and 차원
+        /// 유랑종 no longer fits one page, and no card draws the whole table: each
+        /// research building draws its own list, which is what has to fit.
         /// </summary>
         private static void EachResearchBuildingListsItsOwnRows()
         {
             for (int f = 0; f < FactionData.FactionCount; f++)
             {
                 var faction = (Faction)f;
-                Check(ProductionMenu.Pages(ResearchMenu.For(faction).Count) == 1,
-                    faction + "'s " + ResearchMenu.For(faction).Count + " research rows do not fit one page");
                 int listed = 0;
                 for (int s = 0; s < FactionData.SlotCount(faction, Role.Tech); s++)
                 {
                     List<ResearchMenu.Entry> entries = ResearchMenu.For(faction, Role.Tech, s);
-                    Check(ProductionMenu.Pages(entries.Count) <= ProductionMenu.MaxPages,
-                        faction + " Tech " + s + " needs more than " + ProductionMenu.MaxPages + " research pages");
+                    Check(ProductionMenu.Pages(entries.Count) == 1,
+                        faction + " Tech " + s + "'s " + entries.Count + " research rows do not fit one page");
                     foreach (ResearchMenu.Entry entry in entries)
                     {
                         Check(FactionData.Upgrade(faction, entry.Index).ResearchAt == (Role.Tech, s),

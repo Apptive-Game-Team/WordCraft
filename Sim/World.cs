@@ -274,6 +274,26 @@ namespace WordCraft.Sim
         /// clock to wait behind.
         /// </summary>
         public int ResearchTicksLeft;
+
+        // 상태 이상, docs/TECH-TREE.md 묶음 5. Both live on the body that suffers
+        // them and nowhere else: the shooter keeps no list of whom it slowed or
+        // set alight, so a shooter that dies is a body dying and nothing more.
+        // A new hit refreshes to the longer of what is left and the new
+        // duration and never adds, so neither number grows past one hit's worth.
+
+        /// <summary>
+        /// Ticks of 휘감기 left. StatusSystem takes one off every tick before
+        /// MoveSystem reads it, and a body walks at half speed on every tick it
+        /// is still above zero after that.
+        /// </summary>
+        public int SlowTicksLeft;
+
+        /// <summary>
+        /// Ticks of 화염탄 burn left. StatusSystem takes one off every tick, and
+        /// on every tick the result is a multiple of World.BurnPeriod, zero
+        /// included, the body takes World.BurnDamage: six hits from sixty.
+        /// </summary>
+        public int BurnTicksLeft;
     }
 
     /// <summary>
@@ -461,6 +481,9 @@ namespace WordCraft.Sim
             ReleasePopulation(e);
             ReleaseOffspringSlot(e);
             DropRemnant(e);
+            // 씨앗 귀환, after the population line above so the cap is asked of
+            // the peer without this body.
+            ReturnSeed(e);
             // A capture this body was running dies with it, per
             // docs/FACTION-MECHANICS.md: 둘 중 하나가 죽으면 진행도는 사라진다.
             // Here rather than in the capture loop, so a corpse never carries a
@@ -477,6 +500,10 @@ namespace WordCraft.Sim
             // the growth line above: the clock goes with the body, and nothing
             // here pays anything back.
             ClearResearch(ref e);
+            // A corpse carries no status clock, so nothing a second way of
+            // killing something forgets can keep counting on it.
+            e.SlowTicksLeft = 0;
+            e.BurnTicksLeft = 0;
         }
 
         /// <summary>
@@ -489,15 +516,44 @@ namespace WordCraft.Sim
         /// Dropped from inside the combat system's pass, which is where deaths
         /// happen, so creation and expiry both land at one fixed point in the
         /// system order and two peers repath against the same map on the same tick.
+        ///
+        /// docs/TECH-TREE.md 잔해 규칙, since 묶음 4: the cells come from
+        /// FactionData's remnant shape (고대 골렘 covers its own cell and x−1, x+1),
+        /// only open terrain inside the map is written, and every write is the max
+        /// of the expiry already there and the new one. Overwriting let a short
+        /// expiry cut a longer one short the moment two durations existed (잔해 지속
+        /// 600 against 400); max keeps the longer one, and while there was one
+        /// duration the two rules gave the same answer.
         /// </summary>
         private void DropRemnant(Entity e)
         {
             if (e.Kind != EntityKind.Unit) return; // workers and buildings leave nothing
             if (e.Owner < 0 || e.Owner >= MaxPeers) return;
-            if (factions[e.Owner] != Faction.RockGolems) return;
-            // Overwrites rather than stacks: a second body on one cell resets the
-            // clock, and a count nobody can see is a count nobody can play around.
-            remnantExpiry[CellOf(e.Position)] = Tick + RemnantTicksFor(e.Owner);
+            Faction faction = factions[e.Owner];
+            if (faction != Faction.RockGolems) return;
+
+            int expiry = Tick + RemnantTicksFor(e.Owner);
+            int fell = CellOf(e.Position);
+            int fx = fell % GridSize, fy = fell / GridSize;
+            int count = FactionData.RemnantCellCount(faction, e.Role, e.Slot);
+            for (int i = 0; i < count; i++)
+            {
+                var (dx, dy) = FactionData.RemnantCell(faction, e.Role, e.Slot, i);
+                int x = fx + dx, y = fy + dy;
+                if (x < 0 || y < 0 || x >= GridSize || y >= GridSize) continue;
+                WriteRemnant(y * GridSize + x, expiry);
+            }
+        }
+
+        /// <summary>
+        /// The one write into remnantExpiry: open terrain only, and never shorter
+        /// than what stands there. Debris on water or rock blocks nothing that was
+        /// not blocked already, and it would be hashed state saying so.
+        /// </summary>
+        private void WriteRemnant(int cell, int expiry)
+        {
+            if (terrain[cell] != (byte)TileKind.Open) return;
+            if (remnantExpiry[cell] < expiry) remnantExpiry[cell] = expiry;
         }
 
         /// <summary>
@@ -573,6 +629,25 @@ namespace WordCraft.Sim
             air || (terrain[cell] == (byte)TileKind.Open && remnantExpiry[cell] <= Tick);
 
         /// <summary>
+        /// Whether something may be put down on this cell on the ground: IsPassable
+        /// for a walker, and no building or resource node standing on it. The cells
+        /// the pathfinder blocks, asked by CanBuild for a placement and by
+        /// ArrivalValid for a walking body's arrival, so the two cannot disagree.
+        /// </summary>
+        public bool GroundCellOpen(int cell)
+        {
+            if (!IsPassable(cell, air: false)) return false;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (!e.Alive) continue;
+                if (e.Kind != EntityKind.Building && e.Kind != EntityKind.ResourceNode) continue;
+                if (CellOf(e.Position) == cell) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
         /// The roster row this body fights from: its owner's faction, its role,
         /// and its own entry of that role. One accessor rather than the lookup
         /// written out at each call site, so no system can ask by role alone and
@@ -631,7 +706,7 @@ namespace WordCraft.Sim
         {
             UnitStats s = FactionData.Stats(factions[owner], role, slot);
             int id = Add(EntityKind.Unit, owner, role, slot, position, s.Speed, hpOverride < 0 ? s.Hp : hpOverride);
-            ArmWarlord(id);
+            ArmSpawner(id);
             return id;
         }
 
@@ -736,8 +811,9 @@ namespace WordCraft.Sim
                 ConstructionSystem();
                 ProductionSystem();
                 ResearchSystem();
-                WarlordSpawnSystem();
+                SpawnerSystem();
                 CombatSystem();
+                StatusSystem();
                 FleeSystem();
                 MoveSystem();
                 VictorySystem();
@@ -1106,6 +1182,8 @@ namespace WordCraft.Sim
 
         private void MoveSystem()
         {
+            // 덩굴 지대 is read per step, so its sources are gathered once.
+            CollectAuraSources();
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
@@ -1119,8 +1197,9 @@ namespace WordCraft.Sim
                 FixVec2 goal = e.PathIndex < path.Count ? CellCenter(path[e.PathIndex]) : e.Target;
 
                 // Researched speed is read here and nowhere else that moves a
-                // body; e.Speed stays the hashed value. See World.SpeedFor.
-                Fix speed = SpeedFor(e);
+                // body; e.Speed stays the hashed value. See World.SpeedFor. The
+                // slow of 휘감기 and 덩굴 지대 rides on top, in MoveSpeedFor.
+                Fix speed = MoveSpeedFor(e);
                 FixVec2 delta = goal - e.Position;
                 bool arrives = delta.Magnitude <= speed;
                 FixVec2 next = arrives ? goal : e.Position + delta.Normalized() * speed;
@@ -1335,6 +1414,8 @@ namespace WordCraft.Sim
                 Mix(ref h, e.Fleeing ? 1UL : 0UL);
                 Mix(ref h, (ulong)e.ResearchIndex);
                 Mix(ref h, (ulong)e.ResearchTicksLeft);
+                Mix(ref h, (ulong)e.SlowTicksLeft);
+                Mix(ref h, (ulong)e.BurnTicksLeft);
 
                 List<int> path = paths[i];
                 Mix(ref h, (ulong)path.Count);

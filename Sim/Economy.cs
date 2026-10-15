@@ -176,16 +176,8 @@ namespace WordCraft.Sim
             // Nothing stands in water or on rock. Checked here rather than in
             // TryPlaceBuilding so the client's placement ghost, which calls this,
             // greys out the same cells the simulation is going to refuse.
-            if (!IsPassable(cell, air: false)) return false;
-
-            for (int i = 0; i < entities.Count; i++)
-            {
-                Entity e = entities[i];
-                if (!e.Alive) continue;
-                if (e.Kind != EntityKind.Building && e.Kind != EntityKind.ResourceNode) continue;
-                if (CellOf(e.Position) == cell) return false;
-            }
-            return true;
+            // Nor on a cell a building or a resource node already holds.
+            return GroundCellOpen(cell);
         }
 
         /// <summary>
@@ -215,16 +207,27 @@ namespace WordCraft.Sim
                 if (!e.Alive || e.Kind != EntityKind.Building || e.BuildTicksLeft <= 0) continue;
 
                 e.BuildTicksLeft--;
-                // Integer ramp so hp never depends on a division that rounds
-                // differently anywhere. The divisor is this building's own total,
-                // or a cheap building would finish its hp on someone else's clock.
-                // Its own entry's total: two entries of one slot are timed apart the
-                // moment an override row says so, and a divisor taken at the role
-                // would ramp 전기 타워 against 대포's clock and land it on the wrong
-                // hp every tick of its construction.
-                e.Hp = e.MaxHp -
-                    (e.MaxHp * e.BuildTicksLeft) / FactionData.BuildTicks(factions[e.Owner], e.Role, e.Slot);
-                if (e.Hp < 1) e.Hp = 1;
+                // The ramp adds this tick's share instead of rewriting hp from
+                // progress, so damage a site has taken stays taken and a site under
+                // fire can be razed before it finishes (issue #191). The share is
+                // the difference of two integer divisions on the tick number, so
+                // the remainders add up exactly with no state of their own and
+                // never depend on a division that rounds differently anywhere.
+                //
+                // The ramp climbs from the 1 hp a site is spawned with to MaxHp, so
+                // it is MaxHp - 1 that is spread over the clock: an undamaged site
+                // ends on exactly MaxHp, and one that took d damage ends on
+                // MaxHp - d.
+                //
+                // The divisor is this building's own total, or a cheap building
+                // would finish its hp on someone else's clock. Its own entry's
+                // total: two entries of one slot are timed apart the moment an
+                // override row says so, and a divisor taken at the role would ramp
+                // 전기 타워 against 대포's clock and land it on the wrong hp.
+                int total = FactionData.BuildTicks(factions[e.Owner], e.Role, e.Slot);
+                int elapsed = total - e.BuildTicksLeft;
+                int climb = e.MaxHp - 1;
+                e.Hp += (climb * elapsed) / total - (climb * (elapsed - 1)) / total;
                 entities[i] = e;
             }
         }
@@ -400,6 +403,10 @@ namespace WordCraft.Sim
             if (!OwnedAndAlive(buildingId, peer)) return false;
             Entity b = entities[buildingId];
             if (b.Kind != EntityKind.Building || b.QueueCount <= 0) return false;
+            // 씨앗 요람: the queue was filled for free, so there is nothing to pay
+            // back, and a cancel that paid the entry's price would mint resources.
+            // Refused whole, the way a Produce the building cannot take is.
+            if (HasFreeQueue(b)) return false;
 
             b.QueueCount--;
             // The queue holds one roster entry, so the price it was bought at is

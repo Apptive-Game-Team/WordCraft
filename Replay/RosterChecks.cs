@@ -51,12 +51,11 @@ namespace WordCraft.Replay
         {
             /// <summary>On a building's production list.</summary>
             Produced,
-            /// <summary>Grown into from a 풀씨 정령.</summary>
+            /// <summary>Grown into, from a 풀씨 정령 or (M6, #197) from another unit.</summary>
             Grown,
             /// <summary>
-            /// Neither yet: grown from another unit (M6), spawned by 산란 악마
-            /// (M8) or woken by 이끼 현자 (깨우기). The row exists and Has answers
-            /// yes; nothing makes it until its mechanic's batch.
+            /// On no list: spawned by 산란 악마 (M8) or woken by 이끼 현자 (깨우기).
+            /// The row exists and Has answers yes; MechanicsChecks covers the spawn.
             /// </summary>
             Neither,
         }
@@ -123,9 +122,9 @@ namespace WordCraft.Replay
             Building(Faction.TreeSpirits, Role.Production, 1, "씨앗 요람", "SeedCradle", 3, Role.Tech, 0, 150, 100, 300, 0, 0, 0, ""),
             Building(Faction.TreeSpirits, Role.Defense, 1, "회복 토템", "HealingTotem", 2, Role.Production, 0, 100, 60, 250, 0, 0, 0, ""),
             Unit(Faction.TreeSpirits, Role.Melee, 2, "찌릿쥐", "ZapMouse", 1, Role.None, 0, Got.Grown, 15, 20, 45, 0, 5, 2, 10, 3, 8, false, "지", Role.None, 0, Role.None, 0),
-            Unit(Faction.TreeSpirits, Role.Melee, 3, "폭풍 기수", "StormRider", 2, Role.Tech, 2, Got.Neither, 60, 60, 160, 1, 11, 2, 15, 3, 8, false, "지", Role.None, 0, Role.None, 0),
-            Unit(Faction.TreeSpirits, Role.Ranged, 2, "번개새 무리", "ThunderBirdSwarm", 3, Role.Tech, 1, Got.Neither, 60, 50, 120, 0, 4, 4, 10, 3, 8, true, "지·공", Role.None, 0, Role.None, 0),
-            Unit(Faction.TreeSpirits, Role.Ranged, 3, "거대 덩쿨", "GiantVine", 3, Role.Tech, 0, Got.Neither, 100, 120, 350, 2, 20, 9, 40, 0, 1, false, "지", Role.None, 0, Role.None, 0),
+            Unit(Faction.TreeSpirits, Role.Melee, 3, "폭풍 기수", "StormRider", 2, Role.Tech, 2, Got.Grown, 60, 60, 160, 1, 11, 2, 15, 3, 8, false, "지", Role.None, 0, Role.None, 0),
+            Unit(Faction.TreeSpirits, Role.Ranged, 2, "번개새 무리", "ThunderBirdSwarm", 3, Role.Tech, 1, Got.Grown, 60, 50, 120, 0, 4, 4, 10, 3, 8, true, "지·공", Role.None, 0, Role.None, 0),
+            Unit(Faction.TreeSpirits, Role.Ranged, 3, "거대 덩쿨", "GiantVine", 3, Role.Tech, 0, Got.Grown, 100, 120, 350, 2, 20, 9, 40, 0, 1, false, "지", Role.None, 0, Role.None, 0),
             Unit(Faction.TreeSpirits, Role.Signature, 1, "도깨비불", "WillOWisp", 2, Role.Defense, 1, Got.Grown, 40, 50, 60, 0, 0, 0, 0, 3, 8, true, "", Role.None, 0, Role.None, 0),
             Unit(Faction.TreeSpirits, Role.Signature, 2, "덩굴 군집", "VineColony", 2, Role.Production, 0, Got.Grown, 45, 60, 150, 1, 0, 0, 0, 1, 8, false, "", Role.None, 0, Role.None, 0),
             Building(Faction.TreeSpirits, Role.Tech, 1, "바람 토템", "WindTotem", 3, Role.Tech, 0, 150, 100, 250, 0, 0, 0, ""),
@@ -452,9 +451,9 @@ namespace WordCraft.Replay
             };
 
         /// <summary>
-        /// docs/TECH-TREE.md 연구 행 배치 묶음 3, each row as its faction's
-        /// 업그레이드 table gives it, in the order the faction's table appends them
-        /// behind the four rows of #164.
+        /// docs/TECH-TREE.md 연구 행 배치 묶음 3 and 묶음 4 (#197), each row as its
+        /// faction's 업그레이드 table gives it, in the order the faction's table
+        /// appends them behind the four rows of #164.
         /// </summary>
         private static readonly ResearchRow[] NewResearch =
         {
@@ -463,10 +462,14 @@ namespace WordCraft.Replay
             Research(Faction.TreeSpirits, "거대 덩쿨 사거리", 150, 200, 3, UpgradeEffect.GiantVineRange, Role.Tech, 0, Role.None, 0),
             Research(Faction.TreeSpirits, "번개새 공격 주기", 100, 160, 3, UpgradeEffect.ThunderBirdAttackTicks, Role.Tech, 1, Role.None, 0),
             Research(Faction.TreeSpirits, "잎날 속도", 100, 160, 2, UpgradeEffect.LeafbladeSpeed, Role.Tech, 2, Role.None, 0),
+            // 묶음 4 (#197): read off the free queue table, not an entry.
+            Research(Faction.TreeSpirits, "씨앗 요람 반경", 100, 160, 3, UpgradeEffect.SeedCradleRadius, Role.Tech, 0, Role.Production, 1),
             // 지옥불 군단
             Research(Faction.Hellfire, "용암 투석 사거리", 150, 200, 3, UpgradeEffect.LavaCatapultRange, Role.Tech, 0, Role.None, 0),
             Research(Faction.Hellfire, "재날개 공격 주기", 100, 160, 3, UpgradeEffect.AshWingAttackTicks, Role.Tech, 0, Role.None, 0),
             Research(Faction.Hellfire, "갑각 경화", 150, 200, 3, UpgradeEffect.HardenedCarapace, Role.Tech, 1, Role.Tech, 0),
+            // 묶음 4 (#197): read off the spawner table, not an entry.
+            Research(Faction.Hellfire, "산란 상한", 100, 160, 2, UpgradeEffect.BroodCap, Role.Tech, 1, Role.None, 0),
             // 물 슬라임
             Research(Faction.WaterSlimes, "물결 궁수 사거리", 125, 200, 2, UpgradeEffect.ArcherRange, Role.Tech, 1, Role.None, 0),
             Research(Faction.WaterSlimes, "침 사거리", 75, 120, 2, UpgradeEffect.SpitterRange, Role.Tech, 1, Role.None, 0),
@@ -479,16 +482,32 @@ namespace WordCraft.Replay
             Research(Faction.Driftworlds, "덩쿨편 사거리", 75, 120, 2, UpgradeEffect.VineShardRange, Role.Tech, 1, Role.None, 0),
             Research(Faction.Driftworlds, "틈새 포대 사거리", 100, 160, 2, UpgradeEffect.RiftBatteryRange, Role.Tech, 1, Role.None, 0),
             Research(Faction.Driftworlds, "도주 가속", 100, 160, 2, UpgradeEffect.FleeSpeed, Role.Tech, 1, Role.None, 0),
+            // 묶음 4 (#197): read off the arrival table, not an entry.
+            Research(Faction.Driftworlds, "위상 닻 반경", 100, 160, 2, UpgradeEffect.PhaseAnchorRadius, Role.Tech, 1, Role.None, 0),
             // 인간 마법 문명
             Research(Faction.Humans, "석궁 사거리", 75, 120, 3, UpgradeEffect.CrossbowRange, Role.Tech, 0, Role.None, 0),
             Research(Faction.Humans, "마도 기수 속도", 100, 160, 3, UpgradeEffect.ArcaneRiderSpeed, Role.Tech, 0, Role.None, 0),
             Research(Faction.Humans, "결속 강화", 125, 200, 2, UpgradeEffect.BindingRange, Role.Tech, 2, Role.None, 0),
             Research(Faction.Humans, "결속 갑주", 125, 200, 2, UpgradeEffect.BindingArmor, Role.Tech, 2, Role.None, 0),
+            // 묶음 5 (#200): read off the ability table. Each faction's rows land
+            // behind its own, in the order docs/TECH-TREE.md 연구 행 배치 lists them.
+            Research(Faction.TreeSpirits, "휘감기 지속", 100, 160, 3, UpgradeEffect.EntangleDuration, Role.Tech, 0, Role.None, 0),
+            Research(Faction.TreeSpirits, "연쇄 번개", 150, 200, 3, UpgradeEffect.ChainLightning, Role.Tech, 1, Role.None, 0),
+            Research(Faction.Hellfire, "화염탄", 100, 160, 2, UpgradeEffect.FireShot, Role.Tech, 1, Role.None, 0),
+            Research(Faction.Hellfire, "피 냄새", 100, 160, 2, UpgradeEffect.BloodScent, Role.Tech, 1, Role.None, 0),
+            Research(Faction.Hellfire, "화상 오라 강화", 100, 160, 2, UpgradeEffect.BurnAuraDamage, Role.Tech, 1, Role.None, 0),
+            Research(Faction.Hellfire, "집결 반경", 75, 120, 2, UpgradeEffect.RallyRadius, Role.Tech, 1, Role.Defense, 1),
+            Research(Faction.WaterSlimes, "회복의 비 강화", 100, 160, 3, UpgradeEffect.HealingRainAmount, Role.Tech, 0, Role.None, 0),
+            Research(Faction.WaterSlimes, "거품 벽", 100, 160, 2, UpgradeEffect.BubbleWall, Role.Tech, 1, Role.None, 0),
+            Research(Faction.RockGolems, "이끼 재생 강화", 100, 160, 2, UpgradeEffect.MossRegrowthAmount, Role.Tech, 1, Role.None, 0),
+            Research(Faction.Humans, "연쇄 방전", 125, 200, 2, UpgradeEffect.ChainDischarge, Role.Tech, 1, Role.None, 0),
+            Research(Faction.Humans, "증폭 반경", 100, 160, 2, UpgradeEffect.AmplifyRadius, Role.Tech, 1, Role.None, 0),
+            Research(Faction.Humans, "표식 강화", 100, 160, 2, UpgradeEffect.MarkAmount, Role.Tech, 1, Role.None, 0),
         };
 
         private static void TheResearchRowsAreTheDocumentedOnes()
         {
-            int[] counts = { 8, 7, 7, 6, 8, 8 };
+            int[] counts = { 11, 12, 9, 7, 9, 11 };
             for (int f = 0; f < FactionData.FactionCount; f++)
             {
                 var faction = (Faction)f;
