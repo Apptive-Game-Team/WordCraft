@@ -75,9 +75,10 @@ namespace WordCraft.Sim
         /// with it. The answer that counts is the one taken during Apply.
         ///
         /// In the order Produce asks its own: whose and alive, what kind of
-        /// building, whether it is busy, whether the row can go any higher, the
-        /// tier, and last the price, so a refusal for any other reason never
-        /// depends on what the peer happens to have banked.
+        /// building, whether it is busy, whether the row can go any higher,
+        /// whether this is the building the row is researched in, the tier, the
+        /// building the row requires, and last the price, so a refusal for any
+        /// other reason never depends on what the peer happens to have banked.
         /// </summary>
         public bool CanResearch(int peer, int buildingId, int index)
         {
@@ -94,6 +95,12 @@ namespace WordCraft.Sim
             // line refuses both a row at its last level and a row that is not there.
             UpgradeRow row = FactionData.Upgrade(factions[peer], index);
             if (UpgradeLevel(peer, index) >= row.MaxLevel) return false;
+            // And only in the building the row names. Every row names entry 0 of
+            // the Tech slot today, so this refuses nothing the role test above
+            // lets through; the day docs/TECH-TREE.md moves a row onto a second
+            // research building, the row's ResearchAt moves and this line is
+            // what keeps the first building from running it.
+            if (b.Role != row.ResearchAt.Role || b.Slot != row.ResearchAt.Slot) return false;
             // And not a row another of this peer's 기술 건물 is already on. Two
             // buildings researching one row would each finish a level from one
             // price, so a peer with two would buy level 2 for level 1's money.
@@ -104,6 +111,10 @@ namespace WordCraft.Sim
             // anything the lines above let through. It is here so a row meant to
             // open later is one number in the table rather than a new rule.
             if (row.Tier > TierOf(peer)) return false;
+            // After the tier, the order docs/TECH-TREE.md asks both in. No row
+            // names a building today; the column is there for 씨앗 요람 반경 and
+            // 집결 반경, which need a building other than the one researching.
+            if (row.Requires.Role != Role.None && !HasStanding(peer, row.Requires.Role, row.Requires.Slot)) return false;
             return resources[peer] >= ResearchCost(peer, index);
         }
 
