@@ -145,11 +145,11 @@ namespace WordCraft.Sim
         /// completes: growth adds no body. The peer had this one already and will
         /// have exactly it afterwards, so there is no supply to be over.
         ///
-        /// Neither is the tech tier. A tier is what a production building opens,
-        /// and 세계수 정령's answer to production is that it does not produce: the
-        /// document prices growth in workers and ticks and says nothing about
-        /// buildings, and a tier gate here would be a rule the document does not
-        /// have and no player could see.
+        /// The tech tier and the prerequisite are, the same two questions a
+        /// Produce asks of the entry it names, per docs/TECH-TREE.md 기술 단계.
+        /// 고목 수호자 is a tier-2 body that needs a 풀씨 둥지 standing, and the
+        /// document adds tier-3 growth targets (거대 덩쿨, 번개새 무리) that
+        /// without the gate could grow on the first tick of a match.
         /// </summary>
         private void TryGrow(int peer, int id, Role role, int slot)
         {
@@ -164,6 +164,9 @@ namespace WordCraft.Sim
             // entry a 세계수 정령 player can name is the entry the table lists.
             GrowthCost cost = FactionData.Growth(factions[peer], role, slot);
             if (!cost.Grown) return;
+            // After the table, so a Grow naming something nobody grows into is
+            // refused for that and not for the tier it happens to sit at.
+            if (!MeetsTierAndPrerequisite(peer, role, slot)) return;
             if (resources[peer] < cost.Resources) return;
 
             // Taken in full, up front, and never given back. That is what makes the
