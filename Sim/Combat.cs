@@ -67,24 +67,27 @@ namespace WordCraft.Sim
                 UnitStats s = RosterStats(a);
 
                 Entity t = entities[a.TargetId];
-                if (WithinRange(a.Position, t.Position, RangeOf(a)))
+                if (WithinRange(a.Position, t.Position, RangeFor(a)))
                 {
                     if (a.AttackCooldown == 0)
                     {
-                        a.AttackCooldown = s.AttackTicks;
+                        a.AttackCooldown = AttackTicksFor(a);
                         // 공격력 belongs to the shooter's owner and 방어력 to the
                         // target's. A neutral target has no owner, so no level.
                         t.Hp -= DamageAfterArmor(s.Damage + VolleyBonus(a), AttackBonus(a.Owner),
-                            TargetArmor(t), ArmorBonus(t.Owner));
+                            ArmorFor(t), ArmorBonus(t.Owner));
                         if (t.Hp <= 0) Kill(ref t);
                         entities[t.Id] = t;
                     }
                 }
-                else if (a.Kind != EntityKind.Building && a.Mode != OrderMode.Hold &&
+                else if (a.Kind != EntityKind.Building && a.Mode != OrderMode.Hold && a.Speed.Raw != 0 &&
                          (a.Mode == OrderMode.AttackMove || PathDone(i)))
                 {
                     // A holder is left out for the same reason a building is: Target
-                    // is hashed, and a chase written here would move it.
+                    // is hashed, and a chase written here would move it. So is a
+                    // body with no speed at all, 거대 덩쿨 per docs/TECH-TREE.md:
+                    // MoveSystem never walks it, and a Target written here would be
+                    // hashed state that changes and moves nothing.
                     //
                     // Only chase when no move order is outstanding, so combat never
                     // overrides what the player told the unit to do. A building never
@@ -126,14 +129,6 @@ namespace WordCraft.Sim
             int dealt = damage + attackBonus - (armor + armorBonus);
             return dealt < 1 ? 1 : dealt;
         }
-
-        /// <summary>
-        /// The armor the target's own roster row carries. A neutral body has no
-        /// faction to look a row up in, so it has none, which is the same answer
-        /// Flies and Armed give a body with no owner.
-        /// </summary>
-        private int TargetArmor(Entity t) =>
-            t.Owner >= 0 && t.Owner < MaxPeers ? RosterStats(t).Armor : 0;
 
         /// <summary>
         /// 물 슬라임 일제 사격: +1 damage for every other allied archer standing
@@ -200,20 +195,22 @@ namespace WordCraft.Sim
 
         /// <summary>
         /// How far this body's weapon reaches right now: its roster row's Range,
-        /// and a cell more for the two rows a range upgrade names once their owner
-        /// has it — 돌 골렘's melee bodies under 골렘 사거리, 인간 대포 under 대포
-        /// 사거리. The one place a weapon's reach is read, so the shot and anything
-        /// that later asks how far a body can hit cannot disagree.
+        /// or the researched reach once its owner has the row that names this
+        /// entry (덩쿨 사거리, 물결 궁수 사거리, 결속 강화 and the rest of
+        /// docs/TECH-TREE.md 묶음 3), and a cell more for the two rows a range
+        /// upgrade names by role — 돌 골렘's melee bodies under 골렘 사거리, 인간
+        /// 대포 under 대포 사거리. The one place a weapon's reach is read, so the
+        /// shot and anything that later asks how far a body can hit cannot disagree.
         ///
-        /// 골렘 사거리 covers every entry of the melee slot, which is one entry
-        /// today. 대포 사거리 covers entry 0 of the defense slot and not the 전기
-        /// 타워 and 돌 포탑 behind it, for the reason buildOverrides is keyed by
-        /// entry: the upgrade is named after one building.
+        /// 골렘 사거리 covers every entry of the melee slot. 대포 사거리 covers
+        /// entry 0 of the defense slot and not the 전기 타워 and 돌 포탑 behind
+        /// it, for the reason buildOverrides is keyed by entry: the upgrade is
+        /// named after one building.
         /// </summary>
-        public Fix RangeOf(Entity e)
+        public Fix RangeFor(Entity e)
         {
             if (e.Owner < 0 || e.Owner >= MaxPeers) return Fix.Zero;
-            Fix range = RosterStats(e).Range;
+            Fix range = EntryUpgraded(e, UpgradedStat.Range, out Fix researched) ? researched : RosterStats(e).Range;
             Faction faction = factions[e.Owner];
             if (faction == Faction.RockGolems && e.Kind == EntityKind.Unit && e.Role == Role.Melee &&
                 UpgradeLevelOf(e.Owner, UpgradeEffect.GolemMeleeRange) > 0)

@@ -1118,9 +1118,12 @@ namespace WordCraft.Sim
                 List<int> path = paths[i];
                 FixVec2 goal = e.PathIndex < path.Count ? CellCenter(path[e.PathIndex]) : e.Target;
 
+                // Researched speed is read here and nowhere else that moves a
+                // body; e.Speed stays the hashed value. See World.SpeedFor.
+                Fix speed = SpeedFor(e);
                 FixVec2 delta = goal - e.Position;
-                bool arrives = delta.Magnitude <= e.Speed;
-                FixVec2 next = arrives ? goal : e.Position + delta.Normalized() * e.Speed;
+                bool arrives = delta.Magnitude <= speed;
+                FixVec2 next = arrives ? goal : e.Position + delta.Normalized() * speed;
 
                 // The last word on where a body may stand. The pathfinder already
                 // routes around terrain and cliffs, so this only ever catches the

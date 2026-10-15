@@ -201,6 +201,60 @@ namespace WordCraft.Sim
         // 인간 마법 문명
         CaptureTicks = 13,
         CannonRange = 14,
+
+        // docs/TECH-TREE.md 연구 행 배치, 묶음 3: one roster entry's reach,
+        // rate, speed or armor. Which entry and what value is the
+        // entryUpgrades table in FactionData, read by World.RangeFor,
+        // AttackTicksFor, SpeedFor and ArmorFor.
+
+        // 세계수 정령
+        VineRange = 15,
+        GiantVineRange = 16,
+        ThunderBirdAttackTicks = 17,
+        LeafbladeSpeed = 18,
+
+        // 지옥불 군단
+        LavaCatapultRange = 19,
+        AshWingAttackTicks = 20,
+        HardenedCarapace = 21,
+
+        // 물 슬라임
+        ArcherRange = 22,
+        SpitterRange = 23,
+        WaterCannonRange = 24,
+
+        // 돌 골렘 부족
+        SlingerRange = 25,
+        FloatingStoneRange = 26,
+
+        // 차원 유랑종
+        StormShardAttackTicks = 27,
+        VineShardRange = 28,
+        RiftBatteryRange = 29,
+        FleeSpeed = 30,
+
+        // 인간 마법 문명
+        CrossbowRange = 31,
+        ArcaneRiderSpeed = 32,
+        BindingRange = 33,
+        BindingArmor = 34,
+    }
+
+    /// <summary>
+    /// Which number of one roster entry a row of the entry upgrade table
+    /// replaces. Range, AttackTicks and Speed give the researched value
+    /// outright, the way docs/TECH-TREE.md writes them (사거리 5 → 6); Armor
+    /// is added to the row's own armor (방어 +2). FleeSpeed is the speed of a
+    /// body that is fleeing and only then: 도주 가속.
+    /// </summary>
+    public enum UpgradedStat
+    {
+        None = 0,
+        Range = 1,
+        AttackTicks = 2,
+        Speed = 3,
+        Armor = 4,
+        FleeSpeed = 5,
     }
 
     /// <summary>
@@ -583,7 +637,7 @@ namespace WordCraft.Sim
 
             // 돌 골렘 이끼바위 골렘. 체력 300, 근접, 피해 9, 속도 1/6칸/틱, per
             // docs/FACTION-MECHANICS.md. The shared melee reach and rate are kept
-            // and written out; 골렘 사거리 adds to the reach in World.RangeOf.
+            // and written out; 골렘 사거리 adds to the reach in World.RangeFor.
             (Faction.RockGolems, Role.Melee, 0,
                 new UnitStats
                 {
@@ -978,7 +1032,7 @@ namespace WordCraft.Sim
         /// level array World hashes, so a faction given a fifth row has to move
         /// this too, and the harness refuses a table that outgrows it.
         /// </summary>
-        public const int MaxUpgrades = 4;
+        public const int MaxUpgrades = 8;
 
         /// <summary>
         /// What level 1 of 공격력 and 방어력 costs and how long a level takes. The
@@ -1099,6 +1153,51 @@ namespace WordCraft.Sim
                 ResearchAt = TechBuilding,
                 Requires = NoBuilding,
             };
+
+        /// <summary>
+        /// One row of docs/TECH-TREE.md 업그레이드 written out whole: price, clock,
+        /// tier, the building that researches it and the one it requires. One
+        /// level, as every row past the first two is. The rows that use this are
+        /// the ones the document prices one by one, so there is no shared price to
+        /// start from.
+        /// </summary>
+        private static UpgradeRow ResearchRow(string name, int resources, int ticks, int tier,
+            UpgradeEffect effect, (Role Role, int Slot) at, (Role Role, int Slot) requires) =>
+            new UpgradeRow
+            {
+                Name = name,
+                Resources = resources,
+                Ticks = ticks,
+                MaxLevel = 1,
+                Tier = tier,
+                Effect = effect,
+                ResearchAt = at,
+                Requires = requires,
+            };
+
+        /// <summary>
+        /// What the 묶음 3 research rows change, per roster entry: the entry, the
+        /// row that changes it, which number, and the researched value. A table
+        /// rather than a case per row in the four lookups, so that adding a row
+        /// is one line here and the lookups do not change. Walked in declaration
+        /// order, never through a keyed collection, for the reason
+        /// <see cref="growthTargets"/> is.
+        ///
+        /// One row can name two entries — 갑각 경화 hardens 용암 갑각 악마 and 산란
+        /// 악마 both — and one entry can carry two rows, as Towerback does under
+        /// 결속 강화 and 결속 갑주. What a row may not do is give one entry two
+        /// values for the same number, and the type load refuses it.
+        /// </summary>
+        private static readonly (Faction Faction, Role Role, int Slot, UpgradeEffect Effect, UpgradedStat Stat, Fix Value)[] entryUpgrades =
+        {
+        };
+
+        /// <summary>How many rows the entry upgrade table holds, for the harness.</summary>
+        public static int EntryUpgradeCount => entryUpgrades.Length;
+
+        /// <summary>One row of the entry upgrade table, in declaration order.</summary>
+        public static (Faction Faction, Role Role, int Slot, UpgradeEffect Effect, UpgradedStat Stat, Fix Value) EntryUpgrade(int index) =>
+            entryUpgrades[index];
 
         /// <summary>How many rows this faction's upgrade table holds.</summary>
         public static int UpgradeCount(Faction faction)
@@ -1248,6 +1347,35 @@ namespace WordCraft.Sim
                 var (faction, row) = upgrades[i];
                 RequireBuilding(faction, row.ResearchAt, "upgrades");
                 if (row.Requires.Role != Role.None) RequireBuilding(faction, row.Requires, "upgrades");
+            }
+
+            for (int f = 0; f < FactionCount; f++)
+            {
+                Require(UpgradeCount((Faction)f) <= MaxUpgrades,
+                    "upgrades gives " + (Faction)f + " more rows than MaxUpgrades");
+            }
+
+            // Every entry upgrade names an entry the roster fields and a row its
+            // faction's table holds, and no entry is given two values for one
+            // number: the lookups take the first match, so a second one would be
+            // a row that silently does nothing.
+            for (int i = 0; i < entryUpgrades.Length; i++)
+            {
+                var (faction, role, slot, effect, stat, _) = entryUpgrades[i];
+                RequireFielded(faction, role, slot, "entryUpgrades");
+                Require(stat != UpgradedStat.None, "entryUpgrades row " + i + " changes nothing");
+                bool listed = false;
+                for (int u = 0; u < UpgradeCount(faction); u++)
+                {
+                    if (Upgrade(faction, u).Effect == effect) listed = true;
+                }
+                Require(listed, "entryUpgrades names " + effect + ", which " + faction + " cannot research");
+                for (int j = 0; j < i; j++)
+                {
+                    var other = entryUpgrades[j];
+                    Require(other.Faction != faction || other.Role != role || other.Slot != slot || other.Stat != stat,
+                        "entryUpgrades gives " + faction + " " + role + " " + slot + " two " + stat + " values");
+                }
             }
         }
 

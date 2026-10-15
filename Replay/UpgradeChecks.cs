@@ -319,11 +319,11 @@ namespace WordCraft.Replay
             world.VolleyMaxBonusFor(peer),
             world.VolleyRadiusFor(peer).ToInt(),
             world.RemnantTicksFor(peer),
-            world.RangeOf(world.GetEntity(golem)).ToInt(),
+            world.RangeFor(world.GetEntity(golem)).ToInt(),
             world.ArrivalRadiusFor(peer).ToInt(),
             world.ArrivalTicksFor(peer),
             world.CaptureTicksFor(peer),
-            world.RangeOf(world.GetEntity(cannon)).ToInt(),
+            world.RangeFor(world.GetEntity(cannon)).ToInt(),
         };
 
         /// <summary>What each reading becomes once its own row is researched.</summary>

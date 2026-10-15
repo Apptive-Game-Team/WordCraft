@@ -44,7 +44,7 @@ namespace WordCraft.Sim
         /// from needing a faction test of its own: 인간 has no OffspringCap row,
         /// so a 인간 peer's offspring cap is the base one, and nothing has to say so.
         ///
-        /// A scan of at most four rows, in index order.
+        /// A scan of at most MaxUpgrades rows, in index order.
         /// </summary>
         public int UpgradeLevelOf(int peer, UpgradeEffect effect)
         {
@@ -216,5 +216,78 @@ namespace WordCraft.Sim
 
         /// <summary>What this peer's 방어력 takes off every hit its bodies receive.</summary>
         public int ArmorBonus(int peer) => UpgradeLevelOf(peer, UpgradeEffect.Armor) * ArmorPerLevel;
+
+        /// <summary>
+        /// Whether this body's owner has researched a row of the entry upgrade
+        /// table that changes this number of this body's roster entry, and the
+        /// value it gives. The first matching row answers; the type load refuses a
+        /// table that gives one entry two values for one number. Armor is the
+        /// exception and is summed by ArmorFor, because two rows may each add to it.
+        ///
+        /// A scan of a twenty-row table in declaration order. Asked per shot and
+        /// per step, which is the cost VolleyBonus already pays per shot.
+        /// </summary>
+        private bool EntryUpgraded(Entity e, UpgradedStat stat, out Fix value)
+        {
+            value = Fix.Zero;
+            if (e.Owner < 0 || e.Owner >= MaxPeers) return false;
+            Faction faction = factions[e.Owner];
+            for (int i = 0; i < FactionData.EntryUpgradeCount; i++)
+            {
+                var row = FactionData.EntryUpgrade(i);
+                if (row.Stat != stat || row.Faction != faction || row.Role != e.Role || row.Slot != e.Slot) continue;
+                if (UpgradeLevelOf(e.Owner, row.Effect) <= 0) continue;
+                value = row.Value;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// How many ticks this body's weapon waits between shots: its roster
+        /// row's AttackTicks, or the researched rate (번개새 공격 주기, 재날개
+        /// 공격 주기, 폭풍편 공격 주기). Read when the cooldown is set, so a level
+        /// that lands mid-cooldown shortens the next wait and not the one running.
+        /// </summary>
+        public int AttackTicksFor(Entity e)
+        {
+            if (e.Owner < 0 || e.Owner >= MaxPeers) return 0;
+            return EntryUpgraded(e, UpgradedStat.AttackTicks, out Fix ticks) ? ticks.ToInt() : RosterStats(e).AttackTicks;
+        }
+
+        /// <summary>
+        /// How far this body walks in a tick: the Speed it carries, or the
+        /// researched speed (잎날 속도, 마도 기수 속도), or while it flees the
+        /// fleeing speed (도주 가속). e.Speed stays the hashed value and is never
+        /// rewritten, so a level read here moves every body of the entry at once
+        /// and nothing has to be refreshed when it lands. A body standing at
+        /// speed 0 stays at 0: MoveSystem never asks about it.
+        /// </summary>
+        public Fix SpeedFor(Entity e)
+        {
+            if (e.Fleeing && EntryUpgraded(e, UpgradedStat.FleeSpeed, out Fix fleeing)) return fleeing;
+            return EntryUpgraded(e, UpgradedStat.Speed, out Fix researched) ? researched : e.Speed;
+        }
+
+        /// <summary>
+        /// The armor this body carries before its owner's 방어력: its roster
+        /// row's Armor plus every researched row that hardens this entry (갑각
+        /// 경화, 결속 갑주). A neutral body has no faction to look a row up in, so
+        /// it has none, which is the same answer Flies and Armed give a body with
+        /// no owner. 방어력 is ArmorBonus and is added by the damage rule, not here.
+        /// </summary>
+        public int ArmorFor(Entity e)
+        {
+            if (e.Owner < 0 || e.Owner >= MaxPeers) return 0;
+            int armor = RosterStats(e).Armor;
+            Faction faction = factions[e.Owner];
+            for (int i = 0; i < FactionData.EntryUpgradeCount; i++)
+            {
+                var row = FactionData.EntryUpgrade(i);
+                if (row.Stat != UpgradedStat.Armor || row.Faction != faction || row.Role != e.Role || row.Slot != e.Slot) continue;
+                if (UpgradeLevelOf(e.Owner, row.Effect) > 0) armor += row.Value.ToInt();
+            }
+            return armor;
+        }
     }
 }
