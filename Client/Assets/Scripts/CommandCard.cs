@@ -165,21 +165,17 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// What this faction's buildings can produce, named and priced, one cell
+        /// What the selected building can produce, named and priced, one cell
         /// per roster entry rather than per role. Which entries that is comes
         /// from <see cref="ProductionMenu"/>, kept Unity-free so its one
-        /// interesting question — does every faction's list still fit the card
+        /// interesting question — does every building's list still fit the card
         /// — runs headless in Replay/ProductionMenuChecks.cs. This method only
         /// turns that list into CardSlots and keys.
         ///
         /// Rows 1 and 2 (<see cref="ProductionMenu.Cells"/>, six) are the whole
-        /// budget, not the bottom row alone. 차원 유랑종 fills all six today: three
-        /// melee entries (its two temporary extinct-slime summons standing
-        /// beside 화산편), two ranged (틈새 사수 and 멸종한 번개 슬라임), one
-        /// signature — every other faction fits in three. A faction that grew a
-        /// seventh producible entry would overflow this card; nothing on the
-        /// roster does yet, and #114 leaves rebalancing or paging the card to
-        /// whoever adds one.
+        /// budget, not the bottom row alone. Since docs/TECH-TREE.md 묶음 3 three
+        /// buildings make more than six entries; see the ponytail on the overload
+        /// below.
         ///
         /// 도착 goes in cell 2 because it is the last free cell of row 0, and row 0
         /// is where a building's own settings live rather than what it makes. It
@@ -195,13 +191,30 @@ namespace WordCraft.View
         /// </summary>
         public static CardSlot[] Building(Faction faction)
         {
+            (Role Role, int Slot) selected = SelectedBuilding();
+            return Building(faction, selected.Role, selected.Slot);
+        }
+
+        /// <summary>
+        /// The produce card for one building entry: only what that building
+        /// makes (<see cref="ProductionMenu.For(Faction, Role, int)"/>).
+        /// docs/TECH-TREE.md 묶음 3 spreads each faction's ten or more producible
+        /// entries over two or three buildings, and a faction-wide list ran past
+        /// the six cells before it reached 지옥불 군단장 or 경계 운반자.
+        /// </summary>
+        // ponytail: 물 슬라임's 거품 생성기 makes ten entries, 차원 유랑종's 통로
+        // nine and 돌 골렘's 각성 바위 seven, so those three still run past the
+        // six cells and the tail has no button. The paged card of #169 is what
+        // shows the rest; see Replay/ProductionMenuChecks.cs.
+        public static CardSlot[] Building(Faction faction, Role buildingRole, int buildingSlot)
+        {
             for (int i = 0; i < Cells; i++) building[i] = Empty;
             building[0] = Cmd("Rally", CommandType.SetRallyPoint);
             building[1] = Cmd("Cancel", CommandType.CancelProduction);
             // Type stays None: nothing leaves the client when this cell is pressed.
             building[2] = new CardSlot { Label = "Arrive", Aim = true };
 
-            List<ProductionMenu.Entry> entries = ProductionMenu.For(faction);
+            List<ProductionMenu.Entry> entries = ProductionMenu.For(faction, buildingRole, buildingSlot);
             int cell = Cols; // rows 1-2: one cell per producible roster entry
             for (int i = 0; i < entries.Count && cell < Cells; i++)
             {
@@ -215,6 +228,24 @@ namespace WordCraft.View
                 };
             }
             return building;
+        }
+
+        /// <summary>
+        /// The building the produce card speaks for: the selection's
+        /// representative, read the way Orders and the HUD read it, or Role.None
+        /// when there is no match running. Read here rather than passed in so the
+        /// two callers of <see cref="Of"/> cannot show a card for different
+        /// buildings.
+        /// </summary>
+        private static (Role Role, int Slot) SelectedBuilding()
+        {
+            MatchRunner runner = MatchRunner.Instance;
+            Selection selection = Selection.Instance;
+            if (runner == null || runner.World == null || selection == null) return (Role.None, 0);
+            int id = Representative(runner.World, selection.Selected, runner.LocalPeer);
+            if (id < 0) return (Role.None, 0);
+            Entity e = runner.World.GetEntity(id);
+            return e.Kind == EntityKind.Building ? (e.Role, e.Slot) : (Role.None, 0);
         }
 
         /// <summary>What the card is for, drawn over it so the player is never guessing.</summary>
