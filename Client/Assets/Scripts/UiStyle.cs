@@ -297,12 +297,18 @@ namespace WordCraft.View
         public const float ReadoutWidth = 120f;
 
         // The command card sizes the bottom panel, not the other way round. It is
-        // nine fixed cells and it may not be cropped: the previous layout let the
-        // bottom row fall off the screen, which hid three commands entirely.
+        // twelve fixed cells (three rows of four) and it may not be cropped: the
+        // previous layout let the bottom row fall off the screen, which hid three
+        // commands entirely. The row count is what sizes the panel, so widening the
+        // card from three columns to four moved the card and the selection list and
+        // left BottomPanel, the minimap and the camera's framing alone.
         public const float CardCellSize = 54f;
         public const float KeyCap = 16f;
-        public const float CardWidth = 3f * CardCellSize + 2f * S1;
-        public const float CardHeight = CardWidth;
+
+        // Read off CommandCard rather than written again, so the grid the HUD
+        // draws and the grid the keys fire cannot be sized differently.
+        public const float CardWidth = CommandCard.Cols * CardCellSize + (CommandCard.Cols - 1) * S1;
+        public const float CardHeight = CommandCard.Rows * CardCellSize + (CommandCard.Rows - 1) * S1;
 
         public const float TopBar = S2 + ReadoutHeight + S1;
         public const float BottomPanel = S2 + Micro + S1 + CardHeight + S2;
@@ -591,7 +597,7 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// One cell of the 3x3 command card. The keycap is drawn in the corner
+        /// One cell of the command card. The keycap is drawn in the corner
         /// because position is the shortcut and the cell is the thing worth
         /// learning; armed inverts the whole cell, keycap included, so the state is
         /// visible from the edge of vision.

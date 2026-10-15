@@ -411,7 +411,7 @@ HUD의 어떤 오프셋도 이 값이 아닌 숫자로 쓰지 않는다. 6px과 
 | `Note` | `Micro` / `InkDim`. 값·상태·힌트·진단 |
 | `Button` | 면 + 글자색. 기본 `Raised`, 무장 `Accent` 반전 |
 | 비활성 버튼 | `Void` 면 + `InkMute` 글자. `GUI.enabled`를 쓰지 않는다 |
-| `CardCell` | 3x3 한 칸. 좌상단 키캡 우물 + 하단 라벨. 무장 시 통째 반전 |
+| `CardCell` | 카드 한 칸(3행 4열). 좌상단 키캡 우물 + 하단 라벨. 무장 시 통째 반전 |
 | `EmptyCell` | `Void` 면 + `Raised` 프레임. 눌리지 않는 버튼이 아니라 구멍 |
 | `Readout` | `Micro` 이름 위, `Big` 값 아래. 마나·인구 |
 | `Meter` | `Void` 바닥 + `Health(ratio)` 채움. 체력·생산 진행 |
@@ -428,15 +428,33 @@ HUD의 어떤 오프셋도 이 값이 아닌 숫자로 쓰지 않는다. 6px과 
 ## 레이아웃
 
 **커맨드 카드가 하단 패널의 높이를 정한다.** 반대가 아니다. 카드는 고정
-9칸이고 잘릴 수 없다. 이전 레이아웃은 74px 셀 3행을 150px 바에 넣어서
+12칸(3행 4열)이고 잘릴 수 없다. 이전 레이아웃은 74px 셀 3행을 150px 바에 넣어서
 아래 한 행 — 명령 세 개 — 이 화면 밖으로 나가 보이지 않았다.
 
 ```
-CardCellSize 54  →  CardWidth = CardHeight = 3*54 + 2*S1 = 170
+CardCellSize 54  →  CardWidth  = Cols * 54 + (Cols - 1) * S1 = 4*54 + 3*4 = 228
+                    CardHeight = Rows * 54 + (Rows - 1) * S1 = 3*54 + 2*4 = 170
 BottomPanel = S2 + Micro + S1 + 170 + S2 = 200
 MinimapSize = BottomPanel = 200   (정사각, 좌하단에 밀착)
 TopBar = S2 + ReadoutHeight + S1 = 44
 ```
+
+`Cols` 와 `Rows` 는 `CommandCard` 에서 읽는다(`UiStyle` 이 숫자를 다시 적지
+않는다). 3열에서 4열로 넓힐 때 바뀐 것은 `CardWidth` 170 → 228 뿐이다.
+`CardHeight` 는 행 수만 보므로 `BottomPanel` 200, `MinimapSize` 200, 카메라
+프레이밍(아래)은 그대로다. `TopRightWidth` 는 상단 바의 값이라 카드와 무관하고
+260 그대로다.
+
+카드가 넓어진 만큼 선택 목록이 좁아진다. 목록은 미니맵, 정보, 카드 사이에 남은
+폭을 쓴다.
+
+```
+ListWidth = Screen.width - (MinimapSize + S3 + InfoWidth + S3) - S3 - (CardWidth + S3)
+          = Screen.width - 484 - 12 - 240 = Screen.width - 736
+```
+
+1280px 창에서 544(칩 네 열), 1024px 창에서 288(두 열)이다. `ChipWidth` 132 보다
+좁아지면, 즉 창 폭이 868px 아래면 목록은 그려지지 않는다(전에는 810px).
 
 미니맵과 카드는 각자의 모서리에 붙인다. 둘 다 근육 기억으로 조준하는
 대상이고, 여백은 포인터가 빗나갈 수 있는 공간이다.

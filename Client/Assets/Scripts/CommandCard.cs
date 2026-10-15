@@ -64,49 +64,57 @@ namespace WordCraft.View
     /// </summary>
     public static class CommandCard
     {
-        public const int Cols = 3;
+        public const int Cols = 4;
         public const int Rows = 3;
         public const int Cells = Cols * Rows;
 
         /// <summary>
         /// Cell to key. Not QWE/ASD/ZXC, which would be the obvious block, because
         /// the camera keeps WASD (roadmap 3-5) and a pan key that also fires a
-        /// command is worse than an unfamiliar block. RTY/FGH/VBN is the nearest
-        /// contiguous 3x3 that leaves WASD alone.
+        /// command is worse than an unfamiliar block. RTYU/FGHJ/VBNM is the
+        /// nearest contiguous 3x4 that leaves WASD alone.
+        ///
+        /// The fourth column was added on the right, so the three columns that
+        /// were here before keep their keys: R T Y / F G H / V B N still sit
+        /// where the hand learned them, and U J M are new. Every card below is
+        /// written in rows of four to match.
         /// </summary>
         public static readonly KeyCode[] Keys =
         {
-            KeyCode.R, KeyCode.T, KeyCode.Y,
-            KeyCode.F, KeyCode.G, KeyCode.H,
-            KeyCode.V, KeyCode.B, KeyCode.N,
+            KeyCode.R, KeyCode.T, KeyCode.Y, KeyCode.U,
+            KeyCode.F, KeyCode.G, KeyCode.H, KeyCode.J,
+            KeyCode.V, KeyCode.B, KeyCode.N, KeyCode.M,
         };
 
         // The column convention every card below obeys, so a cell means the same
-        // thing whatever is selected:
-        //   cell 0  point at the ground   Move, or where produced units walk to
-        //   cell 1  cancel                Stop, or take one off the queue
-        //   cell 2  stand and shoot       Hold; on a building, the rest of row 0
-        //   cell 3  name a victim
-        //   cell 4  walk and shoot
-        //   cells 6-8 (bottom row)        what this thing makes
+        // thing whatever is selected. Columns 0-2 are the old 3x3 and keep their
+        // meaning; column 3 (cells 3, 7, 11) is new and stays empty on every card
+        // except where a card says otherwise.
+        //   cell 0  (R)  point at the ground   Move, or where produced units walk to
+        //   cell 1  (T)  cancel                Stop, or take one off the queue
+        //   cell 2  (Y)  stand and shoot       Hold; on a building, the rest of row 0
+        //   cell 4  (F)  name a victim
+        //   cell 5  (G)  walk and shoot
+        //   cells 8-10 (V B N), and on a building all of rows 1 and 2
+        //                what this thing makes
 
         /// <summary>Declared before the tables: static initializers run in textual order.</summary>
         private static readonly CardSlot Empty = new CardSlot();
 
         private static readonly CardSlot[] fighter =
         {
-            Cmd("Move", CommandType.Move), Cmd("Stop", CommandType.Stop), Cmd("Hold", CommandType.HoldPosition),
-            Cmd("Attack", CommandType.Attack), Cmd("A-Move", CommandType.AttackMove), Empty,
-            Empty, Empty, Empty,
+            Cmd("Move", CommandType.Move), Cmd("Stop", CommandType.Stop), Cmd("Hold", CommandType.HoldPosition), Empty,
+            Cmd("Attack", CommandType.Attack), Cmd("A-Move", CommandType.AttackMove), Empty, Empty,
+            Empty, Empty, Empty, Empty,
         };
 
         /// <summary>
-        /// 징발 goes in cell 3 because cell 3 is where naming a body lives — it is
+        /// 징발 goes in cell 4 because cell 4 is where naming a body lives — it is
         /// Attack on the fighter card, and a Capture is the same gesture at the
         /// same key on the one card that has no Attack. The worker card had six
         /// free cells before this and has five after, so nothing was displaced and
-        /// nothing had to be paged; the 3x3 is only tight on the produce card,
-        /// where 차원 유랑종 already fills all six of ProductionMenu.Cells.
+        /// nothing had to be paged; the card is only tight on the produce card,
+        /// where 차원 유랑종 already fills six of ProductionMenu.Cells.
         ///
         /// The cell is here for every faction and drawn dead for five of them
         /// (Hud.Card asks CaptureOrder.Available). One layout per selection kind is
@@ -116,9 +124,9 @@ namespace WordCraft.View
         /// </summary>
         private static readonly CardSlot[] worker =
         {
-            Cmd("Move", CommandType.Move), Cmd("Stop", CommandType.Stop), Empty,
-            Cmd("Capture", CommandType.Capture), Empty, Empty,
-            Cmd("Build", CommandType.Build), Empty, Empty,
+            Cmd("Move", CommandType.Move), Cmd("Stop", CommandType.Stop), Empty, Empty,
+            Cmd("Capture", CommandType.Capture), Empty, Empty, Empty,
+            Cmd("Build", CommandType.Build), Empty, Empty, Empty,
         };
 
         /// <summary>

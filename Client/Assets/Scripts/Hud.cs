@@ -612,7 +612,7 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// The 3x3 card. The key is drawn on its own cell because the cell is the
+        /// The command card, three rows of four. The key is drawn on its own cell because the cell is the
         /// thing worth learning; see CommandCard for the table behind it.
         /// </summary>
         private void Card(Rect area)
