@@ -103,13 +103,17 @@
   프레임에 완공 ring 과 settle 이 보인다.
 - `strip-match-build`: 실제 `MatchView` 로 스크립트 매치에서 처음 완공되는 건물 (tick
   250).
-- `strip-match-raze`, `strip-match-razesite`: 스크립트 매치에는 건물이 무너지는 tick 이
-  없어서 따로 만든 공성 world 를 `MatchView` 로 그린다. 빈 맵에 peer 1 의 풀씨 둥지
-  (완성, 또는 건설 시간 절반이 지난 site) 와 그 양옆 4.5셀에 peer 0 의 지옥불 원거리 4기.
-  peer 0 의 fog 가 켜져 있다. 프레임 사이 4 tick, 8프레임이 1.4초다. 무너지는 tick 은
-  완성 346, site 450.
+- `strip-match-raze`: 스크립트 매치에는 건물이 무너지는 tick 이 없어서 따로 만든 공성
+  world 를 `MatchView` 로 그린다. 빈 맵에 peer 1 의 완성된 풀씨 둥지와 그 양옆 4.5셀에
+  peer 0 의 지옥불 원거리 4기. peer 0 의 fog 가 켜져 있다. 프레임 사이 4 tick, 8프레임이
+  1.4초다. 무너지는 tick 은 346.
+- `strip-<faction>-sitedestroy`: 진행도 50% 의 본진·생산·방어 site 에 `Die(false, 0.25f)`.
+  0.25초 서 있다가 조립된 자세 그대로 무너진다. 실제 경로로 반쯤 지은 site 를 부수는
+  공성도 해 봤지만, `ConstructionSystem` 이 매 tick site 의 hp 를 진행도로 다시 정해서
+  한 tick 에 그 hp 를 넘지 못한 피해는 없던 것이 된다. 그래서 site 는 사실상 처음 몇
+  퍼센트에서만 무너지고, 공성 site 는 다 지어진 뒤 tick 450 에 무너졌다.
 - `-shotsOnly build,work,...`: 한 종류만 다시 찍는 필터. 없는 이름은 `FAIL` 로 끝난다.
-- `CLAUDE.md` 의 "See it" 절을 78장과 `-shotsOnly` 에 맞춘다 (이슈 쓰기 범위 밖, 검토
+- `CLAUDE.md` 의 "See it" 절을 83장과 `-shotsOnly` 에 맞춘다 (이슈 쓰기 범위 밖, 검토
   요청으로 넓힘).
 - `strip-<faction>-work`: 본진, 생산, 기술. 방어 건물은 생산도 연구도 하지 않아서
   기술 건물로 바꾼다. 0.36초 (`DeliverAt`) 에 본진과 생산 건물이 유닛을 내보낸다
@@ -146,7 +150,8 @@ strip 18장을 0.4배로 줄여 진영 6개를 한 장에 쌓은 montage 로 판
    기울고, `strip-match-build` 에서 풀씨 둥지가 frame 1 에 불투명해지고 frame 3~5 에 먼지
    ring 이 퍼진다.
 5. 검토 반영: 자원 노드와 잔해 더미가 건물 파괴 경로 (회색 덩어리와 먼지) 를 타던 것을
-   `Assembled` 로 막았다. 무너지는 건물을 실제 경로로 보려고 공성 strip 두 장을 더했다.
+   `Assembled` 로 막았다. 무너지는 건물을 실제 경로로 보려고 공성 strip 을 더했고, 반쯤
+   지은 site 는 실제 경로로 무너뜨릴 수 없어서 `sitedestroy` strip 으로 직접 찍었다.
    근접 6기는 건물 위로 몰려 가렸고, 뒤쪽 원거리는 화면에서 건물 위에 떠 보여서 양옆
    원거리 4기로 바꿨다. 원거리 처치는 tracer 가 닿을 때까지 쓰러짐을 미루므로 프레임
    간격을 4 tick 으로 늘렸다.
@@ -157,7 +162,7 @@ strip 18장을 0.4배로 줄여 진영 6개를 한 장에 쌓은 montage 로 판
 - `Unity -batchmode -quit -projectPath Client -executeMethod WordCraft.View.ViewSelfCheck.Run`
   → `OK: all view determinism checks passed`
 - `Unity -batchmode -quit -projectPath Client -executeMethod WordCraft.View.ViewShots.Run -shotsOutput shots -shotsTicks 900`
-  → 기존 57장 + strip 18장 + match strip 3장 = 78장
+  → 기존 57장 + strip 24장 + match strip 2장 = 83장
 
 ## Risks & Rollback
 
