@@ -251,5 +251,26 @@ namespace WordCraft.Sim
                 armor += AbilityAmount(t.Owner, FactionData.AbilityRowAt(still));
             return armor;
         }
+
+        /// <summary>
+        /// Fixed damage around a point: every living body of these targets that
+        /// some peer other than this one owns, within the radius, by ascending
+        /// id, and Kill for each it brings to 0. Neutral bodies are nobody's
+        /// enemy. What 화상 오라 and the bursts share; the caller has already
+        /// decided the amount, so no armor or level is asked here.
+        /// </summary>
+        private void DamageHostileBodies(int owner, AbilityTargets targets, FixVec2 from, Fix radius, int damage)
+        {
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity t = entities[i];
+                if (!t.Alive || t.Owner < 0 || t.Owner == owner) continue;
+                if (!AuraTargets(targets, t)) continue;
+                if (!WithinRange(from, t.Position, radius)) continue;
+                t.Hp -= damage;
+                if (t.Hp <= 0) Kill(ref t);
+                entities[i] = t;
+            }
+        }
     }
 }
