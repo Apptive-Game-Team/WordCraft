@@ -1548,9 +1548,23 @@ namespace WordCraft.View
             switch (role)
             {
                 case Role.Worker: MiniRock(b); break;
-                case Role.Melee: MossGolem(b); break;
-                case Role.Ranged: RockMage(b); break;
-                case Role.Signature: AncientGolem(b); break;
+                case Role.Melee:
+                    if (slot == 1) RollingRock(b);
+                    else if (slot == 2) WallGolem(b);
+                    else if (slot == 3) AwakenedStone(b);
+                    else MossGolem(b);
+                    break;
+                case Role.Ranged:
+                    if (slot == 1) PebbleSlinger(b);
+                    else if (slot == 2) FloatingSentinel(b);
+                    else if (slot == 3) SandShaper(b);
+                    else RockMage(b);
+                    break;
+                case Role.Signature:
+                    if (slot == 1) MossSage(b);
+                    else if (slot == 2) SporeCluster(b);
+                    else AncientGolem(b);
+                    break;
                 default: GenericUnit(b, Faction.RockGolems); break;
             }
         }
@@ -1658,6 +1672,195 @@ namespace WordCraft.View
             b.Arm.Lump(Point(0.44f, 0.5f, 0.02f), Extent(0.12f, 0.14f, 0.12f), stone, Turn(0f, 50f, 0f));
             b.Arm.Lump(Point(0.44f, 0.26f, 0.05f), Extent(0.17f, 0.14f, 0.17f), tan, Turn(15f, 20f, 0f));
             b.Arm.Dome(Point(0.44f, 0.6f, 0.02f), Extent(0.09f, 0.04f, 0.09f), 6, 1, moss);
+        }
+
+        /// <summary>구르는 바위: one round boulder with seams and a moss patch, eyes in its face. Bounds along rather than walks. Slot 1.</summary>
+        private static void RollingRock(Blueprint b)
+        {
+            b.Gait = Gait.Hop;
+            b.Strike = Strike.Lunge;
+            Solids hull = b.Hull;
+            Color stone = BodyPalette.RockGolems.Stone, shade = BodyPalette.RockGolems.StoneShade;
+
+            hull.Ball(Point(0f, 0.42f, 0f), 0.42f, stone);
+            hull.Box(Point(0.1f, 0.5f, 0.38f), Extent(0.03f, 0.3f, 0.04f), shade, Turn(0f, 0f, 30f));
+            hull.Box(Point(-0.3f, 0.36f, 0.26f), Extent(0.03f, 0.22f, 0.04f), shade, Quaternion.Euler(0f, -40f, 0f) * Turn(0f, 0f, -20f));
+            hull.Box(Point(0.32f, 0.62f, -0.12f), Extent(0.04f, 0.2f, 0.03f), shade, Quaternion.Euler(0f, 70f, 0f) * Turn(0f, 0f, 35f));
+            hull.Ball(Point(-0.2f, 0.62f, 0.2f), Extent(0.12f, 0.08f, 0.1f), BodyPalette.RockGolems.Tan, Quaternion.identity, 0);
+            hull.Dome(Point(0.04f, 0.74f, -0.16f), Extent(0.24f, 0.08f, 0.2f), 7, 2, BodyPalette.RockGolems.Moss);
+            Eyes(hull, Point(0f, 0.46f, 0.395f), 0.16f, 0.05f);
+            Band(b, hull, Point(0f, 0.36f, 0f), 12, 0.43f, 0.06f);
+        }
+
+        /// <summary>성벽 골렘: a broad, short wall of a body with three boulders set in it, a small head and short arms. Slot 2.</summary>
+        private static void WallGolem(Blueprint b)
+        {
+            Solids hull = b.Hull;
+            Color tan = BodyPalette.RockGolems.Tan, stone = BodyPalette.RockGolems.Stone, moss = BodyPalette.RockGolems.Moss;
+
+            BlockLegs(b, 0.22f, 0.24f, Extent(0.22f, 0.22f, 0.24f), stone);
+            hull.Box(Point(0f, 0.25f, 0f), Extent(0.64f, 0.1f, 0.34f), BodyPalette.RockGolems.StoneShade);
+            hull.Box(Point(0f, 0.5f, 0f), Extent(0.96f, 0.46f, 0.38f), tan);
+            hull.Lump(Point(-0.28f, 0.5f, 0.17f), Extent(0.16f, 0.14f, 0.08f), stone, Turn(0f, 20f, 10f));
+            hull.Lump(Point(0.06f, 0.44f, 0.18f), Extent(0.18f, 0.13f, 0.08f), BodyPalette.RockGolems.StoneShade, Turn(0f, -10f, 0f));
+            hull.Lump(Point(0.3f, 0.56f, 0.17f), Extent(0.14f, 0.12f, 0.08f), stone, Turn(10f, 30f, 0f));
+            hull.Box(Point(0f, 0.8f, 0.04f), Extent(0.2f, 0.15f, 0.2f), tan);
+            Eyes(hull, Point(0f, 0.82f, 0.145f), 0.08f, 0.032f);
+            hull.Dome(Point(-0.3f, 0.73f, 0f), Extent(0.2f, 0.06f, 0.17f), 7, 2, moss);
+            hull.Dome(Point(0.32f, 0.73f, -0.02f), Extent(0.16f, 0.05f, 0.15f), 7, 2, BodyPalette.RockGolems.MossDeep);
+            hull.Box(Point(-0.56f, 0.44f, 0.02f), Extent(0.16f, 0.24f, 0.2f), stone);
+            Strap(b, hull, Point(0f, 0.31f, 0f), Extent(0.98f, 0.05f, 0.4f));
+
+            b.Arm.Origin = Point(0.56f, 0.62f, 0f);
+            b.Arm.Box(Point(0.56f, 0.44f, 0.02f), Extent(0.16f, 0.24f, 0.2f), stone);
+            b.Arm.Box(Point(0.57f, 0.3f, 0.04f), Extent(0.2f, 0.12f, 0.22f), tan);
+        }
+
+        /// <summary>깨어난 바위: a small golem just risen out of rubble, a big lower stone split into two feet, light in its crack. Slot 3.</summary>
+        private static void AwakenedStone(Blueprint b)
+        {
+            Solids hull = b.Hull;
+            Color tan = BodyPalette.RockGolems.Tan, stone = BodyPalette.RockGolems.Stone;
+
+            BlockLegs(b, 0.12f, 0.12f, Extent(0.17f, 0.12f, 0.2f), BodyPalette.RockGolems.StoneShade);
+            hull.Lump(Point(0f, 0.28f, 0f), Extent(0.3f, 0.18f, 0.26f), stone, Turn(0f, 20f, 0f));
+            hull.Lump(Point(0f, 0.46f, 0.02f), Extent(0.22f, 0.14f, 0.2f), tan, Turn(10f, -15f, 0f));
+            hull.Box(Point(0.04f, 0.32f, 0.24f), Extent(0.03f, 0.16f, 0.03f), BodyPalette.RockGolems.Waking, Turn(0f, 0f, 25f));
+            hull.Box(Point(0f, 0.62f, 0.04f), Extent(0.15f, 0.12f, 0.15f), tan);
+            Eyes(hull, Point(0f, 0.63f, 0.115f), 0.07f, 0.03f);
+            hull.Dome(Point(-0.1f, 0.56f, -0.04f), Extent(0.14f, 0.05f, 0.12f), 6, 1, BodyPalette.RockGolems.Moss);
+            hull.Box(Point(-0.27f, 0.36f, 0.02f), Extent(0.1f, 0.16f, 0.12f), stone);
+            Strap(b, hull, Point(0f, 0.38f, 0f), Extent(0.44f, 0.04f, 0.36f));
+
+            b.Arm.Origin = Point(0.27f, 0.46f, 0f);
+            b.Arm.Box(Point(0.27f, 0.36f, 0.02f), Extent(0.1f, 0.16f, 0.12f), stone);
+            b.Arm.Box(Point(0.28f, 0.26f, 0.04f), Extent(0.13f, 0.08f, 0.14f), tan);
+        }
+
+        /// <summary>돌팔매 꼬마돌: a small throwing golem holding a round stone up behind its head. Slot 1.</summary>
+        private static void PebbleSlinger(Blueprint b)
+        {
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color tan = BodyPalette.RockGolems.Tan, stone = BodyPalette.RockGolems.Stone;
+
+            BlockLegs(b, 0.15f, 0.11f, Extent(0.12f, 0.15f, 0.14f), BodyPalette.RockGolems.StoneShade);
+            hull.Taper(Point(0f, 0.15f, 0f), Pair(0.36f, 0.28f), Pair(0.42f, 0.3f), 0.3f, tan);
+            hull.Box(Point(0f, 0.55f, 0.02f), Extent(0.22f, 0.18f, 0.2f), tan);
+            Eyes(hull, Point(0f, 0.56f, 0.125f), 0.09f, 0.035f);
+            hull.Dome(Point(0f, 0.64f, -0.02f), Extent(0.12f, 0.04f, 0.11f), 6, 1, BodyPalette.RockGolems.Moss);
+            hull.Dome(Point(0f, 0.44f, -0.08f), Extent(0.18f, 0.05f, 0.12f), 6, 1, BodyPalette.RockGolems.MossDeep);
+            hull.Box(Point(-0.24f, 0.3f, 0.04f), Extent(0.1f, 0.18f, 0.12f), stone);
+            Strap(b, hull, Point(0f, 0.2f, 0f), Extent(0.38f, 0.05f, 0.3f));
+
+            b.Arm.Origin = Point(0.24f, 0.4f, 0f);
+            b.Arm.Box(Point(0.25f, 0.52f, -0.04f), Extent(0.1f, 0.24f, 0.11f), stone, Turn(-20f, 0f, 0f));
+            b.Arm.Ball(Point(0.24f, 0.74f, -0.1f), Vector3.one * 0.15f, BodyPalette.RockGolems.StoneShade, Quaternion.identity, 0);
+        }
+
+        /// <summary>부유석 파수: a heavy stone hanging low in the air, broad shoulder boulders, a small head, one thick arm. Airborne, slot 2.</summary>
+        private static void FloatingSentinel(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Flap;
+            b.LimbsRideHull = true;
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color tan = BodyPalette.RockGolems.Tan, stone = BodyPalette.RockGolems.Stone, shade = BodyPalette.RockGolems.StoneShade;
+
+            hull.Prism(Point(0f, 0.08f, 0f), 6, 0.06f, 0.3f, 0.3f, shade);
+            hull.Lump(Point(0f, 0.46f, 0f), Extent(0.42f, 0.24f, 0.32f), tan, Turn(0f, 15f, 0f));
+            hull.Lump(Point(-0.34f, 0.6f, 0f), Extent(0.18f, 0.16f, 0.2f), stone, Turn(0f, 30f, 10f));
+            hull.Lump(Point(0.34f, 0.6f, 0f), Extent(0.18f, 0.16f, 0.2f), stone, Turn(0f, -20f, -10f));
+            hull.Box(Point(0f, 0.74f, 0.06f), Extent(0.18f, 0.14f, 0.17f), tan);
+            Eyes(hull, Point(0f, 0.75f, 0.15f), 0.08f, 0.032f);
+            hull.Dome(Point(-0.04f, 0.66f, -0.1f), Extent(0.3f, 0.07f, 0.2f), 8, 2, BodyPalette.RockGolems.Moss);
+            hull.Lump(Point(-0.34f, 0.36f, 0.06f), Extent(0.12f, 0.12f, 0.12f), stone, Turn(20f, 0f, 0f));
+            Strap(b, hull, Point(0f, 0.42f, 0f), Extent(0.62f, 0.05f, 0.5f));
+
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Solids slab = side < 0 ? b.LimbLeft : b.LimbRight;
+                Wing(slab, side, Point(0.46f, 0.5f, -0.08f), 0.24f, 0.2f, 0.14f, 0f, 20f, shade);
+            }
+
+            b.Arm.Origin = Point(0.36f, 0.52f, 0.04f);
+            b.Arm.Lump(Point(0.4f, 0.4f, 0.16f), Extent(0.13f, 0.12f, 0.16f), stone, Turn(30f, 0f, 0f));
+            b.Arm.Lump(Point(0.42f, 0.32f, 0.32f), Extent(0.15f, 0.13f, 0.15f), tan, Turn(10f, 20f, 0f));
+        }
+
+        /// <summary>모래 술사: a stone shaper with its right arm out, a twist of sand blocks hanging over the open hand. Slot 3.</summary>
+        private static void SandShaper(Blueprint b)
+        {
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color tan = BodyPalette.RockGolems.Tan, stone = BodyPalette.RockGolems.Stone;
+            Color sand = BodyPalette.Lighter(tan, 0.25f);
+
+            BlockLegs(b, 0.22f, 0.13f, Extent(0.15f, 0.22f, 0.17f), stone);
+            hull.Taper(Point(0f, 0.22f, 0f), Pair(0.42f, 0.3f), Pair(0.5f, 0.34f), 0.32f, tan);
+            hull.Box(Point(0f, 0.66f, 0.03f), Extent(0.18f, 0.16f, 0.18f), tan);
+            Eyes(hull, Point(0f, 0.67f, 0.125f), 0.08f, 0.032f);
+            hull.Dome(Point(-0.22f, 0.54f, 0f), Extent(0.16f, 0.07f, 0.16f), 7, 2, BodyPalette.RockGolems.Moss);
+            hull.Dome(Point(0.22f, 0.54f, 0f), Extent(0.13f, 0.05f, 0.13f), 6, 1, BodyPalette.RockGolems.MossDeep);
+            hull.Box(Point(-0.3f, 0.36f, 0.04f), Extent(0.12f, 0.24f, 0.14f), stone);
+            Strap(b, hull, Point(0f, 0.27f, 0f), Extent(0.44f, 0.05f, 0.32f));
+
+            b.Arm.Origin = Point(0.28f, 0.5f, 0f);
+            b.Arm.Box(Point(0.36f, 0.48f, 0.12f), Extent(0.12f, 0.12f, 0.3f), stone, Turn(0f, 25f, 0f));
+            b.Arm.Box(Point(0.44f, 0.5f, 0.27f), Extent(0.14f, 0.1f, 0.12f), tan);
+            for (int k = 0; k < 4; k++)
+                b.Arm.Box(Point(0.44f + (k % 2 == 0 ? -0.05f : 0.05f), 0.64f + k * 0.1f, 0.28f), Extent(0.1f - k * 0.01f, 0.06f, 0.08f),
+                          k % 2 == 0 ? sand : tan, Turn(0f, k * 35f, k % 2 == 0 ? 20f : -20f));
+        }
+
+        /// <summary>이끼 현자: a heavy golem grown over with moss, cradling a small rubble stone in both arms. Weaponless.</summary>
+        private static void MossSage(Blueprint b)
+        {
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color tan = BodyPalette.RockGolems.Tan, stone = BodyPalette.RockGolems.Stone;
+            Color moss = BodyPalette.RockGolems.Moss, mossDeep = BodyPalette.RockGolems.MossDeep;
+
+            BlockLegs(b, 0.22f, 0.15f, Extent(0.2f, 0.22f, 0.22f), stone);
+            hull.Lump(Point(0f, 0.48f, -0.02f), Extent(0.36f, 0.28f, 0.28f), tan, Turn(0f, 10f, 0f));
+            hull.Dome(Point(0f, 0.56f, -0.12f), Extent(0.4f, 0.26f, 0.24f), 9, 3, mossDeep);
+            hull.Box(Point(0f, 0.8f, 0.06f), Extent(0.2f, 0.16f, 0.18f), tan);
+            hull.Dome(Point(0f, 0.86f, 0.02f), Extent(0.16f, 0.08f, 0.14f), 7, 2, moss);
+            Eyes(hull, Point(0f, 0.8f, 0.155f), 0.08f, 0.032f);
+            hull.Box(Point(-0.22f, 0.44f, 0.22f), Extent(0.26f, 0.12f, 0.12f), stone, Turn(0f, -30f, 0f));
+            hull.Box(Point(0.22f, 0.44f, 0.22f), Extent(0.26f, 0.12f, 0.12f), stone, Turn(0f, 30f, 0f));
+            hull.Lump(Point(0f, 0.5f, 0.3f), Extent(0.13f, 0.11f, 0.11f), BodyPalette.RockGolems.StoneShade, Turn(10f, 20f, 0f));
+            hull.Dome(Point(0f, 0.59f, 0.3f), Extent(0.07f, 0.03f, 0.06f), 6, 1, moss);
+            hull.Dome(Point(-0.34f, 0.62f, 0f), Extent(0.14f, 0.07f, 0.14f), 7, 2, moss);
+            hull.Dome(Point(0.34f, 0.62f, 0f), Extent(0.14f, 0.07f, 0.14f), 7, 2, moss);
+            Strap(b, hull, Point(0f, 0.3f, 0f), Extent(0.6f, 0.05f, 0.46f));
+        }
+
+        /// <summary>이끼 포자 무리: three moss-capped stones drifting together, two broad moss leaves beating at the sides. Airborne, weaponless.</summary>
+        private static void SporeCluster(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Flap;
+            b.LimbsRideHull = true;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color tan = BodyPalette.RockGolems.Tan, moss = BodyPalette.RockGolems.Moss, mossDeep = BodyPalette.RockGolems.MossDeep;
+
+            Vector3[] stones = { Point(0f, 0.36f, 0.06f), Point(-0.22f, 0.28f, -0.14f), Point(0.2f, 0.3f, -0.16f) };
+            float[] sizes = { 0.2f, 0.15f, 0.14f };
+            for (int i = 0; i < stones.Length; i++)
+            {
+                hull.Lump(stones[i], Vector3.one * sizes[i], i == 0 ? tan : BodyPalette.RockGolems.Stone, Turn(0f, i * 50f, 10f));
+                hull.Dome(stones[i] + Point(0f, sizes[i] * 0.55f, 0f), Extent(sizes[i] * 1.05f, sizes[i] * 0.5f, sizes[i]), 7, 2, i == 1 ? mossDeep : moss);
+            }
+            Eyes(hull, Point(0f, 0.36f, 0.25f), 0.1f, 0.04f);
+            hull.Ball(Point(0.02f, 0.56f, -0.06f), Extent(0.2f, 0.035f, 0.14f), moss, Turn(-25f, 0f, -12f), 1);
+            Band(b, hull, Point(0f, 0.26f, 0.06f), 8, 0.2f, 0.04f);
+
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Solids leaf = side < 0 ? b.LimbLeft : b.LimbRight;
+                Wing(leaf, side, Point(0.18f, 0.44f, 0f), 0.3f, 0.22f, 0.06f, -0.06f, 25f, mossDeep);
+            }
         }
 
         // ---- 차원 유랑종 ----
@@ -1990,6 +2193,7 @@ namespace WordCraft.View
                 case Faction.TreeSpirits: return TreeSpiritExtraBuilding(b, role, slot);
                 case Faction.Hellfire: return HellfireExtraBuilding(b, role, slot);
                 case Faction.WaterSlimes: return WaterSlimeExtraBuilding(b, role, slot);
+                case Faction.RockGolems: return RockGolemExtraBuilding(b, role, slot);
                 default: return false;
             }
         }
@@ -2796,6 +3000,101 @@ namespace WordCraft.View
                 default:
                     GenericBuilding(b, Faction.RockGolems, Cells(role));
                     break;
+            }
+        }
+
+        private static bool RockGolemExtraBuilding(Blueprint b, Role role, int slot)
+        {
+            Solids hull = b.Hull;
+            Color tan = BodyPalette.RockGolems.Tan, stone = BodyPalette.RockGolems.Stone, shade = BodyPalette.RockGolems.StoneShade;
+            Color moss = BodyPalette.RockGolems.Moss, mossDeep = BodyPalette.RockGolems.MossDeep;
+
+            switch (role)
+            {
+                case Role.Production when slot == 1:
+                    // 각성의 원: a low ring of standing stones leaning in on a flat slab, the one at the back taller.
+                    hull.Dome(Vector3.zero, Extent(1.35f, 0.12f, 1.25f), 10, 2, mossDeep);
+                    hull.Prism(Vector3.zero, 8, 0.62f, 0.56f, 0.26f, tan);
+                    Band(b, hull, Point(0f, 0.1f, 0f), 8, 0.62f, 0.08f);
+                    for (int i = 0; i < 5; i++)
+                    {
+                        float yaw = i * 72f;
+                        bool back = i == 0;
+                        float height = back ? 0.95f : 0.55f + (i % 2) * 0.12f;
+                        Vector3 foot = Around(yaw) * 0.98f;
+                        hull = b.Tier(foot);
+                        hull.Lump(foot + Point(0f, height, 0f), Extent(back ? 0.38f : 0.4f, height, 0.34f), i % 2 == 0 ? tan : stone, Outward(yaw, -14f));
+                        hull.Dome(foot + Around(yaw) * -0.08f + Point(0f, height * 1.8f, 0f), Extent(0.26f, 0.08f, 0.22f), 7, 2, i % 2 == 0 ? moss : mossDeep);
+                    }
+                    return true;
+
+                case Role.Defense when slot == 1:
+                    // 부유석 첨탑: a low stack of stones with a great boulder floating over it; the boulder turns on what it drops on.
+                    hull.Lump(Point(0f, 0.28f, 0f), Extent(0.95f, 0.32f, 0.9f), shade, Turn(0f, 20f, 0f));
+                    hull.Dome(Point(-0.4f, 0.48f, -0.3f), Extent(0.36f, 0.1f, 0.3f), 8, 2, moss);
+                    Band(b, hull, Point(0f, 0.04f, 0f), 10, 0.98f, 0.08f);
+                    hull = b.Tier(Point(0f, 0.5f, 0f));
+                    hull.Lump(Point(0f, 0.8f, 0f), Extent(0.5f, 0.34f, 0.46f), stone, Turn(0f, 40f, 5f));
+                    hull.Lump(Point(0.05f, 1.22f, 0f), Extent(0.38f, 0.26f, 0.36f), tan, Turn(0f, -10f, 0f));
+                    hull.Dome(Point(0.05f, 1.42f, 0f), Extent(0.26f, 0.08f, 0.24f), 7, 2, mossDeep);
+
+                    b.Crown.Origin = Point(0f, 2.4f, 0f);
+                    b.Crown.Lump(Point(0f, 2.45f, 0f), Extent(0.66f, 0.42f, 0.6f), tan, Turn(10f, 30f, 5f));
+                    b.Crown.Dome(Point(-0.05f, 2.75f, 0f), Extent(0.42f, 0.14f, 0.36f), 8, 2, moss);
+                    b.Crown.Lump(Point(0.5f, 2.15f, -0.25f), Extent(0.14f, 0.1f, 0.14f), stone, Turn(0f, 20f, 0f));
+                    b.CrownAims = true;
+                    b.CrownKick = 18f;
+                    return true;
+
+                case Role.Defense when slot == 2:
+                    // 잠듦의 고리: low stones leaning in round one round stone asleep in the middle. Unarmed: no crown.
+                    hull.Dome(Vector3.zero, Extent(1.05f, 0.14f, 1.0f), 10, 2, mossDeep);
+                    hull = b.Tier(Vector3.zero);
+                    hull.Ball(Point(0f, 0.38f, 0f), Extent(0.42f, 0.36f, 0.4f), tan);
+                    Band(b, hull, Point(0f, 0.14f, 0f), 10, 0.33f, 0.07f);
+                    for (int side = -1; side <= 1; side += 2)
+                        hull.Box(Point(side * 0.11f, 0.44f, -0.385f), Extent(0.1f, 0.025f, 0.03f), BodyPalette.Eye, Turn(0f, 0f, side * 8f));
+                    hull.Dome(Point(0.04f, 0.66f, 0.06f), Extent(0.28f, 0.1f, 0.24f), 8, 2, moss);
+                    for (int i = 0; i < 5; i++)
+                    {
+                        float yaw = 36f + i * 72f;
+                        float height = 0.3f + Mathf.Max(0f, Around(yaw).z) * 0.3f;
+                        Vector3 foot = Around(yaw) * 0.84f;
+                        hull = b.Tier(foot);
+                        hull.Lump(foot + Point(0f, height, 0f), Extent(0.26f, height, 0.22f), i % 2 == 0 ? stone : shade, Outward(yaw, -22f));
+                        hull.Dome(foot + Point(0f, 0.04f, 0f), Extent(0.3f, 0.1f, 0.26f), 7, 2, moss);
+                    }
+                    return true;
+
+                case Role.Tech when slot == 1:
+                {
+                    // 이끼 정원: three stone terraces thick with moss and leaves, three pebbles turning slowly over them.
+                    hull.Box(Point(0f, 0.15f, 0f), Extent(1.5f, 0.3f, 1.4f), stone);
+                    Strap(b, hull, Point(0f, 0.08f, 0f), Extent(1.54f, 0.08f, 1.44f));
+                    hull.Dome(Point(-0.5f, 0.3f, -0.45f), Extent(0.3f, 0.1f, 0.24f), 7, 2, moss);
+                    hull = b.Tier(Point(0.1f, 0.3f, 0.12f));
+                    hull.Box(Point(0.1f, 0.42f, 0.12f), Extent(1.1f, 0.26f, 1.0f), tan, Turn(0f, 8f, 0f));
+                    hull.Dome(Point(-0.25f, 0.55f, -0.2f), Extent(0.3f, 0.12f, 0.24f), 7, 2, mossDeep);
+                    hull.Dome(Point(0.45f, 0.55f, 0.3f), Extent(0.26f, 0.1f, 0.22f), 7, 2, moss);
+                    hull = b.Tier(Point(0.15f, 0.55f, 0.25f));
+                    hull.Box(Point(0.15f, 0.66f, 0.25f), Extent(0.7f, 0.22f, 0.6f), shade, Turn(0f, -6f, 0f));
+                    for (int i = 0; i < 5; i++)
+                    {
+                        float yaw = i * 72f + 20f;
+                        hull.Ball(Around(yaw) * 0.22f + Point(0.15f, 0.84f, 0.25f), Extent(0.08f, 0.04f, 0.22f), i % 2 == 0 ? moss : mossDeep,
+                                  Quaternion.Euler(0f, yaw, 0f) * Turn(-30f, 0f, 0f), 1);
+                    }
+
+                    Solids crown = b.Crown;
+                    crown.Origin = Point(0.15f, 1.1f, 0.25f);
+                    for (int i = 0; i < 3; i++)
+                        crown.Lump(Around(i * 120f) * 0.36f + Point(0.15f, 1.2f + i * 0.06f, 0.25f), Extent(0.09f, 0.07f, 0.09f), i == 1 ? stone : tan, Turn(0f, i * 40f, 15f));
+                    b.CrownSpin = 25f;
+                    return true;
+                }
+
+                default:
+                    return false;
             }
         }
 
