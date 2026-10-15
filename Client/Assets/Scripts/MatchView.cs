@@ -420,12 +420,16 @@ namespace WordCraft.View
                 rings[i].Visible = picked;
                 if (picked) rings[i].Set(p, body.Footprint * 0.5f + band, band);
 
-                // "이게 저걸 때릴 수 있나" is a question the roster already answers;
-                // this only ever reads it, never a re-typed number of its own, so
-                // the ring can never say something FactionData does not (issue #104).
+                // "이게 저걸 때릴 수 있나" is a question the simulation already
+                // answers; this only ever reads it, never a re-typed number of its
+                // own, so the ring can never say something the shot does not. It is
+                // World.RangeOf and not the roster's Range: a researched range
+                // upgrade moves the reach the shot is tested against, and a ring
+                // left at the base number would draw a boundary the unit hits past
+                // (issues #104, #182).
                 if (picked && world.Armed(e))
                 {
-                    RangeRing(rangeRings[i], FactionData.Stats(world.FactionOf(e.Owner), e.Role, e.Slot).Range, p);
+                    RangeRing(rangeRings[i], world.RangeOf(e), p);
                 }
                 else
                 {
