@@ -20,7 +20,7 @@ namespace WordCraft.View
         /// on. Update it only when the simulation intentionally changes, and only
         /// after both runtimes agree on the new value.
         /// </summary>
-        public const ulong GoldenHash = 0x41023E12FEFCD38DUL;
+        public const ulong GoldenHash = 0x89303B33ED3EA28DUL;
 
         /// <summary>
         /// The factions the golden hash was taken over. Factions are hashed, so
@@ -102,6 +102,15 @@ namespace WordCraft.View
             // that a researched hit happens.
             Add(log, 370, 0, seq, CommandType.Research, Tech0, FixVec2.Zero, 0);
             Add(log, 530, 0, seq, CommandType.Attack, Ranged0, FixVec2.Zero, Melee1);
+
+            // One Cast, 칼바람 회오리 (세계수 정령 ability row 7), named by peer 0's
+            // 잎날 정령. It is refused on the row rule: the row is 바람 정령's,
+            // and no 세계수 정령 or 지옥불 body that holds an active can be
+            // fielded and unlocked inside 600 ticks (a 바람 토템, its research
+            // and a 바람 정령 land past tick 670). So the golden hash covers the
+            // Cast's decoding and its refusal on both runtimes, and Replay's
+            // CastChecks.TheScriptedLogCarriesOneCast pins that it changes nothing.
+            Add(log, 41, 0, seq, CommandType.Cast, Melee0, At(31, 31), 7);
 
             for (int t = 60; t < Ticks; t += 37)
             {
