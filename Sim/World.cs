@@ -307,6 +307,27 @@ namespace WordCraft.Sim
         /// lose the same body on different ticks.
         /// </summary>
         public int ExpireTick;
+
+        // 오토캐스트, docs/TECH-TREE.md 묶음 7. Both live on the body running
+        // the ability and nowhere else: a body holds at most one ability with
+        // state (FactionData refuses a second at type load), so two numbers
+        // carry all of it, and a body that dies takes its ability with it.
+
+        /// <summary>
+        /// Ticks before this body's ability can go off again, or 0 when it is
+        /// ready. Set to the row's cooldown when it goes off (잔해 수리 100, 굴러
+        /// 들이받기 240) and taken down one a tick by AbilitySystem.
+        /// </summary>
+        public int AbilityCooldown;
+
+        /// <summary>
+        /// What this body's ability is in the middle of. Counts down for 질풍
+        /// (ticks of double speed left) and 굴러 들이받기 (ticks of rolling
+        /// left); counts up for 정조준 (ticks stood still, stopping at 40).
+        /// Which of the three it means is the body's own ability row: a body
+        /// holds at most one.
+        /// </summary>
+        public int AbilityTicksLeft;
     }
 
     /// <summary>
@@ -523,6 +544,9 @@ namespace WordCraft.Sim
             e.BurnTicksLeft = 0;
             // A corpse never lapses a second time.
             e.ExpireTick = 0;
+            // Nor carries an ability clock: a roll or a cooldown ends with the body.
+            e.AbilityCooldown = 0;
+            e.AbilityTicksLeft = 0;
         }
 
         /// <summary>
@@ -833,6 +857,7 @@ namespace WordCraft.Sim
                 ResearchSystem();
                 SpawnerSystem();
                 ExpirySystem();
+                AbilitySystem();
                 CombatSystem();
                 StatusSystem();
                 BurstSystem();
@@ -1387,6 +1412,14 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)c);
                 Mix(ref h, (ulong)remnantExpiry[c]);
             }
+            // Water field expiry, docs/TECH-TREE.md 물 지대 규칙: the same sparse
+            // walk as the debris above, and empty in a match with no 물 슬라임.
+            for (int c = 0; c < GridCells; c++)
+            {
+                if (waterFieldExpiry[c] == 0) continue;
+                Mix(ref h, (ulong)c);
+                Mix(ref h, (ulong)waterFieldExpiry[c]);
+            }
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
@@ -1439,6 +1472,8 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.SlowTicksLeft);
                 Mix(ref h, (ulong)e.BurnTicksLeft);
                 Mix(ref h, (ulong)e.ExpireTick);
+                Mix(ref h, (ulong)e.AbilityCooldown);
+                Mix(ref h, (ulong)e.AbilityTicksLeft);
 
                 List<int> path = paths[i];
                 Mix(ref h, (ulong)path.Count);
