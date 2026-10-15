@@ -18,10 +18,11 @@ namespace WordCraft.View
     ///   - lineup-&lt;faction&gt;: every roster entry of one faction in a row,
     ///     and lineup-&lt;faction&gt;-units and -buildings: the same row split in
     ///     two, so each body is twice the size;
-    ///   - strip-&lt;faction&gt;-&lt;motion&gt;: four bodies doing one motion,
-    ///     eight frames across 0.9 seconds side by side, so an animation can be
-    ///     judged from one still image. A faction with more than four walking
-    ///     rows gets -2, -3 pages after the first, so every row is seen.
+    ///   - strip-&lt;faction&gt;-&lt;motion&gt;: four bodies (three buildings)
+    ///     doing one motion, eight frames across 0.9 seconds side by side, so
+    ///     an animation can be judged from one still image. A faction with more
+    ///     rows than one page holds gets -2, -3 pages after the first, so every
+    ///     row is seen.
     ///
     ///   Unity -batchmode -quit -projectPath Client \
     ///         -executeMethod WordCraft.View.ViewShots.Run \
@@ -361,8 +362,13 @@ namespace WordCraft.View
                 {
                     List<(Role Role, int Slot)> cast = Buildings(faction, motion);
                     if (cast.Count == 0 || !Wanted(motion)) continue;
-                    Strip(output, faction, motion, cast);
-                    written++;
+                    // Three buildings a page: the first page is the one it always was.
+                    for (int page = 0; page * BuildingCast < cast.Count; page++)
+                    {
+                        int count = Math.Min(BuildingCast, cast.Count - page * BuildingCast);
+                        Strip(output, faction, motion, cast.GetRange(page * BuildingCast, count), page == 0 ? "" : "-" + (page + 1));
+                        written++;
+                    }
                 }
             }
             return written;
@@ -415,18 +421,34 @@ namespace WordCraft.View
             return list;
         }
 
+        /// <summary>Buildings on one building strip page.</summary>
+        private const int BuildingCast = 3;
+
         /// <summary>
         /// Entry 0 of the base, the production building, and a third: the
         /// defense building for build and destroy, the tech building for work,
         /// because a defense building never queues or researches anything.
+        /// Then every other entry of the production, defense and tech slots,
+        /// so every building is seen going up, at work and coming down; work
+        /// leaves out the defenses for the same reason.
         /// </summary>
         private static List<(Role Role, int Slot)> Buildings(Faction faction, string motion)
         {
             var list = new List<(Role Role, int Slot)>();
-            Role[] roles = { Role.Base, Role.Production, motion == "work" ? Role.Tech : Role.Defense };
+            bool work = motion == "work";
+            Role[] roles = { Role.Base, Role.Production, work ? Role.Tech : Role.Defense };
             foreach (Role role in roles)
             {
                 if (FactionData.Has(faction, role, 0)) list.Add((role, 0));
+            }
+            Role[] extras = work ? new[] { Role.Production, Role.Tech } : new[] { Role.Production, Role.Defense, Role.Tech };
+            foreach (Role role in extras)
+            {
+                int slots = FactionData.SlotCount(faction, role);
+                for (int slot = role == Role.Tech && !work ? 0 : 1; slot < slots; slot++)
+                {
+                    if (FactionData.Has(faction, role, slot)) list.Add((role, slot));
+                }
             }
             return list;
         }
