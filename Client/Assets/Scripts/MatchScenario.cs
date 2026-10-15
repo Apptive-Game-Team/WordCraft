@@ -43,8 +43,15 @@ namespace WordCraft.View
                 world.SpawnBuilding(peer, Role.Base, At(peer, 8, 8), complete: true);
                 world.SpawnWorker(peer, At(peer, 10, 8));
                 world.SpawnWorker(peer, At(peer, 8, 10));
-                world.SpawnUnit(peer, Role.Melee, At(peer, 11, 11));
-                world.SpawnUnit(peer, Role.Ranged, At(peer, 9, 12));
+                // The opening fighters are what the roster says this faction
+                // fields (issue #154), not Melee 0 and Ranged 0 for everyone:
+                // 인간's melee entry 0 is a blank row with no name and no art.
+                // 세계수 정령 and 지옥불 still resolve to those two rows, so the
+                // ids ScriptedLog names are the same bodies.
+                (Role role, int slot) first = FactionData.OpeningFighter(world.FactionOf(peer), 0);
+                (Role role, int slot) second = FactionData.OpeningFighter(world.FactionOf(peer), 1);
+                world.SpawnUnit(peer, first.role, first.slot, At(peer, 11, 11));
+                world.SpawnUnit(peer, second.role, second.slot, At(peer, 9, 12));
                 world.SpawnResourceNode(At(peer, 14, 14), NodeAmount);
                 world.GrantResources(peer, StartingResources);
             }
