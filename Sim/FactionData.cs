@@ -633,8 +633,12 @@ namespace WordCraft.Sim
         /// read tables instead of entry 0 constants, and three research rows land.
         /// A peer on 34 refuses a Grow from 잎날 정령 into 폭풍 기수 that a peer on
         /// 35 charges 60 for, and the banks differ by 60 on the tick it is given.
+        /// 36 is docs/TECH-TREE.md 묶음 5: statuses and auras. A 용암 갑각 악마
+        /// burns enemy ground bodies within 2 cells for 2 every 20 ticks, so a
+        /// peer on 35 and a peer on 36 disagree about a 잎날 정령's hp on the
+        /// first twentieth tick the two stand that close.
         /// </summary>
-        public const uint ContentVersion = 35;
+        public const uint ContentVersion = 36;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
