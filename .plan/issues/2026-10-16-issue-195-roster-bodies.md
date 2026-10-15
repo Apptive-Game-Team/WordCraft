@@ -3,7 +3,7 @@
 - Date: 2026-10-16
 - GitHub Issue: #195
 - Base: `feat/195` = `feat/180`(PR #194) + `feat/186`(PR #188) + `feat/187`(PR #189) 통합. 이 PR 은 세 PR 위에 쌓인다.
-- Status: In progress
+- Status: Implemented, awaiting review
 
 ## Goal
 
@@ -47,3 +47,17 @@
 - `dotnet build`
 - Unity `ViewShots -shotsOnly lineup` 세 번 이상, walk/attack/idle/death strip
 - Unity `ViewSelfCheck`
+
+## 결과
+
+- `Models.cs` 에 유닛 builder 41개, 건물 builder 24개를 더했다. 건물은 `ExtraBuilding` 이
+  (진영, 역할, 슬롯)으로 고르고, builder 가 없는 행은 지금처럼 슬롯 0 몸으로 선다.
+- 건물은 돌려 세우지 않으므로 카메라 쪽은 -z 다. 새 건물의 문, 얼굴, 문장은 -z 에 둔다.
+  기존 건물(마법 탑의 문 등)은 +z 에 있어 화면에서 보이지 않는다. 이 이슈 범위 밖이다.
+- lineup 은 진영마다 3장(전체, `-units`, `-buildings`)으로 18장, 걷는 행 strip 은 4기씩
+  나눠 walk/attack/hit/death/idle/spawn 이 진영마다 3장이 된다. 전체 실행은 167장이다.
+  `CLAUDE.md` 의 "83 PNGs" 설명은 쓰기 범위 밖이라 고치지 않았다.
+- lineup 을 다섯 번 찍어 고쳤다: 씨앗 요람의 소유자 띠가 받침 전체를 덮던 것, 도깨비불이
+  흰 덩어리로 보이던 것, 재날개 악마 날개의 막대, 큰 균열의 띠, 각성의 원과 잠듦의 고리의
+  띠, 부유석 첨탑의 뜬 바위와 받침 사이 틈, 비구름 폭, 멸종한 자연 슬라임의 몸이 외피에
+  가려지던 것.
