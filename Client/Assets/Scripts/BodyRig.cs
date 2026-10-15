@@ -41,6 +41,26 @@ namespace WordCraft.View
     }
 
     /// <summary>
+    /// How a building's parts come together while it is built (issue #186):
+    /// one way per faction, each the faction's own idea of making something.
+    /// </summary>
+    internal enum Assembly
+    {
+        /// <summary>세계수 정령: each part grows up out of a thin shoot.</summary>
+        Grow,
+        /// <summary>지옥불 군단: each part tears up out of the ground, shaking.</summary>
+        Tear,
+        /// <summary>물 슬라임: each part swells up and wobbles to rest.</summary>
+        Inflate,
+        /// <summary>돌 골렘 부족: each part drops from above and lands on the pile.</summary>
+        Stack,
+        /// <summary>차원 유랑종: each plate swings shut from open.</summary>
+        Close,
+        /// <summary>인간 마법 문명: each part is laid up floor by floor, square and without overshoot.</summary>
+        Floors,
+    }
+
+    /// <summary>
     /// Everything that is the same about every body of one roster entry and one
     /// owner: the baked meshes, where the moving parts hinge, and how it moves.
     /// Built once by Models and shared by every body it describes, so a hundred
@@ -70,6 +90,25 @@ namespace WordCraft.View
         /// <summary>Degrees the crown pitches when it fires: negative kicks a barrel up, positive lurches forward.</summary>
         public float CrownKick;
         public Color Tint = Color.white;
+
+        /// <summary>
+        /// A building's hull after the first part, split so a site can be put
+        /// together part by part (issue #186). Each hangs from the hull at its
+        /// pivot; <see cref="TierHeights"/> is how tall each one stands over it.
+        /// Null for a body with one hull mesh.
+        /// </summary>
+        public Mesh[] Tiers;
+        public Vector3[] TierPivots;
+        public float[] TierHeights;
+        /// <summary>World height of the first hull part over its foot.</summary>
+        public float HullHeight;
+        public Assembly Assembly;
+        /// <summary>A razed building's chunks, and the dust a finished or razed building raises.</summary>
+        public Color Debris = Color.grey;
+        /// <summary>What a working building gives off: the small motes that rise from its roof.</summary>
+        public Color Mote = Color.white;
+        /// <summary>The light inside that flashes once and goes out when it is razed; alpha zero for none.</summary>
+        public Color Glow = Color.clear;
     }
 
     /// <summary>
