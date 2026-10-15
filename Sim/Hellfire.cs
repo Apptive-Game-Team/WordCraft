@@ -29,13 +29,24 @@ namespace WordCraft.Sim
         public const int WarlordOffspringSlot = 0;
 
         /// <summary>
-        /// True for 지옥불 군단장 and nothing else. Read off faction and role
-        /// rather than carried on the entity, for the same reason Flies is: it
-        /// never changes for a given faction and role, so making it state would add
-        /// a hashed field that can only ever hold one value.
+        /// Which entry of the signature slot 지옥불 군단장 is. Named for the reason
+        /// WarlordOffspringSlot is: docs/TECH-TREE.md puts 산란 악마 and 운석 술사
+        /// behind it in the same slot, and neither of them emits 자손.
+        /// </summary>
+        public const int WarlordSlot = 0;
+
+        /// <summary>
+        /// True for 지옥불 군단장 and nothing else. Read off faction, role and
+        /// entry rather than carried on the entity, for the same reason Flies is:
+        /// it never changes for a given entry, so making it state would add a
+        /// hashed field that can only ever hold one value.
+        ///
+        /// The entry is asked as well as the role. Asked by role alone, every body
+        /// docs/TECH-TREE.md adds to 지옥불's signature slot would arm a spawn
+        /// clock on the tick it landed.
         /// </summary>
         public bool IsWarlord(Entity e) =>
-            e.Kind == EntityKind.Unit && e.Role == WarlordRole &&
+            e.Kind == EntityKind.Unit && e.Role == WarlordRole && e.Slot == WarlordSlot &&
             e.Owner >= 0 && e.Owner < MaxPeers && factions[e.Owner] == Faction.Hellfire;
 
         /// <summary>
