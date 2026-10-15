@@ -735,19 +735,88 @@ namespace WordCraft.View
         {
             List<Command>[] log = ScriptedLog.Build();
             Moments(log, out int shotTick, out Vector2 shotAt, out int killTick, out Vector2 killAt,
-                    out int spawnTick, out Vector2 spawnAt, out int finishTick, out Vector2 finishAt,
-                    out int razeTick, out Vector2 razeAt);
+                    out int spawnTick, out Vector2 spawnAt, out int finishTick, out Vector2 finishAt);
+            int razeTick = Razed(false, out Vector2 razeAt);
+            int siteTick = Razed(true, out Vector2 siteAt);
             Debug.Log("match strips: first ranged shot at tick " + shotTick + ", first unit death at tick " + killTick +
                       ", first produced unit at tick " + spawnTick + ", first site finished at tick " + finishTick +
-                      ", first building razed at tick " + razeTick);
+                      ", siege razes the building at tick " + razeTick + " and the site at tick " + siteTick);
 
             int written = 0;
             if (shotTick >= 0) { MatchStrip(output, "fight", log, shotTick, shotAt); written++; }
             if (killTick >= 0) { MatchStrip(output, "kill", log, killTick, killAt); written++; }
             if (spawnTick >= 0) { MatchStrip(output, "spawn", log, spawnTick, spawnAt); written++; }
             if (finishTick >= 0) { MatchStrip(output, "build", log, finishTick, finishAt); written++; }
-            if (razeTick >= 0) { MatchStrip(output, "raze", log, razeTick, razeAt); written++; }
+            if (razeTick >= 0) { MatchStrip(output, "raze", NoLog, razeTick, razeAt, () => Siege(false), SiegeCells, SiegeTicksPerFrame); written++; }
+            if (siteTick >= 0) { MatchStrip(output, "razesite", NoLog, siteTick, siteAt, () => Siege(true), SiegeCells, SiegeTicksPerFrame); written++; }
             return written;
+        }
+
+        private static readonly List<Command>[] NoLog = new List<Command>[0];
+
+        /// <summary>Where the siege's building is put, mid map. The world may stand it a little elsewhere; the strip reads where.</summary>
+        private static readonly Vector2 SiegeAt = new Vector2(32f, 32f);
+
+        /// <summary>Cells across a siege strip's frame: closer than a fight's, so the building is the subject.</summary>
+        private const float SiegeCells = 9f;
+
+        /// <summary>How many 지옥불 ranged units besiege it.</summary>
+        private const int SiegeShooters = 4;
+
+        /// <summary>
+        /// Ticks between two frames of a siege strip: eight frames cover 1.4 s,
+        /// the tracer's flight that holds the fall back and the 0.8 s fall.
+        /// </summary>
+        private const int SiegeTicksPerFrame = 4;
+
+        /// <summary>
+        /// The scripted log never razes a building, so the raze is seen through
+        /// MatchView in a siege of its own (issue #186): a fresh map, peer 1's
+        /// 풀씨 둥지 (세계수 정령 production), and four of peer 0's 지옥불 ranged
+        /// standing either side of it with nothing to do but find it. Peer 0 is the local
+        /// peer, so the fog is the attackers'. With <paramref name="site"/> the
+        /// building is half built when the attackers arrive, so a site is seen
+        /// falling from where its assembly had got to.
+        /// </summary>
+        private static World Siege(bool site)
+        {
+            var world = new World(new WordCraft.Net.MatchConfig().Seed);
+            world.SetPeerFaction(0, Faction.Hellfire);
+            world.SetPeerFaction(1, Faction.TreeSpirits);
+            world.SpawnBuilding(1, Role.Production, 0, MatchRunner.ToSim(SiegeAt), complete: !site);
+            var idle = new List<Command>();
+            if (site)
+            {
+                int half = FactionData.BuildTicks(Faction.TreeSpirits, Role.Production, 0) / 2;
+                for (int t = 0; t < half; t++) world.Step(idle);
+            }
+            // Shooters, either side of it as the camera looks and out of reach
+            // of a swing: melee crowd onto the building and hide it, a shooter
+            // behind it hovers over it on screen, and a shot is what the real
+            // path delays a death for.
+            Vector2 home = MatchRunner.ToView(world.GetEntity(0).Position);
+            for (int k = 0; k < SiegeShooters; k++)
+            {
+                float side = k % 2 == 0 ? 1f : -1f;
+                float around = side * (80f + (k / 2) * 20f) * Mathf.Deg2Rad;
+                Vector2 at = home + new Vector2(Mathf.Sin(around), Mathf.Cos(around)) * 4.5f;
+                world.SpawnUnit(0, Role.Ranged, 0, MatchRunner.ToSim(at));
+            }
+            return world;
+        }
+
+        /// <summary>The tick the siege's building dies, or -1 if it stands for a minute.</summary>
+        private static int Razed(bool site, out Vector2 at)
+        {
+            World world = Siege(site);
+            at = MatchRunner.ToView(world.GetEntity(0).Position);
+            var idle = new List<Command>();
+            for (int t = 0; t < 60 * World.TicksPerSecond; t++)
+            {
+                world.Step(idle);
+                if (!world.GetEntity(0).Alive) return world.Tick;
+            }
+            return -1;
         }
 
         private static World Scripted() =>
@@ -761,10 +830,10 @@ namespace WordCraft.View
         /// </summary>
         private static void Moments(List<Command>[] log, out int shotTick, out Vector2 shotAt,
                                     out int killTick, out Vector2 killAt, out int spawnTick, out Vector2 spawnAt,
-                                    out int finishTick, out Vector2 finishAt, out int razeTick, out Vector2 razeAt)
+                                    out int finishTick, out Vector2 finishAt)
         {
-            shotTick = killTick = spawnTick = finishTick = razeTick = -1;
-            shotAt = killAt = spawnAt = finishAt = razeAt = Vector2.zero;
+            shotTick = killTick = spawnTick = finishTick = -1;
+            shotAt = killAt = spawnAt = finishAt = Vector2.zero;
             World world = Scripted();
             var cooldowns = new List<int>();
             var alive = new List<bool>();
@@ -807,18 +876,12 @@ namespace WordCraft.View
                         killAt = MatchRunner.ToView(e.Position);
                         Debug.Log("match strips: entity " + i + " (" + e.Role + ", peer " + e.Owner + ") dies at tick " + killTick);
                     }
-                    // A site finishing and a building razed (issue #186), read the
-                    // way MatchView reads them: BuildTicksLeft reaching zero, Alive
-                    // going false on a building.
+                    // A site finishing (issue #186), read the way MatchView reads
+                    // it: BuildTicksLeft reaching zero.
                     if (finishTick < 0 && e.Kind == EntityKind.Building && e.Alive && sites[i] > 0 && e.BuildTicksLeft == 0)
                     {
                         finishTick = world.Tick;
                         finishAt = MatchRunner.ToView(e.Position);
-                    }
-                    if (razeTick < 0 && alive[i] && !e.Alive && e.Kind == EntityKind.Building)
-                    {
-                        razeTick = world.Tick;
-                        razeAt = MatchRunner.ToView(e.Position);
                     }
                     cooldowns[i] = e.AttackCooldown;
                     alive[i] = e.Alive;
@@ -827,10 +890,11 @@ namespace WordCraft.View
             }
         }
 
-        private static void MatchStrip(string output, string name, List<Command>[] log, int moment, Vector2 focus)
+        private static void MatchStrip(string output, string name, List<Command>[] log, int moment, Vector2 focus,
+                                       Func<World> make = null, float cells = MatchStripCells, int ticksPerFrame = TicksPerFrame)
         {
-            World world = Scripted();
-            int first = moment - TicksPerFrame;
+            World world = make != null ? make() : Scripted();
+            int first = moment - ticksPerFrame;
             int from = Mathf.Max(first - MatchPreroll, 0);
             var idle = new List<Command>();
             while (world.Tick < from) world.Step(world.Tick < log.Length ? log[world.Tick] : idle);
@@ -862,13 +926,13 @@ namespace WordCraft.View
                 cam.targetTexture = target;
                 cam.ResetAspect();
                 float halfAcross = Mathf.Tan(CameraRig.FieldOfView * 0.5f * Mathf.Deg2Rad) * (FrameWidth / (float)FrameHeight);
-                CameraRig.Aim(cam, focus + new Vector2(0f, 0.6f), MatchStripCells / (2f * halfAcross), 0f, hud: false);
+                CameraRig.Aim(cam, focus + new Vector2(0f, 0.6f), cells / (2f * halfAcross), 0f, hud: false);
 
                 for (int frame = 0; frame < Frames; frame++)
                 {
                     if (frame > 0)
                     {
-                        for (int k = 0; k < TicksPerFrame; k++)
+                        for (int k = 0; k < ticksPerFrame; k++)
                         {
                             world.Step(world.Tick < log.Length ? log[world.Tick] : idle);
                             seam.Snapshot();
