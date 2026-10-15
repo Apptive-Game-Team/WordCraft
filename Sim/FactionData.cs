@@ -916,6 +916,31 @@ namespace WordCraft.Sim
             (Faction.WaterSlimes, Role.Defense, 1, Structure(220)),
             // 거품 장벽
             (Faction.WaterSlimes, Role.Defense, 2, Structure(500)),
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            // Fighter: 이동, 체력, 방어, 속도, 피해, 사거리, 주기, 대공, 대지. Support: 이동, 체력, 방어, 속도.
+            // 구르는 바위
+            (Faction.RockGolems, Role.Melee, 1, Fighter(Walks, 180, 2, Fix.Ratio(1, 4), 10, 2, 20, false, true)),
+            // 성벽 골렘
+            (Faction.RockGolems, Role.Melee, 2, Fighter(Walks, 200, 2, Fix.Ratio(1, 6), 6, 2, 20, false, true)),
+            // 깨어난 바위
+            (Faction.RockGolems, Role.Melee, 3, Fighter(Walks, 150, 1, Fix.Ratio(1, 5), 8, 2, 15, false, true)),
+            // 돌팔매 꼬마돌
+            (Faction.RockGolems, Role.Ranged, 1, Fighter(Walks, 70, 0, Fix.Ratio(1, 4), 5, 5, 18, true, true)),
+            // 부유석 파수
+            (Faction.RockGolems, Role.Ranged, 2, Fighter(Flies, 220, 2, Fix.Ratio(1, 6), 10, 6, 22, true, true)),
+            // 모래 술사
+            (Faction.RockGolems, Role.Ranged, 3, Fighter(Walks, 110, 0, Fix.Ratio(1, 4), 5, 5, 20, true, true)),
+            // 이끼 현자
+            (Faction.RockGolems, Role.Signature, 1, Support(Walks, 140, 1, Fix.Ratio(1, 5))),
+            // 이끼 포자 무리
+            (Faction.RockGolems, Role.Signature, 2, Support(Flies, 80, 0, Fix.Ratio(1, 4))),
+            // 각성의 원
+            (Faction.RockGolems, Role.Production, 1, Structure(500)),
+            // 부유석 첨탑
+            (Faction.RockGolems, Role.Defense, 1, Turret(320, 12, 7, 20, true, false)),
+            // 잠듦의 고리
+            (Faction.RockGolems, Role.Defense, 2, Structure(300)),
         };
 
         /// <summary>
@@ -1103,6 +1128,16 @@ namespace WordCraft.Sim
             (Faction.WaterSlimes, Role.Signature, 1, Produce(75, 60)), // 비구름
             (Faction.WaterSlimes, Role.Signature, 2, Produce(120, 100)), // 간헐천 술사
             (Faction.WaterSlimes, Role.Signature, 3, Produce(80, 70)), // 샘물 운반자
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            (Faction.RockGolems, Role.Melee, 1, Produce(75, 60)), // 구르는 바위
+            (Faction.RockGolems, Role.Melee, 2, Produce(60, 50)), // 성벽 골렘
+            (Faction.RockGolems, Role.Melee, 3, new ProductionCost()), // 깨어난 바위
+            (Faction.RockGolems, Role.Ranged, 1, Produce(35, 35)), // 돌팔매 꼬마돌
+            (Faction.RockGolems, Role.Ranged, 2, Produce(140, 120)), // 부유석 파수
+            (Faction.RockGolems, Role.Ranged, 3, Produce(130, 110)), // 모래 술사
+            (Faction.RockGolems, Role.Signature, 1, Produce(150, 120)), // 이끼 현자
+            (Faction.RockGolems, Role.Signature, 2, Produce(70, 60)), // 이끼 포자 무리
         };
 
         private static ProductionCost Produce(int resources, int ticks) =>
@@ -1268,6 +1303,10 @@ namespace WordCraft.Sim
             (Faction.WaterSlimes, ResearchRow("물결 궁수 사거리", 125, 200, 2, UpgradeEffect.ArcherRange, (Role.Tech, 1), NoBuilding)),
             (Faction.WaterSlimes, ResearchRow("침 사거리", 75, 120, 2, UpgradeEffect.SpitterRange, (Role.Tech, 1), NoBuilding)),
             (Faction.WaterSlimes, ResearchRow("물대포 사거리", 150, 200, 3, UpgradeEffect.WaterCannonRange, (Role.Tech, 1), NoBuilding)),
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            (Faction.RockGolems, ResearchRow("돌팔매 사거리", 75, 120, 2, UpgradeEffect.SlingerRange, (Role.Tech, 1), NoBuilding)),
+            (Faction.RockGolems, ResearchRow("부유석 사거리", 150, 200, 3, UpgradeEffect.FloatingStoneRange, (Role.Tech, 1), NoBuilding)),
         };
 
         /// <summary>
@@ -1376,6 +1415,12 @@ namespace WordCraft.Sim
             (Faction.WaterSlimes, Role.Ranged, 2, UpgradeEffect.SpitterRange, UpgradedStat.Range, Fix.FromInt(5)),
             // 물대포 슬라임 사거리 8 → 9.
             (Faction.WaterSlimes, Role.Ranged, 3, UpgradeEffect.WaterCannonRange, UpgradedStat.Range, Fix.FromInt(9)),
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            // 돌팔매 꼬마돌 사거리 5 → 6.
+            (Faction.RockGolems, Role.Ranged, 1, UpgradeEffect.SlingerRange, UpgradedStat.Range, Fix.FromInt(6)),
+            // 부유석 파수 사거리 6 → 7.
+            (Faction.RockGolems, Role.Ranged, 2, UpgradeEffect.FloatingStoneRange, UpgradedStat.Range, Fix.FromInt(7)),
         };
 
         /// <summary>How many rows the entry upgrade table holds, for the harness.</summary>
@@ -1690,6 +1735,20 @@ namespace WordCraft.Sim
             (Faction.WaterSlimes, Role.Signature, "간헐천 술사", "GeyserMage"),
             (Faction.WaterSlimes, Role.Signature, "샘물 운반자", "SpringCarrier"),
             (Faction.WaterSlimes, Role.Tech, "물결 수련장", "WaveTrainingPool"),
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            (Faction.RockGolems, Role.Production, "각성의 원", "AwakeningCircle"),
+            (Faction.RockGolems, Role.Defense, "부유석 첨탑", "HoverstoneSpire"),
+            (Faction.RockGolems, Role.Defense, "잠듦의 고리", "DormancyRing"),
+            (Faction.RockGolems, Role.Melee, "구르는 바위", "RockRolling"),
+            (Faction.RockGolems, Role.Melee, "성벽 골렘", "WallGolem"),
+            (Faction.RockGolems, Role.Melee, "깨어난 바위", "AwakenedStone"),
+            (Faction.RockGolems, Role.Ranged, "돌팔매 꼬마돌", "PebbleSlinger"),
+            (Faction.RockGolems, Role.Ranged, "부유석 파수", "FloatingStoneSentinel"),
+            (Faction.RockGolems, Role.Ranged, "모래 술사", "SandShaper"),
+            (Faction.RockGolems, Role.Signature, "이끼 현자", ""),
+            (Faction.RockGolems, Role.Signature, "이끼 포자 무리", "MossSporeCluster"),
+            (Faction.RockGolems, Role.Tech, "이끼 정원", "MossGarden"),
         };
 
         /// <summary>
@@ -1800,6 +1859,18 @@ namespace WordCraft.Sim
             (Faction.WaterSlimes, Role.Ranged, 3, 3), // 물대포 슬라임
             (Faction.WaterSlimes, Role.Signature, 1, 2), // 비구름
             (Faction.WaterSlimes, Role.Signature, 3, 2), // 샘물 운반자
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            (Faction.RockGolems, Role.Production, 1, 3), // 각성의 원
+            (Faction.RockGolems, Role.Defense, 1, 2), // 부유석 첨탑
+            (Faction.RockGolems, Role.Defense, 2, 3), // 잠듦의 고리
+            (Faction.RockGolems, Role.Melee, 1, 2), // 구르는 바위
+            (Faction.RockGolems, Role.Melee, 2, 2), // 성벽 골렘
+            (Faction.RockGolems, Role.Melee, 3, 3), // 깨어난 바위
+            (Faction.RockGolems, Role.Ranged, 1, 1), // 돌팔매 꼬마돌
+            (Faction.RockGolems, Role.Ranged, 2, 3), // 부유석 파수
+            (Faction.RockGolems, Role.Ranged, 3, 3), // 모래 술사
+            (Faction.RockGolems, Role.Signature, 2, 2), // 이끼 포자 무리
         };
 
         /// <summary>
@@ -1887,6 +1958,14 @@ namespace WordCraft.Sim
             (Faction.WaterSlimes, Role.Ranged, 3, (Role.Tech, 1)), // 물대포 슬라임
             (Faction.WaterSlimes, Role.Signature, 2, (Role.Tech, 0)), // 간헐천 술사
             (Faction.WaterSlimes, Role.Tech, 1, (Role.Production, 0)), // 물결 수련장
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            (Faction.RockGolems, Role.Production, 1, (Role.Tech, 0)), // 각성의 원
+            (Faction.RockGolems, Role.Defense, 1, (Role.Production, 0)), // 부유석 첨탑
+            (Faction.RockGolems, Role.Defense, 2, (Role.Tech, 0)), // 잠듦의 고리
+            (Faction.RockGolems, Role.Ranged, 2, (Role.Tech, 1)), // 부유석 파수
+            (Faction.RockGolems, Role.Signature, 2, (Role.Tech, 1)), // 이끼 포자 무리
+            (Faction.RockGolems, Role.Tech, 1, (Role.Production, 0)), // 이끼 정원
         };
 
         /// <summary>
@@ -1936,6 +2015,13 @@ namespace WordCraft.Sim
             (Faction.WaterSlimes, Role.Signature, 0, (Role.Production, 0), (Role.Production, 1)), // 구름 용
             (Faction.WaterSlimes, Role.Ranged, 2, (Role.Base, 0), (Role.Production, 0)), // 침 뱉는 슬라임
             (Faction.WaterSlimes, Role.Signature, 1, (Role.Production, 1), NoBuilding), // 비구름
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            (Faction.RockGolems, Role.Signature, 0, (Role.Production, 0), (Role.Production, 1)), // 고대 골렘
+            (Faction.RockGolems, Role.Ranged, 1, (Role.Base, 0), (Role.Production, 0)), // 돌팔매 꼬마돌
+            (Faction.RockGolems, Role.Ranged, 2, (Role.Production, 1), NoBuilding), // 부유석 파수
+            (Faction.RockGolems, Role.Ranged, 3, (Role.Production, 1), NoBuilding), // 모래 술사
+            (Faction.RockGolems, Role.Signature, 1, (Role.Production, 1), NoBuilding), // 이끼 현자
         };
 
         /// <summary>
@@ -2049,6 +2135,12 @@ namespace WordCraft.Sim
             (Faction.WaterSlimes, Role.Defense, 1, 80, 50), // 솟는 샘
             (Faction.WaterSlimes, Role.Defense, 2, 50, 40), // 거품 장벽
             (Faction.WaterSlimes, Role.Tech, 1, 150, 100), // 물결 수련장
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            (Faction.RockGolems, Role.Production, 1, 200, 120), // 각성의 원
+            (Faction.RockGolems, Role.Defense, 1, 110, 70), // 부유석 첨탑
+            (Faction.RockGolems, Role.Defense, 2, 120, 80), // 잠듦의 고리
+            (Faction.RockGolems, Role.Tech, 1, 150, 100), // 이끼 정원
         };
 
         /// <summary>
