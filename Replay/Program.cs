@@ -612,9 +612,11 @@ namespace WordCraft.Replay
         /// refused again once it falls. What it does not do is unbuild the unit it
         /// already opened, which is the half of the rule easy to get wrong.
         ///
-        /// Ordered at the production building, which is where a 세계수 정령
-        /// signature unit comes out; it opens tier 2 on its own, so the first
-        /// refusal is the tier-3 rule and not the tier-2 one.
+        /// Ordered at the production building, which is where 세계수 정령's 번개
+        /// 정령 comes out; it opens tier 2 on its own, so the first refusal is the
+        /// tier-3 rule and not the tier-2 one. 번개 정령 rather than 바람 정령,
+        /// because 바람 정령 also needs the 바람 토템 and a refusal for that would
+        /// be a refusal this check is not about.
         /// </summary>
         private static void TechTiersGateProduction()
         {
@@ -624,14 +626,14 @@ namespace WordCraft.Replay
             world.GrantResources(0, 1000);
 
             int banked = world.GetResources(0);
-            world.Step(Produce(TechWorks, 0, 0, Role.Signature));
+            world.Step(Produce(TechWorks, 0, 0, Role.Ranged));
             Check(world.GetResources(0) == banked, "tier 3 spent resources with no tech building");
             Check(world.GetEntity(TechWorks).QueueCount == 0, "tier 3 queued with no tech building");
 
             // Far from the base, so the squad that comes for it later reaches
             // nothing else and the assertions stay about the tier rule.
             world.SpawnBuilding(0, Role.Tech, At(30, 30), complete: true); // 2
-            world.Step(Produce(TechWorks, 0, 1, Role.Signature));
+            world.Step(Produce(TechWorks, 0, 1, Role.Ranged));
             Check(world.GetResources(0) == banked - World.ProduceCost, "the tech building did not open tier 3");
             Check(world.GetEntity(TechWorks).QueueCount == 1, "the tech building did not open tier 3");
 
@@ -643,12 +645,12 @@ namespace WordCraft.Replay
             for (int t = 0; t < 400 && world.GetEntity(TechBuilding).Alive; t++) world.Step(idle);
             Check(!world.GetEntity(TechBuilding).Alive, "the squad never destroyed the tech building");
 
-            Check(world.GetEntity(TechUnit).Role == Role.Signature, "the queued tier 3 unit never appeared");
+            Check(world.GetEntity(TechUnit).Role == Role.Ranged, "the queued tier 3 unit never appeared");
             Check(world.GetEntity(TechUnit).Alive, "losing the tech building unbuilt a finished unit");
 
             banked = world.GetResources(0);
             int queued = world.GetEntity(TechWorks).QueueCount;
-            world.Step(Produce(TechWorks, 0, 2, Role.Signature));
+            world.Step(Produce(TechWorks, 0, 2, Role.Ranged));
             Check(world.GetResources(0) == banked, "tier 3 spent resources after the tech building fell");
             Check(world.GetEntity(TechWorks).QueueCount == queued, "tier 3 queued after the tech building fell");
         }

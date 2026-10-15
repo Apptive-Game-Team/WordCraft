@@ -431,6 +431,50 @@ namespace WordCraft.Sim
         /// </summary>
         public static readonly Fix BodyRadius = Fix.Ratio(3, 8);
 
+        // The four shapes a docs/TECH-TREE.md 묶음 3 row takes, so that a row
+        // reads as the document's columns in the document's order: 체력, 방어,
+        // 속도, then 피해, 사거리, 주기 and 대공/대지 for a body that carries a
+        // weapon. Footprint is BodyRadius on anything with a speed and zero on
+        // anything without one, per docs/TECH-TREE.md 읽는 법, so it is never
+        // a column a row can get wrong.
+        private const bool Walks = false;
+        private const bool Flies = true;
+
+        private static UnitStats Fighter(bool air, int hp, int armor, Fix speed,
+            int damage, int range, int attackTicks, bool hitsAir, bool hitsGround) =>
+            new UnitStats
+            {
+                Hp = hp,
+                Armor = armor,
+                Speed = speed,
+                Footprint = speed.Raw != 0 ? BodyRadius : Fix.Zero,
+                Damage = damage,
+                Range = Fix.FromInt(range),
+                AttackTicks = attackTicks,
+                Air = air,
+                HitsAir = hitsAir,
+                HitsGround = hitsGround,
+            };
+
+        /// <summary>A body with no weapon: 비전투 in the document's 역할 column.</summary>
+        private static UnitStats Support(bool air, int hp, int armor, Fix speed) =>
+            new UnitStats { Hp = hp, Armor = armor, Speed = speed, Footprint = BodyRadius, Air = air };
+
+        /// <summary>A building that shoots: the 기능 column's 피해, 사거리, 주기 and reach.</summary>
+        private static UnitStats Turret(int hp, int damage, int range, int attackTicks, bool hitsAir, bool hitsGround) =>
+            new UnitStats
+            {
+                Hp = hp,
+                Damage = damage,
+                Range = Fix.FromInt(range),
+                AttackTicks = attackTicks,
+                HitsAir = hitsAir,
+                HitsGround = hitsGround,
+            };
+
+        /// <summary>A building that does not shoot: hp and nothing else.</summary>
+        private static UnitStats Structure(int hp) => new UnitStats { Hp = hp };
+
         private static readonly UnitStats[] sharedStats =
         {
             /* None       */ new UnitStats { Hp = 1 },
@@ -807,6 +851,25 @@ namespace WordCraft.Sim
             // this row does not take it. Entry 1 of the slot, behind Towerback.
             (Faction.Humans, Role.Signature, 1,
                 new UnitStats { Hp = 130, Speed = Fix.Ratio(3, 8), Footprint = BodyRadius }),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            // Fighter: 이동, 체력, 방어, 속도, 피해, 사거리, 주기, 대공, 대지. Support: 이동, 체력, 방어, 속도.
+            // 찌릿쥐
+            (Faction.TreeSpirits, Role.Melee, 2, Fighter(Walks, 45, 0, Fix.Ratio(3, 8), 5, 2, 10, false, true)),
+            // 폭풍 기수
+            (Faction.TreeSpirits, Role.Melee, 3, Fighter(Walks, 160, 1, Fix.Ratio(3, 8), 11, 2, 15, false, true)),
+            // 번개새 무리
+            (Faction.TreeSpirits, Role.Ranged, 2, Fighter(Flies, 120, 0, Fix.Ratio(3, 8), 4, 4, 10, true, true)),
+            // 거대 덩쿨
+            (Faction.TreeSpirits, Role.Ranged, 3, Fighter(Walks, 350, 2, Fix.Zero, 20, 9, 40, false, true)),
+            // 도깨비불
+            (Faction.TreeSpirits, Role.Signature, 1, Support(Flies, 60, 0, Fix.Ratio(3, 8))),
+            // 덩굴 군집
+            (Faction.TreeSpirits, Role.Signature, 2, Support(Walks, 150, 1, Fix.Ratio(1, 8))),
+            // 씨앗 요람
+            (Faction.TreeSpirits, Role.Production, 1, Structure(300)),
+            // 회복 토템
+            (Faction.TreeSpirits, Role.Defense, 1, Structure(250)),
         };
 
         /// <summary>
@@ -968,6 +1031,14 @@ namespace WordCraft.Sim
             // 공수 특공대 65자원 55틱.
             (Faction.Humans, Role.Worker, 0, Produce(45, 35)),
             (Faction.Humans, Role.Ranged, 0, Produce(65, 55)),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            (Faction.TreeSpirits, Role.Melee, 2, new ProductionCost()), // 찌릿쥐
+            (Faction.TreeSpirits, Role.Melee, 3, new ProductionCost()), // 폭풍 기수
+            (Faction.TreeSpirits, Role.Ranged, 2, new ProductionCost()), // 번개새 무리
+            (Faction.TreeSpirits, Role.Ranged, 3, new ProductionCost()), // 거대 덩쿨
+            (Faction.TreeSpirits, Role.Signature, 1, new ProductionCost()), // 도깨비불
+            (Faction.TreeSpirits, Role.Signature, 2, new ProductionCost()), // 덩굴 군집
         };
 
         private static ProductionCost Produce(int resources, int ticks) =>
@@ -991,6 +1062,14 @@ namespace WordCraft.Sim
             (Faction.TreeSpirits, Role.Ranged, 1, Grow(30, 40)),
             // 고목 수호자. 50자원, 60틱.
             (Faction.TreeSpirits, Role.Melee, 1, Grow(50, 60)),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            // 찌릿쥐. 15자원, 20틱.
+            (Faction.TreeSpirits, Role.Melee, 2, Grow(15, 20)),
+            // 도깨비불. 40자원, 50틱.
+            (Faction.TreeSpirits, Role.Signature, 1, Grow(40, 50)),
+            // 덩굴 군집. 45자원, 60틱.
+            (Faction.TreeSpirits, Role.Signature, 2, Grow(45, 60)),
         };
 
         private static GrowthCost Grow(int resources, int ticks) =>
@@ -1109,6 +1188,12 @@ namespace WordCraft.Sim
             (Faction.Humans, UniqueRow("포획 가속", UpgradeEffect.CaptureTicks)),
             // 대포 사거리 +1.
             (Faction.Humans, UniqueRow("대포 사거리", UpgradeEffect.CannonRange)),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            (Faction.TreeSpirits, ResearchRow("덩쿨 사거리", 100, 160, 3, UpgradeEffect.VineRange, (Role.Tech, 0), NoBuilding)),
+            (Faction.TreeSpirits, ResearchRow("거대 덩쿨 사거리", 150, 200, 3, UpgradeEffect.GiantVineRange, (Role.Tech, 0), NoBuilding)),
+            (Faction.TreeSpirits, ResearchRow("번개새 공격 주기", 100, 160, 3, UpgradeEffect.ThunderBirdAttackTicks, (Role.Tech, 1), NoBuilding)),
+            (Faction.TreeSpirits, ResearchRow("잎날 속도", 100, 160, 2, UpgradeEffect.LeafbladeSpeed, (Role.Tech, 2), NoBuilding)),
         };
 
         /// <summary>
@@ -1190,6 +1275,15 @@ namespace WordCraft.Sim
         /// </summary>
         private static readonly (Faction Faction, Role Role, int Slot, UpgradeEffect Effect, UpgradedStat Stat, Fix Value)[] entryUpgrades =
         {
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            // 덩쿨 정령 사거리 5 → 6.
+            (Faction.TreeSpirits, Role.Ranged, 1, UpgradeEffect.VineRange, UpgradedStat.Range, Fix.FromInt(6)),
+            // 거대 덩쿨 사거리 9 → 11.
+            (Faction.TreeSpirits, Role.Ranged, 3, UpgradeEffect.GiantVineRange, UpgradedStat.Range, Fix.FromInt(11)),
+            // 번개새 무리 주기 10 → 8틱.
+            (Faction.TreeSpirits, Role.Ranged, 2, UpgradeEffect.ThunderBirdAttackTicks, UpgradedStat.AttackTicks, Fix.FromInt(8)),
+            // 잎날 정령 속도 1/4 → 5/16.
+            (Faction.TreeSpirits, Role.Melee, 0, UpgradeEffect.LeafbladeSpeed, UpgradedStat.Speed, Fix.Ratio(5, 16)),
         };
 
         /// <summary>How many rows the entry upgrade table holds, for the harness.</summary>
@@ -1466,6 +1560,18 @@ namespace WordCraft.Sim
             (Faction.Humans, Role.Defense, "전기 타워", "ElectricTower"),
             (Faction.Humans, Role.Defense, "돌 포탑", "RockTurret"),
             (Faction.Humans, Role.Signature, "마도 정찰기", ""),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            (Faction.TreeSpirits, Role.Production, "씨앗 요람", "SeedCradle"),
+            (Faction.TreeSpirits, Role.Defense, "회복 토템", "HealingTotem"),
+            (Faction.TreeSpirits, Role.Melee, "찌릿쥐", "ZapMouse"),
+            (Faction.TreeSpirits, Role.Melee, "폭풍 기수", "StormRider"),
+            (Faction.TreeSpirits, Role.Ranged, "번개새 무리", "ThunderBirdSwarm"),
+            (Faction.TreeSpirits, Role.Ranged, "거대 덩쿨", "GiantVine"),
+            (Faction.TreeSpirits, Role.Signature, "도깨비불", "WillOWisp"),
+            (Faction.TreeSpirits, Role.Signature, "덩굴 군집", "VineColony"),
+            (Faction.TreeSpirits, Role.Tech, "바람 토템", "WindTotem"),
+            (Faction.TreeSpirits, Role.Tech, "광란의 토템", "FrenzyTotem"),
         };
 
         /// <summary>
@@ -1546,6 +1652,16 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, Role.Ranged, 0, 3),
             (Faction.Driftworlds, Role.Ranged, 1, 3),
             (Faction.Driftworlds, Role.Signature, 0, 2),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            (Faction.TreeSpirits, Role.Production, 1, 3), // 씨앗 요람
+            (Faction.TreeSpirits, Role.Defense, 1, 2), // 회복 토템
+            (Faction.TreeSpirits, Role.Melee, 3, 2), // 폭풍 기수
+            (Faction.TreeSpirits, Role.Ranged, 2, 3), // 번개새 무리
+            (Faction.TreeSpirits, Role.Ranged, 3, 3), // 거대 덩쿨
+            (Faction.TreeSpirits, Role.Signature, 1, 2), // 도깨비불
+            (Faction.TreeSpirits, Role.Signature, 2, 2), // 덩굴 군집
+            (Faction.TreeSpirits, Role.Tech, 1, 3), // 바람 토템
         };
 
         /// <summary>
@@ -1566,11 +1682,10 @@ namespace WordCraft.Sim
         /// Keyed by Faction, Role and Slot, and walked in declaration order, never
         /// through a keyed collection, for the reason <see cref="growthTargets"/> is.
         /// </summary>
-        // ponytail: two rows below stand in for buildings 묶음 3 adds. 바람 정령's
-        // prerequisite is the 바람 토템 (Tech 1) and 마도 정찰기's is the 마도 공창
-        // (Production 2), and neither is in the roster yet, so a row naming one
-        // would fail at type load. Both name Tech 0 until then; swap them when
-        // the buildings arrive.
+        // ponytail: one row below stands in for a building 묶음 3 adds. 마도
+        // 정찰기 comes out of the 마도 공창 (Production 2), which is not in the
+        // roster yet, so it names Tech 0 until then; drop it when the building
+        // arrives.
         private static readonly (Faction Faction, Role Role, int Slot, (Role Role, int Slot) Needs)[] prerequisites =
         {
             // Every faction's 기술 건물 needs its production building: T2, and
@@ -1586,8 +1701,8 @@ namespace WordCraft.Sim
             // 뿌리 회당.
             (Faction.TreeSpirits, Role.Melee, 1, (Role.Production, 0)),
             (Faction.TreeSpirits, Role.Ranged, 0, (Role.Tech, 0)),
-            // 바람 정령: 뿌리 회당 for now, 바람 토템 in 묶음 3.
-            (Faction.TreeSpirits, Role.Signature, 0, (Role.Tech, 0)),
+            // 바람 정령 needs the 바람 토템.
+            (Faction.TreeSpirits, Role.Signature, 0, (Role.Tech, 1)),
 
             // 지옥불 군단장 needs the 용암 도가니.
             (Faction.Hellfire, Role.Signature, 0, (Role.Tech, 0)),
@@ -1609,6 +1724,17 @@ namespace WordCraft.Sim
             // 마도 공창 it is listed under exists, and this keeps it behind tier 3's
             // building in the meantime.
             (Faction.Humans, Role.Signature, 1, (Role.Tech, 0)),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            (Faction.TreeSpirits, Role.Production, 1, (Role.Tech, 0)), // 씨앗 요람
+            (Faction.TreeSpirits, Role.Defense, 1, (Role.Production, 0)), // 회복 토템
+            (Faction.TreeSpirits, Role.Melee, 3, (Role.Tech, 2)), // 폭풍 기수
+            (Faction.TreeSpirits, Role.Ranged, 2, (Role.Tech, 1)), // 번개새 무리
+            (Faction.TreeSpirits, Role.Ranged, 3, (Role.Tech, 0)), // 거대 덩쿨
+            (Faction.TreeSpirits, Role.Signature, 1, (Role.Defense, 1)), // 도깨비불
+            (Faction.TreeSpirits, Role.Signature, 2, (Role.Production, 0)), // 덩굴 군집
+            (Faction.TreeSpirits, Role.Tech, 1, (Role.Tech, 0)), // 바람 토템
+            (Faction.TreeSpirits, Role.Tech, 2, (Role.Production, 0)), // 광란의 토템
         };
 
         /// <summary>
@@ -1744,6 +1870,10 @@ namespace WordCraft.Sim
             // the defense slot; 전기 타워 and 돌 포탑 behind it keep the shared row,
             // which is the whole reason this table is keyed by entry.
             (Faction.Humans, Role.Defense, 0, 55, 50),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            (Faction.TreeSpirits, Role.Tech, 1, 150, 100), // 바람 토템
+            (Faction.TreeSpirits, Role.Tech, 2, 125, 80), // 광란의 토템
         };
 
         /// <summary>
