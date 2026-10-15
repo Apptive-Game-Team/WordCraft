@@ -34,7 +34,6 @@ namespace WordCraft.Sim
         private void ArmLifetime(int id, UnitStats s)
         {
             Entity e = entities[id];
-            if (e.Owner < 0 || e.Owner >= MaxPeers) return;
             int lifetime = LifetimeFor(e.Owner, s);
             if (lifetime == 0) return;
             e.ExpireTick = Tick + lifetime;
