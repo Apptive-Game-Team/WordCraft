@@ -96,6 +96,19 @@
 `Shadow` `Marquee` `MinimapGround` `MinimapView` `MinimapMark` `FogUnseen`
 `FogSeen` `RangeRing`. 지형 자체의 색은 `FieldPalette.cs` 로 갔다(아래 지형).
 
+상태 이상과 오라의 표시(#206)는 새 리터럴 없이 기존 토큰과 `BodyPalette` 견본에서 만든다.
+`MatchView.cs` 에 있다.
+
+| 이름 | 만드는 법 | 쓰임 |
+|---|---|---|
+| `SlowColour` | `TreeSpirits.LeafLight` 를 흰색 쪽으로 20% | 감속된 몸 발밑 ring. alpha 0.95 → 0.3 |
+| `HealRing` | `Good`, alpha 0.8 | 선택된 치유 오라 원천의 반경 ring |
+| `HealMote` / `HealDust` | `Good` 을 흰색 쪽으로 45% / 30% | 치유된 몸의 mote 와 ring(alpha 0.95) |
+| `AuraRing` | `Accent`, alpha 0.7 | 선택된 다른 오라 원천의 반경 ring |
+| `BurnAuraRing` | `Hellfire.Ember`, alpha 0.35 | 화상 오라 원천 발밑에 늘 있는 ring |
+
+불씨와 화상 피해 틱은 `Hellfire.Ember`, 연쇄 bolt 는 진영과 무관하게 `TreeSpirits.Bolt` 다.
+
 크롬과 나란히 `UiStyle`에 사는 이유는 하나다. 색 리터럴을 쓸 수 있는
 파일이 하나여야 재도색이 검색이 아니라 diff가 된다.
 
