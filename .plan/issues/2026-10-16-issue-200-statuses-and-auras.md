@@ -94,3 +94,16 @@ index로 바꾼다. 보유 항목이 로스터에 없거나 연구 행이 없으
 
 `dotnet build`, `dotnet run --project Replay`, `dotnet run --project Host -- selfcheck`,
 `dotnet run -c Release --project Host -- arena -games 2`, Unity `ViewSelfCheck`.
+
+## 리뷰 반영
+
+- 오라 원천의 위치를 패스 시작에 원천 id·행과 함께 담고 거기서 잰다. 덩굴 군집이 `MoveSystem`
+  안에서 걸어서, 그때그때 읽으면 id가 낮은 몸과 높은 몸이 서로 다른 위치를 쟀다. 거울처럼 선 두
+  일꾼 검사가 고치기 전 9번째 틱에 실패했다.
+- 연쇄는 건물로도 튄다(`AcquireTarget`과 같은 범위). 문서를 "적(유닛, 일꾼, 건물)"으로 고쳤다.
+- type load가 수치 없는 행(과생장, 덩굴 지대, 연쇄, 명중 시 감속·화상 제외)과 하한·상한 없는
+  주기 오라·거품 벽 행을 거부한다. `IsAura`는 `FactionData`로 옮겼다.
+- 분리 밀기의 상한은 해시된 `e.Speed / 2` 그대로 둔다. 밀기는 두 몸이 겹친 만큼을 푸는 것이고
+  걷는 빠르기와 관계없으며, 어떤 행 속도의 절반도 반 칸 미만이다. 규칙 변경 없음.
+- `Kill`이 두 시계를 지우는 검사, 섞인 월드에서 감속·화상·연쇄가 실제로 일어났는지 세는 검사,
+  나머지 네 진영을 피어 0~3에 둔 월드의 두 번 실행 검사를 더했다.
