@@ -51,7 +51,10 @@ namespace WordCraft.Host
             return 0;
         }
 
-        /// <summary>Two completed games with alternating sides produce the same result line on a second run.</summary>
+        /// <summary>
+        /// Two games with alternating sides both complete, are both counted, and
+        /// produce the same result line on a second run.
+        /// </summary>
         private static void ArenaIsReproducible()
         {
             // 6000, the arena's own default cap, so both games are played to the
@@ -63,8 +66,14 @@ namespace WordCraft.Host
             string first = Arena.ResultLine(Faction.Driftworlds, Faction.Hellfire, 2, ArenaTicks, 0xC0FFEE);
             string second = Arena.ResultLine(Faction.Driftworlds, Faction.Hellfire, 2, ArenaTicks, 0xC0FFEE);
             Check(first == second, "arena pair result changed between runs: " + first + " / " + second);
-            Check(first.Contains("a wins   0, b wins   2, draws   0"),
-                "arena did not count both completed games for Hellfire after alternating sides: " + first);
+            // Both games played out and counted, whoever won them. Which side wins
+            // is the roster's business and moves with it (#180 turned one game
+            // to 차원 유랑종), so the check reads the totals and not the winner.
+            var counts = System.Text.RegularExpressions.Regex.Match(first, @"a wins +(\d+), b wins +(\d+), draws +(\d+)");
+            Check(counts.Success &&
+                  int.Parse(counts.Groups[1].Value) + int.Parse(counts.Groups[2].Value) == 2 &&
+                  counts.Groups[3].Value == "0",
+                "arena did not count both completed games after alternating sides: " + first);
         }
 
         /// <summary>Drop, duplicate, reorder, and delay, yet identical hashes every tick.</summary>
