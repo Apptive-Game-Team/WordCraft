@@ -128,7 +128,9 @@ namespace WordCraft.View
             // here, not in QualitySettings.asset, so a player built from any
             // quality level still looks like the game.
             QualitySettings.shadows = ShadowQuality.All;
-            QualitySettings.shadowResolution = ShadowResolution.High;
+            // Very high since #187: the strata faces and the props are small
+            // facets, and a rubble stone's shadow at High was a smudge.
+            QualitySettings.shadowResolution = ShadowResolution.VeryHigh;
             QualitySettings.shadowProjection = ShadowProjection.StableFit;
             QualitySettings.shadowDistance = 90f;
             QualitySettings.shadowCascades = 2;

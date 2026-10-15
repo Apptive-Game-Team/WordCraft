@@ -64,10 +64,16 @@ namespace WordCraft.View
         public static readonly Color Sun = Rgb(0xFFF1DA);
 
         /// <summary>Hemisphere ambient from above. Cool, the colour of open sky, so faces turned up and away from the sun still read as outdoors.</summary>
-        public static readonly Color SkyLight = Rgb(0x4C525C);
+        public static readonly Color SkyLight = Rgb(0x4A5059);
 
-        /// <summary>Hemisphere ambient from below. Warm and dim, the grass and earth bouncing back into the undersides.</summary>
-        public static readonly Color EarthLight = Rgb(0x2C2722);
+        /// <summary>
+        /// Hemisphere ambient from below. Warm and dim, the grass and earth
+        /// bouncing back into the undersides. Raised a step and SkyLight lowered a
+        /// step in #187: flat ground takes almost all its ambient from the sky and
+        /// a body's sides take half theirs from the earth, so the trade lifts the
+        /// bodies against the ground they stand on without changing the bands.
+        /// </summary>
+        public static readonly Color EarthLight = Rgb(0x342E28);
 
         /// <summary>The lit paper edge. Pale and warm like the sun it belongs to; alpha is its strength.</summary>
         public static readonly Color Rim = Rgba(0xFFEACB, 0.35f);
