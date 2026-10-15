@@ -208,6 +208,9 @@ namespace WordCraft.View
         /// <summary>Idle time run before a motion starts, so speed, facing and breath are settled rather than at their first frame.</summary>
         private const float PrerollSeconds = 1f;
 
+        /// <summary>How long before frame 0 an attack strip calls Attack: about half the wind-up.</summary>
+        private const float AttackLead = 0.05f;
+
         /// <summary>When the motion starts on the held clock. Far from zero, so nothing reads a start time of zero as "never".</summary>
         private const float StartSeconds = 100f;
 
@@ -224,7 +227,11 @@ namespace WordCraft.View
         /// <summary>How long the walk keeps walking before it stops, so the strip shows a start, a turn and a stop.</summary>
         private const float WalkSeconds = 0.75f;
 
-        /// <summary>The motions every faction gets a strip of. The first five are the issue's; the rest are this change's own checks.</summary>
+        /// <summary>
+        /// The motions every faction gets a strip of. The first five are the
+        /// issue's; the rest are this change's own checks. A faction that grows
+        /// also gets a "growth" strip.
+        /// </summary>
         private static readonly string[] Motions = { "walk", "attack", "hit", "death", "idle", "spawn", "tower" };
 
         private static int Strips(string output)
@@ -241,6 +248,13 @@ namespace WordCraft.View
                     List<(Role Role, int Slot)> cast = motion == "tower" ? towers : walkers;
                     if (cast.Count == 0) continue;
                     Strip(output, faction, motion, cast);
+                    written++;
+                }
+
+                List<(Role Role, int Slot)> growth = Growths(faction);
+                if (growth.Count > 0)
+                {
+                    Strip(output, faction, "growth", growth);
                     written++;
                 }
             }
@@ -273,6 +287,25 @@ namespace WordCraft.View
             return list;
         }
 
+        /// <summary>
+        /// 세계수 정령 성장 as pairs: a worker, then the entry it grows into, for
+        /// every row of the growth table this faction has. The strip swells the
+        /// worker and brings the grown body up in its place, which is what
+        /// MatchView does when a body's roster entry changes in sight.
+        /// </summary>
+        private static List<(Role Role, int Slot)> Growths(Faction faction)
+        {
+            var list = new List<(Role Role, int Slot)>();
+            for (int i = 0; i < FactionData.GrowthTargetCount; i++)
+            {
+                var row = FactionData.GrowthTarget(i);
+                if (row.Faction != faction) continue;
+                list.Add((Role.Worker, 0));
+                list.Add((row.Role, row.Slot));
+            }
+            return list;
+        }
+
         /// <summary>Every defense entry: the buildings that turn, fire and kick.</summary>
         private static List<(Role Role, int Slot)> Towers(Faction faction)
         {
@@ -289,12 +322,16 @@ namespace WordCraft.View
         {
             World world = Empty(faction);
             bool towers = motion == "tower";
-            float spacing = towers ? 4.5f : StripSpacing;
-            float left = World.GridSize * 0.5f - (cast.Count - 1) * spacing * 0.5f;
+            // A growth strip's cast is worker and grown body in pairs, and each
+            // pair stands on one spot: the grown body replaces the worker there.
+            bool growth = motion == "growth";
+            int places = growth ? cast.Count / 2 : cast.Count;
+            float spacing = towers ? 4.5f : growth ? StripSpacing * 1.4f : StripSpacing;
+            float left = World.GridSize * 0.5f - (places - 1) * spacing * 0.5f;
             var homes = new List<Vector2>(cast.Count);
             for (int i = 0; i < cast.Count; i++)
             {
-                var home = new Vector2(left + i * spacing, Row);
+                var home = new Vector2(left + (growth ? i / 2 : i) * spacing, Row);
                 Spawn(world, cast[i].Role, cast[i].Slot, home);
                 homes.Add(home);
             }
@@ -307,14 +344,19 @@ namespace WordCraft.View
                 for (int i = 0; i < rigs.Count; i++)
                 {
                     if (!towers) Turn(rigs[i], FacingYaw);
+                    if (growth && i % 2 == 1) rigs[i].Spawn(1e6f); // not there until the worker has swelled
                     // Fix is cells a tick; a strip walks at the roster's own pace.
                     speeds[i] = FactionData.Stats(faction, cast[i].Role, cast[i].Slot).Speed.Raw / 65536f * World.TicksPerSecond;
                 }
 
                 float now = StartSeconds - PrerollSeconds;
                 var shot = new Shooting { Faction = faction, Cast = cast, Effects = effects };
-                Step(rigs, homes, motion, speeds, shot, ref now, StartSeconds);
+                // An attack starts a moment before frame 0, so frame 0 holds its
+                // wind-up rather than the rest pose the wind-up starts from.
+                float lead = motion == "attack" ? AttackLead : 0f;
+                Step(rigs, homes, motion, speeds, shot, ref now, StartSeconds - lead);
                 Begin(rigs, motion, shot);
+                Step(rigs, homes, motion, speeds, shot, ref now, StartSeconds);
                 // Once at the start, so frame 0 is the motion's first pose and
                 // not the last idle one.
                 for (int i = 0; i < rigs.Count; i++) rigs[i].Animate();
@@ -350,8 +392,16 @@ namespace WordCraft.View
                         shot.Effects.Impact(rigs[i].Chest + Vector3.back * rigs[i].Footprint * 0.35f, colour);
                         break;
                     case "death":
+                    {
                         // The rubble rule is MatchView.Rubble's: a 돌 골렘 combat unit.
-                        rigs[i].Die(shot.Faction == Faction.RockGolems && shot.Cast[i].Role != Role.Worker);
+                        bool rubble = shot.Faction == Faction.RockGolems && shot.Cast[i].Role != Role.Worker;
+                        rigs[i].Die(rubble);
+                        if (rubble) shot.Effects.Crumble(rigs[i].transform.position, rigs[i].Size, UiStyle.Remnant, rigs[i].transform.eulerAngles.y);
+                        break;
+                    }
+                    case "growth":
+                        if (i % 2 == 0) rigs[i].Swell();
+                        else rigs[i].Spawn(BodyRig.SwellSeconds);
                         break;
                     case "spawn":
                         rigs[i].Spawn();
@@ -385,11 +435,11 @@ namespace WordCraft.View
             {
                 Vector3 to = rig.transform.position + forward * (tower ? 4f : 2.4f);
                 to.y = rig.Chest.y - (tower ? rig.ChestLift * 0.6f : 0f);
-                shot.Effects.Shot(rig.Muzzle, to, colour);
+                shot.Effects.Shot(rig.Muzzle, to, colour, tower ? 0f : BodyRig.StrikeDelay);
             }
             else
             {
-                shot.Effects.Impact(rig.Chest + forward * 1.1f, colour, 0.17f);
+                shot.Effects.Impact(rig.Chest + forward * 1.1f, colour, BodyRig.LungeLandDelay);
             }
         }
 
