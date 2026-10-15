@@ -11,15 +11,17 @@ namespace WordCraft.Sim
     {
         /// <summary>
         /// How long a body of this row lives when this peer spawns it, or 0 for
-        /// a row that lives until it is killed. 소환 수명 raises every row that
-        /// lapses to SummonLifetimeResearched; read at spawn, so a body already
+        /// a row that lives until it is killed. 소환 수명 adds what it adds to
+        /// SummonLifetime (600 → 800, so 200) to the row's own lifetime, so a row
+        /// given a lifetime of its own keeps its difference from the others
+        /// rather than being flattened to 800. Read at spawn, so a body already
         /// on the field keeps the tick it was given.
         /// </summary>
         public int LifetimeFor(int peer, UnitStats s)
         {
             if (s.Lifetime == 0) return 0;
             return UpgradeLevelOf(peer, UpgradeEffect.SummonLifetime) > 0
-                ? FactionData.SummonLifetimeResearched
+                ? s.Lifetime + (FactionData.SummonLifetimeResearched - FactionData.SummonLifetime)
                 : s.Lifetime;
         }
 
