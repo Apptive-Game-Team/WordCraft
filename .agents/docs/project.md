@@ -71,6 +71,12 @@ Fill this document during project initialization. Agents must verify commands ag
 | View determinism | `Unity -batchmode -quit -projectPath Client -executeMethod WordCraft.View.ViewSelfCheck.Run` |
 | Screenshots | `Unity -batchmode -quit -projectPath Client -executeMethod WordCraft.View.ViewShots.Run -shotsOutput shots` (needs a GPU, so no `-nographics`) |
 
+Host arena accepts `-a <faction> -b <faction>` to run a selected pair and
+`-games <count>` to repeat it. Faction `a` occupies peer 0 on even game indexes
+and peer 1 on odd game indexes. `Sim/` currently makes no draws from
+`World.Random`, so `-seed` and the seed offset by game index change only the
+hashed RNG state; side alternation is the only game variation.
+
 ## Constraints
 
 - Supported platforms: Windows and macOS desktop. WebGL and mobile are out of scope.

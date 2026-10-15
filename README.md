@@ -38,6 +38,14 @@ dotnet run --project Replay
 
 `OK: all determinism checks passed`가 출력되면 정상입니다.
 
+Host arena는 여섯 진영의 모든 순서 있는 쌍을 실행하거나, `-a`와 `-b`로
+두 진영을 지정해 비교합니다. 예를 들어 `dotnet run -c Release --project Host --
+arena -a Humans -b Hellfire -games 2`는 두 판을 실행합니다. 짝수 판에서 진영 `a`는
+peer 0, 홀수 판에서 진영 `a`는 peer 1로 배정됩니다. 현재 `Sim/`은
+`World.Random`에서 난수를 뽑지 않으므로 `-seed`와 game index를 더한 seed는 hash RNG 상태만
+바꾸며 게임 결과에는 영향을 주지 않습니다. 여러 판에서 결과를 바꾸는 요인은
+진영의 peer 자리 교대뿐입니다.
+
 ## Unity 클라이언트를 열기 전에
 
 `Client/`는 `Sim`과 `Net`을 컴파일된 어셈블리로 참조합니다. 두 파일은 커밋되지
