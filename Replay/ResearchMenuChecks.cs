@@ -35,6 +35,8 @@ namespace WordCraft.Replay
             ProgressRunsFromEmptyToFull();
             AResearchCancelledByTheCardIsRefundedAndStops();
             TheBonusReadoutFollowsTheLevels();
+            CaptureProgressDividesByTheResearchedClock();
+            TheDrawnArrivalRadiusIsTheResearchedOne();
         }
 
         /// <summary>
@@ -205,6 +207,91 @@ namespace WordCraft.Replay
             Check(ResearchMenu.Bonus(world, 0) == "+2/+1" && ResearchMenu.HasBonus(world, 0),
                 "two attack and one armor read " + ResearchMenu.Bonus(world, 0));
             Check(ResearchMenu.Bonus(world, 1) == "+0/+0", "the other peer's readout moved with this peer's levels");
+        }
+
+        // ---------------------------------------------------------------------
+        // The numbers the view reads off the world
+
+        /// <summary>
+        /// The row of this faction's table with this effect, found by searching
+        /// rather than by index so a table reordered later does not make this file
+        /// research the wrong row.
+        /// </summary>
+        private static int RowOf(Faction faction, UpgradeEffect effect)
+        {
+            for (int i = 0; i < FactionData.UpgradeCount(faction); i++)
+            {
+                if (FactionData.Upgrade(faction, i).Effect == effect) return i;
+            }
+            throw new Exception(faction + " has no " + effect + " row");
+        }
+
+        /// <summary>
+        /// A capture's bar, with and without 포획 가속. Both are run through a
+        /// real capture and read at every tick. Before the research the world-aware
+        /// reading is the old one, tick for tick. After it, the bar starts near
+        /// empty and ends near full, which the old reading divided by 60 cannot do
+        /// on a clock that starts at 40: it begins a third of the way across.
+        /// </summary>
+        private static void CaptureProgressDividesByTheResearchedClock()
+        {
+            for (int pass = 0; pass < 2; pass++)
+            {
+                bool researched = pass == 1;
+                World world = TechWorld(Faction.Humans, out int tech);
+                if (researched) ResearchToCompletion(world, tech, RowOf(Faction.Humans, UpgradeEffect.CaptureTicks));
+                int worker = world.SpawnWorker(0, At(30, 30));
+                int rock = world.SpawnNeutralRock(At(31, 30));
+                world.Step(One(0, 50, CommandType.Capture, worker, rock));
+
+                float first = -1f, last = -1f;
+                for (int t = 0; t < 200 && world.GetEntity(worker).CaptureTargetId >= 0; t++)
+                {
+                    Entity w = world.GetEntity(worker);
+                    float now = CaptureOrder.Progress(world, w);
+                    Check(now >= last, "the capture bar went backwards: " + last + " then " + now);
+                    if (!researched)
+                    {
+                        Check(now == CaptureOrder.Progress(w),
+                            "an unresearched peer's bar differs from the base reading at " + w.CaptureTicksLeft + " left");
+                    }
+                    if (now > 0f && first < 0f) first = now;
+                    if (now > 0f) last = now;
+                    world.Step(Idle);
+                }
+
+                string which = researched ? "a researched" : "an unresearched";
+                Check(first > 0f && first < 0.1f, which + " capture's bar started at " + first + ", not near empty");
+                Check(last > 0.9f && last <= 1f, which + " capture's bar ended at " + last + ", not near full");
+            }
+        }
+
+        /// <summary>
+        /// The ring a 굴절 기둥 is drawn with for a peer that has researched 도착
+        /// 반경, on both sides of its edge, the pair ArrivalOrderChecks pins the
+        /// base radius with. A ring drawn at the base radius fails the first half:
+        /// it would promise less than the simulation arrives at.
+        /// </summary>
+        private static void TheDrawnArrivalRadiusIsTheResearchedOne()
+        {
+            World world = TechWorld(Faction.Driftworlds, out int tech);
+            world.SpawnBuilding(0, World.PillarRole, World.PillarSlot, At(30, 30), true);
+            int pillar = world.EntityCount - 1;
+            FixVec2 anchor = world.GetEntity(pillar).Position;
+
+            Check(ArrivalOrder.RadiusFor(world, 0) == World.ArrivalRadius &&
+                  ArrivalOrder.RadiusFor(world, 0) == ArrivalOrder.Radius,
+                "an unresearched peer's ring is not the base radius");
+
+            ResearchToCompletion(world, tech, RowOf(Faction.Driftworlds, UpgradeEffect.ArrivalRadius));
+            Fix radius = ArrivalOrder.RadiusFor(world, 0);
+            Check(radius == World.ArrivalRadiusResearched && radius > ArrivalOrder.Radius,
+                "the researched ring is " + radius.ToInt() + " cells, not " + World.ArrivalRadiusResearched.ToInt());
+
+            Check(world.ArrivalValid(0, new FixVec2(anchor.X + radius, anchor.Y)),
+                "a point on the researched ring is refused by the simulation");
+            Check(!world.ArrivalValid(0, new FixVec2(anchor.X + radius + Fix.Ratio(1, 16), anchor.Y)),
+                "a point a sixteenth of a cell outside the researched ring is still arrived at");
         }
 
         // ---------------------------------------------------------------------
