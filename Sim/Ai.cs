@@ -93,7 +93,20 @@ namespace WordCraft.Sim
             //    production orders behind it are refused for what is left.
             AiResearch(peer);
 
-            // 3. Production. Every finished building of its own with an empty queue
+            // 3. Supply before the cap, not after it. A cap reached is production
+            //    stopped, and a supply building takes 50 ticks to stand up. Ahead
+            //    of production for the reason research is: since docs/TECH-TREE.md
+            //    묶음 3 the base makes fighters as well as workers for five
+            //    factions out of six, production spends the whole bank every
+            //    think, and a supply order asked after it never saw the 75 it costs.
+            if (population[peer] + AiSupplyLead >= PopulationCap(peer) &&
+                PopulationCap(peer) < PopulationHardCap &&
+                !AiHolds(peer, Role.Supply, unfinishedOnly: true))
+            {
+                AiBuild(peer, Role.Supply);
+            }
+
+            // 4. Production. Every finished building of its own with an empty queue
             //    gets an order, so nothing that can build anything sits still.
             //    What it may order there is the roster's answer: a building makes
             //    what is on its list and nothing else, so workers come out of the
@@ -121,15 +134,6 @@ namespace WordCraft.Sim
 
                 if (!AiFighterAt(peer, i, out Role role, out int slot)) continue; // nothing here it can make
                 AiIssue(peer, CommandType.Produce, i, FixVec2.Zero, Command.RosterArg(role, slot));
-            }
-
-            // 4. Supply before the cap, not after it. A cap reached is production
-            //    stopped, and a supply building takes 50 ticks to stand up.
-            if (population[peer] + AiSupplyLead >= PopulationCap(peer) &&
-                PopulationCap(peer) < PopulationHardCap &&
-                !AiHolds(peer, Role.Supply, unfinishedOnly: true))
-            {
-                AiBuild(peer, Role.Supply);
             }
 
             // 5. Somewhere else to build from, so losing the base is not losing the
