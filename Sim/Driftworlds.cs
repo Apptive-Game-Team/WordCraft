@@ -74,10 +74,9 @@ namespace WordCraft.Sim
         public const Role PassageRole = Role.Production;
 
         /// <summary>
-        /// Entry 0. Named rather than left to default, for the reason
-        /// TowerbackSlot is: 차원 유랑종 fields one production building today, and a
-        /// second entry added to that slot later would be a different building that
-        /// this rule has said nothing about.
+        /// Entry 0. The rule itself reads FactionData's arrival table, where 깊은
+        /// 통로 (entry 1) is the second 통로; this name is for the harness and the
+        /// view, which mean the first.
         /// </summary>
         public const int PassageSlot = 0;
 
@@ -123,12 +122,37 @@ namespace WordCraft.Sim
         public const int ArrivalTicksResearched = 40;
 
         /// <summary>
-        /// 도착 반경: the arrival radius this peer's anchors lend. Asked by both of
-        /// the mechanic's checks through ArrivalValid, so a level that lands while
-        /// a body is crossing widens the second check and never narrows it.
+        /// 도착 반경: the radius this peer's 굴절 기둥 and 경계 운반자 lend, the two
+        /// rows of the arrival table at 6 cells that the #164 research widens. Kept
+        /// for the view, which draws that ring; the simulation asks each anchor its
+        /// own radius through ArrivalRadiusOf.
         /// </summary>
-        public Fix ArrivalRadiusFor(int peer) =>
-            UpgradeLevelOf(peer, UpgradeEffect.ArrivalRadius) > 0 ? ArrivalRadiusResearched : ArrivalRadius;
+        public Fix ArrivalRadiusFor(int peer)
+        {
+            if (peer < 0 || peer >= MaxPeers) return ArrivalRadius;
+            return RadiusOf(peer, FactionData.Arrival(PassageFaction, PillarRole, PillarSlot));
+        }
+
+        /// <summary>
+        /// The radius this body lends its owner right now, by its own row of the
+        /// arrival table: 6 for a 굴절 기둥 or a 경계 운반자, 3 for a 위상 닻, 4 for a
+        /// 떠도는 섬, and zero for everything else. A row's research widens that row
+        /// and no other, read on the tick it is asked, so a level that lands while a
+        /// body is crossing widens the second check and never narrows it.
+        ///
+        /// Whether the body is standing or alive is ProvidesArrival's question, not
+        /// this one's.
+        /// </summary>
+        public Fix ArrivalRadiusOf(Entity e)
+        {
+            if (e.Owner < 0 || e.Owner >= MaxPeers) return Fix.Zero;
+            return RadiusOf(e.Owner, FactionData.Arrival(factions[e.Owner], e.Role, e.Slot));
+        }
+
+        private Fix RadiusOf(int peer, ArrivalRow row) =>
+            Fix.FromInt(row.RadiusEffect != UpgradeEffect.None && UpgradeLevelOf(peer, row.RadiusEffect) > 0
+                ? row.RadiusResearched
+                : row.Radius);
 
         /// <summary>
         /// 도착 가속: the 통로's clock, 도착 | 통로에서 60틱 in the document's table,
@@ -155,7 +179,8 @@ namespace WordCraft.Sim
         }
 
         /// <summary>
-        /// True for a standing 통로 and nothing else. Faction, kind, role and entry
+        /// True for a standing 통로 or 깊은 통로, the rows of the arrival table marked
+        /// Passage, and nothing else. Faction, kind, role and entry
         /// are read off the body rather than carried on it, for the reason IsWarlord
         /// is: none of the four ever changes for a given body, so making any of them
         /// state would add a hashed field that can only ever hold one value.
@@ -178,13 +203,14 @@ namespace WordCraft.Sim
         /// view calls this one with no TryQueueUnit anywhere above it.
         /// </summary>
         public bool IsPassage(Entity b) =>
-            b.Kind == EntityKind.Building && b.Role == PassageRole && b.Slot == PassageSlot &&
-            b.BuildTicksLeft <= 0 &&
-            b.Owner >= 0 && b.Owner < MaxPeers && factions[b.Owner] == PassageFaction;
+            b.Kind == EntityKind.Building && b.BuildTicksLeft <= 0 &&
+            b.Owner >= 0 && b.Owner < MaxPeers &&
+            FactionData.Arrival(factions[b.Owner], b.Role, b.Slot).Passage;
 
         /// <summary>
-        /// True for a body lending this peer an arrival radius right now. A standing
-        /// 굴절 기둥 or a living 경계 운반자, and the word right now is the whole of
+        /// True for a body lending this peer an arrival radius right now: a living
+        /// body or a standing building whose row of the arrival table has a radius
+        /// (굴절 기둥, 경계 운반자, 위상 닻, 떠도는 섬), and the word right now is the whole of
         /// it: this is asked twice about the same point and is free to answer
         /// differently, which is the mechanic rather than a hazard.
         ///
@@ -206,12 +232,12 @@ namespace WordCraft.Sim
         public bool ProvidesArrival(Entity e, int peer)
         {
             if (!e.Alive || e.Owner != peer) return false;
-            if (e.Owner < 0 || e.Owner >= MaxPeers || factions[e.Owner] != PassageFaction) return false;
-            if (e.Kind == EntityKind.Building)
-            {
-                return e.Role == PillarRole && e.Slot == PillarSlot && e.BuildTicksLeft <= 0;
-            }
-            return e.Kind == EntityKind.Unit && e.Role == CarrierRole && e.Slot == CarrierSlot;
+            if (e.Owner < 0 || e.Owner >= MaxPeers) return false;
+            // The arrival table is keyed by faction, so asking it is the faction
+            // test: a 지옥불 군단장 at Signature 0 finds no row.
+            if (FactionData.Arrival(factions[e.Owner], e.Role, e.Slot).Radius <= 0) return false;
+            if (e.Kind == EntityKind.Building) return e.BuildTicksLeft <= 0;
+            return e.Kind == EntityKind.Unit;
         }
 
         /// <summary>
@@ -252,12 +278,14 @@ namespace WordCraft.Sim
             if (point.X < Fix.Zero || point.Y < Fix.Zero) return false;
             if (point.X >= Fix.FromInt(GridSize) || point.Y >= Fix.FromInt(GridSize)) return false;
 
-            Fix radius = ArrivalRadiusFor(peer);
+            // Each anchor by its own row's radius. Still a bool and still the first
+            // anchor in range: a radius per anchor changes how far each one reaches
+            // and nothing about which one answers.
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
                 if (!ProvidesArrival(e, peer)) continue;
-                if (WithinRange(point, e.Position, radius)) return true;
+                if (WithinRange(point, e.Position, ArrivalRadiusOf(e))) return true;
             }
             return false;
         }

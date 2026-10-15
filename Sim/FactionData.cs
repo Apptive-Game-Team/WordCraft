@@ -201,6 +201,30 @@ namespace WordCraft.Sim
     }
 
     /// <summary>
+    /// One roster entry that takes part in 차원 유랑종 도착: docs/TECH-TREE.md
+    /// 데이터 모델 확장 M9. A 통로 is a building whose queue arrives at a point
+    /// (Passage); an anchor is a building or a body that lends a radius around
+    /// itself (Radius, in whole cells, 0 for none). Default on the struct is
+    /// neither, so an entry nobody wrote takes no part.
+    /// </summary>
+    public struct ArrivalRow
+    {
+        public Faction Faction;
+        public Role Role;
+        public int Slot;
+
+        /// <summary>Whether this building keeps an arrival point for its queue.</summary>
+        public bool Passage;
+
+        /// <summary>The radius this entry lends, in whole cells. 0 lends none.</summary>
+        public int Radius;
+
+        /// <summary>The research row that widens Radius, or None.</summary>
+        public UpgradeEffect RadiusEffect;
+        public int RadiusResearched;
+    }
+
+    /// <summary>
     /// What one row of the upgrade table changes. Not hashed — a level is hashed,
     /// and the effect is read back off the row the level belongs to — but kept
     /// in a fixed order anyway, because the harness names rows by it.
@@ -283,6 +307,9 @@ namespace WordCraft.Sim
 
         // 지옥불 군단: 잿불 새끼 상한 3 → 4.
         BroodCap = 35,
+
+        // 차원 유랑종: 위상 닻 도착 반경 3 → 4칸.
+        PhaseAnchorRadius = 36,
     }
 
     /// <summary>
@@ -1374,6 +1401,61 @@ namespace WordCraft.Sim
         public static SpawnerRow SpawnerAt(int index) => spawners[index];
 
         /// <summary>
+        /// Every roster entry that is a 통로 or an anchor, docs/TECH-TREE.md M9 and
+        /// 도착 규칙. 통로 and 깊은 통로 keep an arrival point; 굴절 기둥 and 경계
+        /// 운반자 lend 6 cells (8 under 도착 반경, the #164 row, which reaches these
+        /// two and no other), 위상 닻 3, 떠도는 섬 4, and 틈새
+        /// 포대 is written down at 0 so the table says it lends nothing. Walked in
+        /// declaration order, for the reason <see cref="growthTargets"/> is.
+        /// </summary>
+        private static readonly ArrivalRow[] arrivals =
+        {
+            // 통로
+            Arrival(Faction.Driftworlds, Role.Production, 0, true, 0, UpgradeEffect.None, 0),
+            // 깊은 통로
+            Arrival(Faction.Driftworlds, Role.Production, 1, true, 0, UpgradeEffect.None, 0),
+            // 굴절 기둥. 6칸, 도착 반경 8칸.
+            Arrival(Faction.Driftworlds, Role.Defense, 0, false, 6, UpgradeEffect.ArrivalRadius, 8),
+            // 경계 운반자. 이동식 6칸, 도착 반경 8칸.
+            Arrival(Faction.Driftworlds, Role.Signature, 0, false, 6, UpgradeEffect.ArrivalRadius, 8),
+            // 위상 닻. 3칸.
+            Arrival(Faction.Driftworlds, Role.Defense, 1, false, 3, UpgradeEffect.None, 0),
+            // 떠도는 섬. 공중 4칸.
+            Arrival(Faction.Driftworlds, Role.Signature, 1, false, 4, UpgradeEffect.None, 0),
+            // 틈새 포대. 도착 반경 없음.
+            Arrival(Faction.Driftworlds, Role.Defense, 2, false, 0, UpgradeEffect.None, 0),
+        };
+
+        private static ArrivalRow Arrival(Faction faction, Role role, int slot, bool passage, int radius,
+            UpgradeEffect radiusEffect, int radiusResearched) =>
+            new ArrivalRow
+            {
+                Faction = faction, Role = role, Slot = slot,
+                Passage = passage, Radius = radius,
+                RadiusEffect = radiusEffect, RadiusResearched = radiusResearched,
+            };
+
+        /// <summary>
+        /// The arrival row of one entry, or a default row that is neither a 통로
+        /// nor an anchor. A linear scan in declaration order.
+        /// </summary>
+        public static ArrivalRow Arrival(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < arrivals.Length; i++)
+            {
+                ArrivalRow row = arrivals[i];
+                if (row.Faction == faction && row.Role == role && row.Slot == slot) return row;
+            }
+            return new ArrivalRow();
+        }
+
+        /// <summary>How many rows the arrival table holds, for the harness.</summary>
+        public static int ArrivalCount => arrivals.Length;
+
+        /// <summary>One row of the arrival table, in declaration order.</summary>
+        public static ArrivalRow ArrivalAt(int index) => arrivals[index];
+
+        /// <summary>
         /// The most rows any faction's upgrade table holds. Sizes the per-peer
         /// level array World hashes, so a faction given a ninth row has to move
         /// this too, and the type load refuses a table that outgrows it. Eight
@@ -1841,6 +1923,26 @@ namespace WordCraft.Sim
                 {
                     Require(spawners[j].Faction != row.Faction || spawners[j].Role != row.Role || spawners[j].Slot != row.Slot,
                         "spawners lists " + row.Faction + " " + row.Role + " " + row.Slot + " twice");
+                }
+            }
+            RequireArrivals();
+        }
+
+        private static void RequireArrivals()
+        {
+            for (int i = 0; i < arrivals.Length; i++)
+            {
+                ArrivalRow row = arrivals[i];
+                RequireFielded(row.Faction, row.Role, row.Slot, "arrivals");
+                Require(!row.Passage || IsBuilding(row.Role), "arrivals makes a body a 통로 at row " + i);
+                Require(!row.Passage || row.Radius == 0, "arrivals row " + i + " is a 통로 and an anchor");
+                Require(row.Radius >= 0 && (row.RadiusEffect == UpgradeEffect.None || row.RadiusResearched > row.Radius),
+                    "arrivals row " + i + " has a radius research that does not widen it");
+                RequireResearchable(row.Faction, row.RadiusEffect, "arrivals");
+                for (int j = 0; j < i; j++)
+                {
+                    Require(arrivals[j].Faction != row.Faction || arrivals[j].Role != row.Role || arrivals[j].Slot != row.Slot,
+                        "arrivals lists " + row.Faction + " " + row.Role + " " + row.Slot + " twice");
                 }
             }
         }
