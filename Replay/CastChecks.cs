@@ -353,6 +353,9 @@ namespace WordCraft.Replay
             w.SetStatusForScenario(caster, 0, 1);
             Step(w);
             Check(!w.GetEntity(caster).Alive, "the burn did not kill the 운석 술사, so the check proves nothing");
+            Entity corpse = w.GetEntity(caster);
+            Check(corpse.AbilityTicksLeft == 0 && corpse.AbilityPoint.Equals(FixVec2.Zero),
+                "the dead 운석 술사 still holds clock " + corpse.AbilityTicksLeft + " at its point");
             Run(w, 50);
             Check(w.GetEntity(target).Hp == hp, "a dead caster's meteor still fell");
         }
