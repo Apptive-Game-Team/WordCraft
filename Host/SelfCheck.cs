@@ -66,14 +66,29 @@ namespace WordCraft.Host
             string first = Arena.ResultLine(Faction.Driftworlds, Faction.Hellfire, 2, ArenaTicks, 0xC0FFEE);
             string second = Arena.ResultLine(Faction.Driftworlds, Faction.Hellfire, 2, ArenaTicks, 0xC0FFEE);
             Check(first == second, "arena pair result changed between runs: " + first + " / " + second);
-            // Both games played out and counted, whoever won them. Which side wins
-            // is the roster's business and moves with it (#180 turned one game
-            // to 차원 유랑종), so the check reads the totals and not the winner.
-            var counts = System.Text.RegularExpressions.Regex.Match(first, @"a wins +(\d+), b wins +(\d+), draws +(\d+)");
-            Check(counts.Success &&
-                  int.Parse(counts.Groups[1].Value) + int.Parse(counts.Groups[2].Value) == 2 &&
-                  counts.Groups[3].Value == "0",
-                "arena did not count both completed games after alternating sides: " + first);
+            // Both games played out and counted, and each win credited to the
+            // faction in the winning seat. The pair alternates seats: game 0
+            // seats 차원 유랑종 as peer 0, game 1 seats 지옥불 there, on the next
+            // seed. Each game is replayed here with its seats written out, so a
+            // pair line that credited the seat rather than the faction disagrees
+            // with it whenever the two games are won from different seats. Which
+            // faction wins is the roster's business and is not pinned.
+            const ulong seed = 0xC0FFEE;
+            int driftWins = 0, hellfireWins = 0;
+            for (int game = 0; game < 2; game++)
+            {
+                Faction peer0 = game == 0 ? Faction.Driftworlds : Faction.Hellfire;
+                Faction peer1 = game == 0 ? Faction.Hellfire : Faction.Driftworlds;
+                int winner = Arena.GameWinner(peer0, peer1, ArenaTicks, unchecked(seed + (ulong)game));
+                Check(winner >= 0, "arena game " + game + " did not finish inside " + ArenaTicks + " ticks");
+                Faction won = winner == 0 ? peer0 : peer1;
+                if (won == Faction.Driftworlds) driftWins++;
+                else hellfireWins++;
+            }
+            string expected = "a wins " + driftWins.ToString().PadLeft(3) + ", b wins " +
+                              hellfireWins.ToString().PadLeft(3) + ", draws   0";
+            Check(first.Contains(expected),
+                "arena did not credit both games to the winning faction: expected \"" + expected + "\" in " + first);
         }
 
         /// <summary>Drop, duplicate, reorder, and delay, yet identical hashes every tick.</summary>

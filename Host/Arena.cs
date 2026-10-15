@@ -220,6 +220,19 @@ namespace WordCraft.Host
                     " (" + a + " vs " + b + ", 0x" + seed.ToString("X") + ")");
         }
 
+        /// <summary>
+        /// One game with fixed seats, played without the pair bookkeeping: the
+        /// peer that won it, or -1 for a draw at the tick cap. SelfCheck plays each
+        /// game of a pair through this and checks that the pair line credits every
+        /// win to the faction in the winning seat, not to the seat.
+        /// </summary>
+        internal static int GameWinner(Faction peer0, Faction peer1, int ticks, ulong seed)
+        {
+            World world = NewWorld(seed, peer0, peer1);
+            while (world.Tick < ticks && !world.MatchOver) world.Step(NoCommands);
+            return world.MatchOver && (world.Winner == 0 || world.Winner == 1) ? world.Winner : -1;
+        }
+
         private static World NewWorld(ulong seed, Faction a, Faction b)
         {
             World world = MatchScenario.Build(seed, a, b);

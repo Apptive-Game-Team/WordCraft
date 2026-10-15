@@ -97,24 +97,21 @@ namespace WordCraft.Sim
             if (UpgradeLevel(peer, index) >= row.MaxLevel) return false;
             // And only in the building the row names. This is the one test of
             // which building may research, with no role test in front of it:
-            // every row names entry 0 of the Tech slot today, and the day
-            // docs/TECH-TREE.md moves a row onto a second research building, the
-            // row's ResearchAt moves and this line is what keeps every other
-            // building, the first 기술 건물 included, from running it.
+            // docs/TECH-TREE.md 묶음 3 puts rows on second and third research
+            // buildings (Tech 1 and 2), and this line is what keeps every other
+            // building, the first 기술 건물 included, from running them.
             if (b.Role != row.ResearchAt.Role || b.Slot != row.ResearchAt.Slot) return false;
             // And not a row another of this peer's 기술 건물 is already on. Two
             // buildings researching one row would each finish a level from one
             // price, so a peer with two would buy level 2 for level 1's money.
             if (Researching(peer, index)) return false;
 
-            // ponytail: every row is Tier 3 and a finished 기술 건물 is itself
-            // what makes TierOf answer 3, so in play this line cannot refuse
-            // anything the lines above let through. It is here so a row meant to
-            // open later is one number in the table rather than a new rule.
+            // A row at a building that opens no tier says its own tier: 물대포
+            // 사거리 at the 물결 수련장, a tier-2 building, waits for tier 3.
             if (row.Tier > TierOf(peer)) return false;
-            // After the tier, the order docs/TECH-TREE.md asks both in. No row
-            // names a building today; the column is there for 씨앗 요람 반경 and
-            // 집결 반경, which need a building other than the one researching.
+            // After the tier, the order docs/TECH-TREE.md asks both in. 갑각 경화
+            // is the one row that names a building today (용암 도가니, while the
+            // 재 분화구 researches it).
             if (row.Requires.Role != Role.None && !HasStanding(peer, row.Requires.Role, row.Requires.Slot)) return false;
             return resources[peer] >= ResearchCost(peer, index);
         }

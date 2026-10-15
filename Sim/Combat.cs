@@ -290,11 +290,24 @@ namespace WordCraft.Sim
             Entity t = entities[targetId];
             if (!t.Alive || t.Owner == attacker.Owner) return false;
             if (!CanHit(attacker, t)) return false;
-            return WithinRange(attacker.Position, t.Position, AcquireRange);
+            return WithinRange(attacker.Position, t.Position, AcquisitionRange(attacker));
         }
 
         /// <summary>
-        /// Nearest hostile entity inside AcquireRange. Ties break to the lower
+        /// How far this body notices and keeps a hostile: AcquireRange, or its own
+        /// weapon's reach when that is longer. 거대 덩쿨 reaches 11 once 거대 덩쿨
+        /// 사거리 is researched (docs/TECH-TREE.md 묶음 3), and a reach past the
+        /// distance it acquires at would only ever be used on an ordered target.
+        /// Every other row reaches 10 or less, so for them this is AcquireRange.
+        /// </summary>
+        public Fix AcquisitionRange(Entity e)
+        {
+            Fix reach = RangeFor(e);
+            return reach > AcquireRange ? reach : AcquireRange;
+        }
+
+        /// <summary>
+        /// Nearest hostile entity inside AcquisitionRange. Ties break to the lower
         /// entity id, which is why the scan is a plain ascending loop and not a
         /// lookup in any hashed collection.
         /// </summary>
@@ -304,6 +317,7 @@ namespace WordCraft.Sim
         {
             int best = -1;
             Fix bestDist = Fix.Zero;
+            Fix range = AcquisitionRange(attacker);
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity t = entities[i];
@@ -312,7 +326,7 @@ namespace WordCraft.Sim
                 if (!CanHit(attacker, t)) continue;
 
                 Fix d = (t.Position - attacker.Position).SqrMagnitude;
-                if (d > AcquireRange * AcquireRange) continue;
+                if (d > range * range) continue;
                 // Strictly-less: the first, lowest-id entity wins an exact tie.
                 if (best < 0 || d < bestDist) { best = i; bestDist = d; }
             }
