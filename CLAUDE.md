@@ -52,20 +52,29 @@ brings its own build step.
 Unity -batchmode -quit -projectPath Client       -executeMethod WordCraft.View.ViewShots.Run       -shotsOutput shots -shotsTicks 900
 ```
 
-Writes 57 PNGs into the `-shotsOutput` directory (created if missing; a relative
+Writes 78 PNGs into the `-shotsOutput` directory (created if missing; a relative
 path is taken from the working directory, not from `Client/`):
 
 - 5 `field` shots of the scripted match in progress: the base, the lane and its
   high ground, the whole map, a close-up, the flank, from the camera poses the
   player gets;
 - 6 `lineup-<faction>` shots: every roster entry of one faction in a row;
-- 43 `strip-<faction>-<motion>` shots: up to four bodies doing one motion, eight
-  frames across 0.9 seconds side by side, so an animation reads from one still;
-- 3 `strip-match-<fight|kill|spawn>` shots: the real `MatchView` driven over the
-  scripted log, so tracers, flinches and deaths are seen as the player sees them.
+- 61 `strip-<faction>-<motion>` shots: up to four bodies doing one motion, eight
+  frames across 0.9 seconds side by side, so an animation reads from one still.
+  The unit motions are `walk`, `attack`, `hit`, `death`, `idle`, `spawn`,
+  `tower` and `growth`; the building motions are `build`, `work` and `destroy`,
+  each over a faction's base, production building and defense (tech for `work`);
+- 6 `strip-match-<fight|kill|spawn|build|raze|razesite>` shots: the real
+  `MatchView` driven over the scripted log, so tracers, flinches, deaths and a
+  site finishing are seen as the player sees them. The scripted log razes no
+  building, so `raze` and `razesite` drive it over a small siege of their own: a
+  finished and a half-built 풀씨 둥지 shot down by four 지옥불 ranged units.
 
 `-shotsTicks` is how many ticks of the scripted log run before the field shots
-(900 by default). The log line `OK: N shots written to ...` prints the count per
+(900 by default). `-shotsOnly build,work` writes only the kinds it names — `field`,
+`lineup`, `match`, or any strip motion above — so one motion can be looked at
+again in a minute instead of rendering all 78; a name that is no kind fails the
+run. The log line `OK: N shots written to ...` prints the count per
 kind. No `-nographics`: it needs a GPU. This is how a change to the field, a
 model or the light is looked at without launching a player.
 
