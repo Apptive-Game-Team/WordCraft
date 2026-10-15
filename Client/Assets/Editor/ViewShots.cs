@@ -669,7 +669,7 @@ namespace WordCraft.View
                 if (motion == "walk") Include(ref min, ref max, homes[i] + Walk(WalkSeconds, speeds[i]));
             }
             bool buildings = IsBuildingMotion(motion);
-            float margin = motion == "tower" ? 3f : buildings ? 3.0f : 2.2f;
+            float margin = motion == "tower" ? 3f : buildings ? 3.4f : 2.2f;
             width = max.x - min.x + margin * 2f;
             // Pushed away from the camera by about a body's height, so the frame
             // centres on the bodies rather than on the ground at their feet.

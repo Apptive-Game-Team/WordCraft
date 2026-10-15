@@ -197,8 +197,8 @@ namespace WordCraft.View
         private const float WorkPulse = 0.015f;
         private const float WorkPulseRate = 7f;
 
-        /// <summary>Seconds between two motes rising off a working building. A mote lives a second, so two or three are up at once.</summary>
-        private const float MoteInterval = 0.4f;
+        /// <summary>Seconds between two motes rising off a working building. A mote lives a second, so three are up at once.</summary>
+        private const float MoteInterval = 0.33f;
 
         /// <summary>The swell and lean of a building as a unit it made comes out.</summary>
         private const float DeliverSeconds = 0.45f;
@@ -614,9 +614,10 @@ namespace WordCraft.View
 
         /// <summary>
         /// Whether the building is producing or researching. A crown that turns
-        /// by itself turns faster; anything else swells and shrinks a little and
-        /// gives off motes of its faction's colour. Eased in and out, so a queue
-        /// that empties and fills again on the same tick does not stutter.
+        /// by itself turns faster; anything else swells and shrinks a little.
+        /// Either way it gives off motes of its faction's colour. Eased in and
+        /// out, so a queue that empties and fills again on the same tick does
+        /// not stutter.
         /// </summary>
         public void Work(bool on) => working = on;
 
@@ -1036,11 +1037,11 @@ namespace WordCraft.View
             bool spins = crown != null && design.CrownSpin != 0f && !design.CrownAims;
             float rate = deltaTime > 0f ? deltaTime / WorkRamp : 0f;
             work = Mathf.MoveTowards(work, working && progress >= 1f ? 1f : 0f, rate);
-            if (!spins && work > 0f)
-            {
-                scale *= 1f + WorkPulse * work * Mathf.Sin(now * WorkPulseRate * tempo + seed);
-                if (working) Motes(now);
-            }
+            if (!spins && work > 0f) scale *= 1f + WorkPulse * work * Mathf.Sin(now * WorkPulseRate * tempo + seed);
+            // Motes whether or not the crown turns: a crown turning three times
+            // faster is plain in motion and invisible in a still, and a still at
+            // 64 px is what the strips judge by.
+            if (working && progress >= 1f) Motes(now);
 
             Quaternion lean = Quaternion.identity;
             float deliver = Phase(deliverAt, DeliverSeconds, now);

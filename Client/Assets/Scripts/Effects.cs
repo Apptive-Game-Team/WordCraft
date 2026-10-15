@@ -106,9 +106,9 @@ namespace WordCraft.View
         // building's still shows and a base's is not a boulder.
         private const float MoteSeconds = 1.0f;
         private const float MoteRise = 1.3f;
-        private const float MoteShare = 0.12f;
-        private const float MoteMin = 0.26f;
-        private const float MoteMax = 0.42f;
+        private const float MoteShare = 0.13f;
+        private const float MoteMin = 0.3f;
+        private const float MoteMax = 0.5f;
 
         private static readonly int TintId = Shader.PropertyToID("_Tint");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
