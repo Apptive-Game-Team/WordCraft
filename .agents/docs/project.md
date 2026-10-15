@@ -61,6 +61,7 @@ Fill this document during project initialization. Agents must verify commands ag
 |---|---|
 | Install dependencies | none; the .NET SDK is the only requirement |
 | Run locally | `dotnet run --project Host -- selfcheck` |
+| Arena faction win rates (36 pairings) | `dotnet run -c Release --project Host -- arena` |
 | Format | TODO |
 | Lint | `dotnet run --project Replay` includes the forbidden-construct scan over `Sim` |
 | Type-check | `dotnet build` |
