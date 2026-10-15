@@ -158,5 +158,91 @@ namespace WordCraft.Sim
             }
             return false;
         }
+
+        /// <summary>
+        /// The ticks this attacker waits after shooting this target: AttackTicksFor,
+        /// then 피 냄새 (its own period while the target is under half hp), then
+        /// each allied rate aura that reaches it (집결 for bodies, 증폭 for finished
+        /// defense buildings), each once however many sources reach. A rate aura
+        /// takes its amount off and stops at its floor, and never makes a period
+        /// longer than it was.
+        /// </summary>
+        private int AttackTicksAgainst(Entity a, Entity t)
+        {
+            int ticks = AttackTicksFor(a);
+            int scent = ActiveAbility(a, AbilityKind.WoundedRate);
+            if (scent >= 0 && t.Hp * 2 < t.MaxHp)
+            {
+                int wounded = AbilityAmount(a.Owner, FactionData.AbilityRowAt(scent));
+                if (wounded < ticks) ticks = wounded;
+            }
+            for (int r = 0; r < FactionData.AbilityRowCount; r++)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(r);
+                if (row.Kind != AbilityKind.RateAura || !AlliedAuraReaches(r, a, a.Owner)) continue;
+                int faster = ticks - AbilityAmount(a.Owner, row);
+                if (faster < row.Limit) faster = row.Limit;
+                if (faster < ticks) ticks = faster;
+            }
+            return ticks;
+        }
+
+        /// <summary>
+        /// 표식: what a hostile mark aura adds to this shot. The attacker's own
+        /// peer has to own the source, so it is the marking side's weapons that
+        /// hit harder, and only bodies are marked. Once however many reach.
+        /// </summary>
+        private int MarkBonus(Entity a, Entity t)
+        {
+            if (t.Owner < 0) return 0;
+            int bonus = 0;
+            for (int r = 0; r < FactionData.AbilityRowCount; r++)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(r);
+                if (row.Kind != AbilityKind.MarkAura || !AlliedAuraReaches(r, t, a.Owner)) continue;
+                bonus += AbilityAmount(a.Owner, row);
+            }
+            return bonus;
+        }
+
+        /// <summary>
+        /// The armor auras and passives add to this body at the moment it is hit:
+        /// 물막이 once if any allied source reaches it, 거품 벽 one per other
+        /// 거품 정령 of its owner within the radius up to the cap, counted by
+        /// ascending id as 일제 사격 is, and 굳은 몸 while it is not walking (its
+        /// path walked and its position on its Target).
+        /// </summary>
+        private int AuraArmor(Entity t)
+        {
+            if (t.Owner < 0 || t.Owner >= MaxPeers) return 0;
+            int armor = 0;
+            for (int r = 0; r < FactionData.AbilityRowCount; r++)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(r);
+                if (row.Kind != AbilityKind.ArmorAura || !AlliedAuraReaches(r, t, t.Owner)) continue;
+                armor += AbilityAmount(t.Owner, row);
+            }
+
+            int wall = ActiveAbility(t, AbilityKind.ArmorPerAlly);
+            if (wall >= 0)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(wall);
+                Fix radius = Fix.FromInt(AbilityRadius(t.Owner, row));
+                int allies = 0;
+                for (int i = 0; i < entities.Count && allies < row.Limit; i++)
+                {
+                    Entity o = entities[i];
+                    if (!o.Alive || o.Id == t.Id || o.Owner != t.Owner) continue;
+                    if (o.Kind != t.Kind || o.Role != t.Role || o.Slot != t.Slot) continue;
+                    if (WithinRange(o.Position, t.Position, radius)) allies++;
+                }
+                armor += allies * AbilityAmount(t.Owner, row);
+            }
+
+            int still = ActiveAbility(t, AbilityKind.ArmorWhileStill);
+            if (still >= 0 && PathDone(t.Id) && t.Position.Equals(t.Target))
+                armor += AbilityAmount(t.Owner, FactionData.AbilityRowAt(still));
+            return armor;
+        }
     }
 }

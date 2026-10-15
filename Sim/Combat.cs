@@ -27,6 +27,10 @@ namespace WordCraft.Sim
 
         private void CombatSystem()
         {
+            // 물막이, 표식, 집결 and 증폭 are read per shot, so their sources
+            // are gathered once. A source killed earlier in this pass stops
+            // counting the moment it falls: each read checks Alive.
+            CollectAuraSources();
             // Attackers act in ascending id order and damage lands immediately, so
             // two units that would kill each other on the same tick resolve the same
             // way everywhere: the lower id fires first.
@@ -71,11 +75,15 @@ namespace WordCraft.Sim
                 {
                     if (a.AttackCooldown == 0)
                     {
-                        a.AttackCooldown = AttackTicksFor(a);
+                        // 피 냄새, 집결 and 증폭 are read here, when the cooldown
+                        // is set, against the target's hp before this shot.
+                        a.AttackCooldown = AttackTicksAgainst(a, t);
                         // 공격력 belongs to the shooter's owner and 방어력 to the
                         // target's. A neutral target has no owner, so no level.
-                        int dealt = DamageAfterArmor(s.Damage + VolleyBonus(a), AttackBonus(a.Owner),
-                            ArmorFor(t), ArmorBonus(t.Owner));
+                        // 표식 joins the attack side, and 물막이, 거품 벽 and 굳은 몸
+                        // the armor side, per docs/TECH-TREE.md 피해 계산.
+                        int dealt = DamageAfterArmor(s.Damage + VolleyBonus(a) + MarkBonus(a, t), AttackBonus(a.Owner),
+                            ArmorFor(t) + AuraArmor(t), ArmorBonus(t.Owner));
                         // Where the hit landed, kept before Kill so a chain
                         // starts from the body even when the body is gone.
                         FixVec2 hitAt = t.Position;
