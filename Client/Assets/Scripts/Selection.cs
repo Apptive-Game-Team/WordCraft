@@ -172,7 +172,11 @@ namespace WordCraft.View
             lastClickTime = Time.unscaledTime;
             lastClickPoint = screen;
 
-            int hit = runner.EntityAt(cam.ScreenToWorldPoint(screen), PickRadius, mineOnly: true);
+            // A ray against the hills, not a plane at a depth: the click lands on
+            // the ground the player sees under the cursor, slope and all.
+            int hit = Field.Pointer(cam, screen, out Vector2 under)
+                ? runner.EntityAt(under, PickRadius, mineOnly: true)
+                : -1;
             if (hit < 0)
             {
                 if (!shift) selected.Clear();
@@ -193,8 +197,12 @@ namespace WordCraft.View
 
         private void Box(Vector2 a, Vector2 b)
         {
-            Vector2 min = cam.ScreenToWorldPoint(Vector2.Min(a, b));
-            Vector2 max = cam.ScreenToWorldPoint(Vector2.Max(a, b));
+            // Tested on the screen rather than on the map. Under a tilted camera a
+            // screen rectangle is a trapezoid on the ground, and what the player
+            // boxed is what was inside the rectangle they drew, so each body is
+            // projected to where it is drawn and tested there.
+            Vector2 min = Vector2.Min(a, b);
+            Vector2 max = Vector2.Max(a, b);
             World world = runner.World;
 
             boxed.Clear();
@@ -206,8 +214,8 @@ namespace WordCraft.View
                 if (!e.Alive || e.Owner != runner.LocalPeer) continue;
                 if (e.Kind != EntityKind.Unit && e.Kind != EntityKind.Worker) continue;
 
-                Vector2 p = runner.DrawPosition(i);
-                if (p.x < min.x || p.x > max.x || p.y < min.y || p.y > max.y) continue;
+                Vector3 p = cam.WorldToScreenPoint(Field.At(runner.DrawPosition(i)));
+                if (p.z <= 0f || p.x < min.x || p.x > max.x || p.y < min.y || p.y > max.y) continue;
 
                 boxed.Add(i);
                 fighters |= e.Kind == EntityKind.Unit;
@@ -244,8 +252,8 @@ namespace WordCraft.View
                 if (!e.Alive || e.Owner != runner.LocalPeer || !SelectionMatch.SameKind(e, like)) continue;
                 if (e.Kind != EntityKind.Unit && e.Kind != EntityKind.Worker) continue;
 
-                Vector3 v = cam.WorldToViewportPoint(runner.DrawPosition(i));
-                if (v.x < 0f || v.x > 1f || v.y < 0f || v.y > 1f) continue;
+                Vector3 v = cam.WorldToViewportPoint(Field.At(runner.DrawPosition(i)));
+                if (v.z <= 0f || v.x < 0f || v.x > 1f || v.y < 0f || v.y > 1f) continue;
                 if (!selected.Contains(i)) selected.Add(i);
             }
         }

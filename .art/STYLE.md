@@ -38,6 +38,21 @@ Selected concept:
 Use A for all new canonical production art. Rejected B, C, and D exploration
 files were removed so they cannot be mixed into generation prompts.
 
+## The field in three dimensions
+
+Since issue #159 the field is rendered, not drawn: every body on the map is a
+low-poly model built at runtime (`Client/Assets/Scripts/Models.cs`), the ground
+is a mesh with slopes and cliffs, and the light is a surface shader lighting
+model (`Client/Assets/Resources/Shaders/Paper.cginc`). The technique below
+still applies, restated for a renderer: three value bands are the lighting
+function's three bands, the upper-left light is one directional light fixed in
+world space (`Sky.SunAngles` says where and why), forms separate by value with
+no outline pass, saturation stays restrained, and the per-faction shape
+language and palette live in `BodyPalette.cs` and in the archetype builders.
+The sprites in `Client/Assets/Resources/Art/Sprites` remain the HUD's icons and
+the reference the models are built to resemble; they are no longer placed on
+the field.
+
 ## Shared rendering technique (never varies)
 
 - 2.5D cut-paper cartoon. Build forms from large overlapping matte paper shapes.

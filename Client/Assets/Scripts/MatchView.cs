@@ -8,15 +8,21 @@ namespace WordCraft.View
     /// Draws the world. Reads simulation state and nothing else writes back, so
     /// this whole file could be deleted without changing a single tick.
     ///
-    /// Roster art where the faction has it, primitives where it does not: a disc
-    /// for mobile things, a square for static ones, hue for owner. Several slots
-    /// in docs/FACTIONS.md are still concepts, so the fallback is permanent
-    /// furniture, not a stopgap. Art is drawn untinted because STYLE.md makes the
-    /// palette the thing that identifies a faction.
+    /// The field is three dimensional: the terrain is a mesh (FieldMesh), every
+    /// body is a model built from the roster (Models), and the marks the HUD puts
+    /// on the ground — rings, meters, the placement ghost — lie on the terrain or
+    /// float over a head (Decals). The simulation is still a flat grid; Field is
+    /// the one place that turns its (x, y) into a point on the hills, and every
+    /// position below goes through it.
+    ///
+    /// Roster art is no longer drawn on the field. The sprites stay in Resources
+    /// for the HUD — the command card and the production menu still show them as
+    /// icons — and <see cref="SpriteFolder"/> stays here because that is where
+    /// those readers look it up.
     /// </summary>
     public sealed class MatchView : MonoBehaviour
     {
-        /// <summary>How far a ring stands out past the art, as a fraction of the visible height.</summary>
+        /// <summary>How far a ring stands out past the body, as a fraction of the view's half-height.</summary>
         private const float RingBandRatio = 0.012f;
 
         /// <summary>Floor on that band, in cells, so zooming right in does not swallow the unit.</summary>
@@ -26,12 +32,12 @@ namespace WordCraft.View
         private const float HoverRadius = 1.1f;
 
         /// <summary>
-        /// The range ring's line thickness, as a fraction of its own radius,
-        /// baked into the texture in MakeRingSprite. A boundary, not a filled
-        /// area: docs/UI-STYLE.md bans a gradient outright, and a disc filled
-        /// out to a weapon's whole reach would wash the ground under it in the
-        /// exact moment — a fight in progress — this issue exists to make
-        /// legible. A line says how far without covering what is inside it.
+        /// The range ring's line width, as a fraction of its own radius. A
+        /// boundary, not a filled area: docs/UI-STYLE.md bans a gradient
+        /// outright, and a disc filled out to a weapon's whole reach would wash
+        /// the ground under it in the exact moment — a fight in progress — this
+        /// exists to make legible. A line says how far without covering what is
+        /// inside it.
         /// </summary>
         private const float RangeBandRatio = 0.08f;
 
@@ -46,148 +52,105 @@ namespace WordCraft.View
         /// </summary>
         private const float HitFlashSeconds = 0.35f;
 
-        // Overlay geometry, in grid cells. A bar is the same size whatever the art
+        // Meter geometry, in world units. A bar is the same size whatever the body
         // under it, so a row of damaged units reads as one row.
         private const float BarHeight = 0.16f;
-        private const int OverlayOrder = 50;
-        private const int GroundOrder = -100;
-        private const int HoverOrder = 3;
-
-        /// <summary>Debris is terrain: over the baked map, under everything that is alive.</summary>
-        private const int RemnantOrder = -50;
+        private const float BarLift = 0.45f;
 
         /// <summary>
-        /// The fog sits over everything the world draws, so a remembered building
-        /// is dimmed by the same sprite that dims the ground under it rather than
-        /// by a second tint kept in step with the first by hand.
-        /// </summary>
-        private const int FogOrder = 60;
-
-        /// <summary>
-        /// The local peer's own marks: a rally point, a placement ghost and a
-        /// 도착 지점 may all be put down in ground this peer cannot see, and fog
-        /// never hides what the player is doing right now.
-        /// </summary>
-        private const int AboveFogOrder = FogOrder + 1;
-
-        /// <summary>
-        /// How far a worker primitive is lifted toward white. Same owner hue, paler
-        /// body, so a worker is told from a fighter without a second colour.
-        /// </summary>
-        private const float WorkerLift = 0.45f;
-
-        /// <summary>
-        /// How wide 차원 유랑종's 도착 지점 is drawn, in cells. The unit primitive's
-        /// own size (see <see cref="Primitive"/>), because that is what the mark
-        /// means: a body stands up here. It is a disc rather than the rally
-        /// marker's diamond for the same reason — the two sit on the same map and
-        /// name the two halves of one journey, and UiStyle.Rally and GhostOk are
-        /// near enough in hue that shape has to be what tells them apart.
+        /// How wide 차원 유랑종's 도착 지점 is drawn, in cells: a body's own
+        /// footprint, because that is what the mark means — a body stands up here.
+        /// A disc rather than the rally marker's diamond for the same reason: the
+        /// two sit on the same map and name the two halves of one journey, and
+        /// UiStyle.Rally and GhostOk are near enough in hue that shape has to be
+        /// what tells them apart.
         /// </summary>
         private const float ArrivalMarkCells = 0.9f;
 
-        /// <summary>Where the imported WordOnline sprites live, relative to a Resources folder.</summary>
+        /// <summary>How translucent the placement ghost is. The same idea SiteAlpha carries for a site.</summary>
+        private const float GhostAlpha = 0.55f;
+
+        /// <summary>
+        /// A flier's shadow on the ground, as a fraction of its footprint. The one
+        /// thing that tells the eye how high a body is hovering, and so the thing
+        /// that makes it read as flying rather than as standing on a taller base.
+        /// </summary>
+        private const float ShadowRatio = 0.55f;
+
+        /// <summary>Where the imported WordOnline sprites live, relative to a Resources folder. The HUD's icons.</summary>
         public const string SpriteFolder = "Art/Sprites/";
-
-        /// <summary>
-        /// Debris art, named here rather than looked up through FactionData: the
-        /// roster's signature slot is deliberately empty because a death state is
-        /// not a unit, so there is no slot for this to be the sprite of.
-        /// </summary>
-        private const string RemnantArt = "RockRemnant";
-
-        /// <summary>
-        /// 인간 마법 문명 징발: what a neutral 꼬마돌 on the map is drawn as. Named
-        /// here for the reason RemnantArt is, and the reason World.SpawnNeutralRock
-        /// gives for the body carrying Role.None — with no owner there is no
-        /// faction to look a roster row up in, so there is no row this could be the
-        /// sprite of. It is 돌 골렘 부족's own 꼬마돌 sprite, because that is what
-        /// this is; docs/UI-STYLE.md 징발 has why it is the one piece of authored
-        /// art on the field that is tinted.
-        /// </summary>
-        private const string NeutralRockArt = "MiniRockSwarm";
 
         public Camera Cam { get; private set; }
 
         private MatchRunner runner;
 
-        /// <summary>The world these renderers were built for. A new one means new renderers.</summary>
+        /// <summary>The world these bodies were built for. A new one means new bodies.</summary>
         private World shown;
 
-        private Sprite disc;
-        private Sprite square;
-        private readonly List<SpriteRenderer> views = new List<SpriteRenderer>();
-
-        // Rings are not children of the art they ring. The art is scaled to fit its
-        // footprint, and a child would inherit that scale, which is exactly what a
-        // ring whose thickness has to answer to the zoom instead must not do.
-        private readonly List<SpriteRenderer> rings = new List<SpriteRenderer>();
-        private readonly List<float> footprints = new List<float>();
+        private readonly List<BodyRig> bodies = new List<BodyRig>();
 
         /// <summary>
-        /// What each renderer was dressed for (<see cref="SkinOf"/>), parallel to
-        /// views. 징발 is the one rule that changes a live body's owner and roster
-        /// entry, so this is the only reason a renderer is ever built twice.
+        /// What each body was dressed for (<see cref="SkinOf"/>), parallel to
+        /// bodies. 징발 is the one rule that changes a live body's owner and roster
+        /// entry, so this is the only reason a body is ever built twice.
         /// </summary>
         private readonly List<int> skins = new List<int>();
 
+        /// <summary>
+        /// Each entity's weapon cooldown as of the last frame, parallel to bodies.
+        /// A cooldown that went up is a shot that was fired — Combat resets it on
+        /// the tick an attack lands — and that is the one moment the body swings.
+        /// </summary>
+        private readonly List<int> cooldowns = new List<int>();
+
+        // Rings lie on the ground under a body, and are not children of it: the
+        // body turns to face where it walks, and a ring that turned with it would
+        // be a ring that visibly spins.
+        private readonly List<Decal> rings = new List<Decal>();
+
         /// <summary>A hairline circle at the selected entity's own weapon reach (issue #104). One per entity id, most of them always off.</summary>
-        private readonly List<SpriteRenderer> rangeRings = new List<SpriteRenderer>();
-        private Sprite rangeRingArt;
+        private readonly List<Decal> rangeRings = new List<Decal>();
 
         /// <summary>The fading ring a hit itself puts on a body (issue #104), sized like the selection ring and coloured like danger instead of chosen.</summary>
-        private readonly List<SpriteRenderer> hitFlashes = new List<SpriteRenderer>();
+        private readonly List<Decal> hitFlashes = new List<Decal>();
 
-        /// <summary>Unscaled time each entity's flash goes dark. -1 means never armed; parallel to views.</summary>
+        /// <summary>Unscaled time each entity's flash goes dark. -1 means never armed; parallel to bodies.</summary>
         private readonly List<float> hitUntil = new List<float>();
 
+        /// <summary>A flier's blob shadow on the ground, parallel to bodies; off for everything that walks.</summary>
+        private readonly List<Decal> shadows = new List<Decal>();
+
         /// <summary>One highlight, moved to whatever the cursor is over.</summary>
-        private SpriteRenderer hover;
+        private Decal hover;
 
-        /// <summary>
-        /// The whole map, one sprite. Flat until a world exists, because the start
-        /// screen has no terrain to draw and the menu sits over this.
-        /// </summary>
-        private SpriteRenderer ground;
-
-        /// <summary>The mask over it. One sprite, repainted on the fog's cadence rather than the frame's.</summary>
-        private SpriteRenderer fog;
-
-        // Overlays, parallel to views. Kept off the entity's own transform because
-        // authored art is scaled to fit its footprint and a bar must not inherit that.
-        private readonly List<SpriteRenderer> barBacks = new List<SpriteRenderer>();
-        private readonly List<SpriteRenderer> barFills = new List<SpriteRenderer>();
-        private readonly List<SpriteRenderer> queueFills = new List<SpriteRenderer>();
+        // Meters, parallel to bodies. Billboards over the head, never hidden by a hill.
+        private readonly List<Billboard> barBacks = new List<Billboard>();
+        private readonly List<Billboard> barFills = new List<Billboard>();
+        private readonly List<Billboard> queueFills = new List<Billboard>();
 
         // Rally markers are a pool, not one per entity: only the selected buildings
         // that have set one are ever drawn.
-        private readonly List<SpriteRenderer> rallyMarkers = new List<SpriteRenderer>();
+        private readonly List<MeshRenderer> rallyMarkers = new List<MeshRenderer>();
 
-        // One renderer per blocked cell, pooled and re-aimed every frame. Not
+        // One rubble pile per blocked cell, pooled and re-aimed every frame. Not
         // indexed by anything the simulation owns, so a restart needs no reset:
         // the tail is switched off every frame anyway.
-        private readonly List<SpriteRenderer> remnants = new List<SpriteRenderer>();
-        private Sprite remnantArt;
+        private readonly List<BodyRig> remnants = new List<BodyRig>();
 
-        /// <summary>The map's own 꼬마돌 art, loaded once. Null if the file is gone, and the primitive takes over.</summary>
-        private Sprite neutralRockArt;
+        /// <summary>The building under the cursor during placement. Rebuilt when the role changes.</summary>
+        private BodyRig ghost;
+        private Role ghostRole = Role.None;
+        private Faction ghostFaction;
 
-        /// <summary>The building under the cursor during placement. One, made once.</summary>
-        private SpriteRenderer ghost;
-        private Role ghostRole;
-
-        // 차원 유랑종 통로 조준 (#139). Three marks, all of them the local peer's own
-        // and so all of them above the fog: the point the player has named, the
-        // point under the cursor while they are naming one, and a hairline circle
-        // on every body lending them a radius.
-        private SpriteRenderer arrivalMark;
-        private SpriteRenderer arrivalCursor;
-        private readonly List<SpriteRenderer> arrivalRings = new List<SpriteRenderer>();
+        // 차원 유랑종 통로 조준 (#139). Three marks, all of them the local peer's own:
+        // the point the player has named, the point under the cursor while they are
+        // naming one, and a hairline circle on every body lending them a radius.
+        private Decal arrivalMark;
+        private Decal arrivalCursor;
+        private readonly List<Decal> arrivalRings = new List<Decal>();
 
         /// <summary>Refilled every frame the aim is armed, so nothing here allocates per frame.</summary>
         private readonly List<int> anchors = new List<int>();
-
-        private readonly Dictionary<string, Sprite> art = new Dictionary<string, Sprite>();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot() => new GameObject("WordCraft View").AddComponent<MatchView>();
@@ -195,128 +158,131 @@ namespace WordCraft.View
         private void Awake()
         {
             DontDestroyOnLoad(gameObject);
-            disc = MakeSprite(round: true);
-            square = MakeSprite(round: false);
-            rangeRingArt = MakeRingSprite();
-            remnantArt = Resources.Load<Sprite>(SpriteFolder + RemnantArt);
-            neutralRockArt = Resources.Load<Sprite>(SpriteFolder + NeutralRockArt);
 
-            float mid = MatchScenario.MapSize / 2f;
+            // A perspective camera; the rig puts it where it goes. Built here
+            // rather than in a scene so that no gameplay change ever has to touch
+            // a scene asset, which is the rule the whole view runs on.
             Cam = new GameObject("Camera").AddComponent<Camera>();
             Cam.tag = "MainCamera";
-            Cam.orthographic = true;
-            Cam.orthographicSize = 18f;
-            Cam.transform.position = new Vector3(mid, mid, -10f);
-            Cam.backgroundColor = UiStyle.Sky;
+            Cam.orthographic = false;
+            Cam.fieldOfView = CameraRig.FieldOfView;
+            Cam.nearClipPlane = 0.5f;
+            Cam.farClipPlane = 400f;
             DontDestroyOnLoad(Cam.gameObject);
+            Sky.Build(Cam);
 
-            ground = NewRenderer("Ground", square, UiStyle.Ground, GroundOrder);
-            ground.transform.position = new Vector3(mid, mid, 0f);
-            ground.transform.localScale = new Vector3(MatchScenario.MapSize, MatchScenario.MapSize, 1f);
-
-            // Under everything an entity draws, above the ground.
-            hover = NewRenderer("Hover", disc, UiStyle.HoverRing, HoverOrder);
-            hover.enabled = false;
-
-            fog = NewRenderer("Fog", Fog.Field(), Color.white, FogOrder); // a mask, not a tint
-            fog.transform.position = new Vector3(mid, mid, 0f);
-            fog.enabled = false;
+            hover = Decal.Make(transform, "Hover", ring: true, UiStyle.HoverRing);
         }
 
         private void Start() => runner = MatchRunner.Instance;
 
         /// <summary>
         /// LateUpdate, so the interpolated draw position is read after the frame's
-        /// ticks have run rather than one frame behind them.
+        /// ticks have run rather than one frame behind them, and after the camera
+        /// rig has moved, so the meters face where the camera is this frame.
         /// </summary>
         private void LateUpdate()
         {
             if (runner == null) return;
             World world = runner.World;
 
+            Sky.Update(Cam);
+
             // Every pool is indexed by entity id. A restart hands out the same ids
-            // to different entities, so keeping the old renderers would draw the new
-            // match with the previous one's sprites and leave its dead standing.
+            // to different entities, so keeping the old bodies would draw the new
+            // match with the previous one's models and leave its dead standing.
             if (!ReferenceEquals(world, shown))
             {
-                Drop(views);
+                DropBodies(bodies);
                 Drop(rings);
                 Drop(rangeRings);
                 Drop(hitFlashes);
+                Drop(shadows);
                 Drop(barBacks);
                 Drop(barFills);
                 Drop(queueFills);
-                Drop(rallyMarkers);
-                footprints.Clear(); // parallel to views, and Create refills it
-                skins.Clear();      // same
+                skins.Clear();      // parallel to bodies, and Create refills it
+                cooldowns.Clear();  // same
                 hitUntil.Clear();   // same: a restart's ids owe nothing to the match before it
                 shown = world;
 
-                // Terrain is fixed for the whole match, so the map is baked here and
-                // never touched again. The sprite is one cell to one unit, so the
-                // quad that was scaled up to cover the map now sits at scale one.
-                ground.sprite = Tiles.Field(world);
-                ground.color = Color.white; // a picture, not a tint
-                ground.transform.localScale = Vector3.one;
+                // Terrain is fixed for the whole match, so the field is shaped and
+                // meshed here and never touched again.
+                Field.Build(world);
+                FieldMesh.Build(world, transform);
             }
 
-            for (int i = views.Count; i < world.EntityCount; i++) views.Add(Create(world, world.GetEntity(i)));
+            for (int i = bodies.Count; i < world.EntityCount; i++) bodies.Add(Create(world, world.GetEntity(i)));
 
             // Stamped once here rather than read again per entity below: this is
             // the same list HitDetection hands the minimap and the alert, so a
             // hit already lit up off-screen feedback does not walk World a second
             // time to also light up on-screen feedback (issue #104).
             IReadOnlyList<int> hits = HitDetection.HitIds(world, runner.LocalPeer);
-            for (int h = 0; h < hits.Count; h++) hitUntil[hits[h]] = Time.unscaledTime + HitFlashSeconds;
+            for (int h = 0; h < hits.Count; h++)
+            {
+                hitUntil[hits[h]] = Time.unscaledTime + HitFlashSeconds;
+                bodies[hits[h]].Hit();
+            }
 
             Fog.Update(runner);
-            fog.enabled = Fog.Active;
 
+            float band = Band();
             int markers = 0;
             for (int i = 0; i < world.EntityCount; i++)
             {
                 Entity e = world.GetEntity(i);
-                SpriteRenderer sr = views[i];
 
                 // Before the fog tests below, so a 꼬마돌 taken out of sight is
                 // already a Towerback the first frame it is seen again.
                 if (skins[i] != SkinOf(e))
                 {
-                    footprints[i] = Dress(world, e, sr);
+                    Destroy(bodies[i].gameObject);
+                    bodies[i] = Create(world, e);
                     skins[i] = SkinOf(e);
                 }
 
+                BodyRig body = bodies[i];
                 byte show = Fog.Show(i, e);
                 if (show == Fog.Hidden)
                 {
-                    sr.enabled = false;
-                    rings[i].enabled = false;
-                    rangeRings[i].enabled = false;
-                    hitFlashes[i].enabled = false;
+                    body.Show(false);
+                    rings[i].Visible = false;
+                    rangeRings[i].Visible = false;
+                    hitFlashes[i].Visible = false;
+                    shadows[i].Visible = false;
                     Overlays(i);
                     continue;
                 }
 
-                // Remembered: the renderer is left exactly as the last frame that
-                // could see it left it, which is what "last known state" means for a
+                // Remembered: the body is left exactly as the last frame that could
+                // see it left it, which is what "last known state" means for a
                 // thing that cannot move. Nothing is read off the entity here, so a
                 // building razed out of sight goes on standing and one raised out of
                 // sight does not appear. Its meters go, because hp is not remembered.
                 if (show == Fog.Memory)
                 {
-                    rings[i].enabled = false;
-                    rangeRings[i].enabled = false;
-                    hitFlashes[i].enabled = false;
+                    body.Dim(true);
+                    rings[i].Visible = false;
+                    rangeRings[i].Visible = false;
+                    hitFlashes[i].Visible = false;
                     Overlays(i);
                     continue;
                 }
 
                 bool picked = Selection.Instance != null && Selection.Instance.Contains(i);
-                sr.enabled = true;
-                rings[i].enabled = picked;
+                body.Show(true);
+                body.Dim(false);
+
                 Vector2 p = runner.DrawPosition(i);
-                sr.transform.position = new Vector3(p.x, p.y, 0f);
-                if (picked) Ring(rings[i], footprints[i], p);
+                body.Place(Field.At(p));
+                Pose(world, i, e, body);
+
+                shadows[i].Visible = body.Flying;
+                if (body.Flying) shadows[i].Set(p, body.Footprint * ShadowRatio, 0f);
+
+                rings[i].Visible = picked;
+                if (picked) rings[i].Set(p, body.Footprint * 0.5f + band, band);
 
                 // "이게 저걸 때릴 수 있나" is a question the roster already answers;
                 // this only ever reads it, never a re-typed number of its own, so
@@ -327,28 +293,20 @@ namespace WordCraft.View
                 }
                 else
                 {
-                    rangeRings[i].enabled = false;
+                    rangeRings[i].Visible = false;
                 }
 
                 bool flashing = hitUntil[i] > Time.unscaledTime;
-                hitFlashes[i].enabled = flashing;
+                hitFlashes[i].Visible = flashing;
                 if (flashing)
                 {
-                    Ring(hitFlashes[i], footprints[i], p);
+                    hitFlashes[i].Set(p, body.Footprint * 0.5f + band, band);
                     Color flash = UiStyle.Danger;
                     flash.a = Mathf.Clamp01((hitUntil[i] - Time.unscaledTime) / HitFlashSeconds);
-                    hitFlashes[i].color = flash;
+                    hitFlashes[i].Colour = flash;
                 }
 
-                Overlays(world, i, e, p, picked);
-
-                // A site under construction reads as a ghost until it finishes.
-                if (e.Kind == EntityKind.Building)
-                {
-                    Color c = sr.color;
-                    c.a = e.BuildTicksLeft > 0 ? UiStyle.SiteAlpha : 1f;
-                    sr.color = c;
-                }
+                Overlays(world, i, e, p, body, picked);
 
                 if (picked && e.Kind == EntityKind.Building && e.HasRallyPoint)
                 {
@@ -361,6 +319,44 @@ namespace WordCraft.View
             Hover(world);
             Ghost(world);
             Arrival(world);
+        }
+
+        /// <summary>
+        /// What the body is doing, read off the entity and told to the model. A
+        /// swing when the cooldown resets, a turn toward the target while it
+        /// stands and shoots, and for a site the fraction built. All of it is a
+        /// reading of state the simulation already holds; nothing here is a
+        /// second clock.
+        /// </summary>
+        private void Pose(World world, int i, Entity e, BodyRig body)
+        {
+            if (e.AttackCooldown > cooldowns[i]) body.Attack();
+            cooldowns[i] = e.AttackCooldown;
+
+            if (e.TargetId >= 0 && e.TargetId < world.EntityCount && e.Target.Equals(e.Position))
+            {
+                Entity target = world.GetEntity(e.TargetId);
+                if (target.Alive)
+                {
+                    Vector2 to = runner.DrawPosition(e.TargetId) - runner.DrawPosition(i);
+                    if (to.sqrMagnitude > 0.0001f) body.Face(Mathf.Atan2(to.x, to.y) * Mathf.Rad2Deg);
+                }
+            }
+
+            if (e.Kind != EntityKind.Building) return;
+
+            // A site under construction rises out of the ground as it is built, and
+            // reads as a ghost until it finishes — the same SiteAlpha idiom the
+            // sprite had, now carried by the model.
+            if (e.BuildTicksLeft > 0 && e.Owner >= 0)
+            {
+                int ticks = FactionData.BuildTicks(world.FactionOf(e.Owner), e.Role, e.Slot);
+                body.Progress(ticks > 0 ? 1f - e.BuildTicksLeft / (float)ticks : 1f);
+            }
+            else
+            {
+                body.Progress(1f);
+            }
         }
 
         /// <summary>
@@ -382,9 +378,7 @@ namespace WordCraft.View
         /// change for a reason nothing else on screen reports: a 굴절 기둥 falls, or
         /// a 경계 운반자 simply walks away and takes its radius with it, and from
         /// then on the queue comes out at the 통로. Without this the player learns
-        /// it by watching bodies appear in the wrong place. It costs one call to
-        /// the simulation's own rule per frame, so the mark is never a claim about
-        /// a moment that has passed.
+        /// it by watching bodies appear in the wrong place.
         ///
         /// The mark stands whether or not the 통로 is selected, unlike a rally
         /// marker. There is one of these for the whole client rather than one per
@@ -405,14 +399,16 @@ namespace WordCraft.View
             }
             else if (arrivalMark != null)
             {
-                arrivalMark.enabled = false;
+                arrivalMark.Visible = false;
             }
 
-            bool aiming = aims && orders.Aiming && Cam != null && !Hud.OverUi(Input.mousePosition);
+            Vector2 under = default;
+            bool aiming = aims && orders.Aiming && Cam != null && !Hud.OverUi(Input.mousePosition) &&
+                          Field.Pointer(Cam, Input.mousePosition, out under);
             if (!aiming)
             {
-                if (arrivalCursor != null) arrivalCursor.enabled = false;
-                for (int i = 0; i < arrivalRings.Count; i++) arrivalRings[i].enabled = false;
+                if (arrivalCursor != null) arrivalCursor.Visible = false;
+                for (int i = 0; i < arrivalRings.Count; i++) arrivalRings[i].Visible = false;
                 return;
             }
 
@@ -420,7 +416,7 @@ namespace WordCraft.View
             // ghost: a building takes a whole cell and a body stands on a point, so
             // the simulation keeps the point as it was named (Sim/Driftworlds.cs
             // AimArrival) and never runs it through CellOf.
-            FixVec2 aimed = MatchRunner.ToSim(Cam.ScreenToWorldPoint(Input.mousePosition));
+            FixVec2 aimed = MatchRunner.ToSim(under);
             Mark(ref arrivalCursor, "ArrivalCursor");
             Verdict(arrivalCursor, MatchRunner.ToView(aimed), ArrivalOrder.Valid(world, peer, aimed));
 
@@ -434,7 +430,7 @@ namespace WordCraft.View
             {
                 RangeRing(AnchorRing(i), ArrivalOrder.Radius, runner.DrawPosition(anchors[i]));
             }
-            for (int i = anchors.Count; i < arrivalRings.Count; i++) arrivalRings[i].enabled = false;
+            for (int i = anchors.Count; i < arrivalRings.Count; i++) arrivalRings[i].Visible = false;
         }
 
         /// <summary>
@@ -443,53 +439,45 @@ namespace WordCraft.View
         /// gives the build ghost: this is not a status, it is a preview of whether
         /// the simulation will take this point.
         /// </summary>
-        private void Mark(ref SpriteRenderer sr, string name)
+        private void Mark(ref Decal d, string name)
         {
-            if (sr != null) return;
-            sr = NewRenderer(name, disc, UiStyle.GhostOk, AboveFogOrder);
-            sr.transform.localScale = new Vector3(ArrivalMarkCells, ArrivalMarkCells, 1f);
+            if (d == null) d = Decal.Make(transform, name, ring: false, UiStyle.GhostOk);
         }
 
         /// <summary>Puts a mark on a point and dresses it with the answer.</summary>
-        private static void Verdict(SpriteRenderer sr, Vector2 p, bool valid)
+        private static void Verdict(Decal d, Vector2 p, bool valid)
         {
-            sr.transform.position = new Vector3(p.x, p.y, 0f);
-            sr.color = valid ? UiStyle.GhostOk : UiStyle.GhostBad;
-            sr.enabled = true;
+            d.Set(p, ArrivalMarkCells * 0.5f, 0f);
+            d.Colour = valid ? UiStyle.GhostOk : UiStyle.GhostBad;
+            d.Visible = true;
         }
 
         /// <summary>
-        /// A pooled radius circle, the same hairline art the weapon rings use. Not
+        /// A pooled radius circle, the same hairline the weapon rings use. Not
         /// indexed by anything the simulation owns — the tail is switched off every
         /// frame — so a restart needs no reset, exactly like the debris pool.
         /// </summary>
-        private SpriteRenderer AnchorRing(int index)
+        private Decal AnchorRing(int index)
         {
             while (arrivalRings.Count <= index)
             {
-                SpriteRenderer made = NewRenderer("ArrivalRing", rangeRingArt, UiStyle.RangeRing, AboveFogOrder);
-                made.enabled = false;
-                arrivalRings.Add(made);
+                arrivalRings.Add(Decal.Make(transform, "ArrivalRing", ring: true, UiStyle.RangeRing));
             }
             return arrivalRings[index];
         }
 
         /// <summary>
-        /// 돌 골렘 부족 잔해: a rock on every cell the simulation is blocking.
+        /// 돌 골렘 부족 잔해: a rubble pile on every cell the simulation is blocking.
         ///
-        /// Not baked into the terrain texture. That is one 512x512 upload per
-        /// world because terrain never changes; debris appears and lapses mid
-        /// match, and rebaking the map every time a golem falls pays the whole
-        /// map's cost for one cell. A pooled renderer a cell is the same shape
-        /// the rally markers already use.
+        /// Not part of the terrain mesh. That is built once per world because
+        /// terrain never changes; debris appears and lapses mid match, and
+        /// rebuilding the field every time a golem falls pays the whole map's cost
+        /// for one cell. A pooled model a cell is the same shape the rally markers
+        /// already use.
         ///
-        /// Drawn as terrain rather than as a body. Roster art goes down untinted
-        /// because a palette is what identifies a faction; this is tinted into the
-        /// blocked value band instead, so what a player reads is a wall.
-        ///
-        /// Alpha carries how much life is left, which is what SiteAlpha already
-        /// means on a building that is not finished — one idiom, one thing to
-        /// learn. Alpha rather than scale because debris blocks its whole cell
+        /// Alpha carries how much life is left, which is what a site's alpha
+        /// already means on a building that is not finished — one idiom, one thing
+        /// to learn. Alpha rather than scale because debris blocks its whole cell
         /// until the last tick: a pile that shrank would open gaps between
         /// neighbours that a player would walk into. It never reaches zero, or
         /// this would end where it started, with an invisible wall.
@@ -505,58 +493,33 @@ namespace WordCraft.View
             {
                 if (!world.HasRemnant(cell)) continue;
 
-                SpriteRenderer sr = Debris(used++);
-                Vector2 p = MatchRunner.ToView(World.CellCenter(cell));
-                sr.transform.position = new Vector3(p.x, p.y, 0f);
+                BodyRig pile = Debris(used++);
+                pile.Show(true);
+                pile.Place(Field.At(MatchRunner.ToView(World.CellCenter(cell))));
 
                 float left = (world.RemnantExpiry(cell) - world.Tick) / (float)World.RemnantTicks;
-                Color c = UiStyle.Remnant;
-                c.a = Mathf.Lerp(UiStyle.RemnantFade, 1f, Mathf.Clamp01(left));
-                sr.color = c;
-                sr.enabled = true;
+                pile.Alpha(Mathf.Lerp(UiStyle.RemnantFade, 1f, Mathf.Clamp01(left)));
             }
 
-            for (int i = used; i < remnants.Count; i++) remnants[i].enabled = false;
+            for (int i = used; i < remnants.Count; i++) remnants[i].Show(false);
         }
 
-        /// <summary>
-        /// One pooled debris renderer, covering exactly the cell the simulation is
-        /// blocking and no more.
-        ///
-        /// Stretched to the cell rather than fitted to its longest edge the way
-        /// roster art is. The source is 128x89, so a fit would leave a third of a
-        /// cell of clear ground between two stacked remnants — a hole in a wall
-        /// that has none, which is the one thing this layer may not draw. Fitting
-        /// the short edge instead would spill the art a fifth of a cell over each
-        /// horizontal neighbour, which lies the other way. A pile of rubble
-        /// squashed is still a pile of rubble; a wall with a gap is a route.
-        /// </summary>
-        private SpriteRenderer Debris(int index)
+        private BodyRig Debris(int index)
         {
-            while (remnants.Count <= index)
-            {
-                SpriteRenderer made = NewRenderer("Remnant",
-                    remnantArt != null ? remnantArt : square, UiStyle.Remnant, RemnantOrder);
-                Vector2 size = remnantArt != null ? (Vector2)remnantArt.bounds.size : Vector2.one;
-                made.transform.localScale = new Vector3(
-                    size.x > 0f ? 1f / size.x : 1f, size.y > 0f ? 1f / size.y : 1f, 1f);
-                remnants.Add(made);
-            }
+            while (remnants.Count <= index) remnants.Add(Models.Remnant(transform));
             return remnants[index];
         }
 
         /// <summary>
-        /// A ring the width of the art's footprint plus a band, and the band follows
-        /// the zoom. A band fixed in world units disappears with the whole map on
-        /// screen; a band fixed in pixels swallows the unit zoomed right in. Neither
-        /// is legible at both ends, so the band is a fraction of what is visible.
+        /// The ring band, in world units. A band fixed in world units disappears
+        /// with the whole map on screen; a band fixed in pixels swallows the unit
+        /// zoomed right in. Neither is legible at both ends, so the band is a
+        /// fraction of what is visible: the camera's half-height at its frame.
         /// </summary>
-        private void Ring(SpriteRenderer ring, float footprint, Vector2 p)
+        private static float Band()
         {
-            float band = Mathf.Max(RingBandFloor, Cam.orthographicSize * RingBandRatio);
-            float d = footprint + band * 2f;
-            ring.transform.position = new Vector3(p.x, p.y, 0f);
-            ring.transform.localScale = new Vector3(d, d, 1f);
+            float half = CameraRig.Instance != null ? CameraRig.Instance.HalfHeight : 10f;
+            return Mathf.Max(RingBandFloor, half * RingBandRatio);
         }
 
         /// <summary>
@@ -564,18 +527,16 @@ namespace WordCraft.View
         /// the roster in cells and converted the same way Fog already converts
         /// the same field (Fog.Reach): Fix.Raw over Fix.One, since a range is a
         /// plain distance and never needs the position math MatchRunner.ToView
-        /// does for a point. Unlike the selection Ring, this one's thickness is
-        /// not held to a screen-space floor — the shape it draws is the
-        /// boundary the player asked about, not a sliver around a footprint
-        /// that would otherwise vanish, so it is free to scale with the map
-        /// like everything else drawn in it.
+        /// does for a point. Unlike the selection ring, this one's width is not
+        /// held to a screen-space floor — the shape it draws is the boundary the
+        /// player asked about, not a sliver around a footprint that would
+        /// otherwise vanish, so it is free to scale with the map.
         /// </summary>
-        private static void RangeRing(SpriteRenderer sr, Fix range, Vector2 center)
+        private static void RangeRing(Decal d, Fix range, Vector2 centre)
         {
             float radius = range.Raw / (float)Fix.One;
-            sr.transform.position = new Vector3(center.x, center.y, 0f);
-            sr.transform.localScale = new Vector3(radius * 2f, radius * 2f, 1f);
-            sr.enabled = true;
+            d.Set(centre, radius, radius * RangeBandRatio);
+            d.Visible = true;
         }
 
         /// <summary>
@@ -594,58 +555,72 @@ namespace WordCraft.View
         // that stops being true.
         private void Hover(World world)
         {
-            int id = Hud.OverUi(Input.mousePosition)
-                ? -1
-                : runner.EntityAt(Cam.ScreenToWorldPoint(Input.mousePosition), HoverRadius, mineOnly: false);
+            int id = -1;
+            if (!Hud.OverUi(Input.mousePosition) && Field.Pointer(Cam, Input.mousePosition, out Vector2 under))
+            {
+                id = runner.EntityAt(under, HoverRadius, mineOnly: false);
+            }
 
-            hover.enabled = id >= 0 && Fog.Show(id, world.GetEntity(id)) == Fog.Seen;
-            if (!hover.enabled) return;
+            hover.Visible = id >= 0 && Fog.Show(id, world.GetEntity(id)) == Fog.Seen;
+            if (!hover.Visible) return;
 
-            hover.sprite = Shape(world.GetEntity(id).Kind);
-            Ring(hover, footprints[id], runner.DrawPosition(id));
+            float band = Band();
+            hover.Set(runner.DrawPosition(id), bodies[id].Footprint * 0.5f + band, band);
         }
 
         /// <summary>
-        /// The placement preview: the building's own art under the cursor, snapped
-        /// to the cell it would take, tinted by whether the simulation would accept
-        /// it. The tint is feedback and nothing else. It is read from a world up to
-        /// a tick behind the one the command will meet, so the answer that counts is
-        /// the one Apply takes; nothing here gates the click.
+        /// The placement preview: the building's own model under the cursor,
+        /// snapped to the cell it would take, tinted by whether the simulation
+        /// would accept it. The tint is feedback and nothing else. It is read from
+        /// a world up to a tick behind the one the command will meet, so the answer
+        /// that counts is the one Apply takes; nothing here gates the click.
         /// </summary>
         private void Ghost(World world)
         {
             Orders orders = Orders.Instance;
+            Vector2 under = default;
             bool placing = orders != null && orders.Pending == CommandType.Build &&
                            orders.Placing != Role.None && Cam != null &&
-                           !Hud.OverUi(Input.mousePosition);
+                           !Hud.OverUi(Input.mousePosition) &&
+                           Field.Pointer(Cam, Input.mousePosition, out under);
 
             if (!placing)
             {
-                if (ghost != null) ghost.enabled = false;
+                if (ghost != null) ghost.Show(false);
                 return;
             }
 
             Role role = orders.Placing;
-            FixVec2 aimed = MatchRunner.ToSim(Cam.ScreenToWorldPoint(Input.mousePosition));
+            Faction faction = world.FactionOf(runner.LocalPeer);
+            FixVec2 aimed = MatchRunner.ToSim(under);
             bool legal = world.CanBuild(runner.LocalPeer, role, aimed);
 
-            if (ghost == null) ghost = NewRenderer("BuildGhost", square, UiStyle.GhostOk, AboveFogOrder);
-            if (ghostRole != role)
+            if (ghost == null || ghostRole != role || ghostFaction != faction)
             {
+                if (ghost != null) Destroy(ghost.gameObject);
                 ghostRole = role;
+                ghostFaction = faction;
                 // Entry 0 only: Build still names a plain role (Sim/World.cs
                 // Apply), so nothing it places can be anything else yet (#111).
-                Sprite drawn = ArtFor(world.FactionOf(runner.LocalPeer), role, 0);
-                ghost.sprite = drawn != null ? drawn : square;
-                ghost.transform.localScale = drawn != null ? FitScale(drawn, role) : Vector3.one * 2f;
+                ghost = Models.Build(transform, faction, role, 0, EntityKind.Building, runner.LocalPeer, neutral: false);
+                ghost.name = "BuildGhost";
+                ghost.Alpha(GhostAlpha);
             }
 
             // Drawn on the cell the simulation would use, not under the pointer, so
             // what the player sees is where the building lands.
             Vector2 cell = MatchRunner.ToView(World.CellCenter(World.CellOf(aimed)));
-            ghost.transform.position = new Vector3(cell.x, cell.y, 0f);
-            ghost.color = legal ? UiStyle.GhostOk : UiStyle.GhostBad;
-            ghost.enabled = true;
+            ghost.Show(true);
+            ghost.Place(Field.At(cell));
+            ghost.Tint(legal ? UiStyle.GhostOk : UiStyle.GhostBad);
+        }
+
+        /// <summary>Every meter off: the thing is dead, unseen, or only remembered.</summary>
+        private void Overlays(int i)
+        {
+            barBacks[i].Visible = false;
+            barFills[i].Visible = false;
+            queueFills[i].Visible = false;
         }
 
         /// <summary>
@@ -653,31 +628,23 @@ namespace WordCraft.View
         /// selected building. Both are read straight off the entity every frame and
         /// held nowhere, so the overlay cannot drift from what the simulation says.
         /// </summary>
-        /// <summary>Every meter off: the thing is dead, unseen, or only remembered.</summary>
-        private void Overlays(int i)
-        {
-            barBacks[i].enabled = false;
-            barFills[i].enabled = false;
-            queueFills[i].enabled = false;
-        }
-
-        private void Overlays(World world, int i, Entity e, Vector2 p, bool picked)
+        private void Overlays(World world, int i, Entity e, Vector2 p, BodyRig body, bool picked)
         {
             bool node = e.Kind == EntityKind.ResourceNode;
             bool hurt = e.Hp < e.MaxHp;
             bool bar = e.Alive && !node && (hurt || picked);
 
-            barBacks[i].enabled = bar;
-            barFills[i].enabled = bar;
+            Vector3 head = Field.At(p, body.Top + BarLift);
+            float width = e.Kind == EntityKind.Building ? 2.2f : 1.1f;
+
+            barBacks[i].Visible = bar;
+            barFills[i].Visible = bar;
             if (bar)
             {
-                float width = e.Kind == EntityKind.Building ? 2.2f : 1.1f;
-                float y = p.y + (e.Kind == EntityKind.Building ? 1.7f : 0.75f);
                 float ratio = e.MaxHp > 0 ? Mathf.Clamp01(e.Hp / (float)e.MaxHp) : 0f;
-
-                Place(barBacks[i], p.x, y, width, 1f);
-                Place(barFills[i], p.x, y, width, ratio);
-                barFills[i].color = UiStyle.Health(ratio);
+                barBacks[i].Set(Cam, head, width, BarHeight, 1f);
+                barFills[i].Set(Cam, head, width, BarHeight, ratio);
+                barFills[i].Colour = UiStyle.Health(ratio);
             }
 
             // ProduceTicksLeft counts down and is zero in the tick before a queued
@@ -697,10 +664,11 @@ namespace WordCraft.View
                 : -1f;
 
             bool queue = e.Alive && picked && e.Kind == EntityKind.Building && e.QueueCount > 0;
-            queueFills[i].enabled = queue || capture >= 0f;
+            queueFills[i].Visible = queue || capture >= 0f;
+            Vector3 below = head - Cam.transform.up * (BarHeight * 1.4f);
             if (capture >= 0f)
             {
-                Place(queueFills[i], p.x, p.y + 0.55f, 1.1f, capture);
+                queueFills[i].Set(Cam, below, width, BarHeight, capture);
             }
             else if (queue)
             {
@@ -713,165 +681,101 @@ namespace WordCraft.View
                 float done = e.ProduceTicksLeft == 0
                     ? 0f
                     : (ticks - e.ProduceTicksLeft) / (float)ticks;
-                Place(queueFills[i], p.x, p.y + 1.45f, 2.2f, done);
+                queueFills[i].Set(Cam, below, width, BarHeight, done);
             }
         }
 
-        /// <summary>Grows a bar from its left edge rather than its middle.</summary>
-        private static void Place(SpriteRenderer sr, float x, float y, float width, float fill)
-        {
-            float w = width * fill;
-            sr.transform.position = new Vector3(x - (width - w) * 0.5f, y, 0f);
-            sr.transform.localScale = new Vector3(w, BarHeight, 1f);
-        }
-
+        /// <summary>
+        /// A rally marker: a diamond standing on the point, turning slowly so the
+        /// eye finds it. Standing rather than lying flat because a flat diamond on
+        /// a tilted camera is a thin lozenge, and this is the one mark that has to
+        /// be found at a glance across the map.
+        /// </summary>
         private void Rally(int index, Vector2 point)
         {
             while (rallyMarkers.Count <= index)
             {
-                var made = NewRenderer("Rally", square, UiStyle.Rally, AboveFogOrder);
-                made.transform.localScale = new Vector3(0.7f, 0.7f, 1f);
-                made.transform.rotation = Quaternion.Euler(0f, 0f, 45f);
-                rallyMarkers.Add(made);
+                var go = new GameObject("Rally");
+                go.transform.SetParent(transform, worldPositionStays: false);
+                go.AddComponent<MeshFilter>().sharedMesh = Marks.Diamond;
+                var mr = go.AddComponent<MeshRenderer>();
+                mr.sharedMaterial = Marks.Ground;
+                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                mr.receiveShadows = false;
+                var block = new MaterialPropertyBlock();
+                block.SetColor("_Color", UiStyle.Rally);
+                mr.SetPropertyBlock(block);
+                go.transform.localScale = new Vector3(0.7f, 0.7f, 0.7f);
+                rallyMarkers.Add(mr);
             }
-            rallyMarkers[index].transform.position = new Vector3(point.x, point.y, 0f);
-            rallyMarkers[index].enabled = true;
-        }
 
-        private SpriteRenderer Create(World world, Entity e)
-        {
-            Sprite shape = Shape(e.Kind);
-            var sr = NewRenderer("", shape, Color.white, e.Kind == EntityKind.Building ? 5 : 10);
-            footprints.Add(Dress(world, e, sr));
-            skins.Add(SkinOf(e));
-
-            var ring = NewRenderer("Ring", shape, UiStyle.Ring, sr.sortingOrder - 1);
-            ring.enabled = false;
-            rings.Add(ring);
-
-            // Above the fog like the rally marker and the build ghost: both are
-            // information about what the local peer itself is doing right now,
-            // and fog never hides that (docs/UI-STYLE.md 안개).
-            var rangeRing = NewRenderer("Range", rangeRingArt, UiStyle.RangeRing, AboveFogOrder);
-            rangeRing.enabled = false;
-            rangeRings.Add(rangeRing);
-
-            var flash = NewRenderer("HitFlash", shape, UiStyle.Danger, sr.sortingOrder - 1);
-            flash.enabled = false;
-            hitFlashes.Add(flash);
-            hitUntil.Add(-1f);
-
-            barBacks.Add(Overlay("HpBack", UiStyle.MeterBack, OverlayOrder));
-            barFills.Add(Overlay("HpFill", Color.white, OverlayOrder + 1));
-            queueFills.Add(Overlay("Queue", UiStyle.Queue, OverlayOrder + 1));
-
-            return sr;
+            MeshRenderer marker = rallyMarkers[index];
+            marker.transform.position = Field.At(point, 0.5f + 0.08f * Mathf.Sin(Time.unscaledTime * 3f));
+            marker.transform.rotation = Quaternion.Euler(0f, Time.unscaledTime * 60f, 0f);
+            marker.enabled = true;
         }
 
         /// <summary>
-        /// Puts a body's art, colour, size, spin and name on its renderer, and
-        /// answers with the footprint a ring around it has to clear.
-        ///
-        /// One method because it runs twice. A renderer is built once per entity
-        /// id, which held for every rule the simulation had until 징발: everything
-        /// else makes a body or ends one, and this is the first thing that leaves
-        /// a body standing and changes what it is. Without the second call a
-        /// captured 꼬마돌 goes on being drawn as a 꼬마돌 for the rest of the
-        /// match, with the enemy's Towerback shooting out of it.
+        /// A body and everything that rides along with its id: ring, reach ring,
+        /// hit flash, shadow, meters. All of it indexed by entity id, which is why
+        /// every list here is appended in lockstep.
         /// </summary>
-        private float Dress(World world, Entity e, SpriteRenderer sr)
+        private BodyRig Create(World world, Entity e)
         {
-            Primitive(e, out Color color, out float scale, out float spin);
-            Sprite drawn = ArtFor(world, e);
+            BodyRig body = Dress(world, e);
 
-            sr.name = Label(world, e);
-            sr.sprite = drawn != null ? drawn : Shape(e.Kind);
-            sr.color = drawn != null ? Tint(world, e) : color;
-            sr.transform.localScale = drawn != null ? FitScale(drawn, e.Role) : new Vector3(scale, scale, 1f);
-            sr.transform.rotation = Quaternion.Euler(0f, 0f, drawn != null ? 0f : spin);
-            return drawn != null ? Cells(e.Role) : scale;
-        }
-
-        /// <summary>
-        /// What a body is drawn as when its roster entry has no art: hue for owner,
-        /// a disc for the things that move and a square for the things that do not.
-        /// docs/FACTIONS.md still lists several slots as concepts, so this is
-        /// permanent furniture rather than a stopgap.
-        /// </summary>
-        private static void Primitive(Entity e, out Color color, out float scale, out float spin)
-        {
-            Color owner = UiStyle.Owner(e.Owner);
-            spin = 0f;
-
-            switch (e.Kind)
+            if (skins.Count <= e.Id)
             {
-                case EntityKind.Worker:
-                    color = Color.Lerp(owner, Color.white, WorkerLift);
-                    scale = 0.6f;
-                    break;
-                case EntityKind.Unit:
-                    color = owner;
-                    scale = 0.9f;
-                    break;
-                case EntityKind.Building:
-                    color = owner;
-                    scale = 1.6f;
-                    break;
-                default:
-                    color = UiStyle.Node;
-                    scale = 0.9f;
-                    // Rotated square: a diamond reads as "not a building" at a glance.
-                    spin = 45f;
-                    break;
+                skins.Add(SkinOf(e));
+                cooldowns.Add(e.AttackCooldown);
+                hitUntil.Add(-1f);
+                rings.Add(Decal.Make(transform, "Ring", ring: true, UiStyle.Ring));
+                rangeRings.Add(Decal.Make(transform, "Range", ring: true, UiStyle.RangeRing));
+                hitFlashes.Add(Decal.Make(transform, "HitFlash", ring: true, UiStyle.Danger));
+                shadows.Add(Decal.Make(transform, "Shadow", ring: false, UiStyle.Shadow));
+                barBacks.Add(Billboard.Make(transform, "HpBack", UiStyle.MeterBack));
+                barFills.Add(Billboard.Make(transform, "HpFill", Color.white));
+                queueFills.Add(Billboard.Make(transform, "Queue", UiStyle.Queue));
             }
+
+            return body;
         }
 
         /// <summary>
-        /// Everything about a body that decides how it is drawn, in one number, so
+        /// Builds a body's model from what it is: the roster entry for anything
+        /// owned, the map's own 꼬마돌 for the neutral rock, a crystal cluster for
+        /// a node. One method because it runs twice. A body is built once per
+        /// entity id, which held for every rule the simulation had until 징발:
+        /// everything else makes a body or ends one, and this is the first thing
+        /// that leaves a body standing and changes what it is. Without the second
+        /// call a captured 꼬마돌 goes on being drawn as a 꼬마돌 for the rest of
+        /// the match, with the enemy's Towerback shooting out of it.
+        ///
+        /// The neutral 꼬마돌 is the one body on the field that is tinted. It
+        /// belongs to no faction, it is built with a faction's worker shape, and
+        /// untinted it would claim to be that faction's worker. docs/UI-STYLE.md
+        /// 징발 has the measurements.
+        /// </summary>
+        private BodyRig Dress(World world, Entity e)
+        {
+            bool neutral = world.IsNeutralRock(e);
+            Faction faction = e.Owner >= 0
+                ? world.FactionOf(e.Owner)
+                : neutral ? Faction.RockGolems : Faction.TreeSpirits;
+
+            BodyRig body = Models.Build(transform, faction, e.Role, e.Slot, e.Kind, e.Owner, neutral);
+            body.name = Label(world, e);
+            body.Tint(neutral ? UiStyle.Neutral : Color.white);
+            body.Show(false); // the fog decides, below, before the first frame it is seen
+            return body;
+        }
+
+        /// <summary>
+        /// Everything about a body that decides how it is built, in one number, so
         /// the frame can ask whether it changed without asking the roster again.
         /// Owner is offset by one because a neutral's is -1.
         /// </summary>
         private static int SkinOf(Entity e) => ((e.Owner + 1) * 64 + (int)e.Role) * 64 + e.Slot;
-
-        /// <summary>
-        /// The art a body is drawn with, or null when it has none and the
-        /// primitive stands in. A neutral 꼬마돌 has no owner and so no roster row
-        /// to ask, and the map's own sprite answers for it instead.
-        /// </summary>
-        private Sprite ArtFor(World world, Entity e)
-        {
-            if (world.IsNeutralRock(e)) return neutralRockArt;
-            return e.Owner < 0 ? null : ArtFor(world.FactionOf(e.Owner), e.Role, e.Slot);
-        }
-
-        /// <summary>
-        /// What that art is multiplied by. White for everything on a roster,
-        /// because .art/STYLE.md makes the palette the thing that says which
-        /// faction a body belongs to and a tint over it would be a second answer
-        /// to that question.
-        ///
-        /// The neutral 꼬마돌 is the one exception and it is the same rule read
-        /// the other way: it belongs to no faction, it is drawn with a faction's
-        /// worker sprite, and untinted it would claim to be that faction's worker.
-        /// docs/UI-STYLE.md 징발 has the measurements.
-        /// </summary>
-        private static Color Tint(World world, Entity e) =>
-            world.IsNeutralRock(e) ? UiStyle.Neutral : Color.white;
-
-        /// <summary>Roster art for this entry, or null when it has none yet.</summary>
-        private Sprite ArtFor(Faction faction, Role role, int slot)
-        {
-            if (role == Role.None) return null;
-            string file = FactionData.Sprite(faction, role, slot);
-            if (file.Length == 0) return null;
-
-            if (!art.TryGetValue(file, out Sprite sprite))
-            {
-                sprite = Resources.Load<Sprite>(SpriteFolder + file);
-                art[file] = sprite; // cache the miss too, so a bad name is one failed load
-            }
-            return sprite;
-        }
 
         private static string Label(World world, Entity e)
         {
@@ -880,22 +784,10 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// Fits authored art to its role's footprint in cells. The source sprites
-        /// were drawn for another game at another pixels-per-unit, so their own
-        /// size means nothing here.
-        /// </summary>
-        private static Vector3 FitScale(Sprite sprite, Role role)
-        {
-            Vector2 size = sprite.bounds.size;
-            float longest = Mathf.Max(size.x, size.y);
-            float k = longest > 0f ? Cells(role) / longest : 1f;
-            return new Vector3(k, k, 1f);
-        }
-
-        /// <summary>
-        /// A role's footprint on the grid. What the art is fitted to, what a ring
-        /// rings, and the floor on what a building of that role can see: a thing
-        /// is never fogged under its own feet.
+        /// A role's footprint on the grid: what a ring rings, and the floor on what
+        /// a building of that role can see — a thing is never fogged under its own
+        /// feet. Models size themselves to the same table, so the ring and the
+        /// body agree.
         /// </summary>
         public static float Cells(Role role)
         {
@@ -909,11 +801,7 @@ namespace WordCraft.View
             }
         }
 
-        private Sprite Shape(EntityKind kind) =>
-            kind == EntityKind.Unit || kind == EntityKind.Worker ? disc : square;
-
-        /// <summary>Empties a pool. Rings are children of their view, so ordering does not matter.</summary>
-        private static void Drop(List<SpriteRenderer> pool)
+        private static void DropBodies(List<BodyRig> pool)
         {
             for (int i = 0; i < pool.Count; i++)
             {
@@ -922,78 +810,13 @@ namespace WordCraft.View
             pool.Clear();
         }
 
-        private SpriteRenderer Overlay(string name, Color color, int order)
+        private static void Drop<T>(List<T> pool) where T : MonoBehaviour
         {
-            SpriteRenderer sr = NewRenderer(name, square, color, order);
-            sr.enabled = false;
-            return sr;
-        }
-
-        private SpriteRenderer NewRenderer(string name, Sprite sprite, Color color, int order)
-        {
-            var go = new GameObject(name);
-            go.transform.SetParent(transform, worldPositionStays: false);
-            var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = sprite;
-            sr.color = color;
-            sr.sortingOrder = order;
-            return sr;
-        }
-
-        /// <summary>One texture per shape, generated once. 1 sprite unit is 1 grid cell.</summary>
-        private static Sprite MakeSprite(bool round)
-        {
-            const int size = 64;
-            var pixels = new Color32[size * size];
-            float radius = size / 2f - 1f;
-            var centre = new Vector2((size - 1) / 2f, (size - 1) / 2f);
-
-            for (int y = 0; y < size; y++)
+            for (int i = 0; i < pool.Count; i++)
             {
-                for (int x = 0; x < size; x++)
-                {
-                    bool inside = !round || Vector2.Distance(new Vector2(x, y), centre) <= radius;
-                    // A mask, not a colour: the tint comes from the SpriteRenderer.
-                    pixels[y * size + x] = inside ? (Color32)Color.white : (Color32)Color.clear;
-                }
+                if (pool[i] != null) Destroy(pool[i].gameObject);
             }
-
-            var texture = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false);
-            texture.SetPixels32(pixels);
-            texture.Apply();
-            return Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), size);
-        }
-
-        /// <summary>
-        /// A hairline circle: clear everywhere except a thin band at the very
-        /// edge, at RangeBandRatio of its own radius. Baked once at a higher
-        /// texel count than MakeSprite's discs and squares, because this one is
-        /// stretched out to a weapon's whole reach rather than to a body's own
-        /// footprint, and a thin band needs the extra resolution to survive
-        /// that stretch as a line instead of a stair-step.
-        /// </summary>
-        private static Sprite MakeRingSprite()
-        {
-            const int size = 128;
-            var pixels = new Color32[size * size];
-            float outer = size / 2f - 1f;
-            float inner = outer * (1f - RangeBandRatio);
-            var centre = new Vector2((size - 1) / 2f, (size - 1) / 2f);
-
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    float d = Vector2.Distance(new Vector2(x, y), centre);
-                    bool inside = d <= outer && d >= inner;
-                    pixels[y * size + x] = inside ? (Color32)Color.white : (Color32)Color.clear;
-                }
-            }
-
-            var texture = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false);
-            texture.SetPixels32(pixels);
-            texture.Apply();
-            return Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), size);
+            pool.Clear();
         }
     }
 }

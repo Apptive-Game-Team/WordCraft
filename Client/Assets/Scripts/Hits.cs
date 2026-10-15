@@ -17,8 +17,8 @@ namespace WordCraft.View
     /// The watching itself is HitDetection, which never touches UnityEngine so
     /// Replay can check it headless (issue #96). This file is only the Camera
     /// adapter left behind: it answers "is this world point on screen" with a
-    /// viewport test and converts HitDetection's world points to the view space
-    /// Minimap and Alert already draw in.
+    /// viewport test through the perspective camera and converts HitDetection's
+    /// sim points to the plane points Minimap and Alert already draw in.
     /// </summary>
     public static class Hits
     {
@@ -41,10 +41,17 @@ namespace WordCraft.View
             return viewPoints;
         }
 
+        /// <summary>
+        /// Whether a plane point is on screen. The point is lifted onto the ground
+        /// first, because a hit on a hilltop is higher in the picture than the same
+        /// plane point at sea level. The camera is perspective, so the depth has to
+        /// be in front of it as well: a point behind the camera projects to a
+        /// viewport coordinate inside the unit square just the same.
+        /// </summary>
         private static bool OnScreen(Camera cam, Vector2 point)
         {
-            Vector3 v = cam.WorldToViewportPoint(point);
-            return v.x >= 0f && v.x <= 1f && v.y >= 0f && v.y <= 1f;
+            Vector3 v = cam.WorldToViewportPoint(Field.At(point));
+            return v.z > 0f && v.x >= 0f && v.x <= 1f && v.y >= 0f && v.y <= 1f;
         }
     }
 }

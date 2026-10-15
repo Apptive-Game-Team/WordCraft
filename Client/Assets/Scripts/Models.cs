@@ -1,0 +1,2021 @@
+using System.Collections.Generic;
+using UnityEngine;
+using WordCraft.Sim;
+
+namespace WordCraft.View
+{
+    /// <summary>
+    /// Builds every body on the field as a low-poly solid, from code, at runtime.
+    /// No FBX, no prefab, no material asset: issue #159 rules out binary assets,
+    /// and a model that is a function of (faction, role, slot) is a model both
+    /// peers build identically without shipping anything.
+    ///
+    /// .art/STYLE.md is the brief. Technique never varies — flat faces, three
+    /// value bands from Paper.cginc, no outline, chunky proportions about three
+    /// heads tall — and shape language plus palette always does:
+    ///
+    ///   세계수 정령   round and leafy: spheres, cones, eyes; no armour, no tools.
+    ///   지옥불 군단   angular and spiked: tapered slabs, horns, a dark shell with
+    ///                 ember only in eye slits, one chest core and a few seams.
+    ///   물 슬라임     blobby domes in pale blues with an inner highlight.
+    ///   돌 골렘 부족  stacked blocks and boulders, warm tan, moss on the tops.
+    ///   차원 유랑종   blunt warm-brown plates with a vivid interior in the gaps.
+    ///   인간 마법 문명 right angles and symmetry: cut stone, steel-blue roofs,
+    ///                 bronze, wood, banners; no faces.
+    ///
+    /// The models follow the shipped sprites in Resources/Art/Sprites where a
+    /// slot has one, so the HUD icon and the body on the field are the same
+    /// creature. Where FACTIONS.md describes a concept with no art yet, the model
+    /// follows the description and its 금지 list.
+    ///
+    /// Owner is a small accent in <see cref="UiStyle.Owner"/> on every body —
+    /// a collar, belt, band, banner or shard — see <see cref="BodyPalette"/>.
+    ///
+    /// A design is built once per (kind, faction, role, slot, owner) and shared:
+    /// meshes are never per body.
+    /// </summary>
+    public static class Models
+    {
+        /// <summary>World units between the top of a body and the health bar over it.</summary>
+        private const float TopMargin = 0.25f;
+
+        /// <summary>
+        /// Per-face value grain. Three and a half percent: enough that two faces
+        /// of one boulder never land on exactly the same value, too little to
+        /// read as texture.
+        /// </summary>
+        private const float Grain = 0.035f;
+
+        private const float NodeFootprint = 1.4f;
+        private const float NeutralRockFootprint = 1.2f;
+        private const float RemnantFootprint = 1.0f;
+
+        private static readonly Dictionary<long, Design> designs = new Dictionary<long, Design>();
+        private static Design remnant;
+        private static Material opaque;
+        private static Material ghost;
+        private static int built;
+
+        /// <summary>The shared opaque body material. Every body on the field draws with this one instance.</summary>
+        public static Material Opaque => opaque != null ? opaque : (opaque = CreateMaterial("Shaders/Body", "WordCraft Body"));
+
+        /// <summary>The shared see-through material: a construction site, the placement ghost, fading debris.</summary>
+        public static Material Ghost => ghost != null ? ghost : (ghost = CreateMaterial("Shaders/BodyGhost", "WordCraft Body Ghost"));
+
+        /// <summary>
+        /// One body for one roster entry, under <paramref name="parent"/> at local
+        /// zero, facing +z. A resource node and the map's neutral 꼬마돌 come out
+        /// of here too, chosen by kind and the neutral flag rather than by roster.
+        /// </summary>
+        public static BodyRig Build(Transform parent, Faction faction, Role role, int slot, EntityKind kind, int owner, bool neutral)
+        {
+            Design design = DesignFor(faction, role, slot, kind, owner, neutral);
+            return Attach(parent, design, Label(faction, role, slot, kind, neutral));
+        }
+
+        /// <summary>A pile of rubble covering one cell: 돌 골렘 부족's 잔해, which blocks the cell it lies on.</summary>
+        public static BodyRig Remnant(Transform parent)
+        {
+            if (remnant == null || remnant.Hull == null) remnant = RemnantDesign();
+            return Attach(parent, remnant, "Remnant");
+        }
+
+        private static BodyRig Attach(Transform parent, Design design, string name)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+            var rig = go.AddComponent<BodyRig>();
+            rig.Assemble(design, built++);
+            return rig;
+        }
+
+        private static Material CreateMaterial(string path, string name)
+        {
+            Shader shader = Resources.Load<Shader>(path);
+            if (shader == null)
+            {
+                Debug.LogWarning($"Models: Resources/{path}.shader is missing; bodies fall back to Standard and lose the Paper lighting.");
+                shader = Shader.Find("Standard");
+            }
+            return new Material(shader) { name = name };
+        }
+
+        private static string Label(Faction faction, Role role, int slot, EntityKind kind, bool neutral)
+        {
+            if (kind == EntityKind.ResourceNode) return "ResourceNode";
+            if (neutral) return "꼬마돌";
+            string name = role == Role.None ? "" : FactionData.Name(faction, role, slot);
+            return name.Length > 0 ? name : role.ToString();
+        }
+
+        // ------------------------------------------------------------------
+        // Composition
+        // ------------------------------------------------------------------
+
+        private static Design DesignFor(Faction faction, Role role, int slot, EntityKind kind, int owner, bool neutral)
+        {
+            long key = Key(faction, role, slot, kind, owner, neutral);
+            if (designs.TryGetValue(key, out Design cached) && cached.Hull != null) return cached;
+
+            Design made = Compose(faction, role, slot, kind, owner, neutral);
+            designs[key] = made;
+            return made;
+        }
+
+        /// <summary>
+        /// The cache key. Owner is in it because the accent is baked into vertex
+        /// colour; a neutral or a node has no owner and no faction worth keying.
+        /// </summary>
+        private static long Key(Faction faction, Role role, int slot, EntityKind kind, int owner, bool neutral)
+        {
+            if (kind == EntityKind.ResourceNode) return -1;
+            if (neutral) return -2;
+            long key = (int)kind;
+            key = key * 16 + (int)faction;
+            key = key * 16 + (int)role;
+            key = key * 16 + Mathf.Clamp(slot, 0, 15);
+            key = key * 64 + Mathf.Clamp(owner + 1, 0, 63);
+            return key;
+        }
+
+        private static Design Compose(Faction faction, Role role, int slot, EntityKind kind, int owner, bool neutral)
+        {
+            if (kind == EntityKind.ResourceNode) return NodeDesign();
+            if (neutral || (owner < 0 && kind != EntityKind.Building)) return NeutralRockDesign();
+
+            bool accent = BodyPalette.HasAccent(owner, false);
+            Color accentColor = accent ? BodyPalette.Accent(owner) : Color.white;
+            int seed = Seed(faction, role, slot);
+            string name = Label(faction, role, slot, kind, false);
+
+            if (FactionData.IsBuilding(role) || kind == EntityKind.Building)
+            {
+                float footprint = Cells(role);
+                var building = new Blueprint(seed, 1f, accent, accentColor) { Gait = Gait.Still };
+                Building(building, faction, role, slot);
+                return Finish(building, name, footprint, footprint, true, false);
+            }
+
+            float size = 0.9f * Cells(role) * (role == Role.Signature ? 1.5f : 1f);
+            var unit = new Blueprint(seed, size, accent, accentColor);
+            Unit(unit, faction, role, slot);
+
+            bool flying = role != Role.None && FactionData.Stats(faction, role, slot).Air;
+            if (flying) unit.Gait = Gait.Fly;
+            return Finish(unit, name, Cells(role), size, false, flying);
+        }
+
+        /// <summary>
+        /// A role's footprint in cells: Base 4, Production 3, Defense 2.5, Worker
+        /// 1.2, everything else 1.8. The same table as MatchView.Cells, copied
+        /// rather than called so the factory does not depend on the file it is
+        /// being wired into; if one changes, change both.
+        /// </summary>
+        private static float Cells(Role role)
+        {
+            switch (role)
+            {
+                case Role.Base: return 4.0f;
+                case Role.Production: return 3.0f;
+                case Role.Defense: return 2.5f;
+                case Role.Worker: return 1.2f;
+                default: return 1.8f;
+            }
+        }
+
+        private static int Seed(Faction faction, Role role, int slot) =>
+            (((int)faction + 1) * 7919 + (int)role * 104729 + slot * 1299709) & 0x7FFFFFFF;
+
+        private static Design Finish(Blueprint b, string name, float footprint, float size, bool building, bool flying)
+        {
+            var design = new Design
+            {
+                Gait = building ? Gait.Still : b.Gait,
+                Limbs = b.Limbs,
+                Strike = b.Strike,
+                LimbsRideHull = b.LimbsRideHull,
+                CrownSpin = b.CrownSpin,
+                CrownAims = b.CrownAims,
+                CrownKick = b.CrownKick,
+                Footprint = footprint,
+                Size = size,
+                Building = building,
+                Flying = flying,
+                Tint = b.Tint,
+            };
+
+            design.Hull = b.Hull.Bake(name);
+            design.Arm = Bake(b.Arm, name + " arm", out design.ArmPivot);
+            design.LimbLeft = Bake(b.LimbLeft, name + " limb left", out design.LimbLeftPivot);
+            design.LimbRight = Bake(b.LimbRight, name + " limb right", out design.LimbRightPivot);
+            design.Crown = Bake(b.Crown, name + " crown", out design.CrownPivot);
+
+            switch (design.Gait)
+            {
+                case Gait.Hop: design.Stride = 0.9f * size; break;
+                case Gait.Walk: design.Stride = (b.Limbs == LimbMotion.Step ? 0.4f : 0.6f) * size; break;
+                default: design.Stride = size; break;
+            }
+
+            float highest = Mathf.Max(Mathf.Max(b.Hull.Highest, b.Arm.Highest),
+                                      Mathf.Max(Mathf.Max(b.LimbLeft.Highest, b.LimbRight.Highest), b.Crown.Highest));
+            design.Top = highest * b.Hull.Scale + (flying ? BodyRig.HoverHeight : 0f) + TopMargin;
+            return design;
+        }
+
+        private static Mesh Bake(Solids part, string name, out Vector3 pivot)
+        {
+            pivot = part.Origin * part.Scale;
+            return part.Empty ? null : part.Bake(name);
+        }
+
+        /// <summary>
+        /// One body while it is being written: the static hull, and the parts
+        /// that move. Every part shares the body's scale, so all of them are
+        /// authored in the same coordinates and only their pivots differ.
+        /// </summary>
+        private sealed class Blueprint
+        {
+            public readonly Solids Hull, Arm, LimbLeft, LimbRight, Crown;
+            public readonly bool HasAccent;
+            public readonly Color Accent;
+            public readonly System.Random Random;
+            public Gait Gait = Gait.Walk;
+            public LimbMotion Limbs = LimbMotion.Swing;
+            public Strike Strike = Strike.Lunge;
+            public bool LimbsRideHull;
+            public float CrownSpin, CrownKick;
+            public bool CrownAims;
+            public Color Tint = Color.white;
+
+            public Blueprint(int seed, float scale, bool hasAccent, Color accent)
+            {
+                Hull = Part(seed, 0, scale);
+                Arm = Part(seed, 1, scale);
+                LimbLeft = Part(seed, 2, scale);
+                LimbRight = Part(seed, 3, scale);
+                Crown = Part(seed, 4, scale);
+                HasAccent = hasAccent;
+                Accent = accent;
+                Random = new System.Random(seed ^ 0x5bd1e995);
+            }
+
+            private static Solids Part(int seed, int index, float scale) =>
+                new Solids(seed * 31 + index, Grain) { Scale = scale };
+        }
+
+        // ------------------------------------------------------------------
+        // Shorthand for authoring. Units are authored one unit tall, feet at
+        // y = 0, facing +z, right hand at +x. Buildings are authored in world
+        // units directly.
+        // ------------------------------------------------------------------
+
+        private static Vector3 Point(float x, float y, float z) => new Vector3(x, y, z);
+        private static Vector3 Extent(float x, float y, float z) => new Vector3(x, y, z);
+        private static Vector2 Pair(float x, float z) => new Vector2(x, z);
+        private static Quaternion Turn(float x, float y, float z) => Quaternion.Euler(x, y, z);
+
+        /// <summary>A part lying along the body: local +y becomes +z, so a taper's height runs nose-ward.</summary>
+        private static readonly Quaternion Lying = Quaternion.Euler(90f, 0f, 0f);
+
+        /// <summary>Unit vector on the ground at a compass yaw in degrees, 0 = +z.</summary>
+        private static Vector3 Around(float yawDegrees)
+        {
+            float radians = yawDegrees * Mathf.Deg2Rad;
+            return new Vector3(Mathf.Sin(radians), 0f, Mathf.Cos(radians));
+        }
+
+        /// <summary>Faces <paramref name="yawDegrees"/> and tips the top outward by <paramref name="tilt"/> (inward when negative).</summary>
+        private static Quaternion Outward(float yawDegrees, float tilt) =>
+            Quaternion.Euler(0f, yawDegrees, 0f) * Quaternion.Euler(tilt, 0f, 0f);
+
+        /// <summary>STYLE.md's eye: a dark oval with one tiny highlight, upper left. Looks down +z.</summary>
+        private static void Eyes(Solids part, Vector3 middle, float spacing, float size)
+        {
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Vector3 eye = middle + new Vector3(side * spacing * 0.5f, 0f, 0f);
+                part.Ball(eye, Extent(size * 0.62f, size, size * 0.45f), BodyPalette.Eye, Quaternion.identity, 0);
+                part.Ball(eye + Extent(-size * 0.2f, size * 0.38f, size * 0.36f), Vector3.one * size * 0.24f,
+                          BodyPalette.EyeShine, Quaternion.identity, 0);
+            }
+        }
+
+        /// <summary>
+        /// 지옥불's eyes: two glowing slits, outer ends raised. STYLE.md: "No large
+        /// friendly eyes. Eyes are glowing slits."
+        /// </summary>
+        private static void Slits(Solids part, Vector3 middle, float spacing, float width)
+        {
+            for (int side = -1; side <= 1; side += 2)
+                part.Box(middle + new Vector3(side * spacing * 0.5f, 0f, 0f), Extent(width, width * 0.3f, width * 0.35f),
+                         BodyPalette.Hellfire.Ember, Turn(0f, 0f, side * 16f));
+        }
+
+        /// <summary>The owner accent as a ring round a round body. Nothing on a neutral.</summary>
+        private static void Band(Blueprint b, Solids part, Vector3 bottom, int sides, float radius, float height, float depth = 1f)
+        {
+            if (b.HasAccent) part.Prism(bottom, sides, radius, radius, height, b.Accent, Quaternion.identity, depth);
+        }
+
+        /// <summary>The owner accent as a strap, belt or collar round a boxy body. Nothing on a neutral.</summary>
+        private static void Strap(Blueprint b, Solids part, Vector3 center, Vector3 size, Quaternion? rotation = null)
+        {
+            if (!b.HasAccent) return;
+            part.Box(center, size, b.Accent, rotation ?? Quaternion.identity);
+        }
+
+        /// <summary>The owner accent as a floating shard: two pyramids base to base. For factions that fly no flags.</summary>
+        private static void Shard(Blueprint b, Solids part, Vector3 center, float size)
+        {
+            if (!b.HasAccent) return;
+            part.Prism(center, 4, size, 0f, size * 1.5f, b.Accent);
+            part.Prism(center, 4, size, 0f, size * 1.2f, b.Accent, Turn(180f, 0f, 0f));
+        }
+
+        /// <summary>The owner accent as a flag on a pole, for the factions that build. Faces the camera's side of the map.</summary>
+        private static void Pennant(Blueprint b, Solids part, Vector3 foot, float height, Color pole)
+        {
+            if (!b.HasAccent) return;
+            part.Prism(foot, 5, 0.05f, 0.04f, height, pole);
+            part.Box(foot + Point(0.24f, height - 0.22f, 0f), Extent(0.44f, 0.34f, 0.035f), b.Accent);
+        }
+
+        /// <summary>Two legs hinged at the hip, for a body that walks upright.</summary>
+        private static void Legs(Blueprint b, float hip, float halfSpacing, float thickness, Color leg, Color foot)
+        {
+            Leg(b.LimbLeft, -halfSpacing, hip, thickness, leg, foot);
+            Leg(b.LimbRight, halfSpacing, hip, thickness, leg, foot);
+        }
+
+        private static void Leg(Solids part, float x, float hip, float thickness, Color leg, Color foot)
+        {
+            part.Origin = Point(x, hip, 0f);
+            part.Taper(Point(x, 0.05f, 0f), Pair(thickness, thickness), Pair(thickness * 1.15f, thickness * 1.15f), hip - 0.03f, leg);
+            part.Box(Point(x, 0.04f, 0.035f), Extent(thickness * 1.3f, 0.08f, thickness * 1.6f), foot);
+        }
+
+        /// <summary>Two block legs, for the golems: a stacked stone has no ankle.</summary>
+        private static void BlockLegs(Blueprint b, float hip, float halfSpacing, Vector3 size, Color leg)
+        {
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Solids part = side < 0 ? b.LimbLeft : b.LimbRight;
+                float x = side * halfSpacing;
+                part.Origin = Point(x, hip, 0f);
+                part.Box(Point(x, size.y * 0.5f, 0.01f), size, leg);
+            }
+        }
+
+        /// <summary>
+        /// One wing, fin or vane, lying near flat so it beats about the body's
+        /// long axis and reads from a camera above. <paramref name="side"/> is -1
+        /// for the left, +1 for the right; the root is the hinge.
+        /// </summary>
+        private static void Wing(Solids part, float side, Vector3 root, float span, float chord, float tipChord,
+                                 float sweep, float dihedral, Color color)
+        {
+            Vector3 hinge = Point(side * Mathf.Abs(root.x), root.y, root.z);
+            part.Origin = hinge;
+            part.Taper(hinge, Pair(0.035f, chord), Pair(0.025f, tipChord), span, color,
+                       Turn(0f, 0f, -side * (90f - dihedral)), Pair(0f, sweep));
+        }
+
+        // ------------------------------------------------------------------
+        // Units
+        // ------------------------------------------------------------------
+
+        private static void Unit(Blueprint b, Faction faction, Role role, int slot)
+        {
+            switch (faction)
+            {
+                case Faction.TreeSpirits: TreeSpiritUnit(b, role, slot); return;
+                case Faction.Hellfire: HellfireUnit(b, role, slot); return;
+                case Faction.WaterSlimes: WaterSlimeUnit(b, role, slot); return;
+                case Faction.RockGolems: RockGolemUnit(b, role, slot); return;
+                case Faction.Driftworlds: DriftworldUnit(b, role, slot); return;
+                default: HumanUnit(b, role, slot); return;
+            }
+        }
+
+        /// <summary>
+        /// A body for a roster entry no model was written for: a plain biped in
+        /// the faction's two main colours. FACTIONS.md marks 인간's melee slot
+        /// empty by design, so this is what a stray one would look like rather
+        /// than a crash.
+        /// </summary>
+        private static void GenericUnit(Blueprint b, Faction faction)
+        {
+            Color main = BodyPalette.Main(faction), second = BodyPalette.Second(faction);
+            Legs(b, 0.28f, 0.12f, 0.13f, second, second);
+            b.Hull.Taper(Point(0f, 0.26f, 0f), Pair(0.4f, 0.3f), Pair(0.46f, 0.32f), 0.38f, main);
+            b.Hull.Ball(Point(0f, 0.8f, 0.02f), Extent(0.2f, 0.19f, 0.19f), main);
+            if (faction != Faction.Humans && faction != Faction.Hellfire) Eyes(b.Hull, Point(0f, 0.82f, 0.18f), 0.12f, 0.05f);
+            Strap(b, b.Hull, Point(0f, 0.58f, 0f), Extent(0.48f, 0.06f, 0.34f));
+            b.Arm.Origin = Point(0.27f, 0.58f, 0f);
+            b.Arm.Taper(Point(0.29f, 0.3f, 0.02f), Pair(0.1f, 0.1f), Pair(0.11f, 0.11f), 0.3f, second);
+        }
+
+        // ---- 세계수 정령 ----
+
+        private static void TreeSpiritUnit(Blueprint b, Role role, int slot)
+        {
+            switch (role)
+            {
+                case Role.Worker: SeedSpirit(b); break;
+                case Role.Melee: if (slot == 1) TreeGuardian(b); else LeafBlade(b); break;
+                case Role.Ranged: if (slot == 1) VineSpirit(b); else ThunderSpirit(b); break;
+                case Role.Signature: WindSpirit(b); break;
+                default: GenericUnit(b, Faction.TreeSpirits); break;
+            }
+        }
+
+        /// <summary>풀씨 정령: a hopping green seed with a two-leaf sprout, carrying a seed of its own.</summary>
+        private static void SeedSpirit(Blueprint b)
+        {
+            b.Gait = Gait.Hop;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+
+            hull.Ball(Point(0f, 0.36f, 0f), Extent(0.36f, 0.34f, 0.34f), BodyPalette.TreeSpirits.LeafLight);
+            for (int i = 0; i < 6; i++)
+            {
+                float yaw = 30f + i * 60f;
+                hull.Prism(Around(yaw) * 0.27f + Point(0f, 0.02f, 0f), 4, 0.07f, 0f, 0.2f,
+                           i % 2 == 0 ? BodyPalette.TreeSpirits.Leaf : BodyPalette.TreeSpirits.LeafShade, Outward(yaw, 35f));
+            }
+            hull.Prism(Point(0f, 0.66f, 0f), 5, 0.025f, 0.02f, 0.15f, BodyPalette.TreeSpirits.LeafShade);
+            hull.Ball(Point(-0.11f, 0.82f, 0f), Extent(0.13f, 0.035f, 0.07f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 0f, -28f), 1);
+            hull.Ball(Point(0.11f, 0.82f, 0f), Extent(0.13f, 0.035f, 0.07f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 0f, 28f), 1);
+            Eyes(hull, Point(0f, 0.4f, 0.31f), 0.2f, 0.075f);
+            Band(b, hull, Point(0f, 0.15f, 0f), 10, 0.335f, 0.06f);
+
+            b.Arm.Origin = Point(0.3f, 0.32f, 0.05f);
+            b.Arm.Ball(Point(0.36f, 0.24f, 0.15f), 0.09f, BodyPalette.TreeSpirits.Bark);
+            b.Arm.Prism(Point(0.36f, 0.32f, 0.15f), 4, 0.02f, 0f, 0.08f, BodyPalette.TreeSpirits.LeafLight);
+        }
+
+        /// <summary>잎날 정령: a spindle of leaves that drifts and cuts with a leaf blade. Fast raider, slot 0.</summary>
+        private static void LeafBlade(Blueprint b)
+        {
+            b.Gait = Gait.Float;
+            b.Strike = Strike.Lunge;
+            Solids hull = b.Hull;
+
+            hull.Prism(Point(0f, 0.1f, 0f), 6, 0f, 0.27f, 0.32f, BodyPalette.TreeSpirits.LeafShade);
+            hull.Prism(Point(0f, 0.42f, 0f), 6, 0.27f, 0f, 0.56f, BodyPalette.TreeSpirits.Leaf);
+            for (int i = 0; i < 4; i++)
+            {
+                float yaw = 45f + i * 90f;
+                hull.Ball(Around(yaw) * 0.22f + Point(0f, 0.58f, 0f), Extent(0.06f, 0.2f, 0.12f),
+                          BodyPalette.TreeSpirits.LeafLight, Outward(yaw, 28f), 1);
+            }
+            Eyes(hull, Point(0f, 0.52f, 0.2f), 0.13f, 0.055f);
+            Band(b, hull, Point(0f, 0.39f, 0f), 6, 0.29f, 0.06f);
+
+            b.Arm.Origin = Point(0.27f, 0.5f, 0f);
+            b.Arm.Ball(Point(0.38f, 0.42f, 0.14f), Extent(0.05f, 0.22f, 0.1f), BodyPalette.TreeSpirits.LeafDeep, Turn(35f, 0f, 0f), 1);
+        }
+
+        /// <summary>고목 수호자: a blocky wooden guardian with a leafy crown and a log club. What a 풀씨 정령 grows into.</summary>
+        private static void TreeGuardian(Blueprint b)
+        {
+            Color bark = BodyPalette.TreeSpirits.Bark, barkShade = BodyPalette.TreeSpirits.BarkShade;
+            Solids hull = b.Hull;
+
+            Legs(b, 0.3f, 0.15f, 0.15f, barkShade, bark);
+            hull.Taper(Point(0f, 0.28f, 0f), Pair(0.46f, 0.32f), Pair(0.6f, 0.38f), 0.4f, bark);
+            hull.Box(Point(0f, 0.79f, 0.03f), Extent(0.26f, 0.2f, 0.24f), bark);
+            hull.Lump(Point(0f, 0.95f, 0f), Extent(0.22f, 0.12f, 0.19f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 20f, 0f));
+            hull.Lump(Point(-0.27f, 0.72f, -0.02f), Extent(0.13f, 0.1f, 0.13f), BodyPalette.TreeSpirits.LeafLight, Turn(10f, 0f, 0f));
+            hull.Lump(Point(0.25f, 0.73f, -0.05f), Extent(0.11f, 0.09f, 0.11f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 40f, 10f));
+            Eyes(hull, Point(0f, 0.81f, 0.155f), 0.1f, 0.035f);
+            hull.Prism(Point(-0.37f, 0.3f, 0.02f), 6, 0.08f, 0.075f, 0.38f, bark, Turn(0f, 0f, -6f));
+            hull.Box(Point(-0.38f, 0.26f, 0.03f), Extent(0.17f, 0.15f, 0.17f), barkShade);
+            Strap(b, hull, Point(0f, 0.6f, 0f), Extent(0.62f, 0.06f, 0.4f));
+
+            b.Arm.Origin = Point(0.36f, 0.66f, 0.02f);
+            b.Arm.Prism(Point(0.37f, 0.32f, 0.02f), 6, 0.08f, 0.09f, 0.36f, bark);
+            b.Arm.Box(Point(0.38f, 0.27f, 0.04f), Extent(0.19f, 0.17f, 0.19f), barkShade);
+            b.Arm.Lump(Point(0.4f, 0.62f, 0f), Extent(0.09f, 0.06f, 0.09f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 30f, 0f));
+        }
+
+        /// <summary>번개 정령: a round yellow spirit with a swept spiky tuft, throwing a zigzag bolt. Slot 0.</summary>
+        private static void ThunderSpirit(Blueprint b)
+        {
+            b.Gait = Gait.Float;
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+
+            hull.Ball(Point(0f, 0.5f, 0f), Extent(0.33f, 0.31f, 0.31f), BodyPalette.TreeSpirits.Bolt);
+            hull.Prism(Point(0f, 0.74f, -0.04f), 4, 0.09f, 0f, 0.27f, BodyPalette.TreeSpirits.BoltLight, Turn(-30f, 0f, 0f));
+            hull.Prism(Point(-0.1f, 0.72f, -0.02f), 4, 0.07f, 0f, 0.2f, BodyPalette.TreeSpirits.Bolt, Turn(-20f, 0f, 25f));
+            hull.Prism(Point(0.1f, 0.72f, -0.02f), 4, 0.07f, 0f, 0.2f, BodyPalette.TreeSpirits.BoltDeep, Turn(-20f, 0f, -25f));
+            hull.Prism(Point(0f, 0.1f, -0.02f), 5, 0f, 0.14f, 0.24f, BodyPalette.TreeSpirits.BoltDeep);
+            Eyes(hull, Point(0f, 0.53f, 0.285f), 0.2f, 0.07f);
+            Band(b, hull, Point(0f, 0.32f, 0f), 10, 0.3f, 0.05f);
+
+            Color bolt = BodyPalette.TreeSpirits.BoltLight;
+            b.Arm.Origin = Point(0.3f, 0.5f, 0f);
+            b.Arm.Box(Point(0.4f, 0.62f, 0.06f), Extent(0.05f, 0.15f, 0.05f), bolt, Turn(0f, 0f, -30f));
+            b.Arm.Box(Point(0.43f, 0.5f, 0.08f), Extent(0.05f, 0.15f, 0.05f), bolt, Turn(0f, 0f, 30f));
+            b.Arm.Box(Point(0.46f, 0.38f, 0.1f), Extent(0.05f, 0.15f, 0.05f), bolt, Turn(0f, 0f, -30f));
+        }
+
+        /// <summary>덩쿨 정령: a leaf-headed spirit trailing a vine tail, lashing with a vine. Slot 1, grown not bought.</summary>
+        private static void VineSpirit(Blueprint b)
+        {
+            b.Gait = Gait.Float;
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+
+            hull.Ball(Point(0f, 0.66f, 0f), Extent(0.25f, 0.23f, 0.23f), BodyPalette.TreeSpirits.LeafLight);
+            hull.Ball(Point(0f, 0.4f, -0.04f), 0.15f, BodyPalette.TreeSpirits.Leaf);
+            hull.Ball(Point(0.06f, 0.23f, -0.11f), 0.1f, BodyPalette.TreeSpirits.Leaf);
+            hull.Ball(Point(0.02f, 0.11f, -0.19f), 0.06f, BodyPalette.TreeSpirits.LeafShade);
+            hull.Prism(Point(0f, 0.87f, 0f), 5, 0.02f, 0.015f, 0.1f, BodyPalette.TreeSpirits.LeafShade);
+            hull.Ball(Point(0.09f, 0.97f, 0f), Extent(0.13f, 0.03f, 0.07f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 0f, 22f), 1);
+            Eyes(hull, Point(0f, 0.68f, 0.215f), 0.15f, 0.06f);
+            Band(b, hull, Point(0f, 0.42f, -0.04f), 8, 0.16f, 0.05f);
+
+            b.Arm.Origin = Point(0.18f, 0.55f, 0f);
+            b.Arm.Prism(Point(0.2f, 0.55f, 0.02f), 5, 0.035f, 0.018f, 0.4f, BodyPalette.TreeSpirits.Leaf, Turn(70f, 0f, 0f));
+            b.Arm.Ball(Point(0.2f, 0.69f, 0.4f), Extent(0.07f, 0.03f, 0.05f), BodyPalette.TreeSpirits.LeafLight);
+        }
+
+        /// <summary>바람 정령: a large pale teardrop with a curling tail and swept wisps. The faction's signature.</summary>
+        private static void WindSpirit(Blueprint b)
+        {
+            b.Gait = Gait.Float;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+
+            hull.Ball(Point(0f, 0.62f, 0.04f), Extent(0.3f, 0.3f, 0.28f), BodyPalette.TreeSpirits.WindLight);
+            hull.Ball(Point(0f, 0.4f, -0.14f), Extent(0.22f, 0.2f, 0.24f), BodyPalette.TreeSpirits.Wind);
+            hull.Ball(Point(0.07f, 0.25f, -0.33f), Extent(0.14f, 0.12f, 0.16f), BodyPalette.TreeSpirits.Wind);
+            hull.Ball(Point(0.12f, 0.2f, -0.48f), 0.08f, BodyPalette.TreeSpirits.WindDeep);
+            hull.Ball(Point(0f, 0.9f, -0.1f), Extent(0.1f, 0.05f, 0.2f), BodyPalette.TreeSpirits.WindLight, Turn(25f, 0f, 0f), 1);
+            hull.Ball(Point(-0.17f, 0.84f, -0.08f), Extent(0.07f, 0.04f, 0.16f), BodyPalette.TreeSpirits.Wind, Turn(25f, -25f, 0f), 1);
+            hull.Ball(Point(0.17f, 0.84f, -0.08f), Extent(0.07f, 0.04f, 0.16f), BodyPalette.TreeSpirits.Wind, Turn(25f, 25f, 0f), 1);
+            Eyes(hull, Point(0f, 0.65f, 0.3f), 0.18f, 0.06f);
+            Band(b, hull, Point(0f, 0.42f, -0.12f), 10, 0.245f, 0.06f);
+
+            b.Arm.Origin = Point(0.27f, 0.58f, 0f);
+            b.Arm.Ball(Point(0.36f, 0.52f, 0.1f), Extent(0.07f, 0.05f, 0.18f), BodyPalette.TreeSpirits.WindDeep, Turn(-20f, 20f, 0f), 1);
+        }
+
+        // ---- 지옥불 군단 ----
+
+        private static void HellfireUnit(Blueprint b, Role role, int slot)
+        {
+            switch (role)
+            {
+                case Role.Worker: EmberDemon(b); break;
+                case Role.Melee: MagmaDemon(b); break;
+                case Role.Ranged: if (slot == 1) RiftWarden(b); else WarlordSpawn(b); break;
+                case Role.Signature: Warlord(b); break;
+                default: GenericUnit(b, Faction.Hellfire); break;
+            }
+        }
+
+        /// <summary>잿불 악마: a low spined lizard-demon on four legs, hauling a lump of ash ore.</summary>
+        private static void EmberDemon(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Step;
+            b.Strike = Strike.Lunge;
+            Color shell = BodyPalette.Hellfire.Shell, charcoal = BodyPalette.Hellfire.Charcoal, facet = BodyPalette.Hellfire.Facet;
+            Solids hull = b.Hull;
+
+            hull.Taper(Point(0f, 0.36f, -0.38f), Pair(0.36f, 0.3f), Pair(0.3f, 0.24f), 0.6f, shell, Lying);
+            hull.Taper(Point(0f, 0.4f, 0.2f), Pair(0.28f, 0.24f), Pair(0.16f, 0.1f), 0.3f, shell, Lying);
+            hull.Box(Point(0f, 0.52f, -0.08f), Extent(0.28f, 0.05f, 0.42f), facet, Turn(-4f, 0f, 0f));
+            for (int k = 0; k < 4; k++)
+                hull.Prism(Point(0f, 0.53f, -0.32f + k * 0.14f), 4, 0.06f, 0f, 0.17f - k * 0.015f,
+                           k % 2 == 0 ? charcoal : facet, Turn(-25f, 0f, 0f));
+            hull.Prism(Point(-0.08f, 0.48f, 0.34f), 4, 0.04f, 0f, 0.16f, facet, Turn(-45f, 0f, 20f));
+            hull.Prism(Point(0.08f, 0.48f, 0.34f), 4, 0.04f, 0f, 0.16f, facet, Turn(-45f, 0f, -20f));
+            hull.Taper(Point(0f, 0.36f, -0.36f), Pair(0.12f, 0.1f), Pair(0.02f, 0.02f), 0.42f, charcoal, Turn(-105f, 0f, 0f));
+            Slits(hull, Point(0f, 0.43f, 0.5f), 0.11f, 0.065f);
+            hull.Lump(Point(0f, 0.62f, -0.18f), Extent(0.11f, 0.09f, 0.11f), BodyPalette.Hellfire.Ash, Turn(0f, 30f, 0f));
+            Strap(b, hull, Point(0f, 0.39f, 0.18f), Extent(0.33f, 0.31f, 0.06f));
+
+            CrawlerLeg(b.LimbLeft, -0.18f, 0.1f, charcoal, facet);
+            CrawlerLeg(b.LimbLeft, 0.18f, -0.28f, charcoal, facet);
+            CrawlerLeg(b.LimbRight, 0.18f, 0.1f, charcoal, facet);
+            CrawlerLeg(b.LimbRight, -0.18f, -0.28f, charcoal, facet);
+        }
+
+        private static void CrawlerLeg(Solids part, float x, float z, Color leg, Color claw)
+        {
+            part.Taper(Point(x, 0f, z), Pair(0.1f, 0.13f), Pair(0.08f, 0.08f), 0.3f, leg);
+            part.Prism(Point(x, 0.02f, z + 0.05f), 4, 0.03f, 0f, 0.08f, claw, Turn(80f, 0f, 0f));
+        }
+
+        /// <summary>용암 갑각 악마: a hulking biped of shell plates, ember seams between them, one huge fist. Asymmetric on purpose.</summary>
+        private static void MagmaDemon(Blueprint b)
+        {
+            Color shell = BodyPalette.Hellfire.Shell, charcoal = BodyPalette.Hellfire.Charcoal;
+            Color facet = BodyPalette.Hellfire.Facet, ember = BodyPalette.Hellfire.Ember;
+            Solids hull = b.Hull;
+
+            Legs(b, 0.3f, 0.17f, 0.17f, charcoal, shell);
+            hull.Taper(Point(0f, 0.28f, 0f), Pair(0.48f, 0.34f), Pair(0.54f, 0.37f), 0.21f, shell);
+            hull.Box(Point(0f, 0.51f, 0f), Extent(0.5f, 0.05f, 0.34f), ember);
+            hull.Taper(Point(0f, 0.52f, 0f), Pair(0.58f, 0.38f), Pair(0.68f, 0.42f), 0.24f, shell, Turn(0f, 0f, 3f));
+            hull.Box(Point(-0.35f, 0.78f, 0f), Extent(0.22f, 0.13f, 0.3f), facet, Turn(0f, 0f, 14f));
+            hull.Box(Point(0.35f, 0.79f, 0f), Extent(0.2f, 0.12f, 0.3f), facet, Turn(0f, 0f, -18f));
+            hull.Taper(Point(0f, 0.75f, 0.06f), Pair(0.2f, 0.2f), Pair(0.15f, 0.15f), 0.16f, charcoal);
+            hull.Prism(Point(-0.08f, 0.9f, 0.06f), 4, 0.04f, 0f, 0.17f, facet, Turn(-15f, 0f, 30f));
+            hull.Prism(Point(0.08f, 0.9f, 0.06f), 4, 0.04f, 0f, 0.13f, facet, Turn(-15f, 0f, -35f));
+            Slits(hull, Point(0f, 0.84f, 0.165f), 0.09f, 0.05f);
+            hull.Ball(Point(0f, 0.64f, 0.205f), 0.06f, ember);
+            hull.Taper(Point(-0.42f, 0.36f, 0.02f), Pair(0.17f, 0.17f), Pair(0.2f, 0.2f), 0.38f, shell);
+            hull.Box(Point(-0.42f, 0.3f, 0.04f), Extent(0.24f, 0.2f, 0.24f), charcoal);
+            Strap(b, hull, Point(0f, 0.31f, 0f), Extent(0.52f, 0.06f, 0.38f));
+
+            b.Arm.Origin = Point(0.4f, 0.74f, 0f);
+            b.Arm.Taper(Point(0.42f, 0.34f, 0.02f), Pair(0.17f, 0.17f), Pair(0.2f, 0.2f), 0.4f, shell);
+            b.Arm.Box(Point(0.42f, 0.28f, 0.05f), Extent(0.25f, 0.21f, 0.25f), charcoal);
+            b.Arm.Box(Point(0.42f, 0.33f, 0.18f), Extent(0.2f, 0.03f, 0.02f), ember);
+        }
+
+        /// <summary>지옥불 군단장의 자손: a small horned imp on jagged wings. Airborne, slot 0.</summary>
+        private static void WarlordSpawn(Blueprint b)
+        {
+            b.Gait = Gait.Fly;
+            b.Limbs = LimbMotion.Flap;
+            b.LimbsRideHull = true;
+            b.Strike = Strike.Recoil;
+            Color shell = BodyPalette.Hellfire.Shell, charcoal = BodyPalette.Hellfire.Charcoal, facet = BodyPalette.Hellfire.Facet;
+            Solids hull = b.Hull;
+
+            hull.Taper(Point(0f, 0.2f, 0f), Pair(0.22f, 0.18f), Pair(0.32f, 0.26f), 0.3f, shell);
+            hull.Taper(Point(0f, 0.5f, 0.02f), Pair(0.26f, 0.24f), Pair(0.2f, 0.18f), 0.2f, charcoal);
+            hull.Prism(Point(-0.08f, 0.68f, 0.02f), 4, 0.04f, 0f, 0.18f, facet, Turn(-20f, 0f, 35f));
+            hull.Prism(Point(0.08f, 0.68f, 0.02f), 4, 0.04f, 0f, 0.18f, facet, Turn(-20f, 0f, -35f));
+            Slits(hull, Point(0f, 0.6f, 0.14f), 0.09f, 0.05f);
+            hull.Ball(Point(0f, 0.38f, 0.14f), 0.05f, BodyPalette.Hellfire.Ember);
+            hull.Taper(Point(0f, 0.22f, -0.08f), Pair(0.06f, 0.06f), Pair(0.01f, 0.01f), 0.3f, charcoal, Turn(-140f, 0f, 0f));
+            hull.Prism(Point(-0.07f, 0.21f, 0.02f), 4, 0.04f, 0f, 0.14f, charcoal, Turn(180f, 0f, 0f));
+            hull.Prism(Point(0.07f, 0.21f, 0.02f), 4, 0.04f, 0f, 0.14f, charcoal, Turn(180f, 0f, 0f));
+            Strap(b, hull, Point(0f, 0.49f, 0.01f), Extent(0.3f, 0.04f, 0.28f));
+
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Solids wing = side < 0 ? b.LimbLeft : b.LimbRight;
+                Wing(wing, side, Point(0.13f, 0.42f, -0.06f), 0.5f, 0.3f, 0.06f, -0.12f, 18f, shell);
+                wing.Prism(Point(side * 0.42f, 0.55f, -0.1f), 3, 0.04f, 0f, 0.14f, facet, Turn(-30f, 0f, -side * 40f));
+            }
+        }
+
+        /// <summary>균열 파수병: a hunched spined walker with an arm-cannon. Slot 1, holds the ground.</summary>
+        private static void RiftWarden(Blueprint b)
+        {
+            b.Strike = Strike.Recoil;
+            Color shell = BodyPalette.Hellfire.Shell, charcoal = BodyPalette.Hellfire.Charcoal;
+            Color facet = BodyPalette.Hellfire.Facet, ember = BodyPalette.Hellfire.Ember;
+            Solids hull = b.Hull;
+
+            Legs(b, 0.28f, 0.16f, 0.15f, charcoal, shell);
+            hull.Taper(Point(0f, 0.26f, -0.02f), Pair(0.46f, 0.34f), Pair(0.58f, 0.4f), 0.38f, shell, Turn(12f, 0f, 0f));
+            for (int k = 0; k < 3; k++)
+                hull.Prism(Point(-0.13f + k * 0.13f, 0.6f, -0.1f), 4, 0.06f, 0f, 0.18f,
+                           k == 1 ? facet : charcoal, Turn(-30f, 0f, (k - 1) * -15f));
+            hull.Taper(Point(0f, 0.58f, 0.16f), Pair(0.2f, 0.2f), Pair(0.15f, 0.13f), 0.14f, charcoal);
+            Slits(hull, Point(0f, 0.66f, 0.26f), 0.08f, 0.045f);
+            hull.Ball(Point(0f, 0.48f, 0.24f), 0.05f, ember);
+            hull.Taper(Point(-0.36f, 0.3f, 0.06f), Pair(0.12f, 0.12f), Pair(0.14f, 0.14f), 0.3f, shell);
+            Strap(b, hull, Point(0f, 0.3f, 0f), Extent(0.48f, 0.06f, 0.36f));
+
+            b.Arm.Origin = Point(0.34f, 0.58f, 0f);
+            b.Arm.Box(Point(0.37f, 0.5f, 0f), Extent(0.15f, 0.2f, 0.15f), shell);
+            b.Arm.Prism(Point(0.38f, 0.38f, -0.1f), 7, 0.11f, 0.13f, 0.46f, charcoal, Lying);
+            b.Arm.Prism(Point(0.38f, 0.38f, 0.12f), 7, 0.14f, 0.14f, 0.05f, facet, Lying);
+            b.Arm.Prism(Point(0.38f, 0.38f, 0.36f), 7, 0.085f, 0.085f, 0.03f, ember, Lying);
+        }
+
+        /// <summary>지옥불 군단장: a broad spined manta with an ember eye-ring and trailing tendrils. Airborne, weaponless.</summary>
+        private static void Warlord(Blueprint b)
+        {
+            b.Gait = Gait.Fly;
+            b.Limbs = LimbMotion.Flap;
+            b.LimbsRideHull = true;
+            b.Strike = Strike.Pulse;
+            Color shell = BodyPalette.Hellfire.Shell, charcoal = BodyPalette.Hellfire.Charcoal;
+            Color facet = BodyPalette.Hellfire.Facet, ember = BodyPalette.Hellfire.Ember;
+            Solids hull = b.Hull;
+
+            hull.Taper(Point(0f, 0.32f, -0.42f), Pair(0.46f, 0.24f), Pair(0.28f, 0.16f), 0.84f, shell, Lying);
+            hull.Box(Point(0f, 0.45f, -0.06f), Extent(0.34f, 0.06f, 0.5f), facet, Turn(-6f, 0f, 0f));
+            for (int k = 0; k < 4; k++)
+            {
+                float z = -0.3f + k * 0.17f;
+                hull.Prism(Point(-0.11f, 0.47f, z), 4, 0.05f, 0f, 0.2f, charcoal, Turn(-35f, 0f, 12f));
+                hull.Prism(Point(0.11f, 0.47f, z), 4, 0.05f, 0f, 0.2f, charcoal, Turn(-35f, 0f, -12f));
+            }
+            hull.Prism(Point(0f, 0.47f, 0.18f), 8, 0.12f, 0.12f, 0.05f, ember);
+            hull.Prism(Point(0f, 0.5f, 0.18f), 8, 0.06f, 0.06f, 0.03f, charcoal);
+            Slits(hull, Point(0f, 0.36f, 0.43f), 0.14f, 0.06f);
+            for (int k = -1; k <= 1; k++)
+                hull.Taper(Point(k * 0.12f, 0.26f, -0.38f), Pair(0.06f, 0.06f), Pair(0.01f, 0.01f), 0.42f, charcoal, Turn(-120f, 0f, k * 12f));
+            Strap(b, hull, Point(0f, 0.32f, 0.26f), Extent(0.4f, 0.22f, 0.05f));
+
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Solids wing = side < 0 ? b.LimbLeft : b.LimbRight;
+                Wing(wing, side, Point(0.2f, 0.32f, -0.02f), 0.62f, 0.6f, 0.14f, -0.25f, 8f, shell);
+                wing.Prism(Point(side * 0.45f, 0.38f, 0.1f), 4, 0.04f, 0f, 0.16f, facet, Turn(-60f, 0f, 0f));
+                wing.Prism(Point(side * 0.68f, 0.42f, -0.05f), 4, 0.035f, 0f, 0.14f, facet, Turn(-60f, 0f, 0f));
+            }
+        }
+
+        // ---- 물 슬라임 ----
+
+        private static void WaterSlimeUnit(Blueprint b, Role role, int slot)
+        {
+            switch (role)
+            {
+                case Role.Worker: Droplet(b); break;
+                case Role.Melee: BubbleSpirit(b); break;
+                case Role.Ranged: if (slot == 1) TideHerald(b); else AquaArcher(b); break;
+                case Role.Signature: CloudDragon(b); break;
+                default: GenericUnit(b, Faction.WaterSlimes); break;
+            }
+        }
+
+        /// <summary>물방울 생존자: a hopping droplet dome carrying a bubble.</summary>
+        private static void Droplet(Blueprint b)
+        {
+            b.Gait = Gait.Hop;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+
+            hull.Dome(Vector3.zero, Extent(0.38f, 0.5f, 0.36f), 10, 3, BodyPalette.WaterSlimes.Pale);
+            hull.Prism(Point(0f, 0.44f, -0.02f), 8, 0.13f, 0f, 0.26f, BodyPalette.WaterSlimes.Pale, Turn(-18f, 0f, 0f));
+            hull.Ball(Point(-0.14f, 0.32f, 0.25f), Extent(0.06f, 0.1f, 0.05f), BodyPalette.WaterSlimes.Foam);
+            Eyes(hull, Point(0f, 0.27f, 0.3f), 0.17f, 0.065f);
+            Band(b, hull, Point(0f, 0.02f, 0f), 10, 0.39f, 0.06f, 0.95f);
+
+            b.Arm.Origin = Point(0.3f, 0.22f, 0.05f);
+            b.Arm.Ball(Point(0.38f, 0.2f, 0.14f), 0.1f, BodyPalette.WaterSlimes.Foam);
+        }
+
+        /// <summary>거품 정령: a blue dome clustered with bubbles, bashing with a bubble shield.</summary>
+        private static void BubbleSpirit(Blueprint b)
+        {
+            b.Gait = Gait.Hop;
+            b.Strike = Strike.Lunge;
+            Solids hull = b.Hull;
+
+            hull.Dome(Vector3.zero, Extent(0.4f, 0.56f, 0.38f), 10, 3, BodyPalette.WaterSlimes.Sky);
+            hull.Ball(Point(-0.28f, 0.48f, -0.12f), 0.12f, BodyPalette.WaterSlimes.Foam);
+            hull.Ball(Point(0.26f, 0.6f, -0.14f), 0.1f, BodyPalette.WaterSlimes.Pale);
+            hull.Ball(Point(0f, 0.66f, -0.18f), 0.13f, BodyPalette.WaterSlimes.Pale);
+            hull.Ball(Point(-0.14f, 0.8f, -0.1f), 0.07f, BodyPalette.WaterSlimes.Foam);
+            hull.Ball(Point(-0.15f, 0.36f, 0.27f), Extent(0.06f, 0.09f, 0.05f), BodyPalette.WaterSlimes.Foam);
+            Eyes(hull, Point(0f, 0.3f, 0.33f), 0.18f, 0.065f);
+            Band(b, hull, Point(0f, 0.02f, 0f), 10, 0.41f, 0.06f, 0.95f);
+
+            b.Arm.Origin = Point(0.22f, 0.32f, 0.15f);
+            b.Arm.Ball(Point(0.14f, 0.34f, 0.44f), Extent(0.25f, 0.25f, 0.09f), BodyPalette.WaterSlimes.Pale);
+            b.Arm.Ball(Point(0.08f, 0.4f, 0.5f), Extent(0.08f, 0.08f, 0.03f), BodyPalette.WaterSlimes.Foam);
+        }
+
+        /// <summary>물결 궁수: a droplet-headed archer on stubby legs, bow held forward. Slot 0.</summary>
+        private static void AquaArcher(Blueprint b)
+        {
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color deep = BodyPalette.WaterSlimes.Deep, foam = BodyPalette.WaterSlimes.Foam;
+
+            Legs(b, 0.2f, 0.09f, 0.1f, BodyPalette.WaterSlimes.Blue, deep);
+            hull.Taper(Point(0f, 0.18f, 0f), Pair(0.3f, 0.26f), Pair(0.24f, 0.2f), 0.26f, BodyPalette.WaterSlimes.Sky);
+            hull.Ball(Point(0f, 0.6f, 0.02f), Extent(0.25f, 0.24f, 0.23f), BodyPalette.WaterSlimes.Pale);
+            hull.Prism(Point(0f, 0.76f, -0.06f), 8, 0.13f, 0f, 0.3f, BodyPalette.WaterSlimes.Pale, Turn(-35f, 0f, 0f));
+            Eyes(hull, Point(0f, 0.6f, 0.235f), 0.15f, 0.06f);
+            hull.Ball(Point(0f, 0.32f, 0.12f), Extent(0.04f, 0.06f, 0.02f), deep);
+            Band(b, hull, Point(0f, 0.4f, 0f), 8, 0.15f, 0.05f);
+
+            b.Arm.Origin = Point(0.17f, 0.38f, 0f);
+            b.Arm.Box(Point(0.2f, 0.38f, 0.27f), Extent(0.03f, 0.22f, 0.04f), deep);
+            b.Arm.Box(Point(0.2f, 0.54f, 0.22f), Extent(0.03f, 0.15f, 0.04f), deep, Turn(-35f, 0f, 0f));
+            b.Arm.Box(Point(0.2f, 0.22f, 0.22f), Extent(0.03f, 0.15f, 0.04f), deep, Turn(35f, 0f, 0f));
+            b.Arm.Box(Point(0.2f, 0.38f, 0.165f), Extent(0.012f, 0.4f, 0.012f), foam);
+            b.Arm.Box(Point(0.2f, 0.38f, 0.2f), Extent(0.02f, 0.02f, 0.3f), foam);
+        }
+
+        /// <summary>해일 인도자: a tall bell of water with two raised wave arms. Slot 1.</summary>
+        private static void TideHerald(Blueprint b)
+        {
+            b.Gait = Gait.Float;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color pale = BodyPalette.WaterSlimes.Pale, foam = BodyPalette.WaterSlimes.Foam;
+
+            hull.Dome(Vector3.zero, Extent(0.38f, 0.72f, 0.36f), 10, 4, BodyPalette.WaterSlimes.Sky);
+            hull.Ball(Point(-0.14f, 0.5f, 0.24f), Extent(0.06f, 0.1f, 0.05f), foam);
+            hull.Prism(Point(-0.3f, 0.42f, 0f), 6, 0.08f, 0.05f, 0.36f, pale, Turn(0f, 0f, 28f));
+            hull.Ball(Point(-0.48f, 0.78f, 0.02f), Extent(0.1f, 0.08f, 0.1f), foam);
+            Eyes(hull, Point(0f, 0.42f, 0.3f), 0.16f, 0.06f);
+            Band(b, hull, Point(0f, 0.02f, 0f), 10, 0.39f, 0.06f, 0.95f);
+
+            b.Arm.Origin = Point(0.3f, 0.42f, 0f);
+            b.Arm.Prism(Point(0.3f, 0.42f, 0f), 6, 0.08f, 0.05f, 0.36f, pale, Turn(0f, 0f, -28f));
+            b.Arm.Ball(Point(0.48f, 0.78f, 0.02f), Extent(0.1f, 0.08f, 0.1f), foam);
+        }
+
+        /// <summary>구름 용: a cloud body with a small dragon head and blue wings. The faction's signature.</summary>
+        private static void CloudDragon(Blueprint b)
+        {
+            b.Gait = Gait.Float;
+            b.Limbs = LimbMotion.Flap;
+            b.LimbsRideHull = true;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color cloud = BodyPalette.WaterSlimes.Cloud, foam = BodyPalette.WaterSlimes.Foam, sky = BodyPalette.WaterSlimes.Sky;
+
+            hull.Ball(Point(0f, 0.42f, -0.05f), Extent(0.32f, 0.24f, 0.36f), cloud);
+            hull.Ball(Point(-0.22f, 0.36f, -0.2f), 0.2f, cloud);
+            hull.Ball(Point(0.22f, 0.34f, -0.22f), 0.19f, foam);
+            hull.Ball(Point(0f, 0.32f, -0.44f), 0.16f, cloud);
+            hull.Ball(Point(0.06f, 0.34f, -0.6f), 0.1f, foam);
+            hull.Ball(Point(0f, 0.64f, 0.28f), Extent(0.2f, 0.18f, 0.2f), foam);
+            hull.Ball(Point(0f, 0.59f, 0.44f), Extent(0.12f, 0.09f, 0.1f), foam);
+            hull.Prism(Point(0f, 0.79f, 0.25f), 5, 0.04f, 0f, 0.16f, sky, Turn(-25f, 0f, 0f));
+            Eyes(hull, Point(0f, 0.67f, 0.45f), 0.17f, 0.05f);
+            Band(b, hull, Point(0f, 0.46f, 0.22f), 8, 0.15f, 0.05f);
+
+            Wing(b.LimbLeft, -1f, Point(0.2f, 0.52f, -0.08f), 0.34f, 0.26f, 0.1f, -0.05f, 20f, sky);
+            Wing(b.LimbRight, 1f, Point(0.2f, 0.52f, -0.08f), 0.34f, 0.26f, 0.1f, -0.05f, 20f, sky);
+        }
+
+        // ---- 돌 골렘 부족 ----
+
+        private static void RockGolemUnit(Blueprint b, Role role, int slot)
+        {
+            switch (role)
+            {
+                case Role.Worker: MiniRock(b); break;
+                case Role.Melee: MossGolem(b); break;
+                case Role.Ranged: RockMage(b); break;
+                case Role.Signature: AncientGolem(b); break;
+                default: GenericUnit(b, Faction.RockGolems); break;
+            }
+        }
+
+        /// <summary>
+        /// 꼬마돌: a stone block with eyes on two block legs. Also the map's
+        /// neutral 꼬마돌, untinted here and tinted by UiStyle.Neutral there.
+        /// </summary>
+        private static void MiniRock(Blueprint b)
+        {
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color tan = BodyPalette.RockGolems.Tan;
+
+            BlockLegs(b, 0.17f, 0.12f, Extent(0.13f, 0.17f, 0.15f), BodyPalette.RockGolems.Stone);
+            hull.Taper(Point(0f, 0.14f, 0f), Pair(0.42f, 0.34f), Pair(0.5f, 0.42f), 0.15f, BodyPalette.RockGolems.StoneShade);
+            hull.Taper(Point(0f, 0.3f, 0f), Pair(0.56f, 0.46f), Pair(0.6f, 0.5f), 0.48f, tan);
+            hull.Taper(Point(0f, 0.78f, 0f), Pair(0.6f, 0.5f), Pair(0.46f, 0.36f), 0.12f, tan);
+            Eyes(hull, Point(0f, 0.6f, 0.255f), 0.18f, 0.065f);
+            hull.Dome(Point(-0.06f, 0.9f, -0.02f), Extent(0.2f, 0.06f, 0.15f), 7, 2, BodyPalette.RockGolems.Moss);
+            Strap(b, hull, Point(0f, 0.3f, 0f), Extent(0.58f, 0.05f, 0.48f));
+
+            b.Arm.Origin = Point(0.31f, 0.5f, 0f);
+            b.Arm.Box(Point(0.34f, 0.38f, 0.02f), Extent(0.12f, 0.22f, 0.13f), BodyPalette.RockGolems.Stone);
+        }
+
+        /// <summary>이끼바위 골렘: stacked blocks in a wide stance, small head sunk between mossy shoulders.</summary>
+        private static void MossGolem(Blueprint b)
+        {
+            Solids hull = b.Hull;
+            Color tan = BodyPalette.RockGolems.Tan, stone = BodyPalette.RockGolems.Stone, moss = BodyPalette.RockGolems.Moss;
+
+            BlockLegs(b, 0.3f, 0.18f, Extent(0.19f, 0.3f, 0.21f), stone);
+            hull.Box(Point(0f, 0.33f, 0f), Extent(0.42f, 0.12f, 0.3f), BodyPalette.RockGolems.StoneShade);
+            hull.Taper(Point(0f, 0.38f, 0f), Pair(0.52f, 0.36f), Pair(0.7f, 0.42f), 0.36f, tan);
+            hull.Box(Point(0f, 0.8f, 0.06f), Extent(0.2f, 0.16f, 0.2f), tan);
+            Eyes(hull, Point(0f, 0.82f, 0.165f), 0.08f, 0.035f);
+            hull.Lump(Point(-0.38f, 0.72f, 0f), Extent(0.16f, 0.14f, 0.16f), stone, Turn(0f, 25f, 0f));
+            hull.Lump(Point(0.38f, 0.72f, 0f), Extent(0.16f, 0.14f, 0.16f), stone, Turn(0f, -25f, 0f));
+            hull.Dome(Point(-0.38f, 0.8f, 0f), Extent(0.15f, 0.06f, 0.15f), 7, 2, moss);
+            hull.Dome(Point(0.38f, 0.8f, 0f), Extent(0.15f, 0.06f, 0.15f), 7, 2, moss);
+            hull.Dome(Point(0f, 0.88f, 0.04f), Extent(0.1f, 0.04f, 0.1f), 6, 1, moss);
+            hull.Box(Point(-0.42f, 0.45f, 0.02f), Extent(0.16f, 0.3f, 0.18f), stone);
+            hull.Box(Point(-0.42f, 0.25f, 0.04f), Extent(0.2f, 0.16f, 0.2f), tan);
+            Strap(b, hull, Point(0f, 0.4f, 0f), Extent(0.56f, 0.05f, 0.38f));
+
+            b.Arm.Origin = Point(0.42f, 0.66f, 0f);
+            b.Arm.Box(Point(0.42f, 0.48f, 0.02f), Extent(0.16f, 0.3f, 0.18f), stone);
+            b.Arm.Box(Point(0.42f, 0.28f, 0.04f), Extent(0.22f, 0.18f, 0.22f), tan);
+            b.Arm.Dome(Point(0.42f, 0.63f, 0.02f), Extent(0.1f, 0.04f, 0.1f), 6, 1, moss);
+        }
+
+        /// <summary>바위 술사: a hooded stone figure, eyes in the hood's shade, a stone staff tipped with a rune crystal.</summary>
+        private static void RockMage(Blueprint b)
+        {
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color stone = BodyPalette.RockGolems.Stone, shade = BodyPalette.RockGolems.StoneShade;
+
+            BlockLegs(b, 0.14f, 0.1f, Extent(0.12f, 0.14f, 0.14f), shade);
+            hull.Taper(Point(0f, 0.08f, 0f), Pair(0.5f, 0.4f), Pair(0.3f, 0.26f), 0.5f, stone);
+            hull.Taper(Point(0f, 0.56f, -0.02f), Pair(0.34f, 0.32f), Pair(0.12f, 0.12f), 0.36f, shade);
+            hull.Box(Point(0f, 0.68f, 0.12f), Extent(0.18f, 0.16f, 0.06f), BodyPalette.RockGolems.MossDeep);
+            Eyes(hull, Point(0f, 0.69f, 0.155f), 0.08f, 0.035f);
+            hull.Box(Point(0f, 0.38f, 0.17f), Extent(0.07f, 0.07f, 0.03f), BodyPalette.RockGolems.Rune, Turn(0f, 0f, 45f));
+            hull.Dome(Point(-0.16f, 0.54f, 0f), Extent(0.1f, 0.04f, 0.1f), 6, 1, BodyPalette.RockGolems.Moss);
+            Strap(b, hull, Point(0f, 0.52f, 0f), Extent(0.36f, 0.05f, 0.3f));
+
+            b.Arm.Origin = Point(0.24f, 0.42f, 0.06f);
+            b.Arm.Box(Point(0.26f, 0.4f, 0.08f), Extent(0.09f, 0.1f, 0.09f), stone);
+            b.Arm.Box(Point(0.28f, 0.45f, 0.12f), Extent(0.04f, 0.74f, 0.04f), shade);
+            b.Arm.Prism(Point(0.28f, 0.82f, 0.12f), 6, 0.05f, 0.05f, 0.1f, BodyPalette.RockGolems.Rune);
+            b.Arm.Prism(Point(0.28f, 0.92f, 0.12f), 6, 0.05f, 0f, 0.08f, BodyPalette.RockGolems.Rune);
+        }
+
+        /// <summary>고대 골렘: a heap of mossy boulders in the shape of a giant. Rounded where 이끼바위 골렘 is cut.</summary>
+        private static void AncientGolem(Blueprint b)
+        {
+            Solids hull = b.Hull;
+            Color tan = BodyPalette.RockGolems.Tan, stone = BodyPalette.RockGolems.Stone;
+            Color moss = BodyPalette.RockGolems.Moss, mossDeep = BodyPalette.RockGolems.MossDeep;
+
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Solids leg = side < 0 ? b.LimbLeft : b.LimbRight;
+                leg.Origin = Point(side * 0.2f, 0.3f, 0f);
+                leg.Lump(Point(side * 0.2f, 0.12f, 0.02f), Extent(0.15f, 0.13f, 0.17f), stone, Turn(0f, side * 20f, 0f));
+                leg.Lump(Point(side * 0.2f, 0.27f, 0f), Extent(0.13f, 0.1f, 0.13f), tan, Turn(10f, 0f, 0f));
+            }
+            hull.Lump(Point(0f, 0.55f, 0f), Extent(0.4f, 0.3f, 0.3f), tan, Turn(0f, 10f, 0f));
+            hull.Lump(Point(-0.18f, 0.4f, 0.1f), Extent(0.2f, 0.16f, 0.18f), stone, Turn(20f, 0f, 10f));
+            hull.Lump(Point(0.2f, 0.42f, -0.08f), Extent(0.2f, 0.17f, 0.2f), stone, Turn(0f, 40f, 0f));
+            hull.Lump(Point(-0.38f, 0.74f, 0f), Extent(0.18f, 0.15f, 0.18f), stone, Turn(0f, 15f, 0f));
+            hull.Lump(Point(0.38f, 0.74f, 0f), Extent(0.18f, 0.15f, 0.18f), tan, Turn(0f, -35f, 0f));
+            hull.Lump(Point(0f, 0.87f, 0.08f), Extent(0.12f, 0.1f, 0.12f), tan, Turn(0f, 30f, 0f));
+            Eyes(hull, Point(0f, 0.88f, 0.18f), 0.08f, 0.032f);
+            hull.Dome(Point(0f, 0.8f, -0.05f), Extent(0.32f, 0.08f, 0.22f), 8, 2, moss);
+            hull.Dome(Point(-0.38f, 0.84f, 0f), Extent(0.16f, 0.07f, 0.15f), 7, 2, mossDeep);
+            hull.Dome(Point(0.38f, 0.84f, 0f), Extent(0.16f, 0.07f, 0.15f), 7, 2, moss);
+            hull.Lump(Point(-0.44f, 0.5f, 0.02f), Extent(0.12f, 0.14f, 0.12f), stone, Turn(0f, 5f, 0f));
+            hull.Lump(Point(-0.44f, 0.27f, 0.04f), Extent(0.15f, 0.12f, 0.15f), tan, Turn(30f, 0f, 0f));
+            Strap(b, hull, Point(0f, 0.38f, 0f), Extent(0.6f, 0.06f, 0.42f));
+
+            b.Arm.Origin = Point(0.44f, 0.7f, 0f);
+            b.Arm.Lump(Point(0.44f, 0.5f, 0.02f), Extent(0.12f, 0.14f, 0.12f), stone, Turn(0f, 50f, 0f));
+            b.Arm.Lump(Point(0.44f, 0.26f, 0.05f), Extent(0.17f, 0.14f, 0.17f), tan, Turn(15f, 20f, 0f));
+            b.Arm.Dome(Point(0.44f, 0.6f, 0.02f), Extent(0.09f, 0.04f, 0.09f), 6, 1, moss);
+        }
+
+        // ---- 차원 유랑종 ----
+
+        private static void DriftworldUnit(Blueprint b, Role role, int slot)
+        {
+            switch (role)
+            {
+                case Role.Worker:
+                    Salamander(b, BodyPalette.Driftworlds.Shell, BodyPalette.Driftworlds.ShellDeep, BodyPalette.Driftworlds.FireWorld, false);
+                    break;
+                case Role.Melee:
+                    if (slot == 1) ExtinctSlime(b, BodyPalette.Driftworlds.FireWorld, 0);
+                    else if (slot == 2) ExtinctSlime(b, BodyPalette.Driftworlds.StoneWorld, 1);
+                    else Salamander(b, BodyPalette.Driftworlds.Dusk, BodyPalette.Driftworlds.ShellDeep, BodyPalette.Driftworlds.TealLight, true);
+                    break;
+                case Role.Ranged:
+                    if (slot == 1) ExtinctSlime(b, BodyPalette.Driftworlds.StormWorld, 2);
+                    else RiftMarksman(b);
+                    break;
+                case Role.Signature: BoundaryToad(b); break;
+                default: GenericUnit(b, Faction.Driftworlds); break;
+            }
+        }
+
+        /// <summary>
+        /// 화산편 and 폭풍편: a salamander on four legs, two shell plates down its
+        /// back parting on a stripe of the world inside. The worker carries a
+        /// shard of it; the raider has a jaw and a darker hide.
+        /// </summary>
+        private static void Salamander(Blueprint b, Color hide, Color plate, Color interior, bool raider)
+        {
+            b.Limbs = LimbMotion.Step;
+            b.Strike = Strike.Lunge;
+            Solids hull = b.Hull;
+
+            hull.Taper(Point(0f, 0.3f, -0.36f), Pair(0.32f, 0.26f), Pair(0.3f, 0.24f), 0.62f, hide, Lying);
+            hull.Taper(Point(0f, 0.3f, 0.26f), Pair(0.3f, 0.24f), Pair(0.22f, 0.12f), 0.26f, hide, Lying);
+            hull.Taper(Point(0f, 0.3f, -0.34f), Pair(0.18f, 0.16f), Pair(0.03f, 0.03f), 0.5f, plate, Turn(-98f, 0f, 0f));
+            hull.Box(Point(0f, 0.43f, -0.06f), Extent(0.08f, 0.04f, 0.56f), interior);
+            hull.Box(Point(-0.1f, 0.44f, -0.06f), Extent(0.12f, 0.06f, 0.6f), plate, Turn(0f, 0f, 12f));
+            hull.Box(Point(0.1f, 0.44f, -0.06f), Extent(0.12f, 0.06f, 0.6f), plate, Turn(0f, 0f, -12f));
+            Eyes(hull, Point(0f, 0.4f, 0.4f), 0.2f, 0.045f);
+            if (raider)
+            {
+                hull.Taper(Point(0f, 0.22f, 0.3f), Pair(0.26f, 0.06f), Pair(0.18f, 0.04f), 0.26f, plate, Lying);
+                hull.Prism(Point(-0.07f, 0.42f, 0.32f), 4, 0.035f, 0f, 0.12f, interior, Turn(-50f, 0f, 15f));
+                hull.Prism(Point(0.07f, 0.42f, 0.32f), 4, 0.035f, 0f, 0.12f, interior, Turn(-50f, 0f, -15f));
+            }
+            else
+            {
+                hull.Prism(Point(0f, 0.46f, -0.24f), 5, 0.06f, 0f, 0.2f, BodyPalette.Driftworlds.TealLight, Turn(-20f, 0f, 15f));
+            }
+            Strap(b, hull, Point(0f, 0.3f, 0.24f), Extent(0.34f, 0.28f, 0.05f));
+
+            SalamanderLeg(b.LimbLeft, -1f, 0.14f, hide, plate);
+            SalamanderLeg(b.LimbLeft, 1f, -0.24f, hide, plate);
+            SalamanderLeg(b.LimbRight, 1f, 0.14f, hide, plate);
+            SalamanderLeg(b.LimbRight, -1f, -0.24f, hide, plate);
+        }
+
+        private static void SalamanderLeg(Solids part, float side, float z, Color leg, Color foot)
+        {
+            part.Box(Point(side * 0.21f, 0.1f, z), Extent(0.1f, 0.2f, 0.1f), leg, Turn(0f, 0f, side * 25f));
+            part.Box(Point(side * 0.25f, 0.02f, z + 0.02f), Extent(0.12f, 0.04f, 0.12f), foot);
+        }
+
+        /// <summary>
+        /// The three extinct slimes the 층위 관측대 calls back: fire (0) a flame on
+        /// a cinder pile, rock (1) a flat speckled blob, lightning (2) a yellow
+        /// dome with a zigzag crown. Brought in from other worlds, so each wears
+        /// its own world's colour rather than the wanderer shell.
+        /// </summary>
+        private static void ExtinctSlime(Blueprint b, Color body, int which)
+        {
+            b.Gait = Gait.Hop;
+            b.Strike = which == 2 ? Strike.Recoil : Strike.Lunge;
+            Solids hull = b.Hull;
+
+            switch (which)
+            {
+                case 0:
+                    hull.Lump(Point(0f, 0.12f, 0f), Extent(0.42f, 0.18f, 0.4f), BodyPalette.Driftworlds.ShellDeep, Turn(0f, 20f, 0f));
+                    hull.Dome(Point(0f, 0.2f, 0f), Extent(0.32f, 0.5f, 0.3f), 9, 3, body);
+                    hull.Prism(Point(0f, 0.62f, -0.04f), 6, 0.14f, 0f, 0.32f, body, Turn(-35f, 0f, 0f));
+                    Eyes(hull, Point(0f, 0.42f, 0.27f), 0.15f, 0.06f);
+                    Band(b, hull, Point(0f, 0.2f, 0f), 9, 0.33f, 0.05f, 0.95f);
+                    break;
+                case 1:
+                    hull.Dome(Vector3.zero, Extent(0.46f, 0.42f, 0.42f), 10, 3, body);
+                    Color spot = BodyPalette.Darker(body, 0.78f);
+                    hull.Ball(Point(-0.22f, 0.3f, 0.25f), Extent(0.07f, 0.05f, 0.05f), spot);
+                    hull.Ball(Point(0.2f, 0.34f, 0.2f), Extent(0.06f, 0.04f, 0.05f), spot);
+                    hull.Ball(Point(0.05f, 0.4f, -0.1f), Extent(0.08f, 0.04f, 0.07f), spot);
+                    hull.Ball(Point(-0.26f, 0.22f, -0.2f), Extent(0.07f, 0.05f, 0.06f), spot);
+                    Eyes(hull, Point(0f, 0.24f, 0.37f), 0.17f, 0.06f);
+                    Band(b, hull, Point(0f, 0.02f, 0f), 10, 0.47f, 0.06f, 0.92f);
+                    break;
+                default:
+                    hull.Dome(Vector3.zero, Extent(0.4f, 0.62f, 0.38f), 10, 3, body);
+                    Color crown = BodyPalette.Darker(body, 0.8f);
+                    for (int i = 0; i < 8; i++)
+                    {
+                        float yaw = i * 45f;
+                        hull.Box(Around(yaw) * 0.31f + Point(0f, 0.42f, 0f), Extent(0.12f, 0.05f, 0.04f), crown,
+                                 Quaternion.Euler(0f, yaw + 90f, 0f) * Turn(0f, 0f, i % 2 == 0 ? 30f : -30f));
+                    }
+                    Eyes(hull, Point(0f, 0.28f, 0.34f), 0.17f, 0.065f);
+                    Band(b, hull, Point(0f, 0.02f, 0f), 10, 0.41f, 0.06f, 0.95f);
+                    break;
+            }
+        }
+
+        /// <summary>틈새 사수: a long, low armoured crawler on six legs, plates parted on a teal interior, a barrel for a snout.</summary>
+        private static void RiftMarksman(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Step;
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color shell = BodyPalette.Driftworlds.Shell, shade = BodyPalette.Driftworlds.ShellShade, deep = BodyPalette.Driftworlds.ShellDeep;
+
+            hull.Box(Point(0f, 0.3f, -0.05f), Extent(0.28f, 0.16f, 0.82f), BodyPalette.Driftworlds.Teal);
+            float[] plates = { -0.36f, -0.06f, 0.24f };
+            for (int i = 0; i < plates.Length; i++)
+                hull.Taper(Point(0f, 0.2f, plates[i]), Pair(0.44f, 0.26f), Pair(0.34f, 0.2f), 0.26f, i == 1 ? shade : shell);
+            hull.Prism(Point(0f, 0.32f, 0.36f), 6, 0.075f, 0.06f, 0.42f, shade, Lying);
+            hull.Prism(Point(0f, 0.32f, 0.76f), 6, 0.07f, 0.07f, 0.04f, BodyPalette.Driftworlds.TealLight, Lying);
+            hull.Taper(Point(0f, 0.26f, -0.5f), Pair(0.24f, 0.14f), Pair(0.06f, 0.05f), 0.2f, deep, Turn(-100f, 0f, 0f));
+            hull.Ball(Point(-0.1f, 0.38f, 0.4f), 0.03f, BodyPalette.Driftworlds.TealLight);
+            hull.Ball(Point(0.1f, 0.38f, 0.4f), 0.03f, BodyPalette.Driftworlds.TealLight);
+            Strap(b, hull, Point(0f, 0.465f, 0.24f), Extent(0.3f, 0.03f, 0.22f));
+
+            float[] rows = { 0.24f, -0.06f, -0.36f };
+            for (int i = 0; i < rows.Length; i++)
+            {
+                // Two tripods, alternating: left-front, right-middle, left-back
+                // step together, and the other three together.
+                bool first = i % 2 == 0;
+                MarksmanLeg(first ? b.LimbLeft : b.LimbRight, -1f, rows[i], deep);
+                MarksmanLeg(first ? b.LimbRight : b.LimbLeft, 1f, rows[i], deep);
+            }
+        }
+
+        private static void MarksmanLeg(Solids part, float side, float z, Color color)
+        {
+            part.Taper(Point(side * 0.3f, 0f, z), Pair(0.06f, 0.06f), Pair(0.08f, 0.08f), 0.26f, color, Turn(0f, 0f, side * 22f));
+        }
+
+        /// <summary>
+        /// 경계 운반자: a big crouched lilac toad carrying two shell plates that
+        /// part on the world inside. Hops. Non-combat, so its "attack" is a swell.
+        /// </summary>
+        private static void BoundaryToad(Blueprint b)
+        {
+            b.Gait = Gait.Hop;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color lilac = BodyPalette.Driftworlds.Lilac, dusk = BodyPalette.Driftworlds.Dusk, shell = BodyPalette.Driftworlds.Shell;
+
+            hull.Ball(Point(0f, 0.38f, -0.02f), Extent(0.42f, 0.36f, 0.42f), lilac);
+            hull.Ball(Point(0f, 0.28f, 0.16f), Extent(0.32f, 0.24f, 0.3f), BodyPalette.Driftworlds.Belly);
+            hull.Ball(Point(0f, 0.58f, 0.2f), Extent(0.34f, 0.22f, 0.28f), lilac);
+            hull.Ball(Point(-0.2f, 0.74f, 0.26f), 0.1f, lilac);
+            hull.Ball(Point(0.2f, 0.74f, 0.26f), 0.1f, lilac);
+            Eyes(hull, Point(0f, 0.76f, 0.34f), 0.4f, 0.06f);
+            hull.Ball(Point(-0.36f, 0.17f, -0.12f), Extent(0.14f, 0.17f, 0.26f), dusk);
+            hull.Ball(Point(0.36f, 0.17f, -0.12f), Extent(0.14f, 0.17f, 0.26f), dusk);
+            hull.Taper(Point(-0.2f, 0f, 0.3f), Pair(0.12f, 0.14f), Pair(0.08f, 0.08f), 0.24f, dusk);
+            hull.Taper(Point(0.2f, 0f, 0.3f), Pair(0.12f, 0.14f), Pair(0.08f, 0.08f), 0.24f, dusk);
+            hull.Box(Point(0f, 0.73f, -0.14f), Extent(0.1f, 0.06f, 0.44f), BodyPalette.Driftworlds.TealLight);
+            hull.Box(Point(-0.17f, 0.71f, -0.14f), Extent(0.26f, 0.08f, 0.52f), shell, Turn(0f, 0f, 22f));
+            hull.Box(Point(0.17f, 0.71f, -0.14f), Extent(0.26f, 0.08f, 0.52f), BodyPalette.Driftworlds.ShellShade, Turn(0f, 0f, -22f));
+            Band(b, hull, Point(0f, 0.44f, 0.18f), 10, 0.35f, 0.05f, 0.8f);
+        }
+
+        // ---- 인간 마법 문명 ----
+
+        private static void HumanUnit(Blueprint b, Role role, int slot)
+        {
+            switch (role)
+            {
+                case Role.Worker: Apprentice(b); break;
+                case Role.Ranged: Commando(b); break;
+                case Role.Signature: if (slot == 1) ScoutDrone(b); else Towerback(b); break;
+                default: GenericUnit(b, Faction.Humans); break;
+            }
+        }
+
+        /// <summary>수습 마법생: a hooded apprentice, satchel at the hip, a staff with a mana gem. No face — the hood is dark.</summary>
+        private static void Apprentice(Blueprint b)
+        {
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color steel = BodyPalette.Humans.Steel, wood = BodyPalette.Humans.Wood;
+
+            Legs(b, 0.22f, 0.09f, 0.1f, BodyPalette.Humans.SteelDark, wood);
+            hull.Taper(Point(0f, 0.2f, 0f), Pair(0.4f, 0.32f), Pair(0.34f, 0.26f), 0.3f, BodyPalette.Humans.StoneMid);
+            hull.Taper(Point(0f, 0.32f, -0.03f), Pair(0.44f, 0.34f), Pair(0.3f, 0.26f), 0.32f, steel);
+            hull.Taper(Point(0f, 0.62f, -0.02f), Pair(0.32f, 0.3f), Pair(0.2f, 0.2f), 0.26f, steel);
+            hull.Prism(Point(0f, 0.84f, -0.08f), 4, 0.08f, 0f, 0.12f, steel, Turn(-30f, 0f, 0f));
+            hull.Box(Point(0f, 0.72f, 0.115f), Extent(0.18f, 0.16f, 0.06f), BodyPalette.Humans.Hood);
+            hull.Box(Point(-0.24f, 0.32f, 0.04f), Extent(0.1f, 0.16f, 0.18f), wood);
+            hull.Box(Point(-0.08f, 0.48f, 0.14f), Extent(0.04f, 0.4f, 0.02f), BodyPalette.Humans.Bronze, Turn(0f, 0f, -40f));
+            Strap(b, hull, Point(0f, 0.62f, -0.02f), Extent(0.34f, 0.05f, 0.31f));
+
+            b.Arm.Origin = Point(0.24f, 0.48f, 0.04f);
+            b.Arm.Box(Point(0.26f, 0.42f, 0.06f), Extent(0.08f, 0.1f, 0.08f), BodyPalette.Humans.StoneMid);
+            b.Arm.Box(Point(0.27f, 0.45f, 0.1f), Extent(0.035f, 0.75f, 0.035f), wood);
+            b.Arm.Prism(Point(0.27f, 0.84f, 0.1f), 4, 0.05f, 0f, 0.08f, BodyPalette.Humans.Mana);
+            b.Arm.Prism(Point(0.27f, 0.84f, 0.1f), 4, 0.05f, 0f, 0.06f, BodyPalette.Humans.Mana, Turn(180f, 0f, 0f));
+        }
+
+        /// <summary>공수 특공대: a helmeted commando with a launcher, a folded paraglider canopy over the pack.</summary>
+        private static void Commando(Blueprint b)
+        {
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color steel = BodyPalette.Humans.Steel, bronze = BodyPalette.Humans.Bronze, canvas = BodyPalette.Humans.Canvas;
+
+            Legs(b, 0.24f, 0.1f, 0.11f, BodyPalette.Humans.StoneDark, BodyPalette.Humans.Wood);
+            hull.Box(Point(0f, 0.41f, 0f), Extent(0.36f, 0.34f, 0.26f), steel);
+            hull.Box(Point(0f, 0.26f, 0f), Extent(0.37f, 0.05f, 0.27f), bronze);
+            hull.Box(Point(0f, 0.69f, 0.02f), Extent(0.2f, 0.16f, 0.2f), BodyPalette.Humans.StoneMid);
+            hull.Box(Point(0f, 0.76f, 0.02f), Extent(0.26f, 0.14f, 0.26f), bronze);
+            hull.Box(Point(0f, 0.68f, 0.12f), Extent(0.18f, 0.06f, 0.03f), BodyPalette.Humans.Hood);
+            hull.Box(Point(0f, 0.45f, -0.18f), Extent(0.28f, 0.3f, 0.12f), BodyPalette.Humans.Wood);
+            hull.Box(Point(0f, 1.0f, -0.14f), Extent(0.46f, 0.04f, 0.28f), steel);
+            hull.Box(Point(-0.31f, 0.94f, -0.14f), Extent(0.2f, 0.04f, 0.28f), canvas, Turn(0f, 0f, 25f));
+            hull.Box(Point(0.31f, 0.94f, -0.14f), Extent(0.2f, 0.04f, 0.28f), canvas, Turn(0f, 0f, -25f));
+            hull.Box(Point(-0.12f, 0.78f, -0.18f), Extent(0.015f, 0.4f, 0.015f), BodyPalette.Humans.StoneDark, Turn(0f, 0f, 20f));
+            hull.Box(Point(0.12f, 0.78f, -0.18f), Extent(0.015f, 0.4f, 0.015f), BodyPalette.Humans.StoneDark, Turn(0f, 0f, -20f));
+            Strap(b, hull, Point(-0.21f, 0.57f, 0f), Extent(0.1f, 0.07f, 0.26f));
+            Strap(b, hull, Point(0.21f, 0.57f, 0f), Extent(0.1f, 0.07f, 0.26f));
+
+            b.Arm.Origin = Point(0.22f, 0.55f, 0f);
+            b.Arm.Box(Point(0.24f, 0.46f, 0.04f), Extent(0.08f, 0.2f, 0.08f), steel);
+            b.Arm.Prism(Point(0.24f, 0.4f, -0.08f), 6, 0.05f, 0.05f, 0.4f, BodyPalette.Humans.StoneDark, Lying);
+            b.Arm.Prism(Point(0.24f, 0.4f, 0.24f), 6, 0.06f, 0.06f, 0.05f, bronze, Lying);
+        }
+
+        /// <summary>
+        /// Towerback: a captured 꼬마돌 carrying a human gun tower, held by bronze
+        /// bands. STYLE.md asks that the warm living stone and moss of the captive
+        /// stay visibly apart from the cool masonry and steel of the tower — that
+        /// contrast is the unit's whole story.
+        /// </summary>
+        private static void Towerback(Blueprint b)
+        {
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color tan = BodyPalette.RockGolems.Tan, stone = BodyPalette.Humans.Stone, bronze = BodyPalette.Humans.Bronze;
+
+            BlockLegs(b, 0.16f, 0.15f, Extent(0.14f, 0.16f, 0.16f), BodyPalette.RockGolems.Stone);
+            hull.Taper(Point(0f, 0.12f, 0.04f), Pair(0.62f, 0.5f), Pair(0.66f, 0.54f), 0.38f, tan);
+            Eyes(hull, Point(0f, 0.32f, 0.31f), 0.16f, 0.05f);
+            hull.Dome(Point(0.18f, 0.5f, 0.18f), Extent(0.12f, 0.04f, 0.1f), 6, 1, BodyPalette.RockGolems.Moss);
+            hull.Box(Point(0f, 0.3f, 0.04f), Extent(0.68f, 0.05f, 0.56f), bronze);
+            hull.Box(Point(0f, 0.65f, -0.06f), Extent(0.44f, 0.3f, 0.4f), stone);
+            hull.Box(Point(0f, 0.505f, -0.06f), Extent(0.48f, 0.03f, 0.44f), BodyPalette.Humans.Steel);
+            for (int i = 0; i < 4; i++)
+            {
+                float x = i % 2 == 0 ? -0.17f : 0.17f, z = i < 2 ? -0.22f : 0.1f;
+                hull.Box(Point(x, 0.84f, z), Extent(0.09f, 0.08f, 0.09f), BodyPalette.Humans.StoneMid);
+            }
+            Pennant(b, hull, Point(-0.18f, 0.8f, -0.22f), 0.32f, BodyPalette.Humans.Wood);
+
+            b.Arm.Origin = Point(0f, 0.82f, -0.05f);
+            b.Arm.Prism(Point(0f, 0.82f, -0.05f), 8, 0.09f, 0.075f, 0.46f, BodyPalette.Humans.StoneDark, Turn(80f, 0f, 0f));
+            b.Arm.Prism(Point(0f, 0.9f, 0.36f), 8, 0.09f, 0.09f, 0.05f, bronze, Turn(80f, 0f, 0f));
+        }
+
+        /// <summary>
+        /// 마도 정찰기: no art exists for it yet. A floating steel box with one
+        /// mana lens and two bronze vanes — a device, per STYLE.md's humans, with
+        /// nothing a reader could take for a face.
+        /// </summary>
+        private static void ScoutDrone(Blueprint b)
+        {
+            b.Gait = Gait.Float;
+            b.Limbs = LimbMotion.Flap;
+            b.LimbsRideHull = true;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color bronze = BodyPalette.Humans.Bronze, mana = BodyPalette.Humans.Mana;
+
+            hull.Box(Point(0f, 0.52f, 0f), Extent(0.36f, 0.28f, 0.42f), BodyPalette.Humans.Steel);
+            hull.Box(Point(0f, 0.68f, 0f), Extent(0.3f, 0.04f, 0.36f), BodyPalette.Humans.Stone);
+            hull.Prism(Point(0f, 0.52f, 0.2f), 8, 0.11f, 0.11f, 0.06f, bronze, Lying);
+            hull.Prism(Point(0f, 0.52f, 0.25f), 8, 0.075f, 0.075f, 0.03f, mana, Lying);
+            hull.Prism(Point(0f, 0.18f, 0f), 4, 0f, 0.12f, 0.2f, BodyPalette.Humans.StoneDark);
+            hull.Ball(Point(0f, 0.16f, 0f), 0.06f, mana);
+            Strap(b, hull, Point(0f, 0.52f, 0f), Extent(0.38f, 0.05f, 0.44f));
+
+            Wing(b.LimbLeft, -1f, Point(0.18f, 0.56f, 0f), 0.3f, 0.18f, 0.12f, 0f, 10f, bronze);
+            Wing(b.LimbRight, 1f, Point(0.18f, 0.56f, 0f), 0.3f, 0.18f, 0.12f, 0f, 10f, bronze);
+        }
+
+        // ------------------------------------------------------------------
+        // Buildings. Authored in world units: a footprint of F cells is F units
+        // wide. Heights follow issue #159's brief — Base about 3.2, Production
+        // 2.4, Defense about 3.0, Supply about 1.6, Tech about 2.2 — except where
+        // FACTIONS.md describes a concept that is low by nature (a nest, a mound,
+        // a fissure), and there the concept wins.
+        // ------------------------------------------------------------------
+
+        private static void Building(Blueprint b, Faction faction, Role role, int slot)
+        {
+            switch (faction)
+            {
+                case Faction.TreeSpirits: TreeSpiritBuilding(b, role); return;
+                case Faction.Hellfire: HellfireBuilding(b, role); return;
+                case Faction.WaterSlimes: WaterSlimeBuilding(b, role); return;
+                case Faction.RockGolems: RockGolemBuilding(b, role); return;
+                case Faction.Driftworlds: DriftworldBuilding(b, role); return;
+                default: HumanBuilding(b, role, slot); return;
+            }
+        }
+
+        /// <summary>A building no model was written for: a block and a cap in the faction's main colours.</summary>
+        private static void GenericBuilding(Blueprint b, Faction faction, float footprint)
+        {
+            float width = footprint * 0.7f;
+            b.Hull.Box(Point(0f, width * 0.45f, 0f), Extent(width, width * 0.9f, width), BodyPalette.Main(faction));
+            b.Hull.Prism(Point(0f, width * 0.9f, 0f), 4, width * 0.78f, 0f, width * 0.5f, BodyPalette.Second(faction));
+            Strap(b, b.Hull, Point(0f, width * 0.15f, 0f), Extent(width * 1.04f, 0.1f, width * 1.04f));
+        }
+
+        // ---- 세계수 정령 ----
+
+        private static void TreeSpiritBuilding(Blueprint b, Role role)
+        {
+            Solids hull = b.Hull;
+            Color bark = BodyPalette.TreeSpirits.Bark, barkShade = BodyPalette.TreeSpirits.BarkShade;
+            Color leaf = BodyPalette.TreeSpirits.Leaf, leafLight = BodyPalette.TreeSpirits.LeafLight;
+            Color leafShade = BodyPalette.TreeSpirits.LeafShade, leafDeep = BodyPalette.TreeSpirits.LeafDeep;
+
+            switch (role)
+            {
+                case Role.Base:
+                    // 생명의 나무: flared roots, a thick trunk with a glowing knot, a broad canopy.
+                    for (int i = 0; i < 4; i++)
+                    {
+                        float yaw = 45f + i * 90f;
+                        hull.Taper(Around(yaw) * 1.0f, Pair(0.42f, 0.6f), Pair(0.16f, 0.2f), 0.9f, barkShade, Outward(yaw, -40f));
+                    }
+                    hull.Prism(Vector3.zero, 7, 0.55f, 0.4f, 1.9f, bark);
+                    hull.Taper(Point(-0.25f, 1.6f, 0f), Pair(0.3f, 0.3f), Pair(0.14f, 0.14f), 0.7f, bark, Turn(0f, 0f, 35f));
+                    hull.Taper(Point(0.25f, 1.6f, 0f), Pair(0.3f, 0.3f), Pair(0.14f, 0.14f), 0.7f, bark, Turn(0f, 0f, -35f));
+                    hull.Ball(Point(0f, 2.5f, 0f), Extent(1.25f, 0.72f, 1.15f), leaf);
+                    hull.Ball(Point(-0.85f, 2.25f, 0.25f), Extent(0.7f, 0.5f, 0.65f), leafShade);
+                    hull.Ball(Point(0.85f, 2.3f, -0.1f), Extent(0.75f, 0.5f, 0.7f), leaf);
+                    hull.Ball(Point(0.15f, 2.92f, 0.1f), Extent(0.75f, 0.42f, 0.7f), leafLight);
+                    hull.Ball(Point(0.12f, 0.9f, 0.43f), Extent(0.12f, 0.14f, 0.08f), BodyPalette.TreeSpirits.Bolt);
+                    Band(b, hull, Point(0f, 0.45f, 0f), 7, 0.545f, 0.16f);
+                    if (b.HasAccent) hull.Ball(Point(0.35f, 2.62f, 1.08f), 0.24f, b.Accent);
+                    break;
+
+                case Role.Production:
+                    // 풀씨 둥지: a ring of leaves round a bud, three tall leaves rising from it.
+                    hull.Prism(Vector3.zero, 9, 1.0f, 0.95f, 0.14f, leafDeep);
+                    for (int i = 0; i < 9; i++)
+                    {
+                        float yaw = i * 40f;
+                        hull.Ball(Around(yaw) * 0.95f + Point(0f, 0.38f, 0f), Extent(0.42f, 0.34f, 0.36f),
+                                  i % 2 == 0 ? leaf : leafShade, Quaternion.Euler(0f, yaw, 0f) * Turn(15f, 0f, 0f), 1);
+                    }
+                    hull.Ball(Point(0f, 0.55f, 0f), Extent(0.38f, 0.42f, 0.38f), leafLight);
+                    hull.Ball(Point(-0.3f, 1.35f, 0.05f), Extent(0.12f, 0.62f, 0.24f), leaf, Turn(0f, 0f, 22f), 1);
+                    hull.Ball(Point(0.32f, 1.3f, -0.05f), Extent(0.12f, 0.58f, 0.24f), leafShade, Turn(0f, 0f, -24f), 1);
+                    hull.Ball(Point(0f, 1.6f, -0.25f), Extent(0.12f, 0.75f, 0.26f), leafLight, Turn(-14f, 0f, 0f), 1);
+                    Band(b, hull, Point(0f, 0.1f, 0f), 12, 1.38f, 0.12f);
+                    break;
+
+                case Role.Defense:
+                {
+                    // 정령 뇌우목: a twisted bundle of dry branches whose tips face each other over a pale arc.
+                    for (int i = 0; i < 4; i++)
+                    {
+                        float yaw = 20f + i * 90f;
+                        Vector3 start = Around(yaw) * 0.34f;
+                        Quaternion lower = Outward(yaw, -7f);
+                        hull.Taper(start, Pair(0.3f, 0.3f), Pair(0.2f, 0.2f), 1.5f, i % 2 == 0 ? bark : barkShade, lower);
+                        Vector3 knee = start + lower * Point(0f, 1.5f, 0f);
+                        hull.Taper(knee, Pair(0.2f, 0.2f), Pair(0.07f, 0.07f), 1.05f, bark, Outward(yaw, 24f));
+                    }
+                    hull.Dome(Vector3.zero, Extent(0.7f, 0.28f, 0.65f), 9, 2, leafDeep);
+                    hull.Lump(Point(0.3f, 1.1f, 0.25f), Extent(0.18f, 0.12f, 0.15f), leaf, Turn(0f, 30f, 0f));
+                    Band(b, hull, Point(0f, 0.5f, 0f), 8, 0.52f, 0.14f);
+
+                    Solids crown = b.Crown;
+                    crown.Origin = Point(0f, 2.55f, 0f);
+                    Color arc = BodyPalette.TreeSpirits.Arc;
+                    crown.Ball(Point(0f, 2.6f, 0f), 0.18f, arc);
+                    for (int j = 0; j < 4; j++)
+                    {
+                        float yaw = 20f + j * 90f;
+                        Vector3 direction = Around(yaw);
+                        crown.Box(Point(0f, 2.62f, 0f) + direction * 0.22f, Extent(0.05f, 0.05f, 0.24f), arc,
+                                  Quaternion.Euler(0f, yaw, 0f) * Turn(-25f, 0f, 0f));
+                        crown.Box(Point(0f, 2.62f, 0f) + direction * 0.42f, Extent(0.05f, 0.05f, 0.22f), arc,
+                                  Quaternion.Euler(0f, yaw, 0f) * Turn(25f, 0f, 0f));
+                    }
+                    b.CrownSpin = 45f;
+                    break;
+                }
+
+                case Role.Supply:
+                    // 묘목: a faceted sapling on a moss pad.
+                    hull.Dome(Vector3.zero, Extent(0.5f, 0.14f, 0.45f), 8, 2, leafDeep);
+                    hull.Prism(Vector3.zero, 5, 0.15f, 0.09f, 0.9f, bark, Turn(0f, 0f, -5f));
+                    hull.Lump(Point(-0.05f, 1.15f, 0f), Extent(0.6f, 0.48f, 0.56f), leaf, Turn(10f, 30f, 0f));
+                    hull.Lump(Point(0.25f, 1.38f, 0.1f), Extent(0.36f, 0.3f, 0.34f), leafLight, Turn(0f, 70f, 15f));
+                    Band(b, hull, Point(0f, 0.2f, 0f), 5, 0.165f, 0.12f);
+                    break;
+
+                case Role.Tech:
+                    // 뿌리 회당: roots arching in to a leafy cap over a glowing core.
+                    hull.Prism(Vector3.zero, 8, 0.85f, 0.82f, 0.1f, leafDeep);
+                    hull.Ball(Point(0f, 0.48f, 0f), 0.3f, BodyPalette.TreeSpirits.Bolt);
+                    for (int i = 0; i < 6; i++)
+                    {
+                        float yaw = i * 60f;
+                        hull.Taper(Around(yaw) * 0.78f, Pair(0.24f, 0.22f), Pair(0.1f, 0.1f), 1.55f,
+                                   i % 2 == 0 ? bark : barkShade, Outward(yaw, -30f));
+                    }
+                    hull.Ball(Point(0f, 1.5f, 0f), Extent(0.45f, 0.32f, 0.45f), leaf);
+                    hull.Prism(Point(0f, 1.7f, 0f), 5, 0.13f, 0f, 0.5f, leafLight);
+                    Band(b, hull, Point(0f, 0.08f, 0f), 8, 0.88f, 0.1f);
+                    break;
+
+                default:
+                    GenericBuilding(b, Faction.TreeSpirits, Cells(role));
+                    break;
+            }
+        }
+
+        // ---- 지옥불 군단 ----
+
+        private static void HellfireBuilding(Blueprint b, Role role)
+        {
+            Solids hull = b.Hull;
+            Color shell = BodyPalette.Hellfire.Shell, charcoal = BodyPalette.Hellfire.Charcoal;
+            Color facet = BodyPalette.Hellfire.Facet, ember = BodyPalette.Hellfire.Ember, ash = BodyPalette.Hellfire.Ash;
+
+            switch (role)
+            {
+                case Role.Base:
+                    // 균열 제단: two shell horns arching over a rift. A wound, not architecture: no door, no flag.
+                    hull.Taper(Vector3.zero, Pair(3.0f, 2.2f), Pair(2.6f, 1.8f), 0.3f, charcoal);
+                    hull.Box(Point(0f, 1.0f, 0f), Extent(1.3f, 1.9f, 0.12f), ember);
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        Vector3 foot = Point(side * 1.1f, 0.2f, 0f);
+                        Quaternion lower = Turn(0f, 0f, side * 12f);
+                        hull.Taper(foot, Pair(0.9f, 1.0f), Pair(0.6f, 0.7f), 1.6f, side < 0 ? shell : charcoal, lower);
+                        Vector3 knee = foot + lower * Point(0f, 1.6f, 0f);
+                        hull.Taper(knee, Pair(0.6f, 0.7f), Pair(0.15f, 0.25f), 1.4f, side < 0 ? facet : shell, Turn(0f, 0f, side * 48f));
+                    }
+                    for (int i = 0; i < 6; i++)
+                    {
+                        float yaw = 15f + i * 60f;
+                        hull.Prism(Point(Around(yaw).x * 1.3f, 0.2f, Around(yaw).z * 0.95f), 4, 0.16f, 0f, 0.5f + (i % 3) * 0.15f,
+                                   i % 2 == 0 ? charcoal : facet, Outward(yaw, 20f));
+                    }
+                    Strap(b, hull, Point(0f, 0.3f, 0f), Extent(2.66f, 0.08f, 1.86f));
+                    Shard(b, hull, Point(0f, 2.95f, 0f), 0.22f);
+                    break;
+
+                case Role.Production:
+                    // 악마 산란장: a low wide shell sac, ridged, split along the bottom.
+                    hull.Dome(Vector3.zero, Extent(1.3f, 1.1f, 1.15f), 9, 3, shell);
+                    hull.Box(Point(0f, 0.18f, 1.08f), Extent(1.5f, 0.06f, 0.2f), ember);
+                    for (int i = -1; i <= 1; i++)
+                        hull.Taper(Point(i * 0.45f, 0.75f, -0.1f), Pair(0.18f, 1.4f), Pair(0.08f, 1.0f), 0.38f, facet, Turn(0f, 0f, -i * 25f));
+                    hull.Prism(Point(-0.2f, 1.0f, 0.1f), 4, 0.14f, 0f, 1.2f, charcoal, Turn(-8f, 0f, 10f));
+                    hull.Prism(Point(0.35f, 0.95f, -0.1f), 4, 0.12f, 0f, 0.9f, charcoal, Turn(6f, 0f, -14f));
+                    Band(b, hull, Point(0f, 0.04f, 0f), 9, 1.33f, 0.1f, 1.15f / 1.3f);
+                    break;
+
+                case Role.Defense:
+                    // 용암 아가리: a half-buried shell jaw. The upper jaw is the crown and gapes when it fires.
+                    hull.Taper(Vector3.zero, Pair(1.6f, 1.5f), Pair(1.0f, 0.9f), 0.9f, charcoal);
+                    hull.Box(Point(0f, 0.92f, 0.1f), Extent(0.85f, 0.06f, 0.6f), ember);
+                    Strap(b, hull, Point(0f, 0.45f, 0f), Extent(1.34f, 0.1f, 1.24f));
+
+                    b.Crown.Origin = Point(0f, 0.9f, -0.4f);
+                    b.Crown.Taper(Point(0f, 0.9f, 0f), Pair(1.1f, 1.0f), Pair(0.2f, 0.3f), 1.7f, shell, Quaternion.identity, Pair(0f, -0.3f));
+                    b.Crown.Taper(Point(0f, 1.4f, -0.05f), Pair(0.6f, 0.5f), Pair(0.1f, 0.15f), 1.0f, facet, Quaternion.identity, Pair(0f, -0.2f));
+                    for (int i = 0; i < 4; i++)
+                        b.Crown.Prism(Point(-0.33f + i * 0.22f, 0.92f, 0.42f), 4, 0f, 0.07f, 0.17f, ash, Turn(180f, 0f, 0f));
+                    b.CrownKick = -24f;
+                    break;
+
+                case Role.Supply:
+                    // 갈라진 틈: jagged plates heaved up either side of a glowing crack.
+                    hull.Box(Point(0f, 0.04f, 0f), Extent(0.16f, 0.1f, 1.3f), ember);
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        hull.Taper(Point(side * 0.32f, 0f, 0.15f), Pair(0.45f, 0.7f), Pair(0.1f, 0.3f), 1.3f, side < 0 ? shell : charcoal, Turn(0f, 0f, -side * 14f));
+                        hull.Taper(Point(side * 0.3f, 0f, -0.42f), Pair(0.4f, 0.5f), Pair(0.08f, 0.2f), 0.9f, side < 0 ? charcoal : facet, Turn(0f, 15f, -side * 22f));
+                    }
+                    Strap(b, hull, Point(-0.32f, 0.3f, 0.15f), Extent(0.42f, 0.08f, 0.66f), Turn(0f, 0f, 14f));
+                    Shard(b, hull, Point(0f, 1.45f, 0.1f), 0.12f);
+                    break;
+
+                case Role.Tech:
+                    // 용암 도가니: stacked shell rings with ember seams, a jagged rim round a lava pool.
+                    hull.Prism(Vector3.zero, 6, 0.7f, 0.6f, 0.5f, shell);
+                    hull.Prism(Point(0f, 0.5f, 0f), 6, 0.58f, 0.58f, 0.05f, ember);
+                    hull.Prism(Point(0f, 0.55f, 0f), 6, 0.62f, 0.5f, 0.5f, charcoal, Turn(0f, 15f, 0f));
+                    hull.Prism(Point(0f, 1.05f, 0f), 6, 0.49f, 0.49f, 0.05f, ember);
+                    hull.Prism(Point(0f, 1.1f, 0f), 6, 0.54f, 0.46f, 0.45f, shell);
+                    hull.Prism(Point(0f, 1.52f, 0f), 6, 0.4f, 0.4f, 0.04f, ember);
+                    for (int i = 0; i < 5; i++)
+                    {
+                        float yaw = i * 72f;
+                        hull.Prism(Around(yaw) * 0.38f + Point(0f, 1.5f, 0f), 4, 0.1f, 0f, 0.5f + (i % 2) * 0.2f,
+                                   i % 2 == 0 ? facet : charcoal, Outward(yaw, 18f));
+                    }
+                    Band(b, hull, Point(0f, 0.15f, 0f), 6, 0.69f, 0.1f);
+                    break;
+
+                default:
+                    GenericBuilding(b, Faction.Hellfire, Cells(role));
+                    break;
+            }
+        }
+
+        // ---- 물 슬라임 ----
+
+        private static void WaterSlimeBuilding(Blueprint b, Role role)
+        {
+            Solids hull = b.Hull;
+            Color foam = BodyPalette.WaterSlimes.Foam, pale = BodyPalette.WaterSlimes.Pale;
+            Color sky = BodyPalette.WaterSlimes.Sky, blue = BodyPalette.WaterSlimes.Blue;
+
+            switch (role)
+            {
+                case Role.Base:
+                    // 수맥 웅덩이: round shallow tiers, a gentle spring rising from the middle. No walls, no points.
+                    hull.Prism(Vector3.zero, 12, 1.6f, 1.55f, 0.35f, pale);
+                    hull.Prism(Point(0f, 0.35f, 0f), 12, 1.32f, 1.32f, 0.05f, sky);
+                    hull.Prism(Point(0f, 0.35f, 0f), 12, 1.0f, 0.95f, 0.45f, pale);
+                    hull.Prism(Point(0f, 0.8f, 0f), 12, 0.8f, 0.8f, 0.05f, sky);
+                    hull.Dome(Point(0f, 0.8f, 0f), Extent(0.6f, 0.7f, 0.6f), 12, 3, foam);
+                    hull.Prism(Point(0f, 1.4f, 0f), 8, 0.22f, 0.15f, 1.4f, sky);
+                    hull.Ball(Point(0f, 2.85f, 0f), 0.24f, blue);
+                    Band(b, hull, Point(0f, 0.1f, 0f), 12, 1.6f, 0.12f);
+                    if (b.HasAccent) hull.Ball(Point(0f, 3.2f, 0f), Extent(0.16f, 0.2f, 0.16f), b.Accent);
+                    break;
+
+                case Role.Production:
+                {
+                    // 거품 생성기: a captured human device — stone plinth, a ring frame, a bubble held in it.
+                    Color stone = BodyPalette.Humans.Stone, bronze = BodyPalette.Humans.Bronze;
+                    hull.Prism(Vector3.zero, 8, 1.0f, 0.9f, 0.4f, stone);
+                    hull.Prism(Point(0f, 0.4f, 0f), 8, 0.6f, 0.5f, 0.2f, BodyPalette.Humans.StoneMid);
+                    for (int i = 0; i < 12; i++)
+                    {
+                        float angle = i * 30f;
+                        float radians = angle * Mathf.Deg2Rad;
+                        hull.Box(Point(Mathf.Sin(radians) * 0.78f, 1.35f + Mathf.Cos(radians) * 0.78f, 0f),
+                                 Extent(0.42f, 0.14f, 0.2f), i % 3 == 0 ? bronze : stone, Turn(0f, 0f, -angle));
+                    }
+                    hull.Ball(Point(0f, 1.35f, 0f), 0.52f, pale);
+                    hull.Ball(Point(-0.2f, 1.55f, 0.32f), Extent(0.1f, 0.13f, 0.08f), foam);
+                    hull.Prism(Point(0f, 2.18f, 0f), 6, 0.1f, 0f, 0.25f, bronze);
+                    Band(b, hull, Point(0f, 0.26f, 0f), 8, 0.98f, 0.1f);
+                    break;
+                }
+
+                case Role.Defense:
+                    // 물기둥 분수: a low water ring with a column standing out of it. The column leans toward its target.
+                    hull.Prism(Vector3.zero, 10, 0.95f, 0.95f, 0.25f, pale);
+                    hull.Prism(Point(0f, 0.25f, 0f), 10, 0.75f, 0.75f, 0.04f, sky);
+                    Band(b, hull, Point(0f, 0.04f, 0f), 10, 0.97f, 0.09f);
+
+                    b.Crown.Origin = Point(0f, 0.25f, 0f);
+                    b.Crown.Prism(Point(0f, 0.25f, 0f), 8, 0.34f, 0.29f, 0.9f, sky);
+                    b.Crown.Prism(Point(0f, 1.13f, 0.02f), 8, 0.29f, 0.24f, 0.85f, blue, Turn(8f, 0f, 0f));
+                    b.Crown.Prism(Point(0f, 1.95f, 0.14f), 8, 0.24f, 0.16f, 0.7f, sky, Turn(18f, 0f, 0f));
+                    b.Crown.Ball(Point(0f, 2.65f, 0.33f), 0.2f, foam);
+                    b.CrownAims = true;
+                    b.CrownKick = 14f;
+                    break;
+
+                case Role.Supply:
+                    // 물웅덩이: a still pool with a few mounds and one droplet standing up out of it.
+                    hull.Prism(Vector3.zero, 10, 0.8f, 0.78f, 0.18f, pale);
+                    hull.Prism(Point(0f, 0.18f, 0f), 10, 0.62f, 0.62f, 0.03f, sky);
+                    hull.Dome(Point(-0.45f, 0.1f, 0.35f), Extent(0.18f, 0.22f, 0.18f), 8, 2, foam);
+                    hull.Dome(Point(0.5f, 0.1f, -0.2f), Extent(0.14f, 0.16f, 0.14f), 8, 2, pale);
+                    hull.Dome(Point(0f, 0.18f, 0f), Extent(0.28f, 0.85f, 0.28f), 8, 3, sky);
+                    hull.Prism(Point(0f, 0.95f, 0f), 8, 0.12f, 0f, 0.5f, sky);
+                    Band(b, hull, Point(0f, 0.03f, 0f), 10, 0.82f, 0.07f);
+                    break;
+
+                case Role.Tech:
+                {
+                    // 조수 제단: a wave curling up and over its pool.
+                    hull.Prism(Vector3.zero, 10, 0.8f, 0.78f, 0.15f, pale);
+                    hull.Prism(Point(0f, 0.15f, 0f), 10, 0.62f, 0.62f, 0.03f, sky);
+                    Vector3 position = Point(0f, 0.1f, -0.35f);
+                    float pitch = -12f;
+                    float radius = 0.32f;
+                    for (int i = 0; i < 6; i++)
+                    {
+                        Quaternion rotation = Turn(pitch, 0f, 0f);
+                        float next = radius * 0.78f;
+                        float length = 0.6f;
+                        hull.Prism(position, 7, radius, next, length, i % 2 == 0 ? sky : blue, rotation);
+                        position += rotation * Point(0f, length * 0.92f, 0f);
+                        pitch += 30f;
+                        radius = next;
+                    }
+                    hull.Ball(position, 0.12f, foam);
+                    Band(b, hull, Point(0f, 0.03f, 0f), 10, 0.82f, 0.07f);
+                    break;
+                }
+
+                default:
+                    GenericBuilding(b, Faction.WaterSlimes, Cells(role));
+                    break;
+            }
+        }
+
+        // ---- 돌 골렘 부족 ----
+
+        private static void RockGolemBuilding(Blueprint b, Role role)
+        {
+            Solids hull = b.Hull;
+            Color tan = BodyPalette.RockGolems.Tan, stone = BodyPalette.RockGolems.Stone, shade = BodyPalette.RockGolems.StoneShade;
+            Color moss = BodyPalette.RockGolems.Moss, mossDeep = BodyPalette.RockGolems.MossDeep;
+
+            switch (role)
+            {
+                case Role.Base:
+                    // 이끼바위 성소: boulders leaning in on each other, a shaded recess in front that does not go through.
+                    hull.Lump(Point(-0.9f, 0.9f, 0.05f), Extent(0.9f, 1.0f, 0.85f), tan, Turn(0f, 20f, 15f));
+                    hull.Lump(Point(0.9f, 0.85f, -0.1f), Extent(0.85f, 0.95f, 0.85f), stone, Turn(0f, -10f, -15f));
+                    hull.Lump(Point(0f, 0.9f, -0.75f), Extent(0.95f, 0.95f, 0.7f), tan, Turn(10f, 40f, 0f));
+                    hull.Lump(Point(0f, 2.3f, -0.15f), Extent(0.75f, 0.65f, 0.7f), stone, Turn(0f, 15f, 5f));
+                    hull.Box(Point(0f, 0.55f, 0.62f), Extent(0.7f, 0.9f, 0.1f), mossDeep);
+                    hull.Dome(Point(-0.9f, 1.65f, 0.05f), Extent(0.55f, 0.18f, 0.5f), 8, 2, moss);
+                    hull.Dome(Point(0.85f, 1.6f, -0.1f), Extent(0.5f, 0.16f, 0.5f), 8, 2, mossDeep);
+                    hull.Dome(Point(0f, 2.82f, -0.15f), Extent(0.5f, 0.2f, 0.45f), 8, 2, moss);
+                    if (b.HasAccent)
+                    {
+                        hull.Box(Point(0f, 1.55f, 0.66f), Extent(0.6f, 0.06f, 0.08f), shade);
+                        hull.Box(Point(0f, 1.2f, 0.65f), Extent(0.46f, 0.66f, 0.04f), b.Accent);
+                    }
+                    break;
+
+                case Role.Production:
+                    // 각성 바위: an egg of stone, cracked with warm light, moss on its crown. Waking, not assembling.
+                    hull.Lump(Point(-0.7f, 0.25f, 0.3f), Extent(0.35f, 0.3f, 0.35f), stone, Turn(0f, 30f, 0f));
+                    hull.Lump(Point(0.7f, 0.25f, 0.25f), Extent(0.32f, 0.28f, 0.32f), shade, Turn(0f, -20f, 0f));
+                    hull.Ball(Point(0f, 1.15f, 0f), Extent(0.95f, 1.15f, 0.9f), tan);
+                    hull.Box(Point(0.1f, 1.2f, 0.88f), Extent(0.05f, 0.9f, 0.06f), BodyPalette.RockGolems.Waking, Turn(0f, 0f, 20f));
+                    hull.Box(Point(-0.25f, 0.9f, 0.85f), Extent(0.05f, 0.5f, 0.06f), BodyPalette.RockGolems.Waking, Turn(0f, 0f, -35f));
+                    hull.Box(Point(0.3f, 1.6f, 0.76f), Extent(0.05f, 0.4f, 0.06f), BodyPalette.RockGolems.Waking, Turn(0f, 0f, -20f));
+                    hull.Dome(Point(0f, 2.05f, 0f), Extent(0.6f, 0.22f, 0.55f), 9, 2, moss);
+                    Band(b, hull, Point(0f, 0.5f, 0f), 10, 0.84f, 0.1f, 0.9f / 0.95f);
+                    break;
+
+                case Role.Defense:
+                    // 굴림바위 언덕: an earth mound with a boulder on top. It rolls rather than fires; no barrel, no sight.
+                    hull.Dome(Vector3.zero, Extent(1.15f, 0.7f, 1.05f), 10, 3, shade);
+                    hull.Dome(Point(-0.3f, 0.48f, 0.2f), Extent(0.45f, 0.16f, 0.38f), 8, 2, moss);
+                    hull.Dome(Point(0.4f, 0.4f, -0.3f), Extent(0.35f, 0.14f, 0.3f), 8, 2, mossDeep);
+                    Band(b, hull, Point(0f, 0.02f, 0f), 10, 1.17f, 0.1f, 1.05f / 1.15f);
+
+                    b.Crown.Origin = Point(0f, 1.2f, 0f);
+                    b.Crown.Lump(Point(0f, 1.22f, 0f), Extent(0.56f, 0.52f, 0.56f), tan, Turn(15f, 25f, 10f));
+                    b.Crown.Dome(Point(0f, 1.6f, -0.05f), Extent(0.3f, 0.12f, 0.28f), 7, 2, moss);
+                    b.CrownAims = true;
+                    b.CrownKick = 22f;
+                    break;
+
+                case Role.Supply:
+                    // 선돌: one tall standing slab, moss round its foot.
+                    hull.Dome(Vector3.zero, Extent(0.55f, 0.2f, 0.45f), 8, 2, moss);
+                    hull.Taper(Vector3.zero, Pair(0.55f, 0.3f), Pair(0.42f, 0.24f), 1.85f, tan, Turn(0f, 0f, 4f));
+                    hull.Box(Point(-0.1f, 1.1f, 0.14f), Extent(0.04f, 0.5f, 0.03f), shade, Turn(0f, 0f, 14f));
+                    hull.Dome(Point(-0.14f, 1.83f, 0f), Extent(0.16f, 0.06f, 0.14f), 6, 1, moss);
+                    hull.Lump(Point(0.5f, 0.1f, 0.25f), Extent(0.14f, 0.12f, 0.14f), stone, Turn(0f, 20f, 0f));
+                    Strap(b, hull, Point(-0.035f, 0.5f, 0f), Extent(0.54f, 0.1f, 0.31f), Turn(0f, 0f, 4f));
+                    break;
+
+                case Role.Tech:
+                    // 고대 이끼돌: a dolmen — two leg stones, a capstone draped in moss, a warm glow beneath.
+                    hull.Ball(Point(0f, 0.4f, 0f), 0.2f, BodyPalette.RockGolems.Waking);
+                    hull.Taper(Point(-0.5f, 0f, 0f), Pair(0.35f, 0.5f), Pair(0.3f, 0.42f), 1.1f, stone);
+                    hull.Taper(Point(0.5f, 0f, 0f), Pair(0.35f, 0.5f), Pair(0.3f, 0.42f), 1.1f, shade);
+                    hull.Box(Point(0f, 1.25f, 0f), Extent(1.55f, 0.3f, 0.75f), tan, Turn(0f, 0f, 3f));
+                    hull.Dome(Point(0f, 1.38f, 0f), Extent(0.65f, 0.14f, 0.32f), 9, 2, moss);
+                    hull.Box(Point(0.55f, 1.15f, 0.38f), Extent(0.3f, 0.35f, 0.03f), mossDeep);
+                    Strap(b, hull, Point(-0.5f, 0.6f, 0f), Extent(0.37f, 0.1f, 0.51f));
+                    Strap(b, hull, Point(0.5f, 0.6f, 0f), Extent(0.37f, 0.1f, 0.51f));
+                    break;
+
+                default:
+                    GenericBuilding(b, Faction.RockGolems, Cells(role));
+                    break;
+            }
+        }
+
+        // ---- 차원 유랑종 ----
+
+        private static void DriftworldBuilding(Blueprint b, Role role)
+        {
+            Solids hull = b.Hull;
+            Color shell = BodyPalette.Driftworlds.Shell, shade = BodyPalette.Driftworlds.ShellShade, deep = BodyPalette.Driftworlds.ShellDeep;
+            Color teal = BodyPalette.Driftworlds.Teal, tealLight = BodyPalette.Driftworlds.TealLight;
+            Color dusk = BodyPalette.Driftworlds.Dusk, lilac = BodyPalette.Driftworlds.Lilac;
+
+            switch (role)
+            {
+                case Role.Base:
+                    // 정박한 세계: a half-buried shell of matte plates; between them, another world's sky and ground.
+                    hull.Dome(Vector3.zero, Extent(1.35f, 1.85f, 1.15f), 10, 3, lilac);
+                    hull.Prism(Vector3.zero, 10, 1.3f, 1.05f, 0.5f, teal);
+                    for (int i = 0; i < 3; i++)
+                        hull.Prism(Point(-0.5f + i * 0.5f, 0.45f, 0.75f), 4, 0.18f, 0f, 0.4f + (i % 2) * 0.2f, tealLight);
+                    for (int i = 0; i < 5; i++)
+                    {
+                        float yaw = 36f + i * 72f;
+                        hull.Taper(Around(yaw) * 1.5f, Pair(1.05f, 0.35f), Pair(0.45f, 0.25f), 2.3f,
+                                   i % 2 == 0 ? shell : shade, Outward(yaw, -34f));
+                    }
+                    hull.Lump(Point(0f, 2.3f, 0f), Extent(0.62f, 0.35f, 0.55f), shell, Turn(0f, 20f, 0f));
+                    Band(b, hull, Point(0f, 0.04f, 0f), 10, 1.72f, 0.1f);
+                    Shard(b, hull, Point(0f, 3.0f, 0f), 0.2f);
+                    break;
+
+                case Role.Production:
+                    // 통로: two plates parting on a vertical crack; through it, the other side.
+                    hull.Box(Point(0f, 1.15f, 0f), Extent(0.36f, 2.1f, 0.12f), teal);
+                    hull.Box(Point(0f, 1.95f, 0f), Extent(0.3f, 0.6f, 0.13f), lilac);
+                    hull.Prism(Point(-0.06f, 0.15f, 0.02f), 4, 0.1f, 0f, 0.35f, tealLight);
+                    hull.Prism(Point(0.08f, 0.15f, 0.02f), 4, 0.08f, 0f, 0.25f, tealLight);
+                    hull.Taper(Point(-0.48f, 0f, 0f), Pair(0.8f, 0.55f), Pair(0.35f, 0.3f), 2.65f, shell, Turn(0f, 0f, 8f));
+                    hull.Taper(Point(0.48f, 0f, 0f), Pair(0.8f, 0.55f), Pair(0.35f, 0.3f), 2.5f, shade, Turn(0f, 0f, -8f));
+                    hull.Lump(Point(-0.95f, 0.18f, 0.4f), Extent(0.28f, 0.2f, 0.25f), deep, Turn(0f, 20f, 0f));
+                    Strap(b, hull, Point(0f, 0.3f, 0f), Extent(1.75f, 0.1f, 0.6f));
+                    break;
+
+                case Role.Defense:
+                {
+                    // 굴절 기둥: plate fragments hanging in the air with no support, slowly turning. 금지: 받침대, 기초, 케이블.
+                    hull.Lump(Point(-0.4f, 0.08f, 0.3f), Extent(0.18f, 0.1f, 0.16f), deep, Turn(0f, 30f, 0f));
+                    hull.Lump(Point(0.35f, 0.07f, -0.25f), Extent(0.15f, 0.08f, 0.14f), deep, Turn(0f, -20f, 0f));
+                    Band(b, hull, Point(0f, 0.22f, 0f), 8, 0.5f, 0.06f);
+
+                    Solids crown = b.Crown;
+                    crown.Origin = Point(0f, 0f, 0f);
+                    crown.Taper(Point(0f, 0.4f, 0f), Pair(0.9f, 0.6f), Pair(0.7f, 0.5f), 0.45f, shell, Turn(0f, 0f, 0f));
+                    crown.Prism(Point(0f, 0.93f, 0f), 6, 0.42f, 0.42f, 0.12f, lilac);
+                    crown.Taper(Point(0f, 1.15f, 0f), Pair(0.75f, 0.55f), Pair(0.6f, 0.45f), 0.45f, shade, Turn(0f, 35f, 3f));
+                    crown.Prism(Point(0f, 1.68f, 0f), 6, 0.36f, 0.36f, 0.12f, teal);
+                    crown.Taper(Point(0f, 1.9f, 0f), Pair(0.6f, 0.45f), Pair(0.45f, 0.35f), 0.4f, shell, Turn(0f, 70f, -3f));
+                    crown.Taper(Point(0f, 2.5f, 0f), Pair(0.4f, 0.3f), Pair(0.15f, 0.12f), 0.4f, shade, Turn(0f, 110f, 0f));
+                    b.CrownSpin = 22f;
+                    break;
+                }
+
+                case Role.Supply:
+                {
+                    // 계류 닻: a hooked claw driven into the ground, a sliver of the interior at its root.
+                    hull.Box(Point(0.05f, 0.25f, 0.1f), Extent(0.12f, 0.36f, 0.3f), teal);
+                    Vector3 position = Point(0f, 0f, -0.4f);
+                    float pitch = -8f;
+                    float width = 0.62f;
+                    for (int i = 0; i < 5; i++)
+                    {
+                        Quaternion rotation = Turn(pitch, 0f, 0f);
+                        float next = width * 0.76f;
+                        float length = 0.5f;
+                        hull.Taper(position, Pair(width, width * 0.7f), Pair(next, next * 0.7f), length, i % 2 == 0 ? shell : shade, rotation);
+                        position += rotation * Point(0f, length * 0.95f, 0f);
+                        pitch += 34f;
+                        width = next;
+                    }
+                    Strap(b, hull, Point(0f, 0.18f, -0.4f), Extent(0.68f, 0.1f, 0.5f));
+                    break;
+                }
+
+                case Role.Tech:
+                {
+                    // 층위 관측대: a ring of standing shards, two with windows onto the inside, a shard turning over the middle.
+                    for (int i = 0; i < 6; i++)
+                    {
+                        float yaw = i * 60f;
+                        float height = 1.2f + (i % 3) * 0.4f;
+                        Vector3 foot = Around(yaw) * 0.68f;
+                        hull.Taper(foot, Pair(0.36f, 0.22f), Pair(0.12f, 0.1f), height, i % 2 == 0 ? shell : shade,
+                                   Outward(yaw, -6f));
+                        if (i == 0 || i == 4)
+                            hull.Box(foot + Around(yaw) * 0.1f + Point(0f, height * 0.4f, 0f), Extent(0.14f, height * 0.35f, 0.05f),
+                                     i == 0 ? lilac : tealLight, Quaternion.Euler(0f, yaw, 0f));
+                    }
+                    hull.Prism(Vector3.zero, 6, 0.4f, 0.35f, 0.08f, deep);
+                    Band(b, hull, Point(0f, 0.02f, 0f), 12, 0.88f, 0.06f);
+
+                    b.Crown.Origin = Point(0f, 1.3f, 0f);
+                    b.Crown.Prism(Point(0f, 1.1f, 0f), 5, 0.2f, 0f, 0.6f, tealLight);
+                    b.Crown.Prism(Point(0f, 1.1f, 0f), 5, 0.2f, 0f, 0.35f, teal, Turn(180f, 0f, 0f));
+                    b.CrownSpin = 35f;
+                    break;
+                }
+
+                default:
+                    GenericBuilding(b, Faction.Driftworlds, Cells(role));
+                    break;
+            }
+        }
+
+        // ---- 인간 마법 문명 ----
+
+        private static void HumanBuilding(Blueprint b, Role role, int slot)
+        {
+            Solids hull = b.Hull;
+            Color stone = BodyPalette.Humans.Stone, stoneMid = BodyPalette.Humans.StoneMid, stoneDark = BodyPalette.Humans.StoneDark;
+            Color steel = BodyPalette.Humans.Steel, wood = BodyPalette.Humans.Wood, bronze = BodyPalette.Humans.Bronze;
+            Color mana = BodyPalette.Humans.Mana;
+
+            switch (role)
+            {
+                case Role.Base:
+                    // 마나 샘: an octagonal stone basin of mana under a steel-blue pyramid roof on four posts, a banner beside it.
+                    hull.Prism(Vector3.zero, 8, 1.5f, 1.45f, 0.5f, stone);
+                    hull.Prism(Point(0f, 0.5f, 0f), 8, 1.55f, 1.55f, 0.1f, stoneMid);
+                    hull.Prism(Point(0f, 0.5f, 0f), 8, 1.25f, 1.25f, 0.13f, mana);
+                    for (int i = 0; i < 4; i++)
+                    {
+                        float yaw = 45f + i * 90f;
+                        hull.Box(Around(yaw) * 1.2f + Point(0f, 1.3f, 0f), Extent(0.2f, 1.5f, 0.2f), wood);
+                    }
+                    hull.Prism(Point(0f, 2.0f, 0f), 4, 1.55f, 1.55f, 0.08f, bronze);
+                    hull.Prism(Point(0f, 2.08f, 0f), 4, 1.5f, 0f, 0.9f, steel);
+                    hull.Prism(Point(0f, 2.9f, 0f), 6, 0.06f, 0.06f, 0.3f, bronze);
+                    hull.Ball(Point(0f, 3.3f, 0f), 0.13f, mana);
+                    Band(b, hull, Point(0f, 0.18f, 0f), 8, 1.52f, 0.12f);
+                    Pennant(b, hull, Point(1.55f, 0f, 0.9f), 2.7f, wood);
+                    break;
+
+                case Role.Production:
+                    // 마법 탑, 생산: a square cut-stone tower, coursed, under a steel-blue spire, a lit window over a wooden door.
+                    hull.Box(Point(0f, 0.9f, 0f), Extent(1.4f, 1.8f, 1.4f), stone);
+                    hull.Box(Point(0f, 0.6f, 0f), Extent(1.44f, 0.05f, 1.44f), stoneMid);
+                    hull.Box(Point(0f, 1.2f, 0f), Extent(1.44f, 0.05f, 1.44f), stoneMid);
+                    hull.Box(Point(0f, 1.85f, 0f), Extent(1.56f, 0.12f, 1.56f), stoneMid);
+                    hull.Prism(Point(0f, 1.91f, 0f), 4, 1.0f, 0f, 0.95f, steel);
+                    hull.Box(Point(0f, 0.36f, 0.71f), Extent(0.42f, 0.72f, 0.04f), wood);
+                    hull.Box(Point(0f, 0.74f, 0.715f), Extent(0.5f, 0.06f, 0.04f), bronze);
+                    hull.Box(Point(0f, 1.42f, 0.71f), Extent(0.22f, 0.32f, 0.03f), mana);
+                    Strap(b, hull, Point(0f, 1.7f, 0f), Extent(1.46f, 0.12f, 1.46f));
+                    if (b.HasAccent) hull.Box(Point(0.45f, 1.0f, 0.715f), Extent(0.24f, 0.5f, 0.03f), b.Accent);
+                    break;
+
+                case Role.Supply:
+                    // 마법 탑, 인구: the same masonry as a round silo under a steel cone. Shorter than the 생산 tower.
+                    hull.Prism(Vector3.zero, 8, 0.72f, 0.68f, 1.15f, stone);
+                    hull.Prism(Point(0f, 0.45f, 0f), 8, 0.71f, 0.71f, 0.05f, stoneMid);
+                    hull.Prism(Point(0f, 1.15f, 0f), 8, 0.8f, 0.8f, 0.08f, bronze);
+                    hull.Prism(Point(0f, 1.23f, 0f), 8, 0.78f, 0f, 0.65f, steel);
+                    hull.Box(Point(0f, 0.3f, 0.66f), Extent(0.3f, 0.6f, 0.04f), wood);
+                    hull.Box(Point(0f, 0.85f, 0.665f), Extent(0.16f, 0.22f, 0.03f), mana);
+                    Band(b, hull, Point(0f, 0.9f, 0f), 8, 0.71f, 0.1f);
+                    break;
+
+                case Role.Defense:
+                    HumanDefense(b, slot);
+                    break;
+
+                case Role.Tech:
+                    // 공방: a long stone workshop framed in timber, a slanted steel roof, a chimney.
+                    hull.Box(Point(0f, 0.5f, 0f), Extent(1.5f, 1.0f, 1.1f), stone);
+                    hull.Box(Point(-0.72f, 0.5f, 0.56f), Extent(0.08f, 1.0f, 0.04f), wood);
+                    hull.Box(Point(0.72f, 0.5f, 0.56f), Extent(0.08f, 1.0f, 0.04f), wood);
+                    hull.Box(Point(0f, 1.0f, 0.56f), Extent(1.5f, 0.08f, 0.04f), wood);
+                    hull.Taper(Point(0f, 1.0f, 0f), Pair(1.66f, 1.26f), Pair(1.66f, 0.06f), 0.6f, steel);
+                    hull.Box(Point(0.5f, 1.5f, -0.25f), Extent(0.22f, 0.8f, 0.22f), stoneMid);
+                    hull.Box(Point(0f, 0.38f, 0.56f), Extent(0.5f, 0.5f, 0.03f), stoneDark);
+                    hull.Box(Point(0f, 0.38f, 0.57f), Extent(0.16f, 0.16f, 0.03f), mana);
+                    Strap(b, hull, Point(0f, 0.08f, 0f), Extent(1.54f, 0.12f, 1.14f));
+                    if (b.HasAccent) hull.Box(Point(-0.45f, 0.55f, 0.575f), Extent(0.22f, 0.42f, 0.03f), b.Accent);
+                    break;
+
+                default:
+                    GenericBuilding(b, Faction.Humans, Cells(role));
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// 인간's three defensive structures, the only faction with more than one:
+        /// 대포 (slot 0) a stone emplacement with a long barrel, 전기 타워 (slot 1)
+        /// a steel pillar with a spinning orb, 돌 포탑 (slot 2) a round turret with
+        /// a timber throwing arm. Three silhouettes, so a glance tells which.
+        /// </summary>
+        private static void HumanDefense(Blueprint b, int slot)
+        {
+            Solids hull = b.Hull, crown = b.Crown;
+            Color stone = BodyPalette.Humans.Stone, stoneMid = BodyPalette.Humans.StoneMid, stoneDark = BodyPalette.Humans.StoneDark;
+            Color steel = BodyPalette.Humans.Steel, wood = BodyPalette.Humans.Wood, bronze = BodyPalette.Humans.Bronze;
+
+            switch (slot)
+            {
+                case 1:
+                    hull.Prism(Vector3.zero, 8, 1.1f, 1.0f, 0.35f, stone);
+                    hull.Prism(Point(0f, 0.35f, 0f), 8, 0.85f, 0.8f, 0.3f, stoneMid);
+                    hull.Prism(Point(0f, 0.65f, 0f), 8, 0.42f, 0.36f, 1.6f, steel);
+                    hull.Prism(Point(0f, 1.0f, 0f), 8, 0.45f, 0.45f, 0.08f, bronze);
+                    hull.Prism(Point(0f, 1.8f, 0f), 8, 0.4f, 0.4f, 0.08f, bronze);
+                    hull.Prism(Point(0f, 2.22f, 0f), 8, 0.3f, 0.36f, 0.12f, stoneMid);
+                    hull.Box(Point(0f, 1.4f, 0.4f), Extent(0.1f, 0.3f, 0.03f), BodyPalette.Humans.Mana, Turn(0f, 0f, 20f));
+                    Band(b, hull, Point(0f, 0.16f, 0f), 8, 1.08f, 0.1f);
+
+                    crown.Origin = Point(0f, 2.34f, 0f);
+                    crown.Ball(Point(0f, 2.62f, 0f), 0.3f, BodyPalette.Humans.Mana);
+                    crown.Box(Point(-0.44f, 2.62f, 0f), Extent(0.06f, 0.42f, 0.06f), bronze, Turn(0f, 0f, -18f));
+                    crown.Box(Point(0.44f, 2.62f, 0f), Extent(0.06f, 0.42f, 0.06f), bronze, Turn(0f, 0f, 18f));
+                    crown.Box(Point(0f, 2.36f, 0f), Extent(0.94f, 0.05f, 0.06f), bronze);
+                    b.CrownSpin = 60f;
+                    break;
+
+                case 2:
+                    hull.Prism(Vector3.zero, 10, 0.95f, 0.85f, 1.4f, stone);
+                    hull.Prism(Point(0f, 0.7f, 0f), 10, 0.92f, 0.92f, 0.05f, stoneMid);
+                    for (int i = 0; i < 8; i++)
+                    {
+                        float yaw = i * 45f + 22.5f;
+                        hull.Box(Around(yaw) * 0.78f + Point(0f, 1.5f, 0f), Extent(0.22f, 0.2f, 0.16f), stoneMid, Quaternion.Euler(0f, yaw, 0f));
+                    }
+                    Band(b, hull, Point(0f, 0.5f, 0f), 10, 0.93f, 0.1f);
+
+                    crown.Origin = Point(0f, 1.42f, 0f);
+                    crown.Box(Point(0f, 1.52f, 0f), Extent(0.5f, 0.2f, 0.5f), wood);
+                    crown.Box(Point(0f, 1.82f, -0.2f), Extent(0.12f, 0.12f, 0.9f), wood, Turn(-35f, 0f, 0f));
+                    crown.Box(Point(0f, 2.08f, -0.58f), Extent(0.24f, 0.08f, 0.24f), bronze, Turn(-35f, 0f, 0f));
+                    b.CrownAims = true;
+                    b.CrownKick = 40f;
+                    break;
+
+                default:
+                    hull.Box(Point(0f, 0.4f, 0f), Extent(1.5f, 0.8f, 1.5f), stone);
+                    hull.Box(Point(0f, 0.9f, 0f), Extent(1.2f, 0.2f, 1.2f), stoneMid);
+                    for (int i = 0; i < 4; i++)
+                    {
+                        float yaw = 45f + i * 90f;
+                        hull.Box(Around(yaw) * 0.85f + Point(0f, 1.08f, 0f), Extent(0.22f, 0.18f, 0.22f), stoneMid);
+                    }
+                    Strap(b, hull, Point(0f, 0.72f, 0f), Extent(1.54f, 0.1f, 1.54f));
+
+                    crown.Origin = Point(0f, 1.0f, 0f);
+                    crown.Box(Point(0f, 1.2f, -0.05f), Extent(0.7f, 0.4f, 0.6f), stoneDark);
+                    crown.Prism(Point(0f, 1.3f, -0.25f), 10, 0.3f, 0.25f, 1.15f, stoneMid, Turn(78f, 0f, 0f));
+                    crown.Prism(Point(0f, 1.52f, 0.85f), 10, 0.3f, 0.3f, 0.1f, bronze, Turn(78f, 0f, 0f));
+                    b.CrownAims = true;
+                    b.CrownKick = -12f;
+                    break;
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Things that belong to nobody
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// The map's neutral 꼬마돌: 돌 골렘 부족's worker model with no owner
+        /// accent, tinted UiStyle.Neutral. It is drawn with a faction's body and
+        /// untinted would claim to be that faction's worker — MatchView's sprite
+        /// rule, carried over.
+        /// </summary>
+        private static Design NeutralRockDesign()
+        {
+            float size = 0.9f * NeutralRockFootprint;
+            var b = new Blueprint(Seed(Faction.RockGolems, Role.Worker, 0), size, false, Color.white)
+            {
+                Tint = UiStyle.Neutral,
+            };
+            MiniRock(b);
+            return Finish(b, "꼬마돌", NeutralRockFootprint, size, false, false);
+        }
+
+        /// <summary>
+        /// A resource node: tilted crystal prisms in the HUD's node hue growing
+        /// out of a dark rock base, so the field and the minimap agree on what a
+        /// node looks like. Seeded, so every node on every peer is the same cluster.
+        /// </summary>
+        private static Design NodeDesign()
+        {
+            var b = new Blueprint(0x4E4F4445, 1f, false, Color.white) { Gait = Gait.Still };
+            Solids hull = b.Hull;
+            System.Random random = b.Random;
+            Color node = BodyPalette.Node, lit = BodyPalette.Lighter(node, 0.35f), shade = BodyPalette.Darker(node, 0.78f);
+
+            hull.Lump(Point(0f, 0.1f, 0f), Extent(0.55f, 0.2f, 0.5f), BodyPalette.NodeRock, Turn(0f, 20f, 0f));
+            hull.Lump(Point(-0.35f, 0.08f, 0.25f), Extent(0.25f, 0.14f, 0.22f), BodyPalette.Darker(BodyPalette.NodeRock, 0.85f), Turn(0f, 50f, 0f));
+            hull.Lump(Point(0.38f, 0.07f, -0.2f), Extent(0.22f, 0.12f, 0.2f), BodyPalette.NodeRock, Turn(0f, -30f, 0f));
+
+            const int crystals = 6;
+            for (int i = 0; i < crystals; i++)
+            {
+                bool middle = i == 0;
+                float yaw = middle ? 0f : (i - 1) * 72f + (float)random.NextDouble() * 30f;
+                float spread = middle ? 0f : 0.18f + (float)random.NextDouble() * 0.12f;
+                float tilt = middle ? 4f : 18f + (float)random.NextDouble() * 16f;
+                float radius = middle ? 0.15f : 0.08f + (float)random.NextDouble() * 0.04f;
+                float height = middle ? 0.8f : 0.35f + (float)random.NextDouble() * 0.3f;
+                Color color = middle ? lit : i % 2 == 0 ? node : shade;
+
+                Quaternion rotation = Outward(yaw, tilt);
+                Vector3 foot = Around(yaw) * spread + Point(0f, 0.12f, 0f);
+                hull.Prism(foot, 6, radius, radius * 0.9f, height, color, rotation);
+                hull.Prism(foot + rotation * Point(0f, height, 0f), 6, radius * 0.9f, 0f, radius * 2.2f, lit, rotation);
+            }
+            return Finish(b, "ResourceNode", NodeFootprint, 1f, true, false);
+        }
+
+        /// <summary>
+        /// 잔해: a low heap of jittered blocks filling one cell. Low enough to read
+        /// as rubble rather than a wall, wide enough to cover the whole cell, since
+        /// the cell is blocked edge to edge and the heap must not show a gap.
+        /// </summary>
+        private static Design RemnantDesign()
+        {
+            var b = new Blueprint(0x52454D4E, 1f, false, Color.white) { Gait = Gait.Still };
+            Solids hull = b.Hull;
+            System.Random random = b.Random;
+            Color rubble = UiStyle.Remnant;
+
+            hull.Box(Point(0f, 0.05f, 0f), Extent(0.92f, 0.1f, 0.92f), BodyPalette.Darker(rubble, 0.82f));
+            const int pieces = 8;
+            for (int i = 0; i < pieces; i++)
+            {
+                float x = ((float)random.NextDouble() - 0.5f) * 0.6f;
+                float z = ((float)random.NextDouble() - 0.5f) * 0.6f;
+                float size = 0.2f + (float)random.NextDouble() * 0.16f;
+                float height = 0.14f + (float)random.NextDouble() * 0.22f;
+                Color color = BodyPalette.Darker(rubble, 0.85f + (float)random.NextDouble() * 0.25f);
+                Quaternion rotation = Turn(((float)random.NextDouble() - 0.5f) * 30f, (float)random.NextDouble() * 90f,
+                                           ((float)random.NextDouble() - 0.5f) * 30f);
+                if (i % 3 == 0) hull.Lump(Point(x, 0.1f + height * 0.4f, z), Extent(size * 0.7f, height * 0.6f, size * 0.7f), color, rotation);
+                else hull.Box(Point(x, 0.1f + height * 0.4f, z), Extent(size, height, size * 0.85f), color, rotation);
+            }
+            return Finish(b, "Remnant", RemnantFootprint, 1f, true, false);
+        }
+    }
+}
