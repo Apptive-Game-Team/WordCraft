@@ -38,6 +38,18 @@ namespace WordCraft.Sim
         public int AttackTicks;
 
         /// <summary>
+        /// What this body takes off every hit it receives, before the floor of one
+        /// that <see cref="World.DamageAfterArmor"/> keeps. Zero on every row
+        /// today: the field exists so that 방어력 research has something to add
+        /// to, and a roster number is where a body that is born tougher would say
+        /// so. Roster data rather than entity state for the reason
+        /// <see cref="Air"/> is: it never changes for a given row, so nothing
+        /// hashes it. What the owner has researched on top of it is hashed, as an
+        /// upgrade level, and read through World.ArmorBonus.
+        /// </summary>
+        public int Armor;
+
+        /// <summary>
         /// How much ground this body claims, as a radius in cells. Two walkers
         /// closer than the sum of their footprints push each other apart; see
         /// World.SeparationSystem. Roster data rather than entity state for the

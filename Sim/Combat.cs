@@ -60,7 +60,7 @@ namespace WordCraft.Sim
                     if (a.AttackCooldown == 0)
                     {
                         a.AttackCooldown = s.AttackTicks;
-                        t.Hp -= s.Damage + VolleyBonus(a);
+                        t.Hp -= DamageAfterArmor(s.Damage + VolleyBonus(a), 0, TargetArmor(t), 0);
                         if (t.Hp <= 0) Kill(ref t);
                         entities[t.Id] = t;
                     }
@@ -92,6 +92,33 @@ namespace WordCraft.Sim
                 entities[i] = a;
             }
         }
+
+        /// <summary>
+        /// What one hit takes off: the weapon and every bonus behind it, less the
+        /// target's armor and every bonus behind that, and never less than one.
+        ///
+        /// The floor is the rule that keeps armor a discount rather than an
+        /// immunity. Without it three levels of 방어력 on a body hit by a weapon
+        /// of three would make that weapon do nothing at all, and a fight between
+        /// the two would never end — a stalemate that hashes the same on both
+        /// peers and that nobody can play out of.
+        ///
+        /// Public and static so the harness can pin the floor directly: no roster
+        /// row today is light enough for researched armor to reach it in a fight.
+        /// </summary>
+        public static int DamageAfterArmor(int damage, int attackBonus, int armor, int armorBonus)
+        {
+            int dealt = damage + attackBonus - (armor + armorBonus);
+            return dealt < 1 ? 1 : dealt;
+        }
+
+        /// <summary>
+        /// The armor the target's own roster row carries. A neutral body has no
+        /// faction to look a row up in, so it has none, which is the same answer
+        /// Flies and Armed give a body with no owner.
+        /// </summary>
+        private int TargetArmor(Entity t) =>
+            t.Owner >= 0 && t.Owner < MaxPeers ? RosterStats(t).Armor : 0;
 
         /// <summary>
         /// 물 슬라임 일제 사격: +1 damage for every other allied archer standing
