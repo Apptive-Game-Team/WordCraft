@@ -40,19 +40,55 @@ namespace WordCraft.Sim
         }
 
         /// <summary>
-        /// Runs after SpawnerSystem and before CombatSystem: every body whose
-        /// ExpireTick has come, by ascending id, is killed. A body that lapses
-        /// this tick does not fight this tick. Tick at or past rather than equal,
-        /// so a body cannot outlive its tick by having been skipped once.
+        /// Runs after SpawnerSystem and before CombatSystem. First 층위 고정 puts
+        /// back the clocks it reaches, then every body whose ExpireTick has come,
+        /// by ascending id, is killed. A body that lapses this tick does not
+        /// fight this tick. Tick at or past rather than equal, so a body cannot
+        /// outlive its tick by having been skipped once.
         /// </summary>
         private void ExpirySystem()
         {
+            HoldExpiry();
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
                 if (!e.Alive || e.ExpireTick == 0 || Tick < e.ExpireTick) continue;
                 Kill(ref e);
                 entities[i] = e;
+            }
+        }
+
+        /// <summary>
+        /// 층위 고정, before the expiry check: on a tick its row's period divides,
+        /// every allied body that lapses and that a 층위 관측자 reaches has its
+        /// ExpireTick put back one tick, by ascending id. Once per body however
+        /// many observers reach it: auras do not stack. Every second tick, so the
+        /// body lapses at half speed for as long as it stays in reach.
+        /// </summary>
+        private void HoldExpiry()
+        {
+            bool due = false;
+            for (int r = 0; r < FactionData.AbilityRowCount; r++)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(r);
+                if (row.Kind == AbilityKind.ExpiryAura && Tick % row.Period == 0) due = true;
+            }
+            if (!due) return;
+
+            CollectAuraSources();
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (!e.Alive || e.ExpireTick == 0) continue;
+                for (int r = 0; r < FactionData.AbilityRowCount; r++)
+                {
+                    AbilityRow row = FactionData.AbilityRowAt(r);
+                    if (row.Kind != AbilityKind.ExpiryAura || Tick % row.Period != 0) continue;
+                    if (!AlliedAuraReaches(r, e, e.Owner)) continue;
+                    e.ExpireTick++;
+                    entities[i] = e;
+                    break;
+                }
             }
         }
 

@@ -391,6 +391,9 @@ namespace WordCraft.Sim
 
         // 차원 유랑종: 멸종 슬라임 수명 600 → 800틱.
         SummonLifetime = 50,
+
+        // 차원 유랑종: 층위 고정 반경 4 → 6칸.
+        StrataHoldRadius = 51,
     }
 
     /// <summary>
@@ -503,6 +506,13 @@ namespace WordCraft.Sim
 
         /// <summary>덩굴 지대: hostile Targets within Radius walk at the slowed speed.</summary>
         SlowAura = 13,
+
+        /// <summary>
+        /// 층위 고정: every Period ticks, each allied body of Targets within
+        /// Radius that lapses has its ExpireTick put back one tick, once however
+        /// many sources reach it. With Period 2 the body lapses at half speed.
+        /// </summary>
+        ExpiryAura = 14,
     }
 
     /// <summary>
@@ -1906,6 +1916,7 @@ namespace WordCraft.Sim
 
             // docs/TECH-TREE.md 묶음 6 (#202): summons that lapse and bursts.
             (Faction.Driftworlds, ResearchRow("소환 수명", 150, 200, 3, UpgradeEffect.SummonLifetime, (Role.Tech, 0), NoBuilding)),
+            (Faction.Driftworlds, ResearchRow("층위 고정 반경", 100, 160, 3, UpgradeEffect.StrataHoldRadius, (Role.Tech, 0), NoBuilding)),
         };
 
         /// <summary>
@@ -2118,6 +2129,9 @@ namespace WordCraft.Sim
             // 생명 기록: 멸종한 자연 슬라임, 3칸 아군 유닛, 20틱마다 +3.
             Ability("생명 기록", Faction.Driftworlds, Role.Signature, 3, AbilityKind.HealAura, AbilityTargets.Bodies,
                 UpgradeEffect.None, radius: 3, amount: 3, period: 20),
+            // 층위 고정: 층위 관측자, 4칸 아군 한시 소환, 짝수 틱마다 ExpireTick +1. 층위 고정 반경 6칸. 묶음 6 (#202).
+            Ability("층위 고정", Faction.Driftworlds, Role.Signature, 2, AbilityKind.ExpiryAura, AbilityTargets.Bodies,
+                UpgradeEffect.None, radius: 4, period: 2, boost: UpgradeEffect.StrataHoldRadius, boostedRadius: 6),
 
             // 인간 마법 문명
             // 표식: 마도 정찰기, 5칸 적 유닛이 인간의 일반 공격에서 +1. 표식 강화 +2.
@@ -2426,12 +2440,13 @@ namespace WordCraft.Sim
                     Require(row.Ticks > 0, where + " lasts no ticks");
                 if (row.Kind == AbilityKind.ChainOnHit)
                     Require(row.Limit > 0 && row.Limit <= MaxChainHops, where + " hops " + row.Limit + " times");
-                if (row.Kind == AbilityKind.HealAura || row.Kind == AbilityKind.BurnAura || row.Kind == AbilityKind.GrowthAura)
+                if (row.Kind == AbilityKind.HealAura || row.Kind == AbilityKind.BurnAura || row.Kind == AbilityKind.GrowthAura ||
+                    row.Kind == AbilityKind.ExpiryAura)
                     Require(row.Period > 0 && row.Amount >= 0, where + " has no period");
                 if (row.Kind == AbilityKind.HealAura || row.Kind == AbilityKind.BurnAura ||
                     row.Kind == AbilityKind.SlowAura || row.Kind == AbilityKind.RateAura ||
                     row.Kind == AbilityKind.ArmorAura || row.Kind == AbilityKind.MarkAura ||
-                    row.Kind == AbilityKind.GrowthAura)
+                    row.Kind == AbilityKind.GrowthAura || row.Kind == AbilityKind.ExpiryAura)
                     Require(row.Targets != AbilityTargets.None, where + " names no targets");
                 for (int j = 0; j < i; j++)
                 {

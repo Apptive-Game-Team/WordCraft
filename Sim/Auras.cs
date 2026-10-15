@@ -73,7 +73,7 @@ namespace WordCraft.Sim
         private static bool IsAura(AbilityKind kind) =>
             kind == AbilityKind.ArmorAura || kind == AbilityKind.MarkAura || kind == AbilityKind.RateAura ||
             kind == AbilityKind.HealAura || kind == AbilityKind.BurnAura || kind == AbilityKind.GrowthAura ||
-            kind == AbilityKind.SlowAura;
+            kind == AbilityKind.SlowAura || kind == AbilityKind.ExpiryAura;
 
         /// <summary>
         /// Fills the scratch source list: every body that can use an aura row

@@ -72,7 +72,7 @@ namespace WordCraft.Replay
                 Boost = boost, BoostedRadius = boostedRadius, BoostedAmount = boostedAmount, BoostedTicks = boostedTicks,
             };
 
-        /// <summary>docs/TECH-TREE.md 진영별 능력 표, the rows 묶음 5 brings in, with the holder's roster name.</summary>
+        /// <summary>docs/TECH-TREE.md 진영별 능력 표, the rows 묶음 5 and 6 bring in, with the holder's roster name.</summary>
         private static readonly (Want Row, string Holder)[] Documented =
         {
             (Row(Faction.TreeSpirits, "휘감기", Role.Ranged, 1, AbilityKind.SlowOnHit, UpgradeEffect.None,
@@ -105,6 +105,10 @@ namespace WordCraft.Replay
                 amount: 3), "멸종한 바위 슬라임"),
             (Row(Faction.Driftworlds, "생명 기록", Role.Signature, 3, AbilityKind.HealAura, UpgradeEffect.None,
                 radius: 3, amount: 3, period: 20), "멸종한 자연 슬라임"),
+            // 묶음 6 (#202), behind the faction's 묶음 5 rows. Pinned here so
+            // the whole table is one list; Replay/SummonChecks.cs runs them.
+            (Row(Faction.Driftworlds, "층위 고정", Role.Signature, 2, AbilityKind.ExpiryAura, UpgradeEffect.None,
+                radius: 4, period: 2, boost: UpgradeEffect.StrataHoldRadius, boostedRadius: 6), "층위 관측자"),
             (Row(Faction.Humans, "표식", Role.Signature, 1, AbilityKind.MarkAura, UpgradeEffect.None,
                 radius: 5, amount: 1, boost: UpgradeEffect.MarkAmount, boostedAmount: 2), "마도 정찰기"),
             (Row(Faction.Humans, "증폭", Role.Signature, 3, AbilityKind.RateAura, UpgradeEffect.None,
