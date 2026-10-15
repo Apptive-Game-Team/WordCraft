@@ -129,7 +129,7 @@ namespace WordCraft.View
         // ------------------------------------------------------------------
 
         private const int LineupWidth = 2560;
-        private const int LineupHeight = 1080;
+        private const int LineupHeight = 880;
 
         /// <summary>Cells left empty between two neighbours in a lineup.</summary>
         private const float LineupGap = 0.8f;
@@ -195,8 +195,8 @@ namespace WordCraft.View
         // Strips: one motion, eight frames, side by side
         // ------------------------------------------------------------------
 
-        private const int FrameWidth = 560;
-        private const int FrameHeight = 400;
+        private const int FrameWidth = 640;
+        private const int FrameHeight = 360;
         private const int Frames = 8;
 
         /// <summary>The issue's window: every strip covers this many seconds from the moment the motion starts.</summary>
@@ -212,7 +212,7 @@ namespace WordCraft.View
         private const float StartSeconds = 100f;
 
         /// <summary>Cells between two bodies in a strip.</summary>
-        private const float StripSpacing = 3f;
+        private const float StripSpacing = 2.6f;
 
         /// <summary>
         /// Three quarters to the right: STYLE.md's "characters face right" seen
@@ -464,11 +464,11 @@ namespace WordCraft.View
                 Include(ref min, ref max, homes[i]);
                 if (motion == "walk") Include(ref min, ref max, homes[i] + Walk(WalkSeconds, speeds[i]));
             }
-            float margin = motion == "tower" ? 3f : 2.4f;
+            float margin = motion == "tower" ? 3f : 2.2f;
             width = max.x - min.x + margin * 2f;
             // Pushed away from the camera by about a body's height, so the frame
             // centres on the bodies rather than on the ground at their feet.
-            return new Vector2((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f + 1.2f);
+            return new Vector2((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f + 1.8f);
         }
 
         private static void Include(ref Vector2 min, ref Vector2 max, Vector2 p)

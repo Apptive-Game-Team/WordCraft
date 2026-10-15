@@ -127,11 +127,10 @@ namespace WordCraft.View
                 Live = true, At = at, Started = ViewClock.Now + delay, Spin = burstCounter * 47f,
             };
 
-            Color shard = BodyPalette.Lighter(colour, 0.15f);
             for (int s = 0; s < ShardsPerBurst; s++)
             {
                 MeshRenderer r = shardRenderers[i * ShardsPerBurst + s];
-                Colour(r, shard);
+                Colour(r, colour);
                 r.enabled = false; // until the delay is over
             }
         }

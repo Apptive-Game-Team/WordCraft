@@ -176,6 +176,7 @@ namespace WordCraft.View
         private bool rubble;
         private float diedAt;
         private Vector3 fellAt;
+        private Quaternion fellFacing;
         private bool swelling;
         private float swellStarted;
         private bool spent;
@@ -381,6 +382,7 @@ namespace WordCraft.View
             rubble = toRubble;
             diedAt = ViewClock.Now;
             fellAt = transform.position;
+            fellFacing = transform.rotation;
         }
 
         /// <summary>
@@ -621,7 +623,7 @@ namespace WordCraft.View
                     // Standing, a slime settles under its own weight now and
                     // then: a short press and release every second and a half.
                     float press = Mathf.Max(0f, Mathf.Sin(now * 4.2f * tempo + seed));
-                    press = press * press * press * 0.07f * idle;
+                    press = press * press * press * 0.09f * idle;
 
                     float squash = land + press - flight;
                     scale = new Vector3(1f + squash * 0.6f, 1f - squash, 1f + squash * 0.6f);
@@ -668,7 +670,7 @@ namespace WordCraft.View
                         kick = kick * kick * kick;
                         offset.z -= 0.14f * kick * size;
                         pitch -= 16f * kick;
-                        armPitch = -40f * kick;
+                        armPitch = -24f * kick;
                         scale = Vector3.Scale(scale, new Vector3(1f + 0.06f * kick, 1f - 0.08f * kick, 1f - 0.04f * kick));
                         break;
                     }
@@ -695,7 +697,7 @@ namespace WordCraft.View
                 scale = Vector3.Scale(scale, new Vector3(1f + 0.14f * knock, 1f - 0.2f * knock, 1f + 0.14f * knock));
                 pitch -= 14f * knock;
                 float flash = Mathf.Clamp01(1f - hit / 0.45f);
-                washToward = 0.55f * flash * flash;
+                washToward = 0.45f * flash * flash;
             }
             Look(BodyPalette.HitFlash, washToward, 1f);
 
@@ -874,10 +876,13 @@ namespace WordCraft.View
                 opacity = 1f - Mathf.Clamp01((t - 0.3f) / 0.7f);
             }
 
+            // The root turns, not the hull, so legs hanging from the root fall
+            // with the body instead of standing on where it was.
             transform.position = fellAt + offset;
+            transform.rotation = fellFacing * Quaternion.Euler(pitch, 0f, roll);
             transform.localScale = new Vector3(scale.x, scale.y * siteHeight, scale.z);
             hull.localPosition = hullRest;
-            hull.localRotation = Quaternion.Euler(pitch, 0f, roll);
+            hull.localRotation = Quaternion.identity;
             hull.localScale = Vector3.one;
             Look(toward, washed, opacity);
         }
