@@ -208,15 +208,11 @@ namespace WordCraft.View
                 if (state[i] == Seen) state[i] = Memory;
             }
 
-            // One lookup for the whole sweep: everything revealed below belongs to
-            // the local peer, so every sight radius is read off the same roster.
-            Faction seeing = world.FactionOf(peer);
-
             for (int i = 0; i < world.EntityCount; i++)
             {
                 Entity e = world.GetEntity(i);
                 if (!e.Alive || e.Owner != peer) continue;
-                Reveal(MatchRunner.ToView(e.Position), seeing, e);
+                Reveal(MatchRunner.ToView(e.Position), e);
             }
 
             for (int i = 0; i < world.EntityCount; i++)
@@ -279,19 +275,21 @@ namespace WordCraft.View
         /// rather than a table invented for the fog. Height changes it afterwards,
         /// in <see cref="Reveal"/>.
         ///
-        /// Anything that moves sees <see cref="World.AcquireRange"/>, which is how
-        /// far the simulation already lets a unit notice a hostile. Sight shorter
-        /// than that would have this peer's own units opening fire on things its
-        /// own screen is painting black, which is the one incoherence a view-only
-        /// fog can actually avoid. Every weapon in the roster reaches 6 or less, so
-        /// a unit sees further than it shoots for free and no scout stat is needed.
+        /// Anything that moves sees as far as the simulation lets it notice a
+        /// hostile: <see cref="World.AcquireRange"/>, or its own reach when that
+        /// is longer (<see cref="World.AcquisitionRange"/>). Sight shorter than
+        /// that would have this peer's own units opening fire on things its own
+        /// screen is painting black, which is the one incoherence a view-only fog
+        /// can actually avoid. Since docs/TECH-TREE.md 묶음 3 one weapon outreaches
+        /// the 10 cells: 거대 덩쿨 at 9, 11 once 거대 덩쿨 사거리 is researched.
         ///
         /// Buildings see less, because scouting is what units are for and a base
         /// that watched a third of the map would make walking anywhere optional. A
         /// building sees the ground it stands on — its own footprint, so it is
         /// never fogged under itself — or as far as it shoots, whichever is more.
-        /// That puts a defence tower at 6 and everything else between 2 and 4, all
-        /// of them under a unit's 10.
+        /// That puts a defence tower at 6 to 8 (화염 첨탑, 부유석 첨탑 and 틈새
+        /// 포대 reach 7, 틈새 포대 8 once researched) and everything else between
+        /// 2 and 4, all of them under a unit's 10.
         ///
         /// "As far as it shoots" is <see cref="World.RangeFor"/>, the one place the
         /// simulation reads a weapon's reach. A 대포 사거리 that adds a cell to the
@@ -302,7 +300,7 @@ namespace WordCraft.View
         private static float Sight(Entity e) =>
             Static(e)
                 ? Mathf.Max(Reach(shown.RangeFor(e)), MatchView.Cells(e.Role))
-                : Reach(World.AcquireRange);
+                : Reach(shown.AcquisitionRange(e));
 
         private static float Reach(Fix f) => f.Raw / (float)Fix.One;
 
@@ -317,13 +315,15 @@ namespace WordCraft.View
         /// feet, so the near distance grows to the footprint for a static seer.
         /// A flying seer takes neither rule.
         /// </summary>
-        private static void Reveal(Vector2 p, Faction faction, Entity e)
+        private static void Reveal(Vector2 p, Entity e)
         {
             int cx = Mathf.Clamp((int)p.x, 0, Cells - 1);
             int cy = Mathf.Clamp((int)p.y, 0, Cells - 1);
             int level = Field.Level(cy * Cells + cx);
 
-            bool air = FactionData.Stats(faction, e.Role).Air;
+            // The body's own roster entry: 지옥불's ranged entry 0 flies and its
+            // entry 1 walks, so a lookup by role alone would fly 균열 파수병.
+            bool air = shown.Flies(e);
             float radius = Sight(e);
             float near = PlateauSight;
             if (!air)
