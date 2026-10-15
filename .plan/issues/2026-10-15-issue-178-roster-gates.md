@@ -85,3 +85,15 @@ public const Role ArcherRole = Role.Ranged; public const int ArcherSlot = 0; // 
   ·선행 `Tech` 0(공방)으로 적는다. 묶음 3이 건물 행을 넣을 때 바꾼다.
 - 군단장·구름 용·고대 골렘·공수 특공대의 둘째 생산 건물(큰 균열, 구름 둥지, 각성의 원,
   석조 병영)도 묶음 3에서 적는다. 그때까지 `Production` 0 하나다.
+
+## 리뷰 후속 (PR #181)
+
+- 선행 검사를 `return true`로 바꿔도 하네스가 통과했다. `APrerequisiteRefusesWhereTheTierWouldAllow`를
+  더했다. 뿌리 회당이 서 있고 풀씨 둥지가 없는(처음부터 없거나 무너진) 세계수 정령은 T3인데도
+  둘째 뿌리 회당 건설과 고목 수호자 성장을 거부당하고, 풀씨 둥지가 서면 둘 다 받는다.
+  같은 변이를 다시 넣으면 이 check가 실패한다. 단계와 선행은 게임 안에서도 따로 거부된다.
+- `CanResearch`의 `Role.Tech` 검사를 지웠다. 어느 건물이 연구하는지는 `ResearchAt` 한 줄이
+  정한다. 그 줄을 지우면 하네스가 실패한다.
+- `FactionData.Tier`가 로스터에 없는 항목(빈 0번 포함)에 `MaxTier + 1`을 답한다.
+- `docs/FACTION-MECHANICS.md` 연구 거부 순서의 5번과 6번을 코드 순서대로 바꿨다.
+- 골든 해시는 움직이지 않았다(`0x45FA012D9A76F9AB`, CoreCLR과 Mono 같음).
