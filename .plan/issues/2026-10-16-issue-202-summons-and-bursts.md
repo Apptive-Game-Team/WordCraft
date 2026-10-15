@@ -1,8 +1,8 @@
-# 2026-10-16 — 한시 소환과 사망 폭발: Lifetime, ExpirySystem, BurstSystem
+# 2026-10-16: 한시 소환과 사망 폭발: Lifetime, ExpirySystem, BurstSystem
 
 - Date: 2026-10-16
 - GitHub Issue: #202
-- Status: In progress (draft PR, #205 위에 쌓음)
+- Status: Implemented (draft PR, #205 위에 쌓음)
 
 ## Goal
 
@@ -13,7 +13,7 @@
 
 - `UnitStats.Lifetime`(틱, 0이면 영구). `lifetimes` 표 다섯 행이 정적 생성자에서 채운다:
   차원 유랑종 Melee 1·Melee 2·Ranged 1·Ranged 3·Signature 3, 전부 600.
-- `AbilityKind` 셋 추가: `DeathBurst = 14`, `ArrivalBurst = 15`, `ExpiryAura = 16`.
+- `AbilityKind` 셋 추가: `ExpiryAura = 14`, `DeathBurst = 15`, `ArrivalBurst = 16`.
 
 | 진영 | 능력 | 보유 | 종류 | 대상 | 수치 | 수치 연구 |
 |---|---|---|---|---|---|---|
@@ -45,7 +45,13 @@ Tech 1, T2, 75, 120).
 
 능력 표 행, 600틱 만료, 영구 행 `ExpireTick` 0, 층위 고정 지연, 사망 폭발이 `BurstSystem`
 에서 피해를 주고 연쇄 사망이 같은 틱, 도착 방전, 연구 수치, 틱 끝 대기열 비어 있음,
-두 월드 해시 일치, 해시가 `ExpireTick`에 민감함. 각 검사를 한 번씩 일부러 깨서 확인한다.
+두 월드 해시 일치, 해시가 `ExpireTick`에 민감함. 검사 14개를 하나씩 일부러 깨서 모두 실패하는 것을 확인했다.
+
+## 결과
+
+- 골든 해시 `0xC7F3354AEC08548D` → `0x39F72E92D095408D`. CoreCLR과 Unity Mono가 같은 값을 냈다.
+- #205 리뷰 수정(`IsAura`가 `FactionData`로 이동, 더 엄격한 능력 `Require`)을 병합하면서 `ExpiryAura`를
+  `IsAura`에, 폭발 두 종류를 반경·대상 `Require`에 넣었다.
 
 ## 문서
 
