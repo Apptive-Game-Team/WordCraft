@@ -204,6 +204,7 @@ namespace WordCraft.View
                 Building = building,
                 Flying = flying,
                 Tint = b.Tint,
+                Assembled = b.Assembled,
                 Assembly = b.Assembly,
                 Debris = b.Debris,
                 Mote = b.Mote,
@@ -296,7 +297,8 @@ namespace WordCraft.View
             public bool CrownAims;
             public Color Tint = Color.white;
             public Assembly Assembly;
-            public Color Debris = Color.grey, Mote = Color.white, Glow = Color.clear;
+            public bool Assembled;
+            public Color Debris, Mote, Glow;
 
             /// <summary>The hull's later parts, in the order a site puts them up.</summary>
             public readonly List<Solids> Tiers = new List<Solids>(4);
@@ -1363,6 +1365,7 @@ namespace WordCraft.View
         /// </summary>
         private static void Dress(Blueprint b, Faction faction)
         {
+            b.Assembled = true;
             b.Mote = BodyPalette.Shot(faction);
             switch (faction)
             {

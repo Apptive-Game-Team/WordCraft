@@ -102,13 +102,20 @@ namespace WordCraft.View
         public float[] TierHeights;
         /// <summary>World height of the first hull part over its foot.</summary>
         public float HullHeight;
+
+        /// <summary>
+        /// A building a player builds: put together part by part, at work,
+        /// razed. Everything else that stands still — a resource node, a
+        /// rubble pile — is false, keeps one hull and sinks the old way.
+        /// </summary>
+        public bool Assembled;
         public Assembly Assembly;
         /// <summary>A razed building's chunks, and the dust a finished or razed building raises.</summary>
-        public Color Debris = Color.grey;
+        public Color Debris;
         /// <summary>What a working building gives off: the small motes that rise from its roof.</summary>
-        public Color Mote = Color.white;
+        public Color Mote;
         /// <summary>The light inside that flashes once and goes out when it is razed; alpha zero for none.</summary>
-        public Color Glow = Color.clear;
+        public Color Glow;
     }
 
     /// <summary>
@@ -391,7 +398,7 @@ namespace WordCraft.View
             aimYaw = targetYaw;
 
             var made = new System.Collections.Generic.List<MeshRenderer>(8);
-            if (design.Building)
+            if (design.Assembled)
             {
                 // A bare hull over the parts, so construction can move each
                 // part while a flinch still moves the whole.
@@ -601,7 +608,7 @@ namespace WordCraft.View
             bool finished = progress < 1f && t >= 1f;
             progress = t;
             if (parts != null) PoseAssembly(now);
-            if (finished && recent && shown && !remembered && design != null)
+            if (finished && recent && shown && !remembered && parts != null)
             {
                 settledAt = now;
                 if (effects != null) effects.Dust(transform.position, design.Footprint * 0.5f, Dust);
@@ -1041,7 +1048,7 @@ namespace WordCraft.View
             // Motes whether or not the crown turns: a crown turning three times
             // faster is plain in motion and invisible in a still, and a still at
             // 64 px is what the strips judge by.
-            if (working && progress >= 1f) Motes(now);
+            if (working && progress >= 1f && parts != null) Motes(now);
 
             Quaternion lean = Quaternion.identity;
             float deliver = Phase(deliverAt, DeliverSeconds, now);
@@ -1305,6 +1312,17 @@ namespace WordCraft.View
                 float left = Mathf.Max(1f - crumble, 0.02f);
                 squash = new Vector3(left * (1f + 0.3f * crumble), left * left, left * (1f + 0.3f * crumble));
                 opacity = 1f;
+            }
+            else if (design.Building)
+            {
+                // A resource node run dry: it shudders and settles into the
+                // ground, with nothing to break off and nothing inside.
+                float shake = (1f - t) * 0.06f * design.Footprint;
+                offset.x = Mathf.Sin(now * 57f + seed) * shake;
+                offset.z = Mathf.Sin(now * 43f + seed * 3f) * shake * 0.6f;
+                offset.y = -t * t * Mathf.Max(design.Top - 0.25f, 0.5f) * 0.6f;
+                squash.y = 1f - 0.3f * t;
+                roll = Mathf.Sin(now * 31f + seed) * 2.5f * (1f - t);
             }
             else if (design.Flying)
             {
