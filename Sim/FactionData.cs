@@ -187,8 +187,12 @@ namespace WordCraft.Sim
         /// directions with a climb cost and smooths what it finds. A peer on 27
         /// routes a unit one cell at a time through a lane a peer on 28 cuts
         /// diagonally, and the two have diverged on the first tick anything moves.
+        /// 29 is separation: walkers that share ground push each other apart by
+        /// the footprint their roster row carries. A peer on 28 stacks ten bodies
+        /// on one point where a peer on 29 spreads them, and every range test
+        /// after that reads different positions.
         /// </summary>
-        public const uint ContentVersion = 28;
+        public const uint ContentVersion = 29;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
