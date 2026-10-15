@@ -2080,10 +2080,10 @@ namespace WordCraft.View
             SixLegs(b, deep, 0.16f, -0.04f, -0.24f);
 
             b.Arm.Origin = Point(0f, 0.26f, 0.42f);
-            Color vine = BodyPalette.TreeSpirits.LeafShade;
+            Color vine = BodyPalette.Driftworlds.NatureWorld;
             Vector3 position = Curl(b.Arm, Point(0f, 0.26f, 0.4f), 4, 5, 0.045f, 0.85f, 0.13f, 0.12f, 80f, -32f, vine, vine);
-            b.Arm.Ball(position, Extent(0.06f, 0.025f, 0.04f), BodyPalette.TreeSpirits.LeafLight);
-            b.Arm.Ball(Point(0.08f, 0.32f, 0.54f), Extent(0.05f, 0.02f, 0.04f), BodyPalette.TreeSpirits.Leaf);
+            b.Arm.Ball(position, Extent(0.06f, 0.025f, 0.04f), vine);
+            b.Arm.Ball(Point(0.08f, 0.32f, 0.54f), Extent(0.05f, 0.02f, 0.04f), vine);
         }
 
         /// <summary>멸종한 바람 슬라임: a pale teal slime under two shell plates, wisps of its wind trailing behind. Airborne, a temporary summon.</summary>
@@ -2093,7 +2093,7 @@ namespace WordCraft.View
             b.LimbsRideHull = true;
             b.Strike = Strike.Recoil;
             Solids hull = b.Hull;
-            Color body = BodyPalette.Driftworlds.TealLight, wisp = BodyPalette.Lighter(BodyPalette.Driftworlds.TealLight, 0.45f);
+            Color body = BodyPalette.Driftworlds.TealLight, wisp = BodyPalette.Driftworlds.WindWorld;
             Color shell = BodyPalette.Driftworlds.Shell, shade = BodyPalette.Driftworlds.ShellShade;
 
             hull.Ball(Point(0f, 0.4f, 0.04f), Extent(0.26f, 0.22f, 0.28f), body);
@@ -2183,7 +2183,7 @@ namespace WordCraft.View
             Solids hull = b.Hull;
             Color shell = BodyPalette.Driftworlds.Shell, shade = BodyPalette.Driftworlds.ShellShade;
 
-            hull.Dome(Vector3.zero, Extent(0.4f, 0.48f, 0.38f), 10, 3, BodyPalette.TreeSpirits.LeafLight);
+            hull.Dome(Vector3.zero, Extent(0.4f, 0.48f, 0.38f), 10, 3, BodyPalette.Driftworlds.NatureWorld);
             hull.Box(Point(-0.27f, 0.26f, -0.16f), Extent(0.12f, 0.44f, 0.36f), shell, Turn(0f, 0f, 12f));
             hull.Box(Point(0.27f, 0.24f, -0.16f), Extent(0.12f, 0.4f, 0.34f), shade, Turn(0f, 0f, -12f));
             hull.Box(Point(0f, 0.26f, -0.32f), Extent(0.46f, 0.44f, 0.1f), shell);
