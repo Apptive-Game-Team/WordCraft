@@ -696,28 +696,50 @@ namespace WordCraft.Replay
 
         /// <summary>
         /// The client's scripted log carries one Research, so the golden hash both
-        /// runtimes assert covers the command and the clock. A refused order
-        /// changes no state, and a log whose research was silently refused would
-        /// hash identically on both runtimes and cover nothing, so the order is
-        /// checked to have landed: the named entity is peer 0's 기술 건물 and it is
-        /// still researching 공격력 when the log ends.
+        /// runtimes assert covers the command, the clock, the level landing and a
+        /// hit carrying the bonus. A refused order changes no state, and a log
+        /// whose research was silently refused, or whose level landed after the
+        /// last shot, would hash identically on both runtimes and cover none of
+        /// that. So each piece is checked to have happened inside the log: the
+        /// named entity is peer 0's 기술 건물, the order was taken, 공격력 reached
+        /// level 1, and after that a peer 1 body lost exactly what peer 0's archer
+        /// hits for plus one.
         /// </summary>
         private static void ScriptedLogResearches()
         {
             List<Command>[] log = ScriptedLog.Build();
             World world = MatchScenario.Build(Seed, ScriptedLog.Peer0Faction, ScriptedLog.Peer1Faction);
+            int researched = FactionData.Stats(ScriptedLog.Peer0Faction, Role.Ranged).Damage + World.AttackPerLevel;
+
             int tech = -1;
+            bool taken = false, bonusHit = false;
+            var hp = new List<int>();
             for (int t = 0; t < log.Length; t++)
             {
                 world.Step(log[t]);
-                foreach (Command c in log[t]) if (c.Type == CommandType.Research) tech = c.EntityId;
+                foreach (Command c in log[t])
+                {
+                    if (c.Type != CommandType.Research) continue;
+                    tech = c.EntityId;
+                    taken = world.GetEntity(tech).ResearchIndex == c.Arg;
+                }
+
+                for (int i = 0; i < world.EntityCount; i++)
+                {
+                    Entity e = world.GetEntity(i);
+                    if (i == hp.Count) hp.Add(e.Hp);
+                    if (e.Owner == 1 && hp[i] - e.Hp == researched && world.UpgradeLevel(0, 0) > 0) bonusHit = true;
+                    hp[i] = e.Hp;
+                }
             }
 
             Check(tech >= 0, "the scripted log carries no Research");
             Entity b = world.GetEntity(tech);
             Check(b.Alive && b.Owner == 0 && b.Role == Role.Tech, "the scripted log's Research names entity " + tech +
                 ", which is not peer 0's 기술 건물");
-            Check(b.ResearchIndex == 0 && b.ResearchTicksLeft > 0, "the scripted log's Research was refused");
+            Check(taken, "the scripted log's Research was refused");
+            Check(world.UpgradeLevel(0, 0) == 1, "the scripted log's research never landed inside the log");
+            Check(bonusHit, "no hit inside the scripted log carried the researched 공격력");
         }
 
         // ---------------------------------------------------------------------
