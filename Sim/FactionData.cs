@@ -1325,8 +1325,8 @@ namespace WordCraft.Sim
             new ProductionCost { Resources = resources, Ticks = ticks, Produced = true };
 
         /// <summary>
-        /// 세계수 정령 성장: every roster entry a worker of some faction may grow
-        /// into, and what it costs. A whole table rather than a shared row and a
+        /// 세계수 정령 성장: every roster entry a body of some faction may grow
+        /// into, what it grows from, and what it costs. A whole table rather than a shared row and a
         /// list of overrides, because growth is not a thing every faction does a
         /// little differently — it is a thing one faction does at all. A shared row
         /// would have to say "no" fifty-eight times to say "yes" twice.
@@ -1445,12 +1445,6 @@ namespace WordCraft.Sim
             return new SpawnerRow();
         }
 
-        /// <summary>How many rows the spawner table holds, for the harness.</summary>
-        public static int SpawnerCount => spawners.Length;
-
-        /// <summary>One row of the spawner table, in declaration order.</summary>
-        public static SpawnerRow SpawnerAt(int index) => spawners[index];
-
         /// <summary>
         /// Every roster entry that is a 통로 or an anchor, docs/TECH-TREE.md M9 and
         /// 도착 규칙. 통로 and 깊은 통로 keep an arrival point; 굴절 기둥 and 경계
@@ -1500,12 +1494,6 @@ namespace WordCraft.Sim
             return new ArrivalRow();
         }
 
-        /// <summary>How many rows the arrival table holds, for the harness.</summary>
-        public static int ArrivalCount => arrivals.Length;
-
-        /// <summary>One row of the arrival table, in declaration order.</summary>
-        public static ArrivalRow ArrivalAt(int index) => arrivals[index];
-
         /// <summary>
         /// Every building with a free queue, docs/TECH-TREE.md M10 and 씨앗 귀환:
         /// 씨앗 요람 gives back a 풀씨 정령 for a 세계수 정령 unit that dies within 8
@@ -1538,12 +1526,6 @@ namespace WordCraft.Sim
             }
             return new FreeQueueRow();
         }
-
-        /// <summary>How many rows the free queue table holds, for the harness.</summary>
-        public static int FreeQueueCount => freeQueues.Length;
-
-        /// <summary>One row of the free queue table, in declaration order.</summary>
-        public static FreeQueueRow FreeQueueAt(int index) => freeQueues[index];
 
         /// <summary>
         /// The cells a fallen 돌 골렘 unit leaves debris on, as offsets from the cell
@@ -2074,6 +2056,9 @@ namespace WordCraft.Sim
                 RequireFielded(faction, cost.FromRole, cost.FromSlot, "growthTargets");
                 Require(!IsBuilding(role) && !IsBuilding(cost.FromRole), "growthTargets row " + i + " names a building");
                 Require(cost.FromRole != role || cost.FromSlot != slot, "growthTargets row " + i + " grows into itself");
+                // A spawner's clock is armed in SpawnUnit, which a growth never
+                // passes through, so a body that grew into one would never emit.
+                Require(!Spawner(faction, role, slot).Spawns, "growthTargets row " + i + " grows into a spawner");
             }
         }
 
@@ -2087,6 +2072,19 @@ namespace WordCraft.Sim
                 Require(IsBuilding(row.Role) && !IsBuilding(row.GiveRole), "freeQueues row " + i + " is not a building giving a body");
                 Require(Production(row.Faction, row.GiveRole, row.GiveSlot).Ticks > 0, "freeQueues row " + i + " gives an untimed body");
                 Require(row.Radius > 0, "freeQueues row " + i + " has no radius");
+                // Nothing may be produced at a free-queue building: its queue holds
+                // only the free body, so a cancel never has a paid order to refund
+                // and ReturnSeed never meets a queue of another entry.
+                for (int r = 0; r < RoleCount; r++)
+                {
+                    var role = (Role)r;
+                    if (IsBuilding(role)) continue;
+                    for (int slot = 0; slot < SlotCount(row.Faction, role); slot++)
+                    {
+                        Require(!IsProducedAt(row.Faction, role, slot, row.Role, row.Slot),
+                            "freeQueues row " + i + " is a building " + role + " " + slot + " is produced at");
+                    }
+                }
                 RequireResearchable(row.Faction, row.RadiusEffect, "freeQueues");
             }
         }

@@ -367,6 +367,7 @@ namespace WordCraft.Sim
 
             int best = -1;
             Fix bestSqr = Fix.Zero;
+            FreeQueueRow give = default;
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity b = entities[i];
@@ -379,18 +380,17 @@ namespace WordCraft.Sim
                 {
                     best = i;
                     bestSqr = d;
+                    give = row;
                 }
             }
             if (best < 0) return;
 
             Entity cradle = entities[best];
-            FreeQueueRow give = FactionData.FreeQueue(factions[peer], cradle.Role, cradle.Slot);
             if (cradle.QueueCount >= MaxQueue) return;
             if (population[peer] >= PopulationCap(peer)) return;
-            // Nothing else can be on this queue: no Produce names a free-queue
-            // building (it is on no unit's producer list), so the entry is always
-            // the one the row gives. Asked anyway, for the rule TryQueueUnit keeps.
-            if (cradle.QueueCount > 0 && (cradle.ProduceRole != give.GiveRole || cradle.ProduceSlot != give.GiveSlot)) return;
+            // Nothing else can be on this queue: FactionData refuses at type load
+            // a free-queue building that any entry is produced at, so the entry on
+            // it is always the one the row gives.
 
             cradle.QueueCount++;
             cradle.ProduceRole = give.GiveRole;
