@@ -941,6 +941,23 @@ namespace WordCraft.Sim
             (Faction.RockGolems, Role.Defense, 1, Turret(320, 12, 7, 20, true, false)),
             // 잠듦의 고리
             (Faction.RockGolems, Role.Defense, 2, Structure(300)),
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            // Fighter: 이동, 체력, 방어, 속도, 피해, 사거리, 주기, 대공, 대지. Support: 이동, 체력, 방어, 속도.
+            // 덩쿨편
+            (Faction.Driftworlds, Role.Ranged, 2, Fighter(Walks, 80, 0, Fix.Ratio(1, 4), 6, 5, 18, true, true)),
+            // 멸종한 바람 슬라임
+            (Faction.Driftworlds, Role.Ranged, 3, Fighter(Flies, 90, 0, Fix.Ratio(3, 8), 7, 5, 15, true, true)),
+            // 떠도는 섬
+            (Faction.Driftworlds, Role.Signature, 1, Support(Flies, 260, 2, Fix.Ratio(1, 6))),
+            // 층위 관측자
+            (Faction.Driftworlds, Role.Signature, 2, Support(Walks, 110, 0, Fix.Ratio(1, 4))),
+            // 멸종한 자연 슬라임
+            (Faction.Driftworlds, Role.Signature, 3, Support(Walks, 100, 0, Fix.Ratio(1, 4))),
+            // 위상 닻
+            (Faction.Driftworlds, Role.Defense, 1, Structure(80)),
+            // 틈새 포대
+            (Faction.Driftworlds, Role.Defense, 2, Turret(260, 12, 7, 20, true, true)),
         };
 
         /// <summary>
@@ -1138,6 +1155,13 @@ namespace WordCraft.Sim
             (Faction.RockGolems, Role.Ranged, 3, Produce(130, 110)), // 모래 술사
             (Faction.RockGolems, Role.Signature, 1, Produce(150, 120)), // 이끼 현자
             (Faction.RockGolems, Role.Signature, 2, Produce(70, 60)), // 이끼 포자 무리
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            (Faction.Driftworlds, Role.Ranged, 2, Produce(55, 50)), // 덩쿨편
+            (Faction.Driftworlds, Role.Ranged, 3, Produce(45, 30)), // 멸종한 바람 슬라임
+            (Faction.Driftworlds, Role.Signature, 1, Produce(200, 140)), // 떠도는 섬
+            (Faction.Driftworlds, Role.Signature, 2, Produce(120, 100)), // 층위 관측자
+            (Faction.Driftworlds, Role.Signature, 3, Produce(40, 30)), // 멸종한 자연 슬라임
         };
 
         private static ProductionCost Produce(int resources, int ticks) =>
@@ -1307,6 +1331,12 @@ namespace WordCraft.Sim
             // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
             (Faction.RockGolems, ResearchRow("돌팔매 사거리", 75, 120, 2, UpgradeEffect.SlingerRange, (Role.Tech, 1), NoBuilding)),
             (Faction.RockGolems, ResearchRow("부유석 사거리", 150, 200, 3, UpgradeEffect.FloatingStoneRange, (Role.Tech, 1), NoBuilding)),
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            (Faction.Driftworlds, ResearchRow("폭풍편 공격 주기", 100, 160, 2, UpgradeEffect.StormShardAttackTicks, (Role.Tech, 1), NoBuilding)),
+            (Faction.Driftworlds, ResearchRow("덩쿨편 사거리", 75, 120, 2, UpgradeEffect.VineShardRange, (Role.Tech, 1), NoBuilding)),
+            (Faction.Driftworlds, ResearchRow("틈새 포대 사거리", 100, 160, 2, UpgradeEffect.RiftBatteryRange, (Role.Tech, 1), NoBuilding)),
+            (Faction.Driftworlds, ResearchRow("도주 가속", 100, 160, 2, UpgradeEffect.FleeSpeed, (Role.Tech, 1), NoBuilding)),
         };
 
         /// <summary>
@@ -1421,6 +1451,16 @@ namespace WordCraft.Sim
             (Faction.RockGolems, Role.Ranged, 1, UpgradeEffect.SlingerRange, UpgradedStat.Range, Fix.FromInt(6)),
             // 부유석 파수 사거리 6 → 7.
             (Faction.RockGolems, Role.Ranged, 2, UpgradeEffect.FloatingStoneRange, UpgradedStat.Range, Fix.FromInt(7)),
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            // 폭풍편 주기 15 → 12틱.
+            (Faction.Driftworlds, Role.Melee, 0, UpgradeEffect.StormShardAttackTicks, UpgradedStat.AttackTicks, Fix.FromInt(12)),
+            // 덩쿨편 사거리 5 → 6.
+            (Faction.Driftworlds, Role.Ranged, 2, UpgradeEffect.VineShardRange, UpgradedStat.Range, Fix.FromInt(6)),
+            // 틈새 포대 사거리 7 → 8.
+            (Faction.Driftworlds, Role.Defense, 2, UpgradeEffect.RiftBatteryRange, UpgradedStat.Range, Fix.FromInt(8)),
+            // 경계 운반자 도주 중 속도 3/8 → 1/2.
+            (Faction.Driftworlds, Role.Signature, 0, UpgradeEffect.FleeSpeed, UpgradedStat.FleeSpeed, Fix.Ratio(1, 2)),
         };
 
         /// <summary>How many rows the entry upgrade table holds, for the harness.</summary>
@@ -1749,6 +1789,17 @@ namespace WordCraft.Sim
             (Faction.RockGolems, Role.Signature, "이끼 현자", ""),
             (Faction.RockGolems, Role.Signature, "이끼 포자 무리", "MossSporeCluster"),
             (Faction.RockGolems, Role.Tech, "이끼 정원", "MossGarden"),
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            (Faction.Driftworlds, Role.Production, "깊은 통로", "DeepPassage"),
+            (Faction.Driftworlds, Role.Defense, "위상 닻", "PhaseAnchor"),
+            (Faction.Driftworlds, Role.Defense, "틈새 포대", "RiftBattery"),
+            (Faction.Driftworlds, Role.Ranged, "덩쿨편", "VineShard"),
+            (Faction.Driftworlds, Role.Ranged, "멸종한 바람 슬라임", "ExtinctWindSlime"),
+            (Faction.Driftworlds, Role.Signature, "떠도는 섬", "WanderingIsland"),
+            (Faction.Driftworlds, Role.Signature, "층위 관측자", "StrataObserver"),
+            (Faction.Driftworlds, Role.Signature, "멸종한 자연 슬라임", "ExtinctNatureSlime"),
+            (Faction.Driftworlds, Role.Tech, "외피 연마장", "ShellPolishingYard"),
         };
 
         /// <summary>
@@ -1871,6 +1922,12 @@ namespace WordCraft.Sim
             (Faction.RockGolems, Role.Ranged, 2, 3), // 부유석 파수
             (Faction.RockGolems, Role.Ranged, 3, 3), // 모래 술사
             (Faction.RockGolems, Role.Signature, 2, 2), // 이끼 포자 무리
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            (Faction.Driftworlds, Role.Production, 1, 3), // 깊은 통로
+            (Faction.Driftworlds, Role.Defense, 1, 2), // 위상 닻
+            (Faction.Driftworlds, Role.Defense, 2, 2), // 틈새 포대
+            (Faction.Driftworlds, Role.Ranged, 3, 3), // 멸종한 바람 슬라임
         };
 
         /// <summary>
@@ -1966,6 +2023,14 @@ namespace WordCraft.Sim
             (Faction.RockGolems, Role.Ranged, 2, (Role.Tech, 1)), // 부유석 파수
             (Faction.RockGolems, Role.Signature, 2, (Role.Tech, 1)), // 이끼 포자 무리
             (Faction.RockGolems, Role.Tech, 1, (Role.Production, 0)), // 이끼 정원
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            (Faction.Driftworlds, Role.Production, 1, (Role.Tech, 0)), // 깊은 통로
+            (Faction.Driftworlds, Role.Defense, 1, (Role.Production, 0)), // 위상 닻
+            (Faction.Driftworlds, Role.Defense, 2, (Role.Production, 0)), // 틈새 포대
+            (Faction.Driftworlds, Role.Ranged, 3, (Role.Tech, 0)), // 멸종한 바람 슬라임
+            (Faction.Driftworlds, Role.Signature, 3, (Role.Tech, 0)), // 멸종한 자연 슬라임
+            (Faction.Driftworlds, Role.Tech, 1, (Role.Production, 0)), // 외피 연마장
         };
 
         /// <summary>
@@ -2022,6 +2087,10 @@ namespace WordCraft.Sim
             (Faction.RockGolems, Role.Ranged, 2, (Role.Production, 1), NoBuilding), // 부유석 파수
             (Faction.RockGolems, Role.Ranged, 3, (Role.Production, 1), NoBuilding), // 모래 술사
             (Faction.RockGolems, Role.Signature, 1, (Role.Production, 1), NoBuilding), // 이끼 현자
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            (Faction.Driftworlds, Role.Signature, 1, (Role.Production, 1), NoBuilding), // 떠도는 섬
+            (Faction.Driftworlds, Role.Signature, 2, (Role.Production, 1), NoBuilding), // 층위 관측자
         };
 
         /// <summary>
@@ -2141,6 +2210,12 @@ namespace WordCraft.Sim
             (Faction.RockGolems, Role.Defense, 1, 110, 70), // 부유석 첨탑
             (Faction.RockGolems, Role.Defense, 2, 120, 80), // 잠듦의 고리
             (Faction.RockGolems, Role.Tech, 1, 150, 100), // 이끼 정원
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            (Faction.Driftworlds, Role.Production, 1, 220, 130), // 깊은 통로
+            (Faction.Driftworlds, Role.Defense, 1, 40, 30), // 위상 닻
+            (Faction.Driftworlds, Role.Defense, 2, 120, 70), // 틈새 포대
+            (Faction.Driftworlds, Role.Tech, 1, 150, 100), // 외피 연마장
         };
 
         /// <summary>
