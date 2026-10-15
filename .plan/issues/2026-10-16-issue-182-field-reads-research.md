@@ -2,7 +2,7 @@
 
 - Date: 2026-10-16
 - GitHub Issue: #182
-- Status: Draft
+- Status: Implemented, awaiting review
 
 ## Goal
 
@@ -13,7 +13,7 @@
 3. 도착 반경 링: `ArrivalOrder.Radius` 대신 `ArrivalOrder.RadiusFor(World, peer)`.
 4. 잔해 fade: `World.RemnantTicks`(400) 대신 그 월드에서 가능한 최대 지속으로 나눔.
 
-옛 overload `Progress(Entity)` 와 `Radius` 는 호출자가 사라지므로 지운다.
+옛 overload `Progress(Entity)` 와 `Radius` 는 지우려 했으나 지우지 못했다(Open Questions).
 `CLAUDE.md` 의 "See it" 절을 지금 샷 수와 `-shotsOutput` 사용법에 맞게 고친다.
 
 ## Non-goals
@@ -35,11 +35,11 @@
 
 ## Approach (Checklist)
 
-- [ ] **Step 0: Recon** — 호출자 전부 찾기(`MatchView.cs` 와 두 harness 뿐).
-- [ ] **Step 1: 사거리 링** — `world.RangeOf(e)`.
-- [ ] **Step 2: 포획 막대와 도착 반경** — 새 overload 로 바꾸고 옛 overload 삭제, harness 호출도 새 overload 로.
-- [ ] **Step 3: 잔해 fade** — 최대 지속 helper 와 주석.
-- [ ] **Step 4: 문서** — `CLAUDE.md` "See it".
+- [x] **Step 0: Recon** — 호출자 전부 찾기(`MatchView.cs` 와 두 harness 뿐).
+- [x] **Step 1: 사거리 링** — `world.RangeOf(e)`.
+- [x] **Step 2: 포획 막대와 도착 반경** — 새 overload 로 바꾸고 harness 호출도 새 overload 로. 옛 overload 는 남김.
+- [x] **Step 3: 잔해 fade** — 최대 지속 helper 와 주석.
+- [x] **Step 4: 문서** — `CLAUDE.md` "See it".
 
 ## Validation
 
@@ -59,4 +59,9 @@
 
 ## Open Questions
 
-- 없음.
+- 옛 `CaptureOrder.Progress(Entity)` 와 `ArrivalOrder.Radius` 는 지우지 않았다. 쓰기 범위
+  밖인 `Replay/ResearchMenuChecks.cs`(#174)가 연구 안 한 peer 의 막대와 연구한 반경을
+  기본값과 견주는 기준으로 둘을 아직 부른다(255, 283, 288행). 지우면 Replay 가 컴파일되지
+  않는다. `MatchView.cs` 호출자는 사라졌고 두 주석이 그 사실과 지울 조건을 적는다.
+  `ResearchMenuChecks.cs` 가 기본값 기준을 `World.CaptureTicks` 와 `World.ArrivalRadius`
+  로 바꾸는 후속에서 지우면 된다.
