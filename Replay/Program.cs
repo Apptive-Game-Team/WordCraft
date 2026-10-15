@@ -124,6 +124,7 @@ namespace WordCraft.Replay
                 SeparationChecks.Check();
                 UpgradeChecks.Check();
                 RosterGateChecks.Check();
+                RosterNumbersChecks.Check();
                 SimAssemblyIsClean();
             }
             catch (Exception ex)
