@@ -81,7 +81,7 @@ WordCraft의 여섯 진영, 유닛, 건물 정본 문서다. 세계관 사실은
 |---|---|---|
 | 생명의 나무 | 본진 | `LifeTree` |
 | 풀씨 둥지 | 생산 | `SeedNest` |
-| 씨앗 요람 | 죽은 전투 유닛을 풀씨 정령으로 | 신규 필요 (`SeedCradle`) |
+| 씨앗 요람 | 죽은 전투 유닛을 풀씨 정령으로 | `SeedCradle` (1차 시안) |
 | 정령 뇌우목 | 방어 | `SpiritStormtree` |
 | 회복 토템 | 지원 | `HealingTotem` |
 | 묘목 | 인구 | `Sapling` |
@@ -117,28 +117,28 @@ WordCraft의 여섯 진영, 유닛, 건물 정본 문서다. 세계관 사실은
 | 잿불 악마 | T1 | 일꾼, 약한 전투 가능 | `EmberSpiritSwarm` |
 | 용암 갑각 악마 | T2 | 중장 근접, 주변 화상 | `MagmaSpirit` 3상태 |
 | 화염 악마 | T1 | 근접 | `FireSpirit` |
-| 균열 사냥개 | T2 | 빠른 추격 | 신규 필요 (`RiftHound`) |
-| 잿불 새끼 | T2 | 산란 악마가 낳는 무료 근접 | 신규 필요 (`EmberWhelp`) |
+| 균열 사냥개 | T2 | 빠른 추격 | `RiftHound` (1차 시안) |
+| 잿불 새끼 | T2 | 산란 악마가 낳는 무료 근접 | `EmberWhelp` (1차 시안) |
 | 용암 주먹 | T2 | 공격 기관, 독립 생물 아님 | 신규 필요 (`MagmaFist`, 스프라이트 없음) |
 | 군단장의 자손 | T3 | 공중 원거리, 무료 | `FireChildSpirit` |
 | 균열 파수병 | T2 | 지상 원거리 | `RiftWarden` |
-| 용암 투석 악마 | T3 | 공성, 광역 | 신규 필요 (`LavaCatapultDemon`) |
-| 재날개 악마 | T3 | 대공 전담 공중 | 신규 필요 (`AshWingDemon`) |
+| 용암 투석 악마 | T3 | 공성, 광역 | `LavaCatapultDemon` (1차 시안) |
+| 재날개 악마 | T3 | 대공 전담 공중 | `AshWingDemon` (1차 시안) |
 | 지옥불 군단장 | T3 | 공중 비전투 | `FireLordSpirit` |
-| 산란 악마 | T2 | 잿불 새끼를 낳는 지상 유닛 | 신규 필요 (`BroodDemon`) |
-| 운석 술사 | T3 | 비전투 시전자, 유성우 | 신규 필요 (`MeteorInvoker`) |
+| 산란 악마 | T2 | 잿불 새끼를 낳는 지상 유닛 | `BroodDemon` (1차 시안) |
+| 운석 술사 | T3 | 비전투 시전자, 유성우 | `MeteorInvoker` (1차 시안) |
 
 | 건물 | 역할 | 아트 |
 |---|---|---|
 | 균열 제단 | 본진 | `RiftAltar` |
 | 악마 산란장 | 생산 | `SpawningPit` |
-| 큰 균열 | T3 생산 | 신규 필요 (`GrandRift`) |
+| 큰 균열 | T3 생산 | `GrandRift` (1차 시안) |
 | 용암 아가리 | 방어, 지상 전용 | `LavaMaw` |
 | 집결의 횃불 | 지원, 공격 주기 오라 | `RallyingTorch` |
-| 화염 첨탑 | 방어, 공중 전용 | 신규 필요 (`FlameSpire`) |
+| 화염 첨탑 | 방어, 공중 전용 | `FlameSpire` (1차 시안) |
 | 갈라진 틈 | 인구 | `WideningFissure` |
 | 용암 도가니 | 기술 | `LavaCrucible` |
-| 재 분화구 | 연구, 산란 악마의 선행 | 신규 필요 (`AshCaldera`) |
+| 재 분화구 | 연구, 산란 악마의 선행 | `AshCaldera` (1차 시안) |
 
 능력: `MeteorShower`, `FireShot`, `MagmaExplosion`, `Crater`
 
@@ -171,28 +171,28 @@ WordCraft의 여섯 진영, 유닛, 건물 정본 문서다. 세계관 사실은
 |---|---|---|---|
 | 물방울 생존자 | T1 | 일꾼, 물 지대 생성 | `WaterSlimeSwarm` |
 | 거품 정령 | T1 | 근접 방패 | `BubbleSpirit` |
-| 물막이 슬라임 | T2 | 원거리 아군을 지키는 벽 | 신규 필요 (`WaterScreenSlime`) |
-| 급류 슬라임 | T2 | 측면 기동 | 신규 필요 (`RiptideSlime`) |
+| 물막이 슬라임 | T2 | 원거리 아군을 지키는 벽 | `WaterScreenSlime` (1차 시안) |
+| 급류 슬라임 | T2 | 측면 기동 | `RiptideSlime` (1차 시안) |
 | 물결 궁수 | T2 | 원거리 핵심, 대공 | `AquaArcher` 2프레임 |
 | 해일 인도자 | T3 | 광역 | `TideHerald` |
 | 침 뱉는 슬라임 | T1 | 저가 원거리 | `WaterSlimeAttackSpit` |
-| 물대포 슬라임 | T3 | 공성, 지상 전용 | 신규 필요 (`WaterCannonSlime`) |
+| 물대포 슬라임 | T3 | 공성, 지상 전용 | `WaterCannonSlime` (1차 시안) |
 | 구름 용 | T3 | 공중 | `CloudDragon` |
 | 비구름 | T2 | 지원, 회복 | `RainCloud` |
-| 간헐천 술사 | T3 | 비전투 시전자, 간헐천 | 신규 필요 (`GeyserMage`) |
-| 샘물 운반자 | T2 | 비전투 지원, 이동식 물 지대 | 신규 필요 (`SpringCarrier`) |
+| 간헐천 술사 | T3 | 비전투 시전자, 간헐천 | `GeyserMage` (1차 시안) |
+| 샘물 운반자 | T2 | 비전투 지원, 이동식 물 지대 | `SpringCarrier` (1차 시안) |
 
 | 건물 | 역할 | 아트 |
 |---|---|---|
 | 수맥 웅덩이 | 본진 | `SpringheadPool` |
 | 거품 생성기 | 생산 | `BubbleGenerator` |
-| 구름 둥지 | 생산, 비구름·구름 용 | 신규 필요 (`CloudNest`) |
+| 구름 둥지 | 생산, 비구름·구름 용 | `CloudNest` (1차 시안) |
 | 물기둥 분수 | 방어 | `GeyserColumn` |
-| 솟는 샘 | 지원, 고정 물 지대 | 신규 필요 (`RisingSpring`) |
-| 거품 장벽 | 길을 막는 벽 | 신규 필요 (`BubbleMound`) |
+| 솟는 샘 | 지원, 고정 물 지대 | `RisingSpring` (1차 시안) |
+| 거품 장벽 | 길을 막는 벽 | `BubbleMound` (1차 시안) |
 | 물웅덩이 | 인구 | `StillPool` |
 | 조수 제단 | 기술 | `TideAltar` |
-| 물결 수련장 | 연구, 물대포 슬라임의 선행 | 신규 필요 (`WaveTrainingPool`) |
+| 물결 수련장 | 연구, 물대포 슬라임의 선행 | `WaveTrainingPool` (1차 시안) |
 
 능력: `TideCall`, `WaterExplosion`, `WaterField`
 
@@ -224,28 +224,28 @@ WordCraft의 여섯 진영, 유닛, 건물 정본 문서다. 세계관 사실은
 | 꼬마돌 | T1 | 일꾼, 인간의 포획 대상 | `MiniRockSwarm` |
 | 이끼바위 골렘 | T1 | 근접 탱커 | `RockGolem` · `RockGolem2` |
 | 구르는 바위 | T2 | 돌진 | `RockRolling` |
-| 성벽 골렘 | T2 | 스스로 잔해 벽이 된다 | 신규 필요 (`WallGolem`) |
-| 깨어난 바위 | T3 | 잔해에서 깨어난 골렘, 깨우기로만 획득 | 신규 필요 (`AwakenedStone`) |
+| 성벽 골렘 | T2 | 스스로 잔해 벽이 된다 | `WallGolem` (1차 시안) |
+| 깨어난 바위 | T3 | 잔해에서 깨어난 골렘, 깨우기로만 획득 | `AwakenedStone` (1차 시안) |
 | 바위 술사 | T2 | 원거리, 잔해 활용 | `RockMage` |
-| 돌팔매 꼬마돌 | T1 | 싼 원거리 | 신규 필요 (`PebbleSlinger`) |
-| 부유석 파수 | T3 | 공중 원거리 | 신규 필요 (`FloatingStoneSentinel`) |
-| 모래 술사 | T3 | 시전자, 모래폭풍 | 신규 필요 (`SandShaper`) |
+| 돌팔매 꼬마돌 | T1 | 싼 원거리 | `PebbleSlinger` (1차 시안) |
+| 부유석 파수 | T3 | 공중 원거리 | `FloatingStoneSentinel` (1차 시안) |
+| 모래 술사 | T3 | 시전자, 모래폭풍 | `SandShaper` (1차 시안) |
 | 고대 골렘 | T3 | 공성, 사망 시 잔해 3칸 | `AncientGolem` |
-| 이끼 현자 | T3 | 비전투 시전자, 깨우기 | 신규 필요 |
-| 이끼 포자 무리 | T2 | 비전투 지원, 이끼 재생 | 신규 필요 (`MossSporeCluster`) |
+| 이끼 현자 | T3 | 비전투 시전자, 깨우기 | `MossSage` (1차 시안) |
+| 이끼 포자 무리 | T2 | 비전투 지원, 이끼 재생 | `MossSporeCluster` (1차 시안) |
 | 바위 잔해 | — | 지형, 유닛 아님 | `RockRemnant` |
 
 | 건물 | 역할 | 아트 |
 |---|---|---|
 | 이끼바위 성소 | 본진 | `MossrockSanctum` |
 | 각성 바위 | 생산 | `WakingStone` |
-| 각성의 원 | T3 생산 | 신규 필요 (`AwakeningCircle`) |
+| 각성의 원 | T3 생산 | `AwakeningCircle` (1차 시안) |
 | 굴림바위 언덕 | 방어, 지상 전용 | `RollingHill` |
-| 부유석 첨탑 | 방어, 공중 전용 | 신규 필요 (`HoverstoneSpire`) |
-| 잠듦의 고리 | 잔해 만료 연장 | 신규 필요 (`DormancyRing`) |
+| 부유석 첨탑 | 방어, 공중 전용 | `HoverstoneSpire` (1차 시안) |
+| 잠듦의 고리 | 잔해 만료 연장 | `DormancyRing` (1차 시안) |
 | 선돌 | 인구 | `StandingStone` |
 | 고대 이끼돌 | 기술 | `ElderMossstone` |
-| 이끼 정원 | 연구, 부유석 파수·이끼 포자 무리의 선행 | 신규 필요 (`MossGarden`) |
+| 이끼 정원 | 연구, 부유석 파수·이끼 포자 무리의 선행 | `MossGarden` (1차 시안) |
 
 능력: `SandStorm`, `RockDrop`, `Crater`
 
@@ -285,24 +285,24 @@ WordCraft의 여섯 진영, 유닛, 건물 정본 문서다. 세계관 사실은
 | 멸종한 바위 슬라임 | T3 | 한시적 방패 | `ExtinctRockSlime` |
 | 틈새 사수 | T3 | 상시 장거리 | `RiftMarksman` |
 | 멸종한 번개 슬라임 | T3 | 한시적 원거리 | `ExtinctLightningSlime` |
-| 덩쿨편 | T2 | 상시 원거리 (제안) | 신규 필요 (`VineShard`) |
-| 멸종한 바람 슬라임 | T3 | 한시적 공중 | 신규 필요 (`ExtinctWindSlime`) |
+| 덩쿨편 | T2 | 상시 원거리 (제안) | `VineShard` (1차 시안) |
+| 멸종한 바람 슬라임 | T3 | 한시적 공중 | `ExtinctWindSlime` (1차 시안) |
 | 경계 운반자 | T2 | 이동식 통로, 비전투 | `DimensionToad` |
-| 떠도는 섬 | T3 | 공중 도착 지점, 비전투 | 신규 필요 (`WanderingIsland`) |
-| 층위 관측자 | T3 | 비전투 시전자, 층위 고정 | 신규 필요 (`StrataObserver`) |
-| 멸종한 자연 슬라임 | T3 | 한시적 치유 | 신규 필요 (`ExtinctNatureSlime`) |
+| 떠도는 섬 | T3 | 공중 도착 지점, 비전투 | `WanderingIsland` (1차 시안) |
+| 층위 관측자 | T3 | 비전투 시전자, 층위 고정 | `StrataObserver` (1차 시안) |
+| 멸종한 자연 슬라임 | T3 | 한시적 치유 | `ExtinctNatureSlime` (1차 시안) |
 
 | 건물 | 역할 | 아트 |
 |---|---|---|
 | 정박한 세계 | 본진 | `AnchoredWorld` |
 | 통로 | 생산 | `Passage` |
-| 깊은 통로 | 두 번째 통로 | 신규 필요 (`DeepPassage`) |
+| 깊은 통로 | 두 번째 통로 | `DeepPassage` (1차 시안) |
 | 굴절 기둥 | 방어, 도착 지점 반경 6칸 | `RefractingPillar` |
-| 위상 닻 | 도착 지점 반경 3칸, 무기 없음 | 신규 필요 (`PhaseAnchor`) |
-| 틈새 포대 | 방어 | 신규 필요 (`RiftBattery`) |
+| 위상 닻 | 도착 지점 반경 3칸, 무기 없음 | `PhaseAnchor` (1차 시안) |
+| 틈새 포대 | 방어 | `RiftBattery` (1차 시안) |
 | 계류 닻 | 인구 | `MooringClaw` |
 | 층위 관측대 | 기술, 멸종 종 소환 해금 | `StrataObservatory` |
-| 외피 연마장 | 연구 | 신규 필요 (`ShellPolishingYard`) |
+| 외피 연마장 | 연구 | `ShellPolishingYard` (1차 시안) |
 
 `DimensionToad`는 원문에서 직접 공격하지 않는 개체다. 전투 유닛으로 바꾸지 않고
 통로를 여는 원래 능력을 RTS 규칙으로 옮긴다.
@@ -351,30 +351,30 @@ WordCraft의 여섯 진영, 유닛, 건물 정본 문서다. 세계관 사실은
 |---|---|---|---|
 | 수습 마법생 | T1 | 일꾼, 포획 수행 | `ApprenticeMage` |
 | 공수 특공대 | T2 | 원거리 | `ChickenCommando` |
-| 석궁 사수 | T1 | 초반 원거리 | 신규 필요 (`CrossbowMarksman`) |
-| 마도사 | T2 | 시전자, 낙뢰 | 신규 필요 (`ArcaneMage`) |
-| 석조 보행 포대 | T2 | 장갑 원거리 장치 | 신규 필요 (`StoneWalkerBattery`) |
-| 견인 대포 | T3 | 공성, 전개 | 신규 필요 (`TowedCannon`) |
-| 마도 폭격선 | T3 | 공중 폭격, 지상 전용 | 신규 필요 (`ArcaneBomber`) |
-| 마도 기수 | T2 | 빠른 원거리 견제 | 신규 필요 (`ArcaneRider`) |
+| 석궁 사수 | T1 | 초반 원거리 | `CrossbowMarksman` (1차 시안) |
+| 마도사 | T2 | 시전자, 낙뢰 | `ArcaneMage` (1차 시안) |
+| 석조 보행 포대 | T2 | 장갑 원거리 장치 | `StoneWalkerBattery` (1차 시안) |
+| 견인 대포 | T3 | 공성, 전개 | `TowedCannon` (1차 시안) |
+| 마도 폭격선 | T3 | 공중 폭격, 지상 전용 | `ArcaneBomber` (1차 시안) |
+| 마도 기수 | T2 | 빠른 원거리 견제 | `ArcaneRider` (1차 시안) |
 | Towerback | — | 공중 전용, 포획으로만 획득, 생산 목록 밖 | `Towerback` |
-| 마도 정찰기 | T3 | 정찰, 비전투 | 신규 필요 (`ArcaneScout`) |
-| 공방 기술자 | T2 | 비전투 지원, 수리 | 신규 필요 (`WorkshopEngineer`) |
-| 마나 증폭기 | T3 | 비전투 지원, 방어 건물 증폭 | 신규 필요 (`ManaAmplifier`) |
+| 마도 정찰기 | T3 | 정찰, 비전투 | `ArcaneScout` (1차 시안) |
+| 공방 기술자 | T2 | 비전투 지원, 수리 | `WorkshopEngineer` (1차 시안) |
+| 마나 증폭기 | T3 | 비전투 지원, 방어 건물 증폭 | `ManaAmplifier` (1차 시안) |
 | 근접 | — | 없음, 설계상 부재 | — |
 
 | 건물 | 역할 | 아트 |
 |---|---|---|
 | 마나 샘 | 본진 | `ManaWell` |
 | 마법 탑 | 생산 · 인구 | `Tower` |
-| 석조 병영 | 생산 | 신규 필요 (`StoneBarracks`) |
-| 마도 공창 | 생산, 장치 | 신규 필요 (`ArcaneFoundry`) |
+| 석조 병영 | 생산 | `StoneBarracks` (1차 시안) |
+| 마도 공창 | 생산, 장치 | `ArcaneFoundry` (1차 시안) |
 | 대포 | 방어, 지상 전용 최장 사거리 | `Cannon` |
 | 전기 타워 | 방어, 지상·공중 단거리 | `ElectricTower` |
 | 돌 포탑 | 방어 | `RockTurret` |
 | 공방 | 기술, 포획 속도 향상 | `Workshop` |
-| 마도 학당 | 연구, 마도사의 선행 | 신규 필요 (`ArcaneAcademy`) |
-| 결속대 | 연구, Towerback | 신규 필요 (`BindingPlatform`) |
+| 마도 학당 | 연구, 마도사의 선행 | `ArcaneAcademy` (1차 시안) |
+| 결속대 | 연구, Towerback | `BindingPlatform` (1차 시안) |
 
 방어 슬롯에 셋을 나란히 두는 유일한 진영이다. 생산 건물도 셋(마법 탑, 석조 병영, 마도
 공창)이라 건물 항목이 11개다.
@@ -460,7 +460,6 @@ WordCraft의 여섯 진영, 유닛, 건물 정본 문서다. 세계관 사실은
 단위로 직렬화되므로, 새 필드는 보낸 쪽까지만 살아 있고 나머지에서 0으로 읽힌다. 그것은
 명령 유실이 아니라 한 피어만 다른 유닛을 뽑는 일이다.
 
-묶음 3이 더한 항목의 아트 이름은 `.art/TECH-TREE-ART.md`의 영어 리소스 이름이다. PNG가
-아직 `Client/Assets/Resources/Art/Sprites/`에 없는 51개 이름은 `ViewSelfCheck`가
-`.art/concept/<이름>-v1.png` 시안이 있는지로 확인한다. 이름조차 없는 항목은 돌 골렘 부족의
-이끼 현자 하나다.
+묶음 3이 더한 항목의 아트 이름은 `.art/TECH-TREE-ART.md`의 영어 리소스 이름이다. 그 52개
+PNG는 승인 전 1차 시안으로 `Client/Assets/Resources/Art/Sprites/`에 들어와 있고(#193),
+`ViewSelfCheck`가 다른 스프라이트와 똑같이 전부 로드해 본다.
