@@ -13,8 +13,6 @@ namespace WordCraft.Replay
     /// </summary>
     internal static class WaterFieldChecks
     {
-        private const ulong Seed = 0x574A;
-
         public static void Check()
         {
             ACarrierLaysThreeByThreeEveryTwentyTicks();
@@ -276,11 +274,16 @@ namespace WordCraft.Replay
         // ---------------------------------------------------------------------
         // Determinism
 
-        /// <summary>The mixed water match twice from scratch: the same hash on every tick.</summary>
+        /// <summary>
+        /// The mixed water match twice from scratch: the same hash on every tick,
+        /// and a run that laid fields and mended the 대포, or it proves nothing.
+        /// </summary>
         private static void TwoWorldsAgree()
         {
-            ulong a = Mixed(), b = Mixed();
+            ulong a = Mixed(out int laid, out int mended), b = Mixed(out _, out _);
             Check(a == b, "two runs of the water field hash apart: 0x" + a.ToString("X16") + " against 0x" + b.ToString("X16"));
+            Check(laid > 0, "no cell took a field in the mixed match");
+            Check(mended > 0, "수리 mended nothing in the mixed match");
         }
 
         /// <summary>
@@ -288,7 +291,7 @@ namespace WordCraft.Replay
         /// 급류 슬라임, a 솟는 샘 and a 물기둥 분수; 인간 peer 1 with a 마도
         /// 폭격선, crossbows and a 공방 기술자 beside a damaged 대포, 600 ticks.
         /// </summary>
-        private static ulong Mixed()
+        private static ulong Mixed(out int laid, out int mended)
         {
             World world = Two(Faction.WaterSlimes, Faction.Humans);
             AbilityChecks.Research(world, 0, UpgradeEffect.Rapids);
@@ -308,7 +311,12 @@ namespace WordCraft.Replay
             world.SetHpForScenario(cannon, 100);
             world.SpawnUnit(1, Role.Signature, 2, At(47, 31));
             Step(world, orders);
-            return EveryTickHashed(world, 600);
+            int cannonHp = world.GetEntity(cannon).Hp;
+            ulong folded = AbilityChecks.EveryTickHashed(world, 600);
+            laid = 0;
+            for (int c = 0; c < World.GridCells; c++) if (world.WaterFieldExpiry(c) != 0) laid++;
+            mended = world.GetEntity(cannon).Hp - cannonHp;
+            return folded;
         }
 
         /// <summary>
@@ -331,48 +339,15 @@ namespace WordCraft.Replay
 
         // ---------------------------------------------------------------------
 
-        private static readonly List<Command> Idle = new List<Command>();
+        private static void Step(World world, List<Command> commands = null) => AbilityChecks.Step(world, commands);
 
-        private static void Step(World world, List<Command> commands = null)
-        {
-            world.Step(commands ?? Idle);
-            Check(world.PendingBurstCount == 0,
-                world.PendingBurstCount + " bursts were still queued at the end of tick " + (world.Tick - 1));
-        }
+        private static void Run(World world, int ticks) => AbilityChecks.Run(world, ticks);
 
-        /// <summary>
-        /// Runs this many ticks and folds every tick's hash into one number, so
-        /// two runs that part for a few ticks and meet again still differ: a
-        /// clock off by one tick that has run out by the end leaves the last
-        /// hash alone.
-        /// </summary>
-        private static ulong EveryTickHashed(World world, int ticks)
-        {
-            ulong folded = 0;
-            for (int t = 0; t < ticks; t++)
-            {
-                Step(world);
-                folded = folded * 1099511628211UL ^ world.Hash();
-            }
-            return folded;
-        }
-
-        private static void Run(World world, int ticks)
-        {
-            for (int t = 0; t < ticks; t++) Step(world);
-        }
-
-        private static int Cell(int x, int y) => y * World.GridSize + x;
+        private static int Cell(int x, int y) => AbilityChecks.Cell(x, y);
 
         private static FixVec2 At(int x, int y) => AbilityChecks.At(x, y);
 
-        private static World Two(Faction zero, Faction one)
-        {
-            var world = new World(Seed);
-            world.SetPeerFaction(0, zero);
-            world.SetPeerFaction(1, one);
-            return world;
-        }
+        private static World Two(Faction zero, Faction one) => AbilityChecks.Two(zero, one);
 
         private static void Check(bool condition, string message)
         {

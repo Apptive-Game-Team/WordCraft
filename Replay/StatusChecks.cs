@@ -21,6 +21,7 @@ namespace WordCraft.Replay
         public static void Check()
         {
             TheAbilityTableIsTheDocumentedOne();
+            TheDeviceTableIsTheDocumentedOne();
             EntangleSlowsGroundBodiesOnly();
             EntangleRefreshesAndNeverStacks();
             ASlowedBodyWalksAtHalfSpeed();
@@ -194,6 +195,39 @@ namespace WordCraft.Replay
                 Check(FactionData.Ability(faction, -1).Kind == AbilityKind.None, faction + ": ability -1 does something");
             }
             Check(FactionData.AbilityRowCount == total, "the table holds " + FactionData.AbilityRowCount + " rows, not " + total);
+        }
+
+        /// <summary>docs/TECH-TREE.md 인간 능력 표 수리: the 장치 유닛, in table order, by roster name.</summary>
+        private static readonly string[] Devices =
+        {
+            "Towerback", "석조 보행 포대", "견인 대포", "마도 폭격선", "마도 정찰기", "마나 증폭기",
+        };
+
+        /// <summary>
+        /// The six 장치 유닛 수리 mends are the six the document names, all 인간
+        /// units, and no other fielded entry of any faction is one.
+        /// </summary>
+        private static void TheDeviceTableIsTheDocumentedOne()
+        {
+            Check(FactionData.DeviceCount == Devices.Length, "the device table holds " + FactionData.DeviceCount + " entries, not 6");
+            for (int i = 0; i < Devices.Length; i++)
+            {
+                var (faction, role, slot) = FactionData.Device(i);
+                Check(faction == Faction.Humans, "device " + i + " is a " + faction + " entry");
+                Check(FactionData.Name(faction, role, slot) == Devices[i],
+                    "device " + i + " is " + FactionData.Name(faction, role, slot) + ", not " + Devices[i]);
+                Check(FactionData.IsDevice(faction, role, slot), Devices[i] + " is not asked as a device");
+            }
+            int devices = 0;
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                for (int r = 1; r < FactionData.RoleCount; r++)
+                {
+                    for (int slot = 0; slot < FactionData.SlotCount((Faction)f, (Role)r); slot++)
+                        if (FactionData.Has((Faction)f, (Role)r, slot) && FactionData.IsDevice((Faction)f, (Role)r, slot)) devices++;
+                }
+            }
+            Check(devices == Devices.Length, devices + " fielded entries are devices, not 6");
         }
 
         private static UpgradeEffect Effect(Faction faction, int index) =>

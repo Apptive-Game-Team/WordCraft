@@ -589,9 +589,12 @@ namespace WordCraft.Sim
         }
 
         /// <summary>
-        /// The one write into remnantExpiry: open terrain only, and never shorter
-        /// than what stands there. Debris on water or rock blocks nothing that was
-        /// not blocked already, and it would be hashed state saying so.
+        /// The write that lays or lengthens debris in remnantExpiry: open terrain
+        /// only, and never shorter than what stands there. Debris on water or rock
+        /// blocks nothing that was not blocked already, and it would be hashed
+        /// state saying so. A fallen 돌 골렘 and 잠듦의 고리 write through here.
+        /// Two other writes do not: ConsumeRemnant writes 0, which is what using
+        /// debris means, and SetRemnantForScenario writes what a harness asks.
         /// </summary>
         private void WriteRemnant(int cell, int expiry)
         {

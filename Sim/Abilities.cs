@@ -89,10 +89,33 @@ namespace WordCraft.Sim
                     {
                         if (x < 0 || x >= GridSize) continue;
                         int cell = y * GridSize + x;
-                        if (HasRemnant(cell) && remnantExpiry[cell] < hold) remnantExpiry[cell] = hold;
+                        if (HasRemnant(cell)) WriteRemnant(cell, hold);
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// docs/TECH-TREE.md 동점과 경계 "가장 많이 다친": the living body of these
+        /// targets this peer owns within the radius of this point that has lost
+        /// the most hp, MaxHp - Hp, and at least minLost; the lower id on a tie,
+        /// because only a strictly larger loss replaces the one found first.
+        /// -1 when none has. 잔해 수리 and 수리 both ask it.
+        /// </summary>
+        private int MostWounded(int owner, AbilityTargets targets, FixVec2 at, Fix radius, int minLost)
+        {
+            int best = -1, bestLost = 0;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity t = entities[i];
+                if (!t.Alive || t.Owner != owner || !AuraTargets(targets, t)) continue;
+                int lost = t.MaxHp - t.Hp;
+                if (lost < minLost || lost <= bestLost) continue;
+                if (!WithinRange(at, t.Position, radius)) continue;
+                best = i;
+                bestLost = lost;
+            }
+            return best;
         }
 
         /// <summary>
@@ -112,17 +135,7 @@ namespace WordCraft.Sim
                 if (row < 0) continue;
                 AbilityRow r = FactionData.AbilityRowAt(row);
                 if (Tick % r.Period != 0) continue;
-                Fix radius = Fix.FromInt(AbilityRadius(src.Owner, r));
-                int best = -1, bestLost = 0;
-                for (int i = 0; i < entities.Count; i++)
-                {
-                    Entity t = entities[i];
-                    if (!t.Alive || t.Owner != src.Owner || !AuraTargets(r.Targets, t)) continue;
-                    int lost = t.MaxHp - t.Hp;
-                    if (lost <= bestLost || !WithinRange(src.Position, t.Position, radius)) continue;
-                    best = i;
-                    bestLost = lost;
-                }
+                int best = MostWounded(src.Owner, r.Targets, src.Position, Fix.FromInt(AbilityRadius(src.Owner, r)), 1);
                 if (best < 0) continue;
                 Entity mended = entities[best];
                 mended.Hp += AbilityAmount(src.Owner, r);
@@ -202,7 +215,9 @@ namespace WordCraft.Sim
         /// within the row's radius takes the row's amount once, fixed. A body
         /// not rolling, with its cooldown at 0, starts a roll when its target is
         /// RollMinDistance to RollMaxDistance cells off, and the cooldown starts
-        /// with the roll. A body under Hold does not roll: it would not move.
+        /// with the roll. Only a body CombatSystem would chase with starts one:
+        /// under AttackMove, or with no walk of its own left. A body under Hold
+        /// does not roll: it would not move.
         /// Distances are to the TargetId body as it stands now, which is where
         /// last tick's CombatSystem and MoveSystem left it.
         /// </summary>
@@ -229,6 +244,11 @@ namespace WordCraft.Sim
                 return;
             }
             if (e.AbilityCooldown > 0 || !target || e.Mode == OrderMode.Hold || e.Speed.Raw == 0) return;
+            // Only a body that is closing on its target rolls, which is the
+            // condition CombatSystem chases under. A body walking a Move order
+            // still holds a TargetId CombatSystem acquired on the way, and a roll
+            // there would turn the walk into a sprint and spend the cooldown.
+            if (e.Mode != OrderMode.AttackMove && !PathDone(id)) return;
             Fix d = (entities[e.TargetId].Position - e.Position).SqrMagnitude;
             if (d < RollMinDistance * RollMinDistance || d > RollMaxDistance * RollMaxDistance) return;
             e.AbilityTicksLeft = AbilityTicks(e.Owner, r);
@@ -294,18 +314,7 @@ namespace WordCraft.Sim
             Entity e = entities[id];
             if (e.AbilityCooldown > 0) return;
             AbilityRow r = FactionData.AbilityRowAt(row);
-            Fix radius = Fix.FromInt(AbilityRadius(e.Owner, r));
-            int best = -1, bestLost = 0;
-            for (int i = 0; i < entities.Count; i++)
-            {
-                Entity t = entities[i];
-                if (!t.Alive || t.Owner != e.Owner || !AuraTargets(r.Targets, t)) continue;
-                int lost = t.MaxHp - t.Hp;
-                if (lost < r.Limit || lost <= bestLost) continue;
-                if (!WithinRange(e.Position, t.Position, radius)) continue;
-                best = i;
-                bestLost = lost;
-            }
+            int best = MostWounded(e.Owner, r.Targets, e.Position, Fix.FromInt(AbilityRadius(e.Owner, r)), r.Limit);
             if (best < 0) return;
             int cell = RemnantNear(e.Position);
             if (cell < 0) return;
