@@ -2201,6 +2201,16 @@ namespace WordCraft.Sim
         /// </summary>
         public const int MaxChainHops = 2;
 
+        /// <summary>
+        /// Whether this kind is an aura: an effect a holder gives the bodies
+        /// standing around it, read through World's aura source list, rather
+        /// than one it lands with its own shot or carries on itself.
+        /// </summary>
+        public static bool IsAura(AbilityKind kind) =>
+            kind == AbilityKind.ArmorAura || kind == AbilityKind.MarkAura || kind == AbilityKind.RateAura ||
+            kind == AbilityKind.HealAura || kind == AbilityKind.BurnAura || kind == AbilityKind.GrowthAura ||
+            kind == AbilityKind.SlowAura || kind == AbilityKind.ExpiryAura;
+
         /// <summary>How many rows this faction's ability table holds.</summary>
         public static int AbilityCount(Faction faction)
         {
@@ -2468,24 +2478,35 @@ namespace WordCraft.Sim
                 Require((row.BoostEffect == UpgradeEffect.None) ==
                         (row.BoostedRadius == 0 && row.BoostedAmount == 0 && row.BoostedTicks == 0),
                     where + " has a boost that changes nothing, or a boosted number nothing raises");
-                bool aura = row.Kind != AbilityKind.SlowOnHit && row.Kind != AbilityKind.BurnOnHit &&
-                            row.Kind != AbilityKind.WoundedRate && row.Kind != AbilityKind.ArmorWhileStill;
-                Require(!aura || row.Radius > 0, where + " reaches nothing");
+                // An aura, a chain and 거품 벽 reach out from the holder, so each
+                // needs a radius; an aura also says whom it reaches.
+                // A burst goes off around where its holder stood, so it needs
+                // both as well (묶음 6).
+                bool burst = row.Kind == AbilityKind.DeathBurst || row.Kind == AbilityKind.ArrivalBurst;
+                bool reaches = IsAura(row.Kind) || burst || row.Kind == AbilityKind.ChainOnHit ||
+                               row.Kind == AbilityKind.ArmorPerAlly;
+                Require(!reaches || row.Radius > 0, where + " reaches nothing");
+                Require(!(IsAura(row.Kind) || burst) || row.Targets != AbilityTargets.None, where + " names no targets");
+                // Every kind that adds, heals, burns or sets a period carries its
+                // amount in the row. The exceptions carry it elsewhere: 과생장 and
+                // 덩굴 지대 act by being in range, a chain halves the shot it
+                // follows, and the slow and the burn a hit leaves are World
+                // constants (SlowFactor, BurnDamage), because the body carrying
+                // the clock does not remember which row set it.
+                // 층위 고정 puts a clock back one tick by definition.
+                bool amountless = row.Kind == AbilityKind.GrowthAura || row.Kind == AbilityKind.SlowAura ||
+                                  row.Kind == AbilityKind.ChainOnHit || row.Kind == AbilityKind.SlowOnHit ||
+                                  row.Kind == AbilityKind.BurnOnHit || row.Kind == AbilityKind.ExpiryAura;
+                Require(amountless || row.Amount > 0, where + " has no amount");
                 if (row.Kind == AbilityKind.SlowOnHit || row.Kind == AbilityKind.BurnOnHit)
                     Require(row.Ticks > 0, where + " lasts no ticks");
                 if (row.Kind == AbilityKind.ChainOnHit)
                     Require(row.Limit > 0 && row.Limit <= MaxChainHops, where + " hops " + row.Limit + " times");
+                if (row.Kind == AbilityKind.RateAura || row.Kind == AbilityKind.ArmorPerAlly)
+                    Require(row.Limit > 0, where + " has no floor or cap");
                 if (row.Kind == AbilityKind.HealAura || row.Kind == AbilityKind.BurnAura || row.Kind == AbilityKind.GrowthAura ||
                     row.Kind == AbilityKind.ExpiryAura)
-                    Require(row.Period > 0 && row.Amount >= 0, where + " has no period");
-                if (row.Kind == AbilityKind.HealAura || row.Kind == AbilityKind.BurnAura ||
-                    row.Kind == AbilityKind.SlowAura || row.Kind == AbilityKind.RateAura ||
-                    row.Kind == AbilityKind.ArmorAura || row.Kind == AbilityKind.MarkAura ||
-                    row.Kind == AbilityKind.GrowthAura || row.Kind == AbilityKind.ExpiryAura ||
-                    row.Kind == AbilityKind.DeathBurst || row.Kind == AbilityKind.ArrivalBurst)
-                    Require(row.Targets != AbilityTargets.None, where + " names no targets");
-                if (row.Kind == AbilityKind.DeathBurst || row.Kind == AbilityKind.ArrivalBurst)
-                    Require(row.Amount > 0, where + " bursts for nothing");
+                    Require(row.Period > 0, where + " has no period");
                 for (int j = 0; j < i; j++)
                 {
                     Require(abilities[j].Faction != row.Faction || abilities[j].Role != row.Role ||
