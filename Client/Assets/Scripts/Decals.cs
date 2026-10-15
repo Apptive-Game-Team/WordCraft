@@ -253,7 +253,8 @@ namespace WordCraft.View
         /// Makes one, switched off. <paramref name="front"/> draws it after the
         /// other billboards: a fill and its back stand on the same spot, and
         /// with no depth test the camera-distance sort alone can put the back
-        /// over the fill.
+        /// over the fill. The cost: where two bars overlap on screen, a far
+        /// body's fill also paints over a near body's back.
         /// </summary>
         public static Billboard Make(Transform parent, string name, Color colour, bool front = false)
         {
