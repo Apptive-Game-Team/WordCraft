@@ -197,7 +197,12 @@ namespace WordCraft.View
 
         // ---------------------------------------------------------------- water
 
-        /// <summary>The lake bed. Dark wet earth, seen through the water, which is what makes a lake a hollow.</summary>
+        /// <summary>
+        /// The lip of a wall whose high side is a lake bed: a lake standing above
+        /// lower ground. The scenario's map has none, since its lakes sit on the
+        /// floor, but FieldMesh still needs a colour for the case. The bed itself
+        /// is <see cref="BedShallow"/> and <see cref="BedDeep"/>.
+        /// </summary>
         public static readonly Color Bed = Rgb(0x48433A);
 
         /// <summary>
