@@ -11,10 +11,9 @@
 // not the cell edges, and it moves. A second, fainter line further out swells
 // in and out, the way water laps.
 //
-// Two slow wave trains cross the surface in different directions; where both
-// crest at once the water takes a little of the foam colour. Soft bands, not
-// glints: .art/STYLE.md rules out specular sparkle, and Paper's lighting has
-// none to give.
+// Two slow wave trains cross the surface in different directions, each a broad
+// faint swell of lighter water. Soft bands, not glints: .art/STYLE.md rules out
+// specular sparkle, and Paper's lighting has none to give.
 //
 // The ripple is a slow, very small rise and fall of the surface, under three
 // hundredths of a unit, with its slope fed into the normal so the light moves on
@@ -79,37 +78,35 @@ Shader "WordCraft/Water"
             float t = _Time.y;
             float shore = IN.color.a * _ShoreSpan;
 
-            // How far the foam line is pushed out or pulled in here: three sines
-            // of different lengths and speeds, so the line never repeats along a
-            // shore and never stands still.
-            float wobble = sin(p.x * 1.9 + p.y * 0.7 + t * 0.50) * 0.09
-                         + sin(p.y * 2.6 - p.x * 1.1 - t * 0.37) * 0.06
+            // How far the foam line is pushed out or pulled in here: a long slow
+            // swell that differs from one stretch of shore to the next, and three
+            // shorter sines on top, so the line never traces the lake's outline
+            // and never stands still.
+            float wobble = sin(p.x * 0.70 + p.y * 0.45 + 1.7) * 0.14
+                         + sin(p.x * 1.9 + p.y * 0.7 + t * 0.50) * 0.10
+                         + sin(p.y * 2.6 - p.x * 1.1 - t * 0.37) * 0.07
                          + sin((p.x + p.y) * 4.3 + t * 0.90) * 0.03;
 
             // The foam band, from the bank out to about a third of a cell. The
             // bank's waterline stands 0.1 to 0.3 in from the cell edge, so the
-            // visible foam is a ribbon a few tenths wide that thins and swells.
-            float edge = 0.40 + wobble;
+            // visible foam is a ribbon that thins to nothing in places and swells
+            // to half a cell in others.
+            float edge = 0.42 + wobble;
             float foam = 1.0 - smoothstep(edge - 0.03, edge + 0.03, shore);
 
             // A thin line further out that swells toward the shore and back, in
-            // pieces, so it reads as a ripple coming in and not as a frame drawn
-            // round the lake.
+            // short pieces and faint, so it reads as a ripple coming in and not as
+            // a second frame round the lake.
             float swell = 0.85 + 0.10 * sin(t * 0.6 + p.x * 0.4 + p.y * 0.3) + wobble * 1.4;
-            float pieces = smoothstep(-0.1, 0.5, sin(p.x * 1.3 - p.y * 1.7 + t * 0.3));
-            float lap = (1.0 - smoothstep(0.02, 0.05, abs(shore - swell))) * 0.30 * pieces;
+            float pieces = smoothstep(0.3, 0.8, sin(p.x * 1.3 - p.y * 1.7 + t * 0.3));
+            float lap = (1.0 - smoothstep(0.02, 0.05, abs(shore - swell))) * 0.18 * pieces;
 
-            // Two wave trains in different directions, each drawn as short crest
-            // dashes: the crest of a slow sine across the lake, cut into lengths
-            // by a second sine along the crest, so neither train runs as a ruled
-            // line and the two never meet in a cross.
-            float2 dirA = float2(0.80, 0.60);
-            float2 dirB = float2(-0.45, 0.89);
-            float a = sin(dot(p, dirA) * 2.3 + t * 0.55);
-            float b = sin(dot(p, dirB) * 1.8 - t * 0.42);
-            float dashA = smoothstep(0.2, 0.7, sin(dot(p, float2(-dirA.y, dirA.x)) * 1.1 + t * 0.15));
-            float dashB = smoothstep(0.2, 0.7, sin(dot(p, float2(-dirB.y, dirB.x)) * 0.9 - t * 0.12));
-            float crest = max(smoothstep(0.94, 0.99, a) * dashA, smoothstep(0.94, 0.99, b) * dashB) * 0.18;
+            // Two wave trains in different directions, drawn as broad, faint
+            // swells of lighter water rather than lines: a thin bright crest reads
+            // as glare, which .art/STYLE.md rules out.
+            float a = sin(dot(p, float2(0.80, 0.60)) * 2.3 + t * 0.55);
+            float b = sin(dot(p, float2(-0.45, 0.89)) * 1.8 - t * 0.42);
+            float crest = (smoothstep(0.8, 1.0, a) + smoothstep(0.8, 1.0, b)) * 0.035;
 
             float white = max(foam * 0.85, max(lap, crest));
             o.Albedo = lerp(IN.color.rgb, _Foam.rgb, white);

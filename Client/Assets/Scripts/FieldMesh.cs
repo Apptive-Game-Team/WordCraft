@@ -214,8 +214,10 @@ namespace WordCraft.View
             switch (kind)
             {
                 case TileKind.Water:
-                    Color bed = Shore(cx, cy) ? FieldPalette.BedShallow : FieldPalette.BedDeep;
-                    Surface(solid, p0, p1, p2, p3, FieldPalette.Grained(bed, grain));
+                    // Per grid point, like the bed's depth, so the shelf shades
+                    // into the deep bed across a cell instead of framing it.
+                    Surface(solid, p0, p1, p2, p3, BedTone(cx, cy), BedTone(cx + 1, cy),
+                            BedTone(cx, cy + 1), BedTone(cx + 1, cy + 1));
                     WaterSurface(surface, cell, cx, cy);
                     break;
                 case TileKind.Rock:
@@ -1147,18 +1149,9 @@ namespace WordCraft.View
             return Mathf.Sqrt(best);
         }
 
-        /// <summary>Whether a water cell has anything but water among its eight neighbours: the shelf, whose bed is the shallow colour.</summary>
-        private static bool Shore(int cx, int cy)
-        {
-            for (int dy = -1; dy <= 1; dy++)
-            {
-                for (int dx = -1; dx <= 1; dx++)
-                {
-                    if (!IsWater(cx + dx, cy + dy)) return true;
-                }
-            }
-            return false;
-        }
+        /// <summary>The bed's colour at grid point (gx, gy): the shelf's where ground touches the point, the deep bed's where only water does.</summary>
+        private static Color BedTone(int gx, int gy) =>
+            FieldPalette.Grained(ShorePoint(gx, gy) ? FieldPalette.BedShallow : FieldPalette.BedDeep, Unit(gx, gy, 0));
 
         /// <summary>Whether any cell touching grid point (gx, gy) is not water. The bed stays shallow there, so it meets the bank.</summary>
         private static bool ShorePoint(int gx, int gy)
