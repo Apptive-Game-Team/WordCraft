@@ -38,6 +38,20 @@ namespace WordCraft.Sim
         public int AttackTicks;
 
         /// <summary>
+        /// How much ground this body claims, as a radius in cells. Two walkers
+        /// closer than the sum of their footprints push each other apart; see
+        /// World.SeparationSystem. Roster data rather than entity state for the
+        /// reason <see cref="Air"/> is: it never changes for a given row, so
+        /// nothing hashes it and two peers cannot disagree about it.
+        ///
+        /// Zero on everything that never moves, and on nothing that does: a
+        /// walker with no footprint is a walker nothing pushes and that pushes
+        /// nothing, which is the overlap this field exists to end, so the harness
+        /// refuses a row with a Speed and no Footprint.
+        /// </summary>
+        public Fix Footprint;
+
+        /// <summary>
         /// Flies. Terrain and debris do not stop it, and a weapon that cannot
         /// reach air cannot touch it. Roster data rather than entity state: it
         /// never changes for a given faction and role, so nothing hashes it and
@@ -230,16 +244,26 @@ namespace WordCraft.Sim
         /// which is what makes the two exceptions the document names — 대포 지상
         /// 전용, Towerback 공중 전용 — the only rows that turn one of them off.
         /// </summary>
+        /// <summary>
+        /// The footprint every walking row starts from: three eighths of a cell,
+        /// so two bodies stand three quarters of a cell apart and four fit across
+        /// a three-cell lane. Under half a cell on purpose — a push is clamped to
+        /// half a Speed and every Speed is under a cell, so a body is never pushed
+        /// further than one cell edge in a tick, which is the step WalkableStep
+        /// already knows how to ask about.
+        /// </summary>
+        public static readonly Fix BodyRadius = Fix.Ratio(3, 8);
+
         private static readonly UnitStats[] sharedStats =
         {
             /* None       */ new UnitStats { Hp = 1 },
             /* Base       */ new UnitStats { Hp = 400 },
-            /* Worker     */ new UnitStats { Hp = 60, Speed = Fix.Ratio(1, 4) },
+            /* Worker     */ new UnitStats { Hp = 60, Speed = Fix.Ratio(1, 4), Footprint = BodyRadius },
             /* Production */ new UnitStats { Hp = 400 },
             /* Defense    */ new UnitStats { Hp = 300, Damage = 9, Range = Fix.FromInt(6), AttackTicks = 20, HitsAir = true, HitsGround = true },
-            /* Melee      */ new UnitStats { Hp = 100, Speed = Fix.Ratio(1, 4), Damage = 7, Range = Fix.FromInt(2), AttackTicks = 15, HitsGround = true },
-            /* Ranged     */ new UnitStats { Hp = 70, Speed = Fix.Ratio(1, 4), Damage = 6, Range = Fix.FromInt(6), AttackTicks = 18, HitsAir = true, HitsGround = true },
-            /* Signature  */ new UnitStats { Hp = 130, Speed = Fix.Ratio(3, 8), Damage = 10, Range = Fix.FromInt(3), AttackTicks = 22, HitsAir = true, HitsGround = true },
+            /* Melee      */ new UnitStats { Hp = 100, Speed = Fix.Ratio(1, 4), Footprint = BodyRadius, Damage = 7, Range = Fix.FromInt(2), AttackTicks = 15, HitsGround = true },
+            /* Ranged     */ new UnitStats { Hp = 70, Speed = Fix.Ratio(1, 4), Footprint = BodyRadius, Damage = 6, Range = Fix.FromInt(6), AttackTicks = 18, HitsAir = true, HitsGround = true },
+            /* Signature  */ new UnitStats { Hp = 130, Speed = Fix.Ratio(3, 8), Footprint = BodyRadius, Damage = 10, Range = Fix.FromInt(3), AttackTicks = 22, HitsAir = true, HitsGround = true },
             /* Supply     */ new UnitStats { Hp = 200 },
             /* Tech       */ new UnitStats { Hp = 250 },
         };
@@ -277,6 +301,7 @@ namespace WordCraft.Sim
                 {
                     Hp = 220,
                     Speed = Fix.Ratio(1, 4),
+                    Footprint = BodyRadius,
                     Damage = 12,
                     Range = Fix.FromInt(2),
                     AttackTicks = 15,
@@ -293,6 +318,7 @@ namespace WordCraft.Sim
                 {
                     Hp = 90,
                     Speed = Fix.Ratio(1, 4),
+                    Footprint = BodyRadius,
                     Damage = 6,
                     Range = Fix.FromInt(5),
                     AttackTicks = 18,
@@ -306,7 +332,7 @@ namespace WordCraft.Sim
             // a unit the player has to keep alive is a unit the player has to be
             // able to pull out.
             (Faction.Hellfire, Role.Signature, 0,
-                new UnitStats { Hp = 300, Speed = Fix.Ratio(3, 8), Air = true }),
+                new UnitStats { Hp = 300, Speed = Fix.Ratio(3, 8), Footprint = BodyRadius, Air = true }),
 
             // 지옥불 군단장의 자손. Airborne, shorter reach and lighter hit than the
             // shared ranged row. Free and spawned rather than produced, which is
@@ -318,6 +344,7 @@ namespace WordCraft.Sim
                 {
                     Hp = 70,
                     Speed = Fix.Ratio(1, 4),
+                    Footprint = BodyRadius,
                     Damage = 5,
                     Range = Fix.FromInt(4),
                     AttackTicks = 18,
@@ -338,6 +365,7 @@ namespace WordCraft.Sim
                 {
                     Hp = 110,
                     Speed = Fix.Ratio(1, 4),
+                    Footprint = BodyRadius,
                     Damage = 8,
                     Range = Fix.FromInt(2),
                     AttackTicks = 15,
@@ -383,7 +411,7 @@ namespace WordCraft.Sim
             // radius of its own written into this row would be a second number
             // meaning what that one already means.
             (Faction.Driftworlds, Role.Signature, 0,
-                new UnitStats { Hp = 240, Speed = Fix.Ratio(3, 8) }),
+                new UnitStats { Hp = 240, Speed = Fix.Ratio(3, 8), Footprint = BodyRadius }),
 
             // 인간 대포. 지상 전용, per docs/FACTION-MECHANICS.md 공중, which is
             // the whole reason this row exists: everything else about it could
@@ -412,6 +440,7 @@ namespace WordCraft.Sim
                 {
                     Hp = 200,
                     Speed = Fix.Ratio(3, 8),
+                    Footprint = BodyRadius,
                     Damage = 8,
                     Range = Fix.FromInt(6),
                     AttackTicks = 22,
