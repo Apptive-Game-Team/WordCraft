@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 using WordCraft.Sim;
@@ -60,8 +61,9 @@ namespace WordCraft.View
                 Shoot(world, output);
                 int lineups = Lineups(output);
                 int strips = Strips(output);
-                Debug.Log("OK: " + (Shots.Length + lineups + strips) + " shots written to " + Path.GetFullPath(output) +
-                          " (" + Shots.Length + " field, " + lineups + " lineup, " + strips + " strip)");
+                int matches = MatchStrips(output);
+                Debug.Log("OK: " + (Shots.Length + lineups + strips + matches) + " shots written to " + Path.GetFullPath(output) +
+                          " (" + Shots.Length + " field, " + lineups + " lineup, " + strips + " strip, " + matches + " match strip)");
                 EditorApplication.Exit(0);
             }
             catch (Exception e)
@@ -346,11 +348,11 @@ namespace WordCraft.View
                     if (!towers) Turn(rigs[i], FacingYaw);
                     if (growth && i % 2 == 1) rigs[i].Spawn(1e6f); // not there until the worker has swelled
                     // Fix is cells a tick; a strip walks at the roster's own pace.
-                    speeds[i] = FactionData.Stats(faction, cast[i].Role, cast[i].Slot).Speed.Raw / 65536f * World.TicksPerSecond;
+                    speeds[i] = FactionData.Stats(faction, cast[i].Role, cast[i].Slot).Speed.Raw / (float)Fix.One * World.TicksPerSecond;
                 }
 
                 float now = StartSeconds - PrerollSeconds;
-                var shot = new Shooting { Faction = faction, Cast = cast, Effects = effects };
+                var shot = new Shooting { World = world, Faction = faction, Cast = cast, Effects = effects };
                 // An attack starts a moment before frame 0, so frame 0 holds its
                 // wind-up rather than the rest pose the wind-up starts from.
                 float lead = motion == "attack" ? AttackLead : 0f;
@@ -393,8 +395,7 @@ namespace WordCraft.View
                         break;
                     case "death":
                     {
-                        // The rubble rule is MatchView.Rubble's: a 돌 골렘 combat unit.
-                        bool rubble = shot.Faction == Faction.RockGolems && shot.Cast[i].Role != Role.Worker;
+                        bool rubble = MatchView.Rubble(shot.Faction, shot.World.GetEntity(i).Kind);
                         rigs[i].Die(rubble);
                         if (rubble) shot.Effects.Crumble(rigs[i].transform.position, rigs[i].Size, UiStyle.Remnant, rigs[i].transform.eulerAngles.y);
                         break;
@@ -413,6 +414,8 @@ namespace WordCraft.View
         /// <summary>What a strip needs to fire a body's weapon the way MatchView.Shoot does.</summary>
         private sealed class Shooting
         {
+            /// <summary>The strip's world. Rig i is entity i, because Dress builds them in id order.</summary>
+            public World World;
             public Faction Faction;
             public List<(Role Role, int Slot)> Cast;
             public Effects Effects;
@@ -430,7 +433,7 @@ namespace WordCraft.View
             Color colour = BodyPalette.Shot(shot.Faction);
             bool tower = FactionData.IsBuilding(shot.Cast[i].Role);
             Vector3 forward = tower ? Quaternion.Euler(0f, TowerYaw(ViewClock.Now - StartSeconds), 0f) * Vector3.forward : rig.transform.forward;
-            bool ranged = FactionData.Stats(shot.Faction, shot.Cast[i].Role, shot.Cast[i].Slot).Range > Fix.FromInt(2);
+            bool ranged = MatchView.Throws(FactionData.Stats(shot.Faction, shot.Cast[i].Role, shot.Cast[i].Slot));
             if (ranged)
             {
                 Vector3 to = rig.transform.position + forward * (tower ? 4f : 2.4f);
@@ -525,6 +528,268 @@ namespace WordCraft.View
         {
             min = Vector2.Min(min, p);
             max = Vector2.Max(max, p);
+        }
+
+        // ------------------------------------------------------------------
+        // Match strips: the real MatchView over the scripted match
+        // ------------------------------------------------------------------
+
+        /// <summary>Held-clock frames per simulation tick: a 60 fps player over 20 ticks a second.</summary>
+        private const int FramesPerTick = 3;
+
+        /// <summary>Ticks between two frames of a match strip: eight frames cover 0.7 s from two ticks before the moment.</summary>
+        private const int TicksPerFrame = 2;
+
+        /// <summary>Cells across a match strip's frame: wide enough for a shooter and its target six cells apart.</summary>
+        private const float MatchStripCells = 15f;
+
+        /// <summary>Ticks the view runs before a match strip's first frame, so every body has been seen and placed.</summary>
+        private const int MatchPreroll = 20;
+
+        /// <summary>
+        /// The strips above drive BodyRig and Effects directly, so they never
+        /// run MatchView's own reading of the world: a death noticed from Alive,
+        /// a cooldown read as a shot, a hit waiting for its tracer, the fog, a
+        /// produced body rising. These do. They step the scripted match one tick
+        /// every three held-clock frames through MatchView.Draw — the view's own
+        /// LateUpdate — over a <see cref="MatchRunner"/> whose state is set by
+        /// reflection, because the editor calls none of MatchRunner's lifecycle
+        /// and its setters are private. Three moments, found by scanning the
+        /// log: the first ranged shot, the first unit death, the first produced
+        /// unit. Peer 0's fog is on, as in a match.
+        /// </summary>
+        private static int MatchStrips(string output)
+        {
+            List<Command>[] log = ScriptedLog.Build();
+            Moments(log, out int shotTick, out Vector2 shotAt, out int killTick, out Vector2 killAt,
+                    out int spawnTick, out Vector2 spawnAt);
+            Debug.Log("match strips: first ranged shot at tick " + shotTick + ", first unit death at tick " + killTick +
+                      ", first produced unit at tick " + spawnTick);
+
+            int written = 0;
+            if (shotTick >= 0) { MatchStrip(output, "fight", log, shotTick, shotAt); written++; }
+            if (killTick >= 0) { MatchStrip(output, "kill", log, killTick, killAt); written++; }
+            if (spawnTick >= 0) { MatchStrip(output, "spawn", log, spawnTick, spawnAt); written++; }
+            return written;
+        }
+
+        private static World Scripted() =>
+            MatchScenario.Build(new WordCraft.Net.MatchConfig().Seed, ScriptedLog.Peer0Faction, ScriptedLog.Peer1Faction);
+
+        /// <summary>
+        /// Runs the log once and notes the tick and place of the first ranged
+        /// shot, the first death of a unit, and the first unit produced. Read
+        /// the way MatchView reads them: a cooldown going up, Alive going false,
+        /// an id appearing.
+        /// </summary>
+        private static void Moments(List<Command>[] log, out int shotTick, out Vector2 shotAt,
+                                    out int killTick, out Vector2 killAt, out int spawnTick, out Vector2 spawnAt)
+        {
+            shotTick = killTick = spawnTick = -1;
+            shotAt = killAt = spawnAt = Vector2.zero;
+            World world = Scripted();
+            var cooldowns = new List<int>();
+            var alive = new List<bool>();
+            for (int i = 0; i < world.EntityCount; i++)
+            {
+                cooldowns.Add(world.GetEntity(i).AttackCooldown);
+                alive.Add(world.GetEntity(i).Alive);
+            }
+
+            for (int t = 0; t < log.Length; t++)
+            {
+                world.Step(log[t]);
+                for (int i = 0; i < world.EntityCount; i++)
+                {
+                    Entity e = world.GetEntity(i);
+                    if (i >= cooldowns.Count)
+                    {
+                        cooldowns.Add(e.AttackCooldown);
+                        alive.Add(e.Alive);
+                        if (spawnTick < 0 && e.Kind == EntityKind.Unit)
+                        {
+                            spawnTick = world.Tick;
+                            spawnAt = MatchRunner.ToView(e.Position);
+                        }
+                        continue;
+                    }
+
+                    if (shotTick < 0 && e.Owner >= 0 && e.AttackCooldown > cooldowns[i] && e.TargetId >= 0 &&
+                        MatchView.Throws(FactionData.Stats(world.FactionOf(e.Owner), e.Role, e.Slot)))
+                    {
+                        shotTick = world.Tick;
+                        shotAt = (MatchRunner.ToView(e.Position) + MatchRunner.ToView(world.GetEntity(e.TargetId).Position)) * 0.5f;
+                    }
+                    if (killTick < 0 && alive[i] && !e.Alive && e.Kind == EntityKind.Unit)
+                    {
+                        killTick = world.Tick;
+                        killAt = MatchRunner.ToView(e.Position);
+                        Debug.Log("match strips: entity " + i + " (" + e.Role + ", peer " + e.Owner + ") dies at tick " + killTick);
+                    }
+                    cooldowns[i] = e.AttackCooldown;
+                    alive[i] = e.Alive;
+                }
+            }
+        }
+
+        private static void MatchStrip(string output, string name, List<Command>[] log, int moment, Vector2 focus)
+        {
+            World world = Scripted();
+            int first = moment - TicksPerFrame;
+            int from = Mathf.Max(first - MatchPreroll, 0);
+            var idle = new List<Command>();
+            while (world.Tick < from) world.Step(world.Tick < log.Length ? log[world.Tick] : idle);
+
+            var runnerObject = new GameObject("MatchRunner (shots)");
+            MatchRunner runner = runnerObject.AddComponent<MatchRunner>();
+            MatchView view = null;
+            var target = new RenderTexture(FrameWidth, FrameHeight, 24) { antiAliasing = 4 };
+            var image = new Texture2D(FrameWidth * Frames, FrameHeight, TextureFormat.RGB24, mipChain: false);
+
+            try
+            {
+                var seam = new RunnerSeam(runner);
+                seam.Start(world);
+                view = MatchView.Detached(runner);
+
+                float now = StartSeconds;
+                // Before the first frame: one draw so every body exists, then the
+                // preroll a tick at a time.
+                DrawFrame(view, seam, ref now, 1f);
+                while (world.Tick < first)
+                {
+                    world.Step(world.Tick < log.Length ? log[world.Tick] : idle);
+                    seam.Snapshot();
+                    for (int f = 1; f <= FramesPerTick; f++) DrawFrame(view, seam, ref now, f / (float)FramesPerTick);
+                }
+
+                Camera cam = view.Cam;
+                cam.targetTexture = target;
+                cam.ResetAspect();
+                float halfAcross = Mathf.Tan(CameraRig.FieldOfView * 0.5f * Mathf.Deg2Rad) * (FrameWidth / (float)FrameHeight);
+                CameraRig.Aim(cam, focus + new Vector2(0f, 0.6f), MatchStripCells / (2f * halfAcross), 0f, hud: false);
+
+                for (int frame = 0; frame < Frames; frame++)
+                {
+                    if (frame > 0)
+                    {
+                        for (int k = 0; k < TicksPerFrame; k++)
+                        {
+                            world.Step(world.Tick < log.Length ? log[world.Tick] : idle);
+                            seam.Snapshot();
+                            for (int f = 1; f <= FramesPerTick; f++) DrawFrame(view, seam, ref now, f / (float)FramesPerTick);
+                        }
+                    }
+                    cam.Render();
+                    RenderTexture.active = target;
+                    image.ReadPixels(new Rect(0, 0, FrameWidth, FrameHeight), frame * FrameWidth, 0);
+                    RenderTexture.active = null;
+                }
+
+                image.Apply();
+                File.WriteAllBytes(Path.Combine(output, "strip-match-" + name + ".png"), image.EncodeToPNG());
+            }
+            finally
+            {
+                if (view != null)
+                {
+                    if (view.Cam != null)
+                    {
+                        view.Cam.targetTexture = null;
+                        UnityEngine.Object.DestroyImmediate(view.Cam.gameObject);
+                    }
+                    UnityEngine.Object.DestroyImmediate(view.gameObject);
+                }
+                FieldMesh.Drop();
+                UnityEngine.Object.DestroyImmediate(target);
+                UnityEngine.Object.DestroyImmediate(image);
+                UnityEngine.Object.DestroyImmediate(runnerObject);
+                foreach (Light light in UnityEngine.Object.FindObjectsOfType<Light>())
+                {
+                    UnityEngine.Object.DestroyImmediate(light.gameObject);
+                }
+            }
+        }
+
+        /// <summary>
+        /// One player frame: the clock a sixtieth on, the draw position
+        /// <paramref name="alpha"/> of the way through the tick, every enabled
+        /// body animated as Update would, then the view drawn as LateUpdate would.
+        /// </summary>
+        private static void DrawFrame(MatchView view, RunnerSeam seam, ref float now, float alpha)
+        {
+            now += StepSeconds;
+            ViewClock.Hold(now, StepSeconds);
+            seam.Alpha(alpha);
+            foreach (BodyRig rig in view.GetComponentsInChildren<BodyRig>())
+            {
+                if (rig.enabled) rig.Animate();
+            }
+            view.Draw();
+        }
+
+        /// <summary>
+        /// The MatchRunner state MatchView reads, set from outside: the world,
+        /// the local peer, the phase, the two position snapshots the draw
+        /// position interpolates between, and the time of the last step that
+        /// sets how far between them. All private to MatchRunner, which this
+        /// change may not edit, so reflection; a rename there fails here loudly
+        /// rather than silently.
+        /// </summary>
+        private sealed class RunnerSeam
+        {
+            private const BindingFlags Hidden = BindingFlags.NonPublic | BindingFlags.Instance;
+            private readonly MatchRunner runner;
+            private readonly List<Vector2> previous, current;
+            private readonly FieldInfo lastStep;
+
+            public RunnerSeam(MatchRunner runner)
+            {
+                this.runner = runner;
+                previous = (List<Vector2>)Field("previous").GetValue(runner);
+                current = (List<Vector2>)Field("current").GetValue(runner);
+                lastStep = Field("lastStepMs");
+            }
+
+            public void Start(World world)
+            {
+                Set("World", world);
+                Set("LocalPeer", 0);
+                Set("Phase", Phase.Match);
+                PropertyInfo instance = typeof(MatchRunner).GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
+                instance.GetSetMethod(true).Invoke(null, new object[] { runner });
+                previous.Clear();
+                current.Clear();
+                Snapshot();
+            }
+
+            /// <summary>What StepOnce does after a tick: the old current becomes previous, and the world is read again.</summary>
+            public void Snapshot()
+            {
+                previous.Clear();
+                previous.AddRange(current);
+                current.Clear();
+                World world = runner.World;
+                for (int i = 0; i < world.EntityCount; i++) current.Add(MatchRunner.ToView(world.GetEntity(i).Position));
+                while (previous.Count < current.Count) previous.Add(current[previous.Count]);
+            }
+
+            /// <summary>Sets the last step so that MatchRunner.Alpha reads <paramref name="alpha"/> now.</summary>
+            public void Alpha(float alpha)
+            {
+                long nowMs = (long)(Time.realtimeSinceStartupAsDouble * 1000.0);
+                lastStep.SetValue(runner, nowMs - (long)(alpha * 1000f / World.TicksPerSecond));
+            }
+
+            private static FieldInfo Field(string name) =>
+                typeof(MatchRunner).GetField(name, Hidden) ?? throw new MissingFieldException("MatchRunner", name);
+
+            private void Set(string property, object value)
+            {
+                PropertyInfo info = typeof(MatchRunner).GetProperty(property, BindingFlags.Public | BindingFlags.Instance)
+                                    ?? throw new MissingMemberException("MatchRunner", property);
+                info.GetSetMethod(true).Invoke(runner, new[] { value });
+            }
         }
 
         // ------------------------------------------------------------------
