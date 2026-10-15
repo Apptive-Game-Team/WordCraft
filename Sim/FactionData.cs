@@ -893,6 +893,29 @@ namespace WordCraft.Sim
             (Faction.Hellfire, Role.Defense, 1, Structure(200)),
             // 화염 첨탑
             (Faction.Hellfire, Role.Defense, 2, Turret(260, 12, 7, 20, true, false)),
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            // Fighter: 이동, 체력, 방어, 속도, 피해, 사거리, 주기, 대공, 대지. Support: 이동, 체력, 방어, 속도.
+            // 물막이 슬라임
+            (Faction.WaterSlimes, Role.Melee, 1, Fighter(Walks, 240, 2, Fix.Ratio(1, 5), 5, 2, 18, false, true)),
+            // 급류 슬라임
+            (Faction.WaterSlimes, Role.Melee, 2, Fighter(Walks, 100, 0, Fix.Ratio(5, 16), 7, 2, 12, false, true)),
+            // 침 뱉는 슬라임
+            (Faction.WaterSlimes, Role.Ranged, 2, Fighter(Walks, 45, 0, Fix.Ratio(1, 4), 4, 4, 15, true, true)),
+            // 물대포 슬라임
+            (Faction.WaterSlimes, Role.Ranged, 3, Fighter(Walks, 160, 1, Fix.Ratio(1, 6), 14, 8, 40, false, true)),
+            // 비구름
+            (Faction.WaterSlimes, Role.Signature, 1, Support(Flies, 90, 0, Fix.Ratio(1, 4))),
+            // 간헐천 술사
+            (Faction.WaterSlimes, Role.Signature, 2, Support(Walks, 100, 0, Fix.Ratio(1, 4))),
+            // 샘물 운반자
+            (Faction.WaterSlimes, Role.Signature, 3, Support(Walks, 140, 1, Fix.Ratio(1, 5))),
+            // 구름 둥지
+            (Faction.WaterSlimes, Role.Production, 1, Structure(350)),
+            // 솟는 샘
+            (Faction.WaterSlimes, Role.Defense, 1, Structure(220)),
+            // 거품 장벽
+            (Faction.WaterSlimes, Role.Defense, 2, Structure(500)),
         };
 
         /// <summary>
@@ -1071,6 +1094,15 @@ namespace WordCraft.Sim
             (Faction.Hellfire, Role.Ranged, 3, Produce(110, 90)), // 재날개 악마
             (Faction.Hellfire, Role.Signature, 1, Produce(160, 120)), // 산란 악마
             (Faction.Hellfire, Role.Signature, 2, Produce(180, 130)), // 운석 술사
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            (Faction.WaterSlimes, Role.Melee, 1, Produce(70, 60)), // 물막이 슬라임
+            (Faction.WaterSlimes, Role.Melee, 2, Produce(50, 40)), // 급류 슬라임
+            (Faction.WaterSlimes, Role.Ranged, 2, Produce(25, 25)), // 침 뱉는 슬라임
+            (Faction.WaterSlimes, Role.Ranged, 3, Produce(130, 110)), // 물대포 슬라임
+            (Faction.WaterSlimes, Role.Signature, 1, Produce(75, 60)), // 비구름
+            (Faction.WaterSlimes, Role.Signature, 2, Produce(120, 100)), // 간헐천 술사
+            (Faction.WaterSlimes, Role.Signature, 3, Produce(80, 70)), // 샘물 운반자
         };
 
         private static ProductionCost Produce(int resources, int ticks) =>
@@ -1231,6 +1263,11 @@ namespace WordCraft.Sim
             (Faction.Hellfire, ResearchRow("용암 투석 사거리", 150, 200, 3, UpgradeEffect.LavaCatapultRange, (Role.Tech, 0), NoBuilding)),
             (Faction.Hellfire, ResearchRow("재날개 공격 주기", 100, 160, 3, UpgradeEffect.AshWingAttackTicks, (Role.Tech, 0), NoBuilding)),
             (Faction.Hellfire, ResearchRow("갑각 경화", 150, 200, 3, UpgradeEffect.HardenedCarapace, (Role.Tech, 1), (Role.Tech, 0))),
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            (Faction.WaterSlimes, ResearchRow("물결 궁수 사거리", 125, 200, 2, UpgradeEffect.ArcherRange, (Role.Tech, 1), NoBuilding)),
+            (Faction.WaterSlimes, ResearchRow("침 사거리", 75, 120, 2, UpgradeEffect.SpitterRange, (Role.Tech, 1), NoBuilding)),
+            (Faction.WaterSlimes, ResearchRow("물대포 사거리", 150, 200, 3, UpgradeEffect.WaterCannonRange, (Role.Tech, 1), NoBuilding)),
         };
 
         /// <summary>
@@ -1331,6 +1368,14 @@ namespace WordCraft.Sim
             (Faction.Hellfire, Role.Melee, 0, UpgradeEffect.HardenedCarapace, UpgradedStat.Armor, Fix.FromInt(2)),
             // 산란 악마 방어 +2.
             (Faction.Hellfire, Role.Signature, 1, UpgradeEffect.HardenedCarapace, UpgradedStat.Armor, Fix.FromInt(2)),
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            // 물결 궁수 사거리 6 → 7.
+            (Faction.WaterSlimes, Role.Ranged, 0, UpgradeEffect.ArcherRange, UpgradedStat.Range, Fix.FromInt(7)),
+            // 침 뱉는 슬라임 사거리 4 → 5.
+            (Faction.WaterSlimes, Role.Ranged, 2, UpgradeEffect.SpitterRange, UpgradedStat.Range, Fix.FromInt(5)),
+            // 물대포 슬라임 사거리 8 → 9.
+            (Faction.WaterSlimes, Role.Ranged, 3, UpgradeEffect.WaterCannonRange, UpgradedStat.Range, Fix.FromInt(9)),
         };
 
         /// <summary>How many rows the entry upgrade table holds, for the harness.</summary>
@@ -1632,6 +1677,19 @@ namespace WordCraft.Sim
             (Faction.Hellfire, Role.Signature, "산란 악마", "BroodDemon"),
             (Faction.Hellfire, Role.Signature, "운석 술사", "MeteorInvoker"),
             (Faction.Hellfire, Role.Tech, "재 분화구", "AshCaldera"),
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            (Faction.WaterSlimes, Role.Production, "구름 둥지", "CloudNest"),
+            (Faction.WaterSlimes, Role.Defense, "솟는 샘", "RisingSpring"),
+            (Faction.WaterSlimes, Role.Defense, "거품 장벽", "BubbleMound"),
+            (Faction.WaterSlimes, Role.Melee, "물막이 슬라임", "WaterScreenSlime"),
+            (Faction.WaterSlimes, Role.Melee, "급류 슬라임", "RiptideSlime"),
+            (Faction.WaterSlimes, Role.Ranged, "침 뱉는 슬라임", "WaterSlimeAttackSpit"),
+            (Faction.WaterSlimes, Role.Ranged, "물대포 슬라임", "WaterCannonSlime"),
+            (Faction.WaterSlimes, Role.Signature, "비구름", "RainCloud"),
+            (Faction.WaterSlimes, Role.Signature, "간헐천 술사", "GeyserMage"),
+            (Faction.WaterSlimes, Role.Signature, "샘물 운반자", "SpringCarrier"),
+            (Faction.WaterSlimes, Role.Tech, "물결 수련장", "WaveTrainingPool"),
         };
 
         /// <summary>
@@ -1732,6 +1790,16 @@ namespace WordCraft.Sim
             (Faction.Hellfire, Role.Ranged, 2, 3), // 용암 투석 악마
             (Faction.Hellfire, Role.Ranged, 3, 3), // 재날개 악마
             (Faction.Hellfire, Role.Signature, 1, 2), // 산란 악마
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            (Faction.WaterSlimes, Role.Production, 1, 2), // 구름 둥지
+            (Faction.WaterSlimes, Role.Defense, 1, 2), // 솟는 샘
+            (Faction.WaterSlimes, Role.Melee, 1, 2), // 물막이 슬라임
+            (Faction.WaterSlimes, Role.Melee, 2, 2), // 급류 슬라임
+            (Faction.WaterSlimes, Role.Ranged, 2, 1), // 침 뱉는 슬라임
+            (Faction.WaterSlimes, Role.Ranged, 3, 3), // 물대포 슬라임
+            (Faction.WaterSlimes, Role.Signature, 1, 2), // 비구름
+            (Faction.WaterSlimes, Role.Signature, 3, 2), // 샘물 운반자
         };
 
         /// <summary>
@@ -1812,6 +1880,13 @@ namespace WordCraft.Sim
             (Faction.Hellfire, Role.Defense, 2, (Role.Production, 0)), // 화염 첨탑
             (Faction.Hellfire, Role.Signature, 1, (Role.Tech, 1)), // 산란 악마
             (Faction.Hellfire, Role.Tech, 1, (Role.Production, 0)), // 재 분화구
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            (Faction.WaterSlimes, Role.Production, 1, (Role.Production, 0)), // 구름 둥지
+            (Faction.WaterSlimes, Role.Defense, 1, (Role.Production, 0)), // 솟는 샘
+            (Faction.WaterSlimes, Role.Ranged, 3, (Role.Tech, 1)), // 물대포 슬라임
+            (Faction.WaterSlimes, Role.Signature, 2, (Role.Tech, 0)), // 간헐천 술사
+            (Faction.WaterSlimes, Role.Tech, 1, (Role.Production, 0)), // 물결 수련장
         };
 
         /// <summary>
@@ -1856,6 +1931,11 @@ namespace WordCraft.Sim
             (Faction.Hellfire, Role.Ranged, 2, (Role.Production, 1), NoBuilding), // 용암 투석 악마
             (Faction.Hellfire, Role.Ranged, 3, (Role.Production, 1), NoBuilding), // 재날개 악마
             (Faction.Hellfire, Role.Signature, 2, (Role.Production, 1), NoBuilding), // 운석 술사
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            (Faction.WaterSlimes, Role.Signature, 0, (Role.Production, 0), (Role.Production, 1)), // 구름 용
+            (Faction.WaterSlimes, Role.Ranged, 2, (Role.Base, 0), (Role.Production, 0)), // 침 뱉는 슬라임
+            (Faction.WaterSlimes, Role.Signature, 1, (Role.Production, 1), NoBuilding), // 비구름
         };
 
         /// <summary>
@@ -1964,6 +2044,11 @@ namespace WordCraft.Sim
             (Faction.Hellfire, Role.Defense, 1, 90, 50), // 집결의 횃불
             (Faction.Hellfire, Role.Defense, 2, 110, 70), // 화염 첨탑
             (Faction.Hellfire, Role.Tech, 1, 150, 100), // 재 분화구
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            (Faction.WaterSlimes, Role.Defense, 1, 80, 50), // 솟는 샘
+            (Faction.WaterSlimes, Role.Defense, 2, 50, 40), // 거품 장벽
+            (Faction.WaterSlimes, Role.Tech, 1, 150, 100), // 물결 수련장
         };
 
         /// <summary>
