@@ -1442,7 +1442,7 @@ namespace WordCraft.View
             b.Arm.Ball(Point(0f, 0.08f, 0.44f), Extent(0.22f, 0.06f, 0.08f), foam);
         }
 
-        /// <summary>침 뱉는 슬라임: a round slime with an open mouth and a stream of droplets in front of it. Slot 2.</summary>
+        /// <summary>침 뱉는 슬라임: a round slime with a short spout of a mouth pushed forward, a stream of droplets in front of it. Slot 2.</summary>
         private static void SpitSlime(Blueprint b)
         {
             b.Gait = Gait.Hop;
@@ -1451,17 +1451,18 @@ namespace WordCraft.View
             Color foam = BodyPalette.WaterSlimes.Foam, deep = BodyPalette.WaterSlimes.Deep;
 
             hull.Dome(Vector3.zero, Extent(0.38f, 0.48f, 0.36f), 10, 3, BodyPalette.WaterSlimes.Blue);
-            hull.Ball(Point(0f, 0.22f, 0.32f), Extent(0.13f, 0.1f, 0.06f), deep);
+            hull.Prism(Point(0f, 0.24f, 0.24f), 8, 0.1f, 0.13f, 0.2f, BodyPalette.WaterSlimes.Sky, Lying);
+            hull.Prism(Point(0f, 0.24f, 0.44f), 8, 0.09f, 0.09f, 0.01f, deep, Lying);
             hull.Ball(Point(-0.14f, 0.36f, 0.26f), Extent(0.05f, 0.08f, 0.04f), foam);
             hull.Ball(Point(-0.1f, 0.62f, -0.04f), 0.05f, foam);
             hull.Ball(Point(0.04f, 0.68f, 0.02f), 0.035f, BodyPalette.WaterSlimes.Pale);
-            Eyes(hull, Point(0f, 0.38f, 0.32f), 0.2f, 0.065f);
+            Eyes(hull, Point(0f, 0.42f, 0.29f), 0.2f, 0.065f);
             Band(b, hull, Point(0f, 0.02f, 0f), 10, 0.39f, 0.06f, 0.95f);
 
-            b.Arm.Origin = Point(0f, 0.22f, 0.36f);
-            b.Arm.Ball(Point(0f, 0.24f, 0.46f), Extent(0.07f, 0.06f, 0.06f), BodyPalette.WaterSlimes.Pale);
-            b.Arm.Ball(Point(0.03f, 0.26f, 0.58f), 0.05f, foam);
-            b.Arm.Ball(Point(-0.02f, 0.28f, 0.68f), 0.035f, foam);
+            b.Arm.Origin = Point(0f, 0.24f, 0.44f);
+            b.Arm.Ball(Point(0f, 0.25f, 0.54f), Extent(0.07f, 0.06f, 0.06f), BodyPalette.WaterSlimes.Pale);
+            b.Arm.Ball(Point(0.03f, 0.27f, 0.66f), 0.05f, foam);
+            b.Arm.Ball(Point(-0.02f, 0.29f, 0.76f), 0.035f, foam);
         }
 
         /// <summary>물대포 슬라임: a big round slime with a thick water column pushed out of its body, no barrel. Slot 3, the siege.</summary>
@@ -1485,7 +1486,7 @@ namespace WordCraft.View
             b.Arm.Ball(Point(-0.04f, 0.38f, 0.62f), 0.045f, BodyPalette.WaterSlimes.Blue);
         }
 
-        /// <summary>비구름: a blue rain cloud with eyes, drops hanging under it, two puffs beating at its sides. Airborne, weaponless.</summary>
+        /// <summary>비구름: a flat, wide rain cloud in light blues with eyes, drops hanging under it, two puffs beating at its sides. Airborne, weaponless.</summary>
         private static void RainCloud(Blueprint b)
         {
             b.Limbs = LimbMotion.Flap;
@@ -1494,25 +1495,27 @@ namespace WordCraft.View
             Solids hull = b.Hull;
             Color sky = BodyPalette.WaterSlimes.Sky, blue = BodyPalette.WaterSlimes.Blue, deep = BodyPalette.WaterSlimes.Deep;
 
-            hull.Ball(Point(0f, 0.42f, 0f), Extent(0.42f, 0.18f, 0.3f), blue);
-            hull.Ball(Point(-0.3f, 0.48f, -0.04f), 0.17f, sky);
-            hull.Ball(Point(-0.1f, 0.56f, 0.02f), 0.2f, sky);
-            hull.Ball(Point(0.16f, 0.56f, -0.04f), 0.22f, BodyPalette.WaterSlimes.Pale);
-            hull.Ball(Point(0.36f, 0.48f, 0.02f), 0.15f, sky);
-            hull.Ball(Point(0f, 0.32f, 0f), Extent(0.4f, 0.07f, 0.26f), deep);
-            for (int i = 0; i < 5; i++)
+            // Flat, wide puffs in light values over a flat blue underside: a cloud, not a slime.
+            hull.Ball(Point(0f, 0.36f, 0f), Extent(0.5f, 0.1f, 0.32f), blue);
+            hull.Ball(Point(0f, 0.46f, 0f), Extent(0.46f, 0.14f, 0.3f), BodyPalette.WaterSlimes.Pale);
+            hull.Ball(Point(-0.3f, 0.52f, 0.02f), Extent(0.2f, 0.13f, 0.2f), BodyPalette.WaterSlimes.Foam);
+            hull.Ball(Point(-0.04f, 0.58f, -0.04f), Extent(0.24f, 0.15f, 0.22f), BodyPalette.WaterSlimes.Cloud);
+            hull.Ball(Point(0.26f, 0.54f, 0.04f), Extent(0.2f, 0.12f, 0.2f), BodyPalette.WaterSlimes.Foam);
+            hull.Ball(Point(0.44f, 0.44f, -0.02f), Extent(0.14f, 0.09f, 0.14f), sky);
+            hull.Ball(Point(-0.48f, 0.42f, 0f), Extent(0.12f, 0.08f, 0.12f), sky);
+            for (int i = 0; i < 6; i++)
             {
-                float x = -0.2f + i * 0.1f, z = i % 2 == 0 ? 0.06f : -0.1f;
-                hull.Prism(Point(x, 0.08f + (i % 2) * 0.06f, z), 6, 0.025f, 0f, 0.1f, deep, Turn(180f, 0f, 0f));
-                hull.Ball(Point(x, 0.06f + (i % 2) * 0.06f, z), 0.03f, deep);
+                float x = -0.3f + i * 0.12f, z = i % 2 == 0 ? 0.08f : -0.1f;
+                hull.Prism(Point(x, 0.1f + (i % 2) * 0.06f, z), 6, 0.025f, 0f, 0.12f, deep, Turn(180f, 0f, 0f));
+                hull.Ball(Point(x, 0.08f + (i % 2) * 0.06f, z), 0.03f, deep);
             }
-            Eyes(hull, Point(0f, 0.44f, 0.27f), 0.16f, 0.05f);
-            Band(b, hull, Point(0f, 0.3f, 0f), 10, 0.31f, 0.04f, 0.85f);
+            Eyes(hull, Point(0f, 0.42f, 0.3f), 0.16f, 0.05f);
+            Band(b, hull, Point(0f, 0.3f, 0f), 10, 0.36f, 0.04f, 0.7f);
 
             for (int side = -1; side <= 1; side += 2)
             {
                 Solids puff = side < 0 ? b.LimbLeft : b.LimbRight;
-                Wing(puff, side, Point(0.38f, 0.42f, 0f), 0.2f, 0.24f, 0.14f, -0.04f, 15f, sky);
+                Wing(puff, side, Point(0.46f, 0.42f, 0f), 0.18f, 0.22f, 0.14f, -0.04f, 12f, BodyPalette.WaterSlimes.Pale);
             }
         }
 
@@ -1716,7 +1719,7 @@ namespace WordCraft.View
             Band(b, hull, Point(0f, 0.36f, 0f), 12, 0.43f, 0.06f);
         }
 
-        /// <summary>성벽 골렘: a broad, short wall of a body with three boulders set in it, a small head and short arms. Slot 2.</summary>
+        /// <summary>성벽 골렘: a broad, short body carrying a flat stone slab on its back, wider than itself and over its head. Slot 2.</summary>
         private static void WallGolem(Blueprint b)
         {
             Solids hull = b.Hull;
@@ -1733,6 +1736,10 @@ namespace WordCraft.View
             hull.Dome(Point(-0.3f, 0.73f, 0f), Extent(0.2f, 0.06f, 0.17f), 7, 2, moss);
             hull.Dome(Point(0.32f, 0.73f, -0.02f), Extent(0.16f, 0.05f, 0.15f), 7, 2, BodyPalette.RockGolems.MossDeep);
             hull.Box(Point(-0.56f, 0.44f, 0.02f), Extent(0.16f, 0.24f, 0.2f), stone);
+            // The wall itself: one flat slab on its back, wider than the body and over its head.
+            hull.Box(Point(0f, 0.68f, -0.27f), Extent(1.12f, 0.86f, 0.14f), BodyPalette.RockGolems.StoneShade, Turn(-6f, 0f, 0f));
+            hull.Box(Point(0.18f, 0.66f, -0.19f), Extent(0.03f, 0.6f, 0.02f), stone, Turn(-6f, 0f, 12f));
+            hull.Dome(Point(-0.2f, 1.1f, -0.29f), Extent(0.36f, 0.06f, 0.1f), 7, 2, moss);
             Strap(b, hull, Point(0f, 0.31f, 0f), Extent(0.98f, 0.05f, 0.4f));
 
             b.Arm.Origin = Point(0.56f, 0.62f, 0f);
@@ -2059,7 +2066,7 @@ namespace WordCraft.View
             Band(b, hull, Point(0f, 0.44f, 0.18f), 10, 0.35f, 0.05f, 0.8f);
         }
 
-        /// <summary>덩쿨편: a round-backed crawler on six legs, two domed plates parting on the world inside, a vine of that world for a snout.</summary>
+        /// <summary>덩쿨편: a round-backed crawler on six legs, two domed plates parting on the world inside, a vine of that world rising from the gap and another for a snout.</summary>
         private static void VineShard(Blueprint b)
         {
             b.Limbs = LimbMotion.Step;
@@ -2072,6 +2079,11 @@ namespace WordCraft.View
             hull.Dome(Point(0f, 0.22f, 0.16f), Extent(0.3f, 0.26f, 0.2f), 8, 2, shade);
             hull.Box(Point(0f, 0.44f, -0.02f), Extent(0.14f, 0.05f, 0.08f), BodyPalette.Driftworlds.Lilac);
             hull.Prism(Point(0.04f, 0.42f, -0.02f), 4, 0.04f, 0f, 0.1f, BodyPalette.Driftworlds.TealLight);
+            // A crest of the vine's world, rising out of the gap and curling forward.
+            Color crest = BodyPalette.Driftworlds.NatureWorld;
+            Vector3 top = Curl(hull, Point(0f, 0.4f, -0.04f), 5, 5, 0.055f, 0.86f, 0.17f, 0.16f, -24f, 26f, crest, crest);
+            hull.Ball(top, Extent(0.09f, 0.03f, 0.06f), crest, Turn(0f, 0f, 20f), 1);
+            hull.Ball(Point(-0.08f, 0.62f, -0.12f), Extent(0.08f, 0.025f, 0.05f), crest, Turn(0f, 0f, -30f), 1);
             hull.Taper(Point(0f, 0.24f, 0.32f), Pair(0.22f, 0.14f), Pair(0.16f, 0.1f), 0.1f, deep, Lying);
             hull.Ball(Point(-0.07f, 0.3f, 0.42f), 0.03f, BodyPalette.Driftworlds.TealLight);
             hull.Ball(Point(0.07f, 0.3f, 0.42f), 0.03f, BodyPalette.Driftworlds.TealLight);
@@ -2135,11 +2147,15 @@ namespace WordCraft.View
                 hull.Prism(Around(yaw) * 0.38f + Point(0f, 0.5f, 0f), 4, 0.05f, 0f, 0.14f, BodyPalette.Driftworlds.TealLight);
             }
             hull.Prism(Point(0f, 0.45f, 0f), 8, 0.42f, 0.1f, 0.3f, shade, Turn(180f, 0f, 0f));
-            float[] xs = { -0.18f, 0.02f, 0.2f, -0.06f, 0.12f };
-            float[] zs = { 0.04f, 0.14f, -0.02f, -0.16f, -0.1f };
-            for (int i = 0; i < xs.Length; i++)
-                hull.Taper(Point(xs[i], 0.24f, zs[i]), Pair(0.05f, 0.05f), Pair(0.015f, 0.015f), 0.22f + (i % 3) * 0.06f, deep,
-                           Turn(180f + (i % 2 == 0 ? 10f : -10f), 0f, i * 7f - 14f));
+            // Roots splay out and down from under the rim, long enough to be seen from above.
+            for (int i = 0; i < 10; i++)
+            {
+                float yaw = 10f + i * 36f;
+                Quaternion hang = Quaternion.Euler(0f, yaw, 0f) * Turn(148f + (i % 2) * 10f, 0f, 0f);
+                hull.Taper(Around(yaw) * 0.32f + Point(0f, 0.4f, 0f), Pair(0.045f, 0.045f), Pair(0.012f, 0.012f), 0.24f + (i % 3) * 0.06f,
+                           i % 2 == 0 ? deep : shade, hang);
+            }
+            hull.Taper(Point(0f, 0.18f, 0f), Pair(0.06f, 0.06f), Pair(0.015f, 0.015f), 0.26f, deep, Turn(180f, 0f, 0f));
             hull.Lump(Point(0.1f, 0.74f, -0.05f), Extent(0.14f, 0.07f, 0.12f), shade, Turn(0f, 30f, 0f));
             Shard(b, hull, Point(-0.12f, 0.86f, 0.05f), 0.06f);
 
@@ -3021,7 +3037,11 @@ namespace WordCraft.View
                     Strap(b, hull, Point(0f, 0.08f, 0f), Extent(2.4f, 0.08f, 1.46f));
                     hull = b.Tier(Point(0f, 0.2f, 0f));
                     hull.Box(Point(0f, 1.15f, 0.04f), Extent(1.1f, 1.95f, 0.1f), ember);
-                    hull.Box(Point(0f, 1.02f, -0.05f), Extent(0.66f, 1.5f, 0.08f), charcoal);
+                    hull.Box(Point(0f, 1.0f, 0.02f), Extent(0.6f, 1.45f, 0.08f), charcoal);
+                    // The rim of the opening, standing proud of the pillars on the camera's side.
+                    hull.Box(Point(-0.36f, 1.0f, -0.12f), Extent(0.1f, 1.55f, 0.08f), ember, Turn(0f, 0f, -4f));
+                    hull.Box(Point(0.34f, 0.95f, -0.12f), Extent(0.1f, 1.4f, 0.08f), ember, Turn(0f, 0f, 5f));
+                    hull.Box(Point(-0.02f, 1.78f, -0.12f), Extent(0.64f, 0.1f, 0.08f), ember, Turn(0f, 0f, -8f));
                     hull = b.Tier(Point(-0.8f, 0.2f, 0f));
                     hull.Taper(Point(-0.8f, 0.2f, 0f), Pair(0.8f, 0.9f), Pair(0.46f, 0.56f), 1.8f, shell, Turn(0f, 0f, -6f));
                     hull.Taper(Point(-0.61f, 1.98f, 0f), Pair(0.46f, 0.56f), Pair(0.06f, 0.1f), 1.3f, facet, Turn(0f, 0f, 16f));
@@ -3420,19 +3440,21 @@ namespace WordCraft.View
                     return true;
 
                 case Role.Defense when slot == 1:
-                    // 부유석 첨탑: a low stack of stones with a great boulder floating over it; the boulder turns on what it drops on.
-                    hull.Lump(Point(0f, 0.28f, 0f), Extent(0.95f, 0.32f, 0.9f), shade, Turn(0f, 20f, 0f));
-                    hull.Dome(Point(-0.4f, 0.48f, -0.3f), Extent(0.36f, 0.1f, 0.3f), 8, 2, moss);
-                    Band(b, hull, Point(0f, 0.04f, 0f), 10, 0.98f, 0.08f);
-                    hull = b.Tier(Point(0f, 0.5f, 0f));
-                    hull.Lump(Point(0f, 0.8f, 0f), Extent(0.5f, 0.34f, 0.46f), stone, Turn(0f, 40f, 5f));
-                    hull.Lump(Point(0.05f, 1.22f, 0f), Extent(0.38f, 0.26f, 0.36f), tan, Turn(0f, -10f, 0f));
-                    hull.Dome(Point(0.05f, 1.42f, 0f), Extent(0.26f, 0.08f, 0.24f), 7, 2, mossDeep);
+                    // 부유석 첨탑: a thin stone spire on a mossy foot, a great boulder floating well clear of its tip;
+                    // the boulder turns on what it drops on.
+                    hull.Dome(Vector3.zero, Extent(0.75f, 0.16f, 0.7f), 9, 2, mossDeep);
+                    hull.Lump(Point(0.35f, 0.14f, -0.3f), Extent(0.2f, 0.14f, 0.18f), stone, Turn(0f, 20f, 0f));
+                    hull.Lump(Point(0f, 0.22f, 0f), Extent(0.42f, 0.22f, 0.4f), shade, Turn(0f, 20f, 0f));
+                    Band(b, hull, Point(0f, 0.1f, 0f), 9, 0.42f, 0.08f);
+                    hull = b.Tier(Point(0f, 0.35f, 0f));
+                    hull.Taper(Point(0f, 0.35f, 0f), Pair(0.36f, 0.32f), Pair(0.12f, 0.1f), 1.45f, stone, Turn(0f, 25f, 2f));
+                    hull.Box(Point(-0.06f, 0.95f, -0.12f), Extent(0.03f, 0.4f, 0.02f), shade, Turn(0f, 25f, 10f));
+                    hull.Dome(Point(-0.02f, 0.62f, 0f), Extent(0.2f, 0.06f, 0.17f), 6, 1, moss);
 
-                    b.Crown.Origin = Point(0f, 2.4f, 0f);
-                    b.Crown.Lump(Point(0f, 2.45f, 0f), Extent(0.66f, 0.42f, 0.6f), tan, Turn(10f, 30f, 5f));
-                    b.Crown.Dome(Point(-0.05f, 2.75f, 0f), Extent(0.42f, 0.14f, 0.36f), 8, 2, moss);
-                    b.Crown.Lump(Point(0.5f, 2.15f, -0.25f), Extent(0.14f, 0.1f, 0.14f), stone, Turn(0f, 20f, 0f));
+                    b.Crown.Origin = Point(0f, 2.6f, 0f);
+                    b.Crown.Lump(Point(0f, 2.62f, 0f), Extent(0.66f, 0.4f, 0.6f), tan, Turn(10f, 30f, 5f));
+                    b.Crown.Dome(Point(-0.05f, 2.9f, 0f), Extent(0.42f, 0.14f, 0.36f), 8, 2, moss);
+                    b.Crown.Lump(Point(0.55f, 2.3f, -0.25f), Extent(0.13f, 0.1f, 0.13f), stone, Turn(0f, 20f, 0f));
                     b.CrownAims = true;
                     b.CrownKick = 18f;
                     return true;
