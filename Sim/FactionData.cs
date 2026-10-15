@@ -2919,7 +2919,8 @@ namespace WordCraft.Sim
                 // 층위 고정 puts a clock back one tick by definition.
                 // A splash halves the shot it follows, 급류 walks at a World
                 // constant, and a field or a debris hold writes cells, not hp.
-                bool amountless = row.Kind == AbilityKind.GrowthAura || row.Kind == AbilityKind.SlowAura ||
+                // An active says what it needs in RequireCast.
+                bool amountless = IsCast(row.Kind) || row.Kind == AbilityKind.GrowthAura || row.Kind == AbilityKind.SlowAura ||
                                   row.Kind == AbilityKind.ChainOnHit || row.Kind == AbilityKind.SlowOnHit ||
                                   row.Kind == AbilityKind.BurnOnHit || row.Kind == AbilityKind.ExpiryAura ||
                                   row.Kind == AbilityKind.SplashOnHit || row.Kind == AbilityKind.FieldSpeed ||

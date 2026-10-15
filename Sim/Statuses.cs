@@ -59,7 +59,9 @@ namespace WordCraft.Sim
             if (RunningAbility(e, AbilityKind.RollCharge) >= 0) speed = RollSpeed;
             int gale = RunningAbility(e, AbilityKind.GaleAfterAttack);
             if (gale >= 0) speed = speed * Fix.FromInt(AbilityAmount(e.Owner, FactionData.AbilityRowAt(gale)));
-            if (e.SlowTicksLeft > 0 || InHostileAura(AbilityKind.SlowAura, e)) speed = speed * SlowFactor;
+            // 모래폭풍 slows by the same factor, and once with the other two.
+            if (e.SlowTicksLeft > 0 || InHostileAura(AbilityKind.SlowAura, e) || SandStormReach(e) >= 0)
+                speed = speed * SlowFactor;
             return speed > MaxMoveSpeed ? MaxMoveSpeed : speed;
         }
 

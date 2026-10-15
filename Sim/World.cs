@@ -964,6 +964,8 @@ namespace WordCraft.Sim
                 {
                     if (!OwnedAndAlive(c.EntityId, c.PeerId)) return;
                     Entity e = entities[c.EntityId];
+                    // 전개 중 이동 명령도 거부, and mid-transition too.
+                    if (Anchored(e)) return;
                     ClearOrders(ref e);
                     entities[c.EntityId] = e;
                     SetDestination(c.EntityId, c.Target);
@@ -987,8 +989,9 @@ namespace WordCraft.Sim
                     e.TargetId = c.Arg;
                     entities[c.EntityId] = e;
                     // Walk into range. A turret has no walk to give, and its Target
-                    // is hashed state, so it takes the order without moving.
-                    if (e.Speed.Raw != 0) SetDestination(c.EntityId, victim.Position);
+                    // is hashed state, so it takes the order without moving. Nor
+                    // does a deployed 견인 대포, which shoots from where it stands.
+                    if (e.Speed.Raw != 0 && !e.Deployed) SetDestination(c.EntityId, victim.Position);
                     break;
                 }
 
@@ -999,7 +1002,7 @@ namespace WordCraft.Sim
                     // Has to walk and has to shoot. On anything else this order is a
                     // plain Move wearing another name, and accepting it would leave
                     // an entity in a mode whose systems never touch it.
-                    if (e.Speed.Raw == 0 || !CanAttack(e)) return;
+                    if (e.Speed.Raw == 0 || !CanAttack(e) || Anchored(e)) return;
                     ClearOrders(ref e);
                     e.Mode = OrderMode.AttackMove;
                     e.OrderPoint = c.Target;
@@ -1194,6 +1197,12 @@ namespace WordCraft.Sim
                     // outside the table fails there like any other refusal.
                     TryResearch(c.PeerId, c.EntityId, c.Arg);
                     break;
+
+                case CommandType.Cast:
+                    // Arg is the row of the owner's ability table and Target the
+                    // point. Every rule lives in CastRefusal. See Sim/Casts.cs.
+                    TryCast(c);
+                    break;
             }
         }
 
@@ -1269,6 +1278,8 @@ namespace WordCraft.Sim
                 // written. Enforced here as well as in CombatSystem because this
                 // is the only line that decides whether an entity moves at all.
                 if (e.Mode == OrderMode.Hold) continue;
+                // 전개: a deployed 견인 대포 and one mid-transition stand still.
+                if (Anchored(e)) continue;
 
                 List<int> path = paths[i];
                 FixVec2 goal = e.PathIndex < path.Count ? CellCenter(path[e.PathIndex]) : e.Target;
