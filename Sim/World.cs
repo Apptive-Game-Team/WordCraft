@@ -328,6 +328,28 @@ namespace WordCraft.Sim
         /// holds at most one.
         /// </summary>
         public int AbilityTicksLeft;
+
+        // 액티브, docs/TECH-TREE.md 묶음 8. Both on the caster and nowhere
+        // else, the one-sidedness every field above has: a delayed hit or a
+        // zone lives in the caster's clock and point, so a caster that dies
+        // takes the hit or the zone with it and Kill clearing two fields is all
+        // that ending it takes.
+
+        /// <summary>
+        /// Where the caster's point active is aimed: the Target of the Cast that
+        /// set it, as it was on the tick of the order. Read by AbilitySystem
+        /// while AbilityTicksLeft runs, for 유성우, 간헐천, 낙뢰 and the two zones.
+        /// Hashed: two peers that disagreed here would drop one meteor on two
+        /// different armies.
+        /// </summary>
+        public FixVec2 AbilityPoint;
+
+        /// <summary>
+        /// Whether this 견인 대포 stands deployed: no walking, the deployed reach,
+        /// and a splash. False on every other body. Flipped by AbilitySystem on
+        /// the tick a 전개 transition's clock reaches 0, never by the Cast itself.
+        /// </summary>
+        public bool Deployed;
     }
 
     /// <summary>
@@ -547,6 +569,11 @@ namespace WordCraft.Sim
             // Nor carries an ability clock: a roll or a cooldown ends with the body.
             e.AbilityCooldown = 0;
             e.AbilityTicksLeft = 0;
+            // A meteor, a geyser or a bolt the body had aimed never falls, and
+            // a zone it held ends, per docs/TECH-TREE.md 동점과 경계: the point
+            // goes with the clock.
+            e.AbilityPoint = FixVec2.Zero;
+            e.Deployed = false;
         }
 
         /// <summary>
@@ -1477,6 +1504,9 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.ExpireTick);
                 Mix(ref h, (ulong)e.AbilityCooldown);
                 Mix(ref h, (ulong)e.AbilityTicksLeft);
+                Mix(ref h, (ulong)e.AbilityPoint.X.Raw);
+                Mix(ref h, (ulong)e.AbilityPoint.Y.Raw);
+                Mix(ref h, e.Deployed ? 1UL : 0UL);
 
                 List<int> path = paths[i];
                 Mix(ref h, (ulong)path.Count);
