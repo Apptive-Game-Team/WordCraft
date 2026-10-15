@@ -24,6 +24,8 @@ namespace WordCraft.Replay
         {
             ScriptedLogFactionsKeepTheirOpeners();
             HumansOpenWithNoNamelessBody();
+            HumansOpenWithTwoSpecialForces();
+            AMixedMatchPlacesEachPeersOwnOpeners();
             EveryFactionOpensTwoArmedNamedFighters();
         }
 
@@ -53,6 +55,55 @@ namespace WordCraft.Replay
                     "a 인간 opening spawned the nameless body " + e.Role + " entry " + e.Slot);
             }
             Check(units == 4, "a 인간 mirror match opens with " + units + " fighters, not 4");
+        }
+
+        /// <summary>
+        /// 인간's melee entry 0 is blank, so the first named, armed entry in the
+        /// melee-first order and in the ranged-first order is the same one, Ranged
+        /// 0, and 인간 opens with two 공수 특공대. Pinned on purpose. It is the
+        /// answer the rule gives, and a roster row that changes it should show up
+        /// here and be decided rather than slip in.
+        /// </summary>
+        private static void HumansOpenWithTwoSpecialForces()
+        {
+            Check(FactionData.OpeningFighter(Faction.Humans, 0).Equals((Role.Ranged, 0)),
+                "인간's first opener is no longer Ranged 0");
+            Check(FactionData.OpeningFighter(Faction.Humans, 1).Equals((Role.Ranged, 0)),
+                "인간's second opener is no longer Ranged 0");
+            World world = MatchScenario.Build(Seed, Faction.Humans, Faction.Humans);
+            int special = 0;
+            for (int i = 0; i < world.EntityCount; i++)
+            {
+                Entity e = world.GetEntity(i);
+                if (e.Kind == EntityKind.Unit && e.Owner == 0 && e.Role == Role.Ranged && e.Slot == 0) special++;
+            }
+            Check(special == 2, "인간 opens with " + special + " 공수 특공대, not 2");
+        }
+
+        /// <summary>
+        /// Two different factions, so the two peers' openers are different rows.
+        /// Each peer's two units are the OpeningFighter rows of its own faction, in
+        /// spawn order, and not the other peer's.
+        /// </summary>
+        private static void AMixedMatchPlacesEachPeersOwnOpeners()
+        {
+            World world = MatchScenario.Build(Seed, Faction.Humans, Faction.TreeSpirits);
+            for (int peer = 0; peer < MatchScenario.Peers; peer++)
+            {
+                Faction faction = world.FactionOf(peer);
+                int index = 0;
+                for (int i = 0; i < world.EntityCount; i++)
+                {
+                    Entity e = world.GetEntity(i);
+                    if (e.Kind != EntityKind.Unit || e.Owner != peer) continue;
+                    (Role Role, int Slot) want = FactionData.OpeningFighter(faction, index);
+                    Check(e.Role == want.Role && e.Slot == want.Slot,
+                        "peer " + peer + " (" + faction + ") opener " + index + " is " + e.Role + " " + e.Slot +
+                        ", not " + want.Role + " " + want.Slot);
+                    index++;
+                }
+                Check(index == 2, "peer " + peer + " opens with " + index + " fighters, not 2");
+            }
         }
 
         private static void EveryFactionOpensTwoArmedNamedFighters()

@@ -297,8 +297,7 @@ namespace WordCraft.Replay
             }
             Check(impassable > 0, "the map has no terrain, so the symmetry check proves nothing");
 
-            EveryBodyHasAMirrorAndStandsAtFullHp(world, ScriptedLog.Peer0Faction, ScriptedLog.Peer1Faction,
-                sameRosterEntries: ScriptedLog.Peer0Faction == ScriptedLog.Peer1Faction);
+            EveryBodyHasAMirrorAndStandsAtFullHp(world, ScriptedLog.Peer0Faction, ScriptedLog.Peer1Faction);
 
             // Again over a pair whose roster rows are not the same row. The layout
             // is a function of the grid and the peer, so this is the same map with
@@ -308,21 +307,21 @@ namespace WordCraft.Replay
             // hp reported an asymmetric map about a map nobody had touched.
             EveryBodyHasAMirrorAndStandsAtFullHp(
                 MatchScenario.Build(Seed, Faction.TreeSpirits, Faction.Driftworlds),
-                Faction.TreeSpirits, Faction.Driftworlds, sameRosterEntries: false);
+                Faction.TreeSpirits, Faction.Driftworlds);
 
             // 인간 against 세계수 정령 is the pair whose openers really are different
             // roster entries: 인간 has no melee entry 0 to open with.
             EveryBodyHasAMirrorAndStandsAtFullHp(
                 MatchScenario.Build(Seed, Faction.Humans, Faction.TreeSpirits),
-                Faction.Humans, Faction.TreeSpirits, sameRosterEntries: false);
+                Faction.Humans, Faction.TreeSpirits);
 
-            // And over a mirror match of every faction, where the pair must be the
-            // same roster entry because both halves ask the same roster.
+            // And over a mirror match of every faction, where both halves ask the
+            // same roster and so every pair is compared strictly.
             for (int f = 0; f < FactionData.FactionCount; f++)
             {
                 var faction = (Faction)f;
                 EveryBodyHasAMirrorAndStandsAtFullHp(
-                    MatchScenario.Build(Seed, faction, faction), faction, faction, sameRosterEntries: true);
+                    MatchScenario.Build(Seed, faction, faction), faction, faction);
             }
 
             Check(world.GetResources(0) == world.GetResources(1), "peers start with different resources");
@@ -347,19 +346,21 @@ namespace WordCraft.Replay
         /// role, position and hp and apart in entry is exactly the asymmetry that
         /// would have walked past the old rule.
         ///
-        /// sameRosterEntries is whether the two peers ask one roster. The opening
-        /// fighters follow the roster (issue #154), so in a mixed-faction match the
-        /// two halves may open on different roles and slots, and a pair is then
-        /// compared on Kind and position only. The roster entry is what the faction
-        /// decides there, not what the map does; the map is still pinned by every
-        /// body having a counterpart where the rotation puts it, and by each body
-        /// standing at full hp for its own roster row. A mirror match keeps the
-        /// whole comparison, so the entry a faction opens with still has to be
-        /// the same on both halves.
+        /// The one relaxation is the opening fighters. They follow the roster
+        /// (issue #154), so when the two factions' openers differ the two halves
+        /// open on different roles and slots, and a pair of owned units is
+        /// compared on Kind and position only. Nothing else is relaxed: buildings,
+        /// workers, resource nodes and 꼬마돌 are compared on Role and Slot as
+        /// before, and when the openers are the same, which includes the golden
+        /// pair and every mirror match, so are the units. What a unit is allowed
+        /// to be in place of that comparison is pinned directly: its role and
+        /// entry must be one of the two OpeningFighter rows of its own faction.
         /// </summary>
-        private static void EveryBodyHasAMirrorAndStandsAtFullHp(
-            World world, Faction peer0, Faction peer1, bool sameRosterEntries)
+        private static void EveryBodyHasAMirrorAndStandsAtFullHp(World world, Faction peer0, Faction peer1)
         {
+            bool openersDiffer =
+                !FactionData.OpeningFighter(peer0, 0).Equals(FactionData.OpeningFighter(peer1, 0)) ||
+                !FactionData.OpeningFighter(peer0, 1).Equals(FactionData.OpeningFighter(peer1, 1));
             string pair = peer0 + " against " + peer1;
 
             // Cell x sits at x + 1/2, its mirror at (GridSize - 1 - x) + 1/2, so a
@@ -372,17 +373,27 @@ namespace WordCraft.Replay
                 var mirrored = new FixVec2(span - a.Position.X, span - a.Position.Y);
                 int wantOwner = a.Owner < 0 ? -1 : 1 - a.Owner;
 
+                bool relaxed = openersDiffer && a.Kind == EntityKind.Unit && a.Owner >= 0;
                 bool found = false;
                 for (int j = 0; j < world.EntityCount && !found; j++)
                 {
                     Entity b = world.GetEntity(j);
                     found = b.Owner == wantOwner && b.Kind == a.Kind && b.Resource == a.Resource &&
                             b.Position.Equals(mirrored) &&
-                            (!sameRosterEntries || (b.Role == a.Role && b.Slot == a.Slot));
+                            (relaxed || (b.Role == a.Role && b.Slot == a.Slot));
                 }
                 Check(found, pair + ": " + Body(a) + " at " + Show(a.Position) + " has no mirror — " +
                     "nothing of owner " + wantOwner + " stands at " + Show(mirrored) +
-                    " with the same kind" + (sameRosterEntries ? ", role and roster entry" : ""));
+                    " with the same kind" + (relaxed ? "" : ", role and roster entry"));
+
+                if (relaxed)
+                {
+                    Faction owner = a.Owner == 0 ? peer0 : peer1;
+                    Check((a.Role, a.Slot).Equals(FactionData.OpeningFighter(owner, 0)) ||
+                          (a.Role, a.Slot).Equals(FactionData.OpeningFighter(owner, 1)),
+                        pair + ": " + Body(a) + " at " + Show(a.Position) +
+                        " is neither opening fighter the roster gives " + owner);
+                }
 
                 // Full strength, read off the body rather than compared with the
                 // other half of the pair.
