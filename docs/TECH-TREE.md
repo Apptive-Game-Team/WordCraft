@@ -1127,7 +1127,7 @@ PR 하나이고, 묶음마다 `FactionData.ContentVersion`을 1 올린다. 묶�
    준다. 코드는 `Production` 0번에 60/80(`buildOverrides`)을 주지만 체력은 공유 행 400이고,
    `Supply` 0번은 공유 행 75자원 50틱 체력 200이다. 인구 쪽 값은 어느 문서도 정하지 않았다.
    표는 생산 쪽 220†, 인구 쪽 코드 값을 적었다.
-3. **`docs/FACTION-MECHANICS.md` 수치가 코드에 없다.** `statOverrides`·`productionOverrides`에
+3. **`docs/FACTION-MECHANICS.md` 수치가 코드에 없다.** **반영됨(#179).** `statOverrides`·`productionOverrides`에
    행이 없어 공유 행이 대신 돈다. 표에서 `†`로 적은 값들이다.
 
    | 항목 | 문서 | 코드 |
@@ -1143,19 +1143,19 @@ PR 하나이고, 묶음마다 `FactionData.ContentVersion`을 1 올린다. 묶�
    | 공수 특공대 | 65자원 55틱, 체력 90, 사거리 5, 피해 7 | 20자원 40틱, 체력 70, 사거리 6, 피해 6 |
    | 마법 탑 (생산) | 체력 220 | 체력 400 |
 
-4. **공중 플래그.** `docs/FACTIONS.md`는 바람 정령과 구름 용을 공중으로,
+4. **공중 플래그.** **반영됨(#179).** `docs/FACTIONS.md`는 바람 정령과 구름 용을 공중으로,
    `docs/FACTION-MECHANICS.md` 공중 절은 구름 용을 공중 유닛으로 적고 "구현됨. 네 줄 전부"라고
    쓴다. 코드는 세계수 정령·물 슬라임 `Signature` 행에 override가 없어 둘 다 지상이다.
    공중 절은 바람 정령을 공중 목록에 넣지 않았다. 표는 공중으로 적었다.
-5. **지상 전용 방어.** `docs/FACTIONS.md` 공중 규칙은 대포, 굴림바위 언덕, 용암 아가리를
+5. **지상 전용 방어.** **반영됨(#179).** `docs/FACTIONS.md` 공중 규칙은 대포, 굴림바위 언덕, 용암 아가리를
    지상 전용으로 둔다. 코드는 인간 대포 하나만 `HitsAir`를 끄고 나머지 둘은 공유 방어 행
    (지·공)이다. 표는 지상 전용으로 적었다.
-6. **인간의 대공.** `docs/FACTION-MECHANICS.md`는 Towerback을 "인간의 유일한 대공 수단"으로
+6. **인간의 대공.** **반영됨(#179): 공수 특공대·돌 포탑 지상 전용은 채택하지 않았고 [열린 결정](#열린-결정)에 남는다.** `docs/FACTION-MECHANICS.md`는 Towerback을 "인간의 유일한 대공 수단"으로
    쓰고, `docs/FACTIONS.md`는 전기 타워를 "지상·공중 단거리"로 쓴다. 코드는 공수 특공대(공유
    원거리 행), 전기 타워, 돌 포탑이 모두 공중을 친다. 이 문서는 "유일한 기동 대공"으로 읽고
    정적 대공은 전기 타워만 남기는 쪽을 제안한다. 전기 타워의 "단거리"도 코드에서는 다른
    방어와 같은 6칸이다.
-7. **마도 정찰기.** `docs/FACTIONS.md`는 "정찰, 비전투"인데 코드는 공유 `Signature` 행을 받아
+7. **마도 정찰기.** **반영됨(#179): 무기만 뺐고 공중은 채택하지 않았다.** `docs/FACTIONS.md`는 "정찰, 비전투"인데 코드는 공유 `Signature` 행을 받아
    피해 10, 사거리 3이다. 표는 비전투로 적었다.
 8. **단계.** 코드는 역할 하나에 단계 하나(`FactionData.tiers`)라 `docs/FACTIONS.md`의 유닛별
    단계와 어긋난다. 표는 문서 단계를 따르고 `(코드 …)`로 적었다.
@@ -1185,7 +1185,7 @@ PR 하나이고, 묶음마다 `FactionData.ContentVersion`을 1 올린다. 묶�
 11. **세계수 정령의 인구 예외.** `docs/FACTIONS.md` 공유 시스템은 "세계수 정령만 예외로
     인구가 아니라 몸이 병목"이라고 쓰지만, 코드의 인구 상한은 여섯 진영이 같고 세계수
     정령에도 인구 건물(묘목)이 있다. 이 문서는 코드를 따른다.
-12. **아트 현황이 낡았다.** `docs/FACTIONS.md`의 건물 표는 아래 항목을 "신규 필요"로 적지만
+12. **아트 현황이 낡았다.** **반영됨(#179).** `docs/FACTIONS.md`의 건물 표는 아래 항목을 "신규 필요"로 적지만
     스프라이트가 이미 있고 `FactionData.sprites`도 그것을 쓴다: `Sapling`, `RootHall`,
     `SpiritStormtree`, `RiftAltar`, `WideningFissure`, `SpawningPit`, `LavaCrucible`,
     `LavaMaw`, `SpringheadPool`, `StillPool`, `TideAltar`, `GeyserColumn`,
@@ -1195,8 +1195,8 @@ PR 하나이고, 묶음마다 `FactionData.ContentVersion`을 1 올린다. 묶�
     갖췄다고 이미 적는다. `docs/FACTION-MECHANICS.md` 인간 절의 "일꾼만 없다"와
     `FactionData.sprites` 인간 주석의 "the worker and the 공방 are the holes"도
     `ApprenticeMage`·`Workshop`이 생긴 뒤로 맞지 않는다.
-13. **`MagmaFist`.** `docs/FACTIONS.md`가 용암 주먹의 아트로 적지만 스프라이트가 없다.
-14. **돌 골렘 `Signature` 주석.** `FactionData.sprites`의 주석은 "The signature slot is
+13. **`MagmaFist`.** **반영됨(#179): `docs/FACTIONS.md`가 신규 필요로 적는다.** `docs/FACTIONS.md`가 용암 주먹의 아트로 적지만 스프라이트가 없다.
+14. **돌 골렘 `Signature` 주석.** **반영됨(#179).** `FactionData.sprites`의 주석은 "The signature slot is
     deliberately empty"라고 쓰지만 같은 줄의 `names`·`sprites`가 고대 골렘·`AncientGolem`을
     그 자리에 둔다.
 15. **`FireTadpole`의 귀속.** `.art/MAGIC-CATALOG.md`는 지옥불 "악마 유충·사냥개 계열"로
