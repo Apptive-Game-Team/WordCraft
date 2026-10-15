@@ -462,8 +462,18 @@ ListWidth = Screen.width - (MinimapSize + S3 + InfoWidth + S3) - S3 - (CardWidth
 **카드 칸과 키.** 키는 `R T Y U / F G H J / V B N M` 이다. 카메라가 WASD 를
 쓰므로 그것과 겹치지 않는 가장 가까운 3x4 블록이다. 3열 시절의 `R T Y / F G H /
 V B N` 은 같은 칸, 같은 키로 남고 네 번째 열(`U J M`)만 새로 생겼다. 그래서
-Attack 은 계속 `F` 다. 새 열은 비워 두며, 건물 카드만 1·2행 여덟 칸 전체를
-생산 목록에 쓴다.
+Move, Stop, Hold, Attack, A-Move, Capture, Build 는 키가 그대로다. 새 열은
+비워 두며, 건물 카드만 1·2행 여덟 칸 전체를 생산 목록에 쓴다.
+
+**건물 카드의 생산 키는 일부 바뀌었다.** 전에는 생산 목록이 1·2행의 여섯 칸
+`F G H V B N` 이었고, 이제는 네 번째 열이 끼어서 여덟 칸 `F G H J V B N M`
+이다. 앞의 세 항목은 `F G H` 로 그대로지만 4번째 항목부터는 한 칸씩 밀린다.
+차원 유랑종은 여섯 항목을 다 쓰므로 뒤의 세 항목 키가 `V B N` 에서 `J V B`
+로 바뀐다. 항목이 세 개인 다른 진영은 `F G H` 그대로다. 단축키 위치를 지키는
+범위는 명령 카드의 고정 칸(Move, Stop, Hold, Attack, A-Move, Capture, Build,
+Rally, Cancel, Arrive)이고, 생산 목록은 로스터 순서대로 채워지는 칸이라
+로스터가 늘면 키가 움직인다. 그 위치 규칙이 항목 순서에 걸려 있다는 것을 이번
+확장에서 한 번 겪은 것이다.
 
 **생산 목록 page.** 목록이 여덟 칸 이하면 그대로 놓는다. 더 길면 page 당 일곱
 개를 놓고 11번 칸(`M`)이 `More` 가 되어 다음 page 로 넘기고, 마지막 page 에서
