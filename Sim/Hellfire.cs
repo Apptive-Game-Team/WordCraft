@@ -169,12 +169,12 @@ namespace WordCraft.Sim
         }
 
         /// <summary>
-        /// Gives a dead offspring's slot back to the warlord that emitted it.
-        /// Called from Kill, which is the one place a body stops existing, so a
-        /// second way to kill something cannot forget it.
+        /// Gives a dead child's slot back to the spawner that emitted it, a 군단장
+        /// or a 산란 악마. Called from Kill, which is the one place a body stops
+        /// existing, so a second way to kill something cannot forget it.
         ///
-        /// Writing straight into the parent's slot is safe because a warlord and
-        /// its offspring share an owner, and combat only ever kills across owners:
+        /// Writing straight into the parent's slot is safe because a spawner and
+        /// its children share an owner, and combat only ever kills across owners:
         /// no attacker can be the parent of what it just killed, so the write-back
         /// at the end of the combat loop can never be holding a stale count.
         /// </summary>

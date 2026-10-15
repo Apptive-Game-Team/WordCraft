@@ -50,7 +50,7 @@ namespace WordCraft.Sim
     /// Nothing else about the carrier can change at all, and it is worth saying
     /// rather than assuming. Owner moves only through 인간 징발, which transfers a
     /// neutral 꼬마돌 and nothing else; Role and Slot move only through 세계수 정령
-    /// 성장, which is one faction's workers. Neither can reach a 차원 유랑종 body,
+    /// 성장, which is one faction's bodies. Neither can reach a 차원 유랑종 body,
     /// so a 경계 운반자 is a 경계 운반자 for its whole life.
     ///
     /// And the thing this must not do is choose. It picks the nearest threat, and
