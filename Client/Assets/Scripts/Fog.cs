@@ -293,7 +293,7 @@ namespace WordCraft.View
         /// That puts a defence tower at 6 and everything else between 2 and 4, all
         /// of them under a unit's 10.
         ///
-        /// "As far as it shoots" is <see cref="World.RangeOf"/>, the one place the
+        /// "As far as it shoots" is <see cref="World.RangeFor"/>, the one place the
         /// simulation reads a weapon's reach. A 대포 사거리 that adds a cell to the
         /// cannon adds it to what the cannon sees, and the roster entry is the one
         /// asked (a cannon and a 전기 타워 share a role) rather than the role's
@@ -301,7 +301,7 @@ namespace WordCraft.View
         /// </summary>
         private static float Sight(Entity e) =>
             Static(e)
-                ? Mathf.Max(Reach(shown.RangeOf(e)), MatchView.Cells(e.Role))
+                ? Mathf.Max(Reach(shown.RangeFor(e)), MatchView.Cells(e.Role))
                 : Reach(World.AcquireRange);
 
         private static float Reach(Fix f) => f.Raw / (float)Fix.One;
