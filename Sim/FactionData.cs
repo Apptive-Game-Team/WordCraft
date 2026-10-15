@@ -499,6 +499,33 @@ namespace WordCraft.Sim
                     HitsGround = true,
                 }),
 
+            // 지옥불 군단장. Flies, and carries no weapon at all: it kills nothing
+            // itself and pays for itself by what it spawns. Numbers from
+            // docs/FACTION-MECHANICS.md. Keeps the shared signature speed, because
+            // a unit the player has to keep alive is a unit the player has to be
+            // able to pull out.
+            (Faction.Hellfire, Role.Signature, 0,
+                new UnitStats { Hp = 300, Speed = Fix.Ratio(3, 8), Footprint = BodyRadius, Air = true }),
+
+            // 지옥불 군단장의 자손. Airborne, shorter reach and lighter hit than the
+            // shared ranged row. Free and spawned rather than produced, which is
+            // what productionOverrides below says and World.WarlordSpawnSystem does.
+            // Entry 0 only: 균열 파수병 is entry 1 and holds the ground on the
+            // shared ranged row, which is the whole reason this key names a slot.
+            (Faction.Hellfire, Role.Ranged, 0,
+                new UnitStats
+                {
+                    Hp = 70,
+                    Speed = Fix.Ratio(1, 4),
+                    Footprint = BodyRadius,
+                    Damage = 5,
+                    Range = Fix.FromInt(4),
+                    AttackTicks = 18,
+                    Air = true,
+                    HitsAir = true,
+                    HitsGround = true,
+                }),
+
             // 물 슬라임 거품 정령. 체력 130, 근접, 피해 6, per
             // docs/FACTION-MECHANICS.md 물 슬라임 표: the wall the archers stand
             // behind, tougher than the shared melee row and lighter in the hand.
@@ -594,33 +621,6 @@ namespace WordCraft.Sim
                     Damage = 9,
                     Range = Fix.FromInt(6),
                     AttackTicks = 20,
-                    HitsGround = true,
-                }),
-
-            // 지옥불 군단장. Flies, and carries no weapon at all: it kills nothing
-            // itself and pays for itself by what it spawns. Numbers from
-            // docs/FACTION-MECHANICS.md. Keeps the shared signature speed, because
-            // a unit the player has to keep alive is a unit the player has to be
-            // able to pull out.
-            (Faction.Hellfire, Role.Signature, 0,
-                new UnitStats { Hp = 300, Speed = Fix.Ratio(3, 8), Footprint = BodyRadius, Air = true }),
-
-            // 지옥불 군단장의 자손. Airborne, shorter reach and lighter hit than the
-            // shared ranged row. Free and spawned rather than produced, which is
-            // what productionOverrides below says and World.WarlordSpawnSystem does.
-            // Entry 0 only: 균열 파수병 is entry 1 and holds the ground on the
-            // shared ranged row, which is the whole reason this key names a slot.
-            (Faction.Hellfire, Role.Ranged, 0,
-                new UnitStats
-                {
-                    Hp = 70,
-                    Speed = Fix.Ratio(1, 4),
-                    Footprint = BodyRadius,
-                    Damage = 5,
-                    Range = Fix.FromInt(4),
-                    AttackTicks = 18,
-                    Air = true,
-                    HitsAir = true,
                     HitsGround = true,
                 }),
 
