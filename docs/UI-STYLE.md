@@ -411,7 +411,7 @@ HUD의 어떤 오프셋도 이 값이 아닌 숫자로 쓰지 않는다. 6px과 
 | `Note` | `Micro` / `InkDim`. 값·상태·힌트·진단 |
 | `Button` | 면 + 글자색. 기본 `Raised`, 무장 `Accent` 반전 |
 | 비활성 버튼 | `Void` 면 + `InkMute` 글자. `GUI.enabled`를 쓰지 않는다 |
-| `CardCell` | 3x3 한 칸. 좌상단 키캡 우물 + 하단 라벨. 무장 시 통째 반전 |
+| `CardCell` | 카드 한 칸(3행 4열). 좌상단 키캡 우물 + 하단 라벨. 무장 시 통째 반전 |
 | `EmptyCell` | `Void` 면 + `Raised` 프레임. 눌리지 않는 버튼이 아니라 구멍 |
 | `Readout` | `Micro` 이름 위, `Big` 값 아래. 마나·인구 |
 | `Meter` | `Void` 바닥 + `Health(ratio)` 채움. 체력·생산 진행 |
@@ -428,18 +428,66 @@ HUD의 어떤 오프셋도 이 값이 아닌 숫자로 쓰지 않는다. 6px과 
 ## 레이아웃
 
 **커맨드 카드가 하단 패널의 높이를 정한다.** 반대가 아니다. 카드는 고정
-9칸이고 잘릴 수 없다. 이전 레이아웃은 74px 셀 3행을 150px 바에 넣어서
+12칸(3행 4열)이고 잘릴 수 없다. 이전 레이아웃은 74px 셀 3행을 150px 바에 넣어서
 아래 한 행 — 명령 세 개 — 이 화면 밖으로 나가 보이지 않았다.
 
 ```
-CardCellSize 54  →  CardWidth = CardHeight = 3*54 + 2*S1 = 170
+CardCellSize 54  →  CardWidth  = Cols * 54 + (Cols - 1) * S1 = 4*54 + 3*4 = 228
+                    CardHeight = Rows * 54 + (Rows - 1) * S1 = 3*54 + 2*4 = 170
 BottomPanel = S2 + Micro + S1 + 170 + S2 = 200
 MinimapSize = BottomPanel = 200   (정사각, 좌하단에 밀착)
 TopBar = S2 + ReadoutHeight + S1 = 44
 ```
 
+`Cols` 와 `Rows` 는 `CommandCard` 에서 읽는다(`UiStyle` 이 숫자를 다시 적지
+않는다). 3열에서 4열로 넓힐 때 바뀐 것은 `CardWidth` 170 → 228 뿐이다.
+`CardHeight` 는 행 수만 보므로 `BottomPanel` 200, `MinimapSize` 200, 카메라
+프레이밍(아래)은 그대로다. `TopRightWidth` 는 상단 바의 값이라 카드와 무관하고
+260 그대로다.
+
+카드가 넓어진 만큼 선택 목록이 좁아진다. 목록은 미니맵, 정보, 카드 사이에 남은
+폭을 쓴다.
+
+```
+ListWidth = Screen.width - (MinimapSize + S3 + InfoWidth + S3) - S3 - (CardWidth + S3)
+          = Screen.width - 484 - 12 - 240 = Screen.width - 736
+```
+
+1280px 창에서 544(칩 네 열), 1024px 창에서 288(두 열)이다. `ChipWidth` 132 보다
+좁아지면, 즉 창 폭이 868px 아래면 목록은 그려지지 않는다(전에는 810px).
+
 미니맵과 카드는 각자의 모서리에 붙인다. 둘 다 근육 기억으로 조준하는
 대상이고, 여백은 포인터가 빗나갈 수 있는 공간이다.
+
+**카드 칸과 키.** 키는 `R T Y U / F G H J / V B N M` 이다. 카메라가 WASD 를
+쓰므로 그것과 겹치지 않는 가장 가까운 3x4 블록이다. 3열 시절의 `R T Y / F G H /
+V B N` 은 같은 칸, 같은 키로 남고 네 번째 열(`U J M`)만 새로 생겼다. 그래서
+Move, Stop, Hold, Attack, A-Move, Capture, Build 는 키가 그대로다. 새 열은
+비워 두며, 건물 카드만 1·2행 여덟 칸 전체를 생산 목록에 쓴다.
+
+**건물 카드의 생산 키는 일부 바뀌었다.** 전에는 생산 목록이 1·2행의 여섯 칸
+`F G H V B N` 이었고, 이제는 네 번째 열이 끼어서 여덟 칸 `F G H J V B N M`
+이다. 앞의 세 항목은 `F G H` 로 그대로지만 4번째 항목부터는 한 칸씩 밀린다.
+차원 유랑종은 여섯 항목을 다 쓰므로 뒤의 세 항목 키가 `V B N` 에서 `J V B`
+로 바뀐다. 항목이 세 개인 다른 진영은 `F G H` 그대로다. 단축키 위치를 지키는
+범위는 명령 카드의 고정 칸(Move, Stop, Hold, Attack, A-Move, Capture, Build,
+Rally, Cancel, Arrive)이고, 생산 목록은 로스터 순서대로 채워지는 칸이라
+로스터가 늘면 키가 움직인다. 그 위치 규칙이 항목 순서에 걸려 있다는 것을 이번
+확장에서 한 번 겪은 것이다.
+
+**생산 목록 page.** 목록이 여덟 칸 이하면 그대로 놓는다. 더 길면 page 당 일곱
+개를 놓고 11번 칸(`M`)이 `More` 가 되어 다음 page 로 넘기고, 마지막 page 에서
+누르면 첫 page 로 돌아온다. `More` 의 라벨은 `2/3` 처럼 현재 page 를 적는다.
+page 는 뷰 상태(`Orders.Page`)라 시뮬레이션에 아무것도 보내지 않고, 선택이
+바뀌면 0 으로 돌아간다. 네 page(28개)를 넘는 목록은 `Replay` 의
+`ProductionMenuChecks` 가 실패로 본다.
+
+**건설 서브메뉴**는 같은 폭을 쓴다. 건물 역할 다섯 개가 1행 네 칸, 2행 한 칸에
+놓이고 page 는 없다.
+
+**기술 건물(`Role.Tech`)**을 고르면 카드 제목이 `produce` 대신 `research` 이고
+1·2행이 비어 있다. 연구 버튼이 들어올 자리를 미리 잡은 것이고, 버튼은 #164 뒤의
+후속 이슈가 채운다. 카드 종류는 `Building` 그대로다.
 
 하단 패널은 손이 뻗는 순서대로 네 컬럼이다: 맵 · 선택된 하나 · 선택
 전체 · 명령.

@@ -612,7 +612,7 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// The 3x3 card. The key is drawn on its own cell because the cell is the
+        /// The command card, three rows of four. The key is drawn on its own cell because the cell is the
         /// thing worth learning; see CommandCard for the table behind it.
         /// </summary>
         private void Card(Rect area)
@@ -622,12 +622,12 @@ namespace WordCraft.View
 
             CardKind kind = orders.Kind();
             Faction faction = runner.World.FactionOf(runner.LocalPeer);
-            CardSlot[] card = CommandCard.Of(kind, faction);
+            CardSlot[] card = orders.Card();
 
             // The card changes under the same rectangle, so it says what it is.
             // Without this a build submenu and a produce row look alike.
             UiStyle.Header(new Rect(area.x, area.y, area.width, UiStyle.Micro + UiStyle.S1),
-                CommandCard.Title(kind));
+                CommandCard.Title(kind, orders.LeadRole()));
 
             float top = area.y + UiStyle.Micro + UiStyle.S1;
             float step = UiStyle.CardCellSize + UiStyle.S1;
@@ -638,7 +638,7 @@ namespace WordCraft.View
                     top + i / CommandCard.Cols * step,
                     UiStyle.CardCellSize, UiStyle.CardCellSize);
 
-                if (card[i].Type == CommandType.None && !card[i].Aim)
+                if (card[i].Type == CommandType.None && !card[i].Aim && !card[i].More)
                 {
                     UiStyle.EmptyCell(cell);
                     continue;
@@ -660,7 +660,14 @@ namespace WordCraft.View
                 // Armed is the cell inverting, and the aim cell is armed by its own
                 // state rather than by Pending: nothing is pending, because pressing
                 // it puts no command on the wire.
-                bool armed = card[i].Aim ? orders.Aiming : orders.Pending == card[i].Type;
+                //
+                // More is None-typed like the aim cell, and Pending is None while
+                // nothing is armed, so left to the comparison it would read as armed
+                // the whole time. Turning a page is a press and a release, never a
+                // state.
+                bool armed = card[i].Aim
+                    ? orders.Aiming
+                    : !card[i].More && orders.Pending == card[i].Type;
 
                 if (UiStyle.CardCell(cell, CommandCard.Keys[i].ToString(), card[i].Label, armed, live))
                 {

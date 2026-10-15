@@ -52,6 +52,14 @@ namespace WordCraft.View
         /// so it says so in a field of its own.
         /// </summary>
         public bool Aim;
+
+        /// <summary>
+        /// True on the cell that turns the production list to its next page. Like
+        /// <see cref="Aim"/> it puts nothing on the wire and has no command to
+        /// borrow, so it says so in a field of its own; the page it turns is view
+        /// state (Orders.Page).
+        /// </summary>
+        public bool More;
     }
 
     /// <summary>
@@ -64,49 +72,57 @@ namespace WordCraft.View
     /// </summary>
     public static class CommandCard
     {
-        public const int Cols = 3;
+        public const int Cols = 4;
         public const int Rows = 3;
         public const int Cells = Cols * Rows;
 
         /// <summary>
         /// Cell to key. Not QWE/ASD/ZXC, which would be the obvious block, because
         /// the camera keeps WASD (roadmap 3-5) and a pan key that also fires a
-        /// command is worse than an unfamiliar block. RTY/FGH/VBN is the nearest
-        /// contiguous 3x3 that leaves WASD alone.
+        /// command is worse than an unfamiliar block. RTYU/FGHJ/VBNM is the
+        /// nearest contiguous 3x4 that leaves WASD alone.
+        ///
+        /// The fourth column was added on the right, so the three columns that
+        /// were here before keep their keys: R T Y / F G H / V B N still sit
+        /// where the hand learned them, and U J M are new. Every card below is
+        /// written in rows of four to match.
         /// </summary>
         public static readonly KeyCode[] Keys =
         {
-            KeyCode.R, KeyCode.T, KeyCode.Y,
-            KeyCode.F, KeyCode.G, KeyCode.H,
-            KeyCode.V, KeyCode.B, KeyCode.N,
+            KeyCode.R, KeyCode.T, KeyCode.Y, KeyCode.U,
+            KeyCode.F, KeyCode.G, KeyCode.H, KeyCode.J,
+            KeyCode.V, KeyCode.B, KeyCode.N, KeyCode.M,
         };
 
         // The column convention every card below obeys, so a cell means the same
-        // thing whatever is selected:
-        //   cell 0  point at the ground   Move, or where produced units walk to
-        //   cell 1  cancel                Stop, or take one off the queue
-        //   cell 2  stand and shoot       Hold; on a building, the rest of row 0
-        //   cell 3  name a victim
-        //   cell 4  walk and shoot
-        //   cells 6-8 (bottom row)        what this thing makes
+        // thing whatever is selected. Columns 0-2 are the old 3x3 and keep their
+        // meaning; column 3 (cells 3, 7, 11) is new and stays empty on every card
+        // except where a card says otherwise.
+        //   cell 0  (R)  point at the ground   Move, or where produced units walk to
+        //   cell 1  (T)  cancel                Stop, or take one off the queue
+        //   cell 2  (Y)  stand and shoot       Hold; on a building, the rest of row 0
+        //   cell 4  (F)  name a victim
+        //   cell 5  (G)  walk and shoot
+        //   cells 8-10 (V B N), and on a building all of rows 1 and 2
+        //                what this thing makes
 
         /// <summary>Declared before the tables: static initializers run in textual order.</summary>
         private static readonly CardSlot Empty = new CardSlot();
 
         private static readonly CardSlot[] fighter =
         {
-            Cmd("Move", CommandType.Move), Cmd("Stop", CommandType.Stop), Cmd("Hold", CommandType.HoldPosition),
-            Cmd("Attack", CommandType.Attack), Cmd("A-Move", CommandType.AttackMove), Empty,
-            Empty, Empty, Empty,
+            Cmd("Move", CommandType.Move), Cmd("Stop", CommandType.Stop), Cmd("Hold", CommandType.HoldPosition), Empty,
+            Cmd("Attack", CommandType.Attack), Cmd("A-Move", CommandType.AttackMove), Empty, Empty,
+            Empty, Empty, Empty, Empty,
         };
 
         /// <summary>
-        /// 징발 goes in cell 3 because cell 3 is where naming a body lives — it is
+        /// 징발 goes in cell 4 because cell 4 is where naming a body lives — it is
         /// Attack on the fighter card, and a Capture is the same gesture at the
         /// same key on the one card that has no Attack. The worker card had six
         /// free cells before this and has five after, so nothing was displaced and
-        /// nothing had to be paged; the 3x3 is only tight on the produce card,
-        /// where 차원 유랑종 already fills all six of ProductionMenu.Cells.
+        /// nothing had to be paged; the card is only tight on the produce card,
+        /// where 차원 유랑종 already fills six of ProductionMenu.Cells.
         ///
         /// The cell is here for every faction and drawn dead for five of them
         /// (Hud.Card asks CaptureOrder.Available). One layout per selection kind is
@@ -116,9 +132,9 @@ namespace WordCraft.View
         /// </summary>
         private static readonly CardSlot[] worker =
         {
-            Cmd("Move", CommandType.Move), Cmd("Stop", CommandType.Stop), Empty,
-            Cmd("Capture", CommandType.Capture), Empty, Empty,
-            Cmd("Build", CommandType.Build), Empty, Empty,
+            Cmd("Move", CommandType.Move), Cmd("Stop", CommandType.Stop), Empty, Empty,
+            Cmd("Capture", CommandType.Capture), Empty, Empty, Empty,
+            Cmd("Build", CommandType.Build), Empty, Empty, Empty,
         };
 
         /// <summary>
@@ -149,16 +165,19 @@ namespace WordCraft.View
 
         /// <summary>
         /// The card for this selection kind, laid out for this faction. Always
-        /// Cells long. The HUD and the keys both call this, so what a key fires is
-        /// always what the button under it says.
+        /// Cells long. The HUD and the keys both get it through Orders.Card, so
+        /// what a key fires is always what the button under it says. Page is the
+        /// production list's page and means nothing to any other card. Lead is the
+        /// role of the entity the card speaks for, which only the building card
+        /// reads: a Tech building has its own title and no production list.
         /// </summary>
-        public static CardSlot[] Of(CardKind kind, Faction faction)
+        public static CardSlot[] Of(CardKind kind, Faction faction, Role lead, int page)
         {
             switch (kind)
             {
                 case CardKind.Fighter: return fighter;
                 case CardKind.Worker: return worker;
-                case CardKind.Building: return Building(faction);
+                case CardKind.Building: return Building(faction, lead, page);
                 case CardKind.BuildMenu: return buildMenu;
                 default: return none;
             }
@@ -172,14 +191,18 @@ namespace WordCraft.View
         /// — runs headless in Replay/ProductionMenuChecks.cs. This method only
         /// turns that list into CardSlots and keys.
         ///
-        /// Rows 1 and 2 (<see cref="ProductionMenu.Cells"/>, six) are the whole
-        /// budget, not the bottom row alone. 차원 유랑종 fills all six today: three
-        /// melee entries (its two temporary extinct-slime summons standing
-        /// beside 화산편), two ranged (틈새 사수 and 멸종한 번개 슬라임), one
-        /// signature — every other faction fits in three. A faction that grew a
-        /// seventh producible entry would overflow this card; nothing on the
-        /// roster does yet, and #114 leaves rebalancing or paging the card to
-        /// whoever adds one.
+        /// A Tech building (<paramref name="lead"/>) lists nothing: see below.
+        ///
+        /// Rows 1 and 2 (<see cref="ProductionMenu.Cells"/>, eight) are the whole
+        /// budget, column 3 included: the card was widened to four columns so a
+        /// roster past six entries still has a button each. 차원 유랑종 fills six
+        /// today, every other faction three.
+        ///
+        /// A list longer than eight is paged. Each page lists seven entries and
+        /// cell 11 (key M) becomes More, which turns to the next page and, on the
+        /// last, back to the first. The page is the caller's: it is view state
+        /// (Orders.Page), and turning it sends nothing to the simulation. Every
+        /// entry is on exactly one page, in roster order.
         ///
         /// 도착 goes in cell 2 because it is the last free cell of row 0, and row 0
         /// is where a building's own settings live rather than what it makes. It
@@ -193,7 +216,7 @@ namespace WordCraft.View
         /// appeared only for 차원 유랑종 would move nothing today and everything the
         /// day row 0 grows a fourth entry.
         /// </summary>
-        public static CardSlot[] Building(Faction faction)
+        public static CardSlot[] Building(Faction faction, Role lead, int page)
         {
             for (int i = 0; i < Cells; i++) building[i] = Empty;
             building[0] = Cmd("Rally", CommandType.SetRallyPoint);
@@ -201,9 +224,19 @@ namespace WordCraft.View
             // Type stays None: nothing leaves the client when this cell is pressed.
             building[2] = new CardSlot { Label = "Arrive", Aim = true };
 
+            // Rows 1 and 2 are held for research, which lands with #164's tech tree
+            // and a follow-up issue. Left empty rather than hidden so the position
+            // is already the card's by the time the buttons arrive. Still the
+            // Building card, not a new CardKind: selection ranking, the keys and
+            // row 0 are all the building's, and only the title differs.
+            if (lead == Role.Tech) return building;
+
             List<ProductionMenu.Entry> entries = ProductionMenu.For(faction);
+            int pages = ProductionMenu.Pages(entries.Count);
+            page = ProductionMenu.PageRange(entries.Count, page, out int first, out int length);
+
             int cell = Cols; // rows 1-2: one cell per producible roster entry
-            for (int i = 0; i < entries.Count && cell < Cells; i++)
+            for (int i = first; i < first + length; i++)
             {
                 ProductionMenu.Entry entry = entries[i];
                 building[cell++] = new CardSlot
@@ -214,17 +247,36 @@ namespace WordCraft.View
                     Slot = entry.Slot,
                 };
             }
+
+            // The last cell of the card, whatever the page holds, so the key that
+            // turns the page never moves. The label says where the list stands.
+            if (pages > 1)
+            {
+                building[Cells - 1] = new CardSlot { Label = "More\n" + (page + 1) + "/" + pages, More = true };
+            }
             return building;
         }
 
-        /// <summary>What the card is for, drawn over it so the player is never guessing.</summary>
-        public static string Title(CardKind kind)
+        /// <summary>
+        /// How many pages this faction's production list takes. Orders reads it to
+        /// know where More wraps; the card itself only needs the count to decide
+        /// whether it has a More at all.
+        /// </summary>
+        public static int PageCount(Faction faction) =>
+            ProductionMenu.Pages(ProductionMenu.For(faction).Count);
+
+        /// <summary>
+        /// What the card is for, drawn over it so the player is never guessing. A
+        /// Tech building reads "research" because that is the one thing its rows 1
+        /// and 2 are for; every other building produces.
+        /// </summary>
+        public static string Title(CardKind kind, Role lead)
         {
             switch (kind)
             {
                 case CardKind.Fighter: return "orders";
                 case CardKind.Worker: return "worker";
-                case CardKind.Building: return "produce";
+                case CardKind.Building: return lead == Role.Tech ? "research" : "produce";
                 case CardKind.BuildMenu: return "build  ·  esc to cancel";
                 default: return "";
             }
@@ -234,6 +286,10 @@ namespace WordCraft.View
         /// Lays the submenu out for this faction and returns it. Bottom two rows,
         /// keeping the top row where the worker card's own commands live, so the
         /// submenu reads as an extension of the card rather than a new screen.
+        ///
+        /// Four to a row, so the five building roles take cells 4-8: four on row 1
+        /// and the fifth at the start of row 2. Eight cells are free and five are
+        /// used, which is why this menu has no page.
         /// </summary>
         // ponytail: every building the faction lists is shown live, whether or not
         // the peer can afford it or has the tier for it; the simulation refuses the
