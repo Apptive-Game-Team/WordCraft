@@ -318,6 +318,9 @@ namespace WordCraft.View
                 {
                     body.Die(Rubble(world, e));
                 }
+                // A dead body that is not playing its death has nothing left to
+                // move; switched off, so a long match's dead cost no Update.
+                if (!e.Alive && !body.Dying && body.enabled) body.enabled = false;
                 if (!e.Alive && body.Dying)
                 {
                     rings[i].Visible = false;
