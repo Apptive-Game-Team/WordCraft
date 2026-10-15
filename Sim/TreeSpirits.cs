@@ -52,10 +52,12 @@ namespace WordCraft.Sim
     /// became a Signature this tick would be armed for this tick's spawn pass, and
     /// the faction test is what makes that a fact about 지옥불 rather than luck.
     ///
-    /// CombatSystem is where the swap is visible, and 공격 불가 rests on exactly
-    /// one clause of it: CanAttack admits Kind == Unit and a finished Defense
-    /// building, and a growing body is a Worker until the tick it lands. That is
-    /// the whole enforcement. Armed would also answer no, because the worker row
+    /// CombatSystem is where the swap is visible, and for a worker 공격 불가 rests
+    /// on one clause of it: CanAttack admits Kind == Unit and a finished Defense
+    /// building, and a growing worker is a Worker until the tick it lands. A unit
+    /// that grows (docs/TECH-TREE.md M6, 잎날 정령 → 폭풍 기수) is a Unit
+    /// throughout, so CanAttack also refuses IsGrowing; that clause is the
+    /// growth-specific line for units, and the worker case below stands as it was. Armed would also answer no, because the worker row
     /// carries no weapon, but it is not what is holding the rule — arming that row
     /// changes nothing about a growing body, which was checked rather than assumed.
     /// The consequence is worth stating: there is no growth-specific line here to
@@ -154,16 +156,20 @@ namespace WordCraft.Sim
         private void TryGrow(int peer, int id, Role role, int slot)
         {
             Entity w = entities[id];
-            // A worker, not an army. 일꾼이 자란다 is the mechanic, and refusing
-            // rather than reinterpreting keeps a 고목 수호자 from being ordered to
-            // grow into a second one.
-            if (w.Kind != EntityKind.Worker) return;
 
             // The table is the faction test, the roster test and the price in one
             // question. Five factions out of six have no row here at all, and the
             // entry a 세계수 정령 player can name is the entry the table lists.
             GrowthCost cost = FactionData.Growth(factions[peer], role, slot);
             if (!cost.Grown) return;
+            // And the body has to be the entry the row grows from, docs/TECH-TREE.md
+            // M6: a 풀씨 정령 for the five worker rows, 잎날 정령 for 폭풍 기수,
+            // 번개 정령 for 번개새 무리, 덩쿨 정령 for 거대 덩쿨. Refusing rather than
+            // reinterpreting keeps a 고목 수호자 from being ordered to grow into a
+            // second one, and a worker from skipping a stage. The kind goes with the
+            // entry: a worker row is a Worker, every other row a Unit.
+            EntityKind from = cost.FromRole == Role.Worker ? EntityKind.Worker : EntityKind.Unit;
+            if (w.Kind != from || w.Role != cost.FromRole || w.Slot != cost.FromSlot) return;
             // After the table, so a Grow naming something nobody grows into is
             // refused for that and not for the tier it happens to sit at.
             if (!MeetsTierAndPrerequisite(peer, role, slot)) return;

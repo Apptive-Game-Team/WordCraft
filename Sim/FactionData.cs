@@ -160,6 +160,14 @@ namespace WordCraft.Sim
         /// rather than by a faction test written somewhere else.
         /// </summary>
         public bool Grown;
+
+        /// <summary>
+        /// The entry a body has to be to grow into this one, docs/TECH-TREE.md
+        /// M6: (Worker, 0) for the rows a 풀씨 정령 grows into, a unit entry for
+        /// 폭풍 기수, 번개새 무리 and 거대 덩쿨.
+        /// </summary>
+        public Role FromRole;
+        public int FromSlot;
     }
 
     /// <summary>
@@ -1296,21 +1304,29 @@ namespace WordCraft.Sim
         private static readonly (Faction Faction, Role Role, int Slot, GrowthCost Cost)[] growthTargets =
         {
             // 덩쿨 정령. 30자원, 40틱.
-            (Faction.TreeSpirits, Role.Ranged, 1, Grow(30, 40)),
+            (Faction.TreeSpirits, Role.Ranged, 1, Grow(30, 40, Role.Worker, 0)),
             // 고목 수호자. 50자원, 60틱.
-            (Faction.TreeSpirits, Role.Melee, 1, Grow(50, 60)),
+            (Faction.TreeSpirits, Role.Melee, 1, Grow(50, 60, Role.Worker, 0)),
 
             // 세계수 정령, docs/TECH-TREE.md 묶음 3.
             // 찌릿쥐. 15자원, 20틱.
-            (Faction.TreeSpirits, Role.Melee, 2, Grow(15, 20)),
+            (Faction.TreeSpirits, Role.Melee, 2, Grow(15, 20, Role.Worker, 0)),
             // 도깨비불. 40자원, 50틱.
-            (Faction.TreeSpirits, Role.Signature, 1, Grow(40, 50)),
+            (Faction.TreeSpirits, Role.Signature, 1, Grow(40, 50, Role.Worker, 0)),
             // 덩굴 군집. 45자원, 60틱.
-            (Faction.TreeSpirits, Role.Signature, 2, Grow(45, 60)),
+            (Faction.TreeSpirits, Role.Signature, 2, Grow(45, 60, Role.Worker, 0)),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 4 (M6): a unit growing into a unit.
+            // 잎날 정령 → 폭풍 기수. 60자원, 60틱.
+            (Faction.TreeSpirits, Role.Melee, 3, Grow(60, 60, Role.Melee, 0)),
+            // 번개 정령 → 번개새 무리. 60자원, 50틱.
+            (Faction.TreeSpirits, Role.Ranged, 2, Grow(60, 50, Role.Ranged, 0)),
+            // 덩쿨 정령 → 거대 덩쿨. 100자원, 120틱. Speed 0, so it roots where it grew.
+            (Faction.TreeSpirits, Role.Ranged, 3, Grow(100, 120, Role.Ranged, 1)),
         };
 
-        private static GrowthCost Grow(int resources, int ticks) =>
-            new GrowthCost { Resources = resources, Ticks = ticks, Grown = true };
+        private static GrowthCost Grow(int resources, int ticks, Role fromRole, int fromSlot) =>
+            new GrowthCost { Resources = resources, Ticks = ticks, Grown = true, FromRole = fromRole, FromSlot = fromSlot };
 
         /// <summary>
         /// What growing into one entry costs and how long it takes. An entry no
@@ -1926,6 +1942,19 @@ namespace WordCraft.Sim
                 }
             }
             RequireArrivals();
+            RequireGrowthSources();
+        }
+
+        private static void RequireGrowthSources()
+        {
+            for (int i = 0; i < growthTargets.Length; i++)
+            {
+                var (faction, role, slot, cost) = growthTargets[i];
+                RequireFielded(faction, role, slot, "growthTargets");
+                RequireFielded(faction, cost.FromRole, cost.FromSlot, "growthTargets");
+                Require(!IsBuilding(role) && !IsBuilding(cost.FromRole), "growthTargets row " + i + " names a building");
+                Require(cost.FromRole != role || cost.FromSlot != slot, "growthTargets row " + i + " grows into itself");
+            }
         }
 
         private static void RequireArrivals()

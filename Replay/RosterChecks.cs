@@ -51,12 +51,11 @@ namespace WordCraft.Replay
         {
             /// <summary>On a building's production list.</summary>
             Produced,
-            /// <summary>Grown into from a 풀씨 정령.</summary>
+            /// <summary>Grown into, from a 풀씨 정령 or (M6, #197) from another unit.</summary>
             Grown,
             /// <summary>
-            /// Neither yet: grown from another unit (M6), spawned by 산란 악마
-            /// (M8) or woken by 이끼 현자 (깨우기). The row exists and Has answers
-            /// yes; nothing makes it until its mechanic's batch.
+            /// On no list: spawned by 산란 악마 (M8) or woken by 이끼 현자 (깨우기).
+            /// The row exists and Has answers yes; MechanicsChecks covers the spawn.
             /// </summary>
             Neither,
         }
@@ -123,9 +122,9 @@ namespace WordCraft.Replay
             Building(Faction.TreeSpirits, Role.Production, 1, "씨앗 요람", "SeedCradle", 3, Role.Tech, 0, 150, 100, 300, 0, 0, 0, ""),
             Building(Faction.TreeSpirits, Role.Defense, 1, "회복 토템", "HealingTotem", 2, Role.Production, 0, 100, 60, 250, 0, 0, 0, ""),
             Unit(Faction.TreeSpirits, Role.Melee, 2, "찌릿쥐", "ZapMouse", 1, Role.None, 0, Got.Grown, 15, 20, 45, 0, 5, 2, 10, 3, 8, false, "지", Role.None, 0, Role.None, 0),
-            Unit(Faction.TreeSpirits, Role.Melee, 3, "폭풍 기수", "StormRider", 2, Role.Tech, 2, Got.Neither, 60, 60, 160, 1, 11, 2, 15, 3, 8, false, "지", Role.None, 0, Role.None, 0),
-            Unit(Faction.TreeSpirits, Role.Ranged, 2, "번개새 무리", "ThunderBirdSwarm", 3, Role.Tech, 1, Got.Neither, 60, 50, 120, 0, 4, 4, 10, 3, 8, true, "지·공", Role.None, 0, Role.None, 0),
-            Unit(Faction.TreeSpirits, Role.Ranged, 3, "거대 덩쿨", "GiantVine", 3, Role.Tech, 0, Got.Neither, 100, 120, 350, 2, 20, 9, 40, 0, 1, false, "지", Role.None, 0, Role.None, 0),
+            Unit(Faction.TreeSpirits, Role.Melee, 3, "폭풍 기수", "StormRider", 2, Role.Tech, 2, Got.Grown, 60, 60, 160, 1, 11, 2, 15, 3, 8, false, "지", Role.None, 0, Role.None, 0),
+            Unit(Faction.TreeSpirits, Role.Ranged, 2, "번개새 무리", "ThunderBirdSwarm", 3, Role.Tech, 1, Got.Grown, 60, 50, 120, 0, 4, 4, 10, 3, 8, true, "지·공", Role.None, 0, Role.None, 0),
+            Unit(Faction.TreeSpirits, Role.Ranged, 3, "거대 덩쿨", "GiantVine", 3, Role.Tech, 0, Got.Grown, 100, 120, 350, 2, 20, 9, 40, 0, 1, false, "지", Role.None, 0, Role.None, 0),
             Unit(Faction.TreeSpirits, Role.Signature, 1, "도깨비불", "WillOWisp", 2, Role.Defense, 1, Got.Grown, 40, 50, 60, 0, 0, 0, 0, 3, 8, true, "", Role.None, 0, Role.None, 0),
             Unit(Faction.TreeSpirits, Role.Signature, 2, "덩굴 군집", "VineColony", 2, Role.Production, 0, Got.Grown, 45, 60, 150, 1, 0, 0, 0, 1, 8, false, "", Role.None, 0, Role.None, 0),
             Building(Faction.TreeSpirits, Role.Tech, 1, "바람 토템", "WindTotem", 3, Role.Tech, 0, 150, 100, 250, 0, 0, 0, ""),
