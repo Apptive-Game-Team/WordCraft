@@ -511,17 +511,43 @@ namespace WordCraft.View
         // Units
         // ------------------------------------------------------------------
 
+        /// <summary>
+        /// The unit builder for this entry; failing that, entry 0's of the same
+        /// slot; failing that, the generic body.
+        /// </summary>
         private static void Unit(Blueprint b, Faction faction, Role role, int slot)
+        {
+            if (FactionUnit(b, faction, role, slot)) return;
+            if (slot > 0 && FactionUnit(b, faction, role, 0)) return;
+            GenericUnit(b, faction);
+        }
+
+        /// <summary>True when a builder written for this very entry drew it into <paramref name="b"/>; false, and nothing drawn, otherwise.</summary>
+        private static bool FactionUnit(Blueprint b, Faction faction, Role role, int slot)
         {
             switch (faction)
             {
-                case Faction.TreeSpirits: TreeSpiritUnit(b, role, slot); return;
-                case Faction.Hellfire: HellfireUnit(b, role, slot); return;
-                case Faction.WaterSlimes: WaterSlimeUnit(b, role, slot); return;
-                case Faction.RockGolems: RockGolemUnit(b, role, slot); return;
-                case Faction.Driftworlds: DriftworldUnit(b, role, slot); return;
-                default: HumanUnit(b, role, slot); return;
+                case Faction.TreeSpirits: return TreeSpiritUnit(b, role, slot);
+                case Faction.Hellfire: return HellfireUnit(b, role, slot);
+                case Faction.WaterSlimes: return WaterSlimeUnit(b, role, slot);
+                case Faction.RockGolems: return RockGolemUnit(b, role, slot);
+                case Faction.Driftworlds: return DriftworldUnit(b, role, slot);
+                default: return HumanUnit(b, role, slot);
             }
+        }
+
+        /// <summary>
+        /// Whether a roster entry has a body written for it rather than falling
+        /// back to entry 0's body or the generic one. ViewSelfCheck asks this of
+        /// every entry, so a row added without a builder fails there instead of
+        /// quietly drawing as its neighbour. Builds into a throwaway blueprint;
+        /// not for the per-frame path.
+        /// </summary>
+        public static bool HasBuilder(Faction faction, Role role, int slot)
+        {
+            var scratch = new Blueprint(0, 1f, false, Color.white);
+            if (!FactionData.IsBuilding(role)) return FactionUnit(scratch, faction, role, slot);
+            return slot > 0 ? ExtraBuilding(scratch, faction, role, slot) : FactionBuilding(scratch, faction, role);
         }
 
         /// <summary>
@@ -544,29 +570,23 @@ namespace WordCraft.View
 
         // ---- 세계수 정령 ----
 
-        private static void TreeSpiritUnit(Blueprint b, Role role, int slot)
+        private static bool TreeSpiritUnit(Blueprint b, Role role, int slot)
         {
             switch (role)
             {
-                case Role.Worker: SeedSpirit(b); break;
-                case Role.Melee:
-                    if (slot == 1) TreeGuardian(b);
-                    else if (slot == 2) ZapMouse(b);
-                    else if (slot == 3) StormRider(b);
-                    else LeafBlade(b);
-                    break;
-                case Role.Ranged:
-                    if (slot == 1) VineSpirit(b);
-                    else if (slot == 2) ThunderBirds(b);
-                    else if (slot == 3) GiantVine(b);
-                    else ThunderSpirit(b);
-                    break;
-                case Role.Signature:
-                    if (slot == 1) WillOWisp(b);
-                    else if (slot == 2) VineColony(b);
-                    else WindSpirit(b);
-                    break;
-                default: GenericUnit(b, Faction.TreeSpirits); break;
+                case Role.Worker when slot == 0: SeedSpirit(b); return true;
+                case Role.Melee when slot == 0: LeafBlade(b); return true;
+                case Role.Melee when slot == 1: TreeGuardian(b); return true;
+                case Role.Melee when slot == 2: ZapMouse(b); return true;
+                case Role.Melee when slot == 3: StormRider(b); return true;
+                case Role.Ranged when slot == 0: ThunderSpirit(b); return true;
+                case Role.Ranged when slot == 1: VineSpirit(b); return true;
+                case Role.Ranged when slot == 2: ThunderBirds(b); return true;
+                case Role.Ranged when slot == 3: GiantVine(b); return true;
+                case Role.Signature when slot == 0: WindSpirit(b); return true;
+                case Role.Signature when slot == 1: WillOWisp(b); return true;
+                case Role.Signature when slot == 2: VineColony(b); return true;
+                default: return false;
             }
         }
 
@@ -888,29 +908,23 @@ namespace WordCraft.View
 
         // ---- 지옥불 군단 ----
 
-        private static void HellfireUnit(Blueprint b, Role role, int slot)
+        private static bool HellfireUnit(Blueprint b, Role role, int slot)
         {
             switch (role)
             {
-                case Role.Worker: EmberDemon(b); break;
-                case Role.Melee:
-                    if (slot == 1) FireDemon(b);
-                    else if (slot == 2) RiftHound(b);
-                    else if (slot == 3) EmberWhelp(b);
-                    else MagmaDemon(b);
-                    break;
-                case Role.Ranged:
-                    if (slot == 1) RiftWarden(b);
-                    else if (slot == 2) LavaCatapult(b);
-                    else if (slot == 3) AshWingDemon(b);
-                    else WarlordSpawn(b);
-                    break;
-                case Role.Signature:
-                    if (slot == 1) BroodDemon(b);
-                    else if (slot == 2) MeteorInvoker(b);
-                    else Warlord(b);
-                    break;
-                default: GenericUnit(b, Faction.Hellfire); break;
+                case Role.Worker when slot == 0: EmberDemon(b); return true;
+                case Role.Melee when slot == 0: MagmaDemon(b); return true;
+                case Role.Melee when slot == 1: FireDemon(b); return true;
+                case Role.Melee when slot == 2: RiftHound(b); return true;
+                case Role.Melee when slot == 3: EmberWhelp(b); return true;
+                case Role.Ranged when slot == 0: WarlordSpawn(b); return true;
+                case Role.Ranged when slot == 1: RiftWarden(b); return true;
+                case Role.Ranged when slot == 2: LavaCatapult(b); return true;
+                case Role.Ranged when slot == 3: AshWingDemon(b); return true;
+                case Role.Signature when slot == 0: Warlord(b); return true;
+                case Role.Signature when slot == 1: BroodDemon(b); return true;
+                case Role.Signature when slot == 2: MeteorInvoker(b); return true;
+                default: return false;
             }
         }
 
@@ -1269,29 +1283,23 @@ namespace WordCraft.View
 
         // ---- 물 슬라임 ----
 
-        private static void WaterSlimeUnit(Blueprint b, Role role, int slot)
+        private static bool WaterSlimeUnit(Blueprint b, Role role, int slot)
         {
             switch (role)
             {
-                case Role.Worker: Droplet(b); break;
-                case Role.Melee:
-                    if (slot == 1) WaterScreenSlime(b);
-                    else if (slot == 2) RiptideSlime(b);
-                    else BubbleSpirit(b);
-                    break;
-                case Role.Ranged:
-                    if (slot == 1) TideHerald(b);
-                    else if (slot == 2) SpitSlime(b);
-                    else if (slot == 3) CannonSlime(b);
-                    else AquaArcher(b);
-                    break;
-                case Role.Signature:
-                    if (slot == 1) RainCloud(b);
-                    else if (slot == 2) GeyserMage(b);
-                    else if (slot == 3) SpringCarrier(b);
-                    else CloudDragon(b);
-                    break;
-                default: GenericUnit(b, Faction.WaterSlimes); break;
+                case Role.Worker when slot == 0: Droplet(b); return true;
+                case Role.Melee when slot == 0: BubbleSpirit(b); return true;
+                case Role.Melee when slot == 1: WaterScreenSlime(b); return true;
+                case Role.Melee when slot == 2: RiptideSlime(b); return true;
+                case Role.Ranged when slot == 0: AquaArcher(b); return true;
+                case Role.Ranged when slot == 1: TideHerald(b); return true;
+                case Role.Ranged when slot == 2: SpitSlime(b); return true;
+                case Role.Ranged when slot == 3: CannonSlime(b); return true;
+                case Role.Signature when slot == 0: CloudDragon(b); return true;
+                case Role.Signature when slot == 1: RainCloud(b); return true;
+                case Role.Signature when slot == 2: GeyserMage(b); return true;
+                case Role.Signature when slot == 3: SpringCarrier(b); return true;
+                default: return false;
             }
         }
 
@@ -1570,29 +1578,23 @@ namespace WordCraft.View
 
         // ---- 돌 골렘 부족 ----
 
-        private static void RockGolemUnit(Blueprint b, Role role, int slot)
+        private static bool RockGolemUnit(Blueprint b, Role role, int slot)
         {
             switch (role)
             {
-                case Role.Worker: MiniRock(b); break;
-                case Role.Melee:
-                    if (slot == 1) RollingRock(b);
-                    else if (slot == 2) WallGolem(b);
-                    else if (slot == 3) AwakenedStone(b);
-                    else MossGolem(b);
-                    break;
-                case Role.Ranged:
-                    if (slot == 1) PebbleSlinger(b);
-                    else if (slot == 2) FloatingSentinel(b);
-                    else if (slot == 3) SandShaper(b);
-                    else RockMage(b);
-                    break;
-                case Role.Signature:
-                    if (slot == 1) MossSage(b);
-                    else if (slot == 2) SporeCluster(b);
-                    else AncientGolem(b);
-                    break;
-                default: GenericUnit(b, Faction.RockGolems); break;
+                case Role.Worker when slot == 0: MiniRock(b); return true;
+                case Role.Melee when slot == 0: MossGolem(b); return true;
+                case Role.Melee when slot == 1: RollingRock(b); return true;
+                case Role.Melee when slot == 2: WallGolem(b); return true;
+                case Role.Melee when slot == 3: AwakenedStone(b); return true;
+                case Role.Ranged when slot == 0: RockMage(b); return true;
+                case Role.Ranged when slot == 1: PebbleSlinger(b); return true;
+                case Role.Ranged when slot == 2: FloatingSentinel(b); return true;
+                case Role.Ranged when slot == 3: SandShaper(b); return true;
+                case Role.Signature when slot == 0: AncientGolem(b); return true;
+                case Role.Signature when slot == 1: MossSage(b); return true;
+                case Role.Signature when slot == 2: SporeCluster(b); return true;
+                default: return false;
             }
         }
 
@@ -1896,31 +1898,23 @@ namespace WordCraft.View
 
         // ---- 차원 유랑종 ----
 
-        private static void DriftworldUnit(Blueprint b, Role role, int slot)
+        private static bool DriftworldUnit(Blueprint b, Role role, int slot)
         {
             switch (role)
             {
-                case Role.Worker:
-                    Salamander(b, BodyPalette.Driftworlds.Shell, BodyPalette.Driftworlds.ShellDeep, BodyPalette.Driftworlds.FireWorld, false);
-                    break;
-                case Role.Melee:
-                    if (slot == 1) ExtinctSlime(b, BodyPalette.Driftworlds.FireWorld, 0);
-                    else if (slot == 2) ExtinctSlime(b, BodyPalette.Driftworlds.StoneWorld, 1);
-                    else Salamander(b, BodyPalette.Driftworlds.Dusk, BodyPalette.Driftworlds.ShellDeep, BodyPalette.Driftworlds.TealLight, true);
-                    break;
-                case Role.Ranged:
-                    if (slot == 1) ExtinctSlime(b, BodyPalette.Driftworlds.StormWorld, 2);
-                    else if (slot == 2) VineShard(b);
-                    else if (slot == 3) ExtinctWindSlime(b);
-                    else RiftMarksman(b);
-                    break;
-                case Role.Signature:
-                    if (slot == 1) WanderingIsland(b);
-                    else if (slot == 2) StrataObserver(b);
-                    else if (slot == 3) ExtinctNatureSlime(b);
-                    else BoundaryToad(b);
-                    break;
-                default: GenericUnit(b, Faction.Driftworlds); break;
+                case Role.Worker when slot == 0: Salamander(b, BodyPalette.Driftworlds.Shell, BodyPalette.Driftworlds.ShellDeep, BodyPalette.Driftworlds.FireWorld, false); return true;
+                case Role.Melee when slot == 0: Salamander(b, BodyPalette.Driftworlds.Dusk, BodyPalette.Driftworlds.ShellDeep, BodyPalette.Driftworlds.TealLight, true); return true;
+                case Role.Melee when slot == 1: ExtinctSlime(b, BodyPalette.Driftworlds.FireWorld, 0); return true;
+                case Role.Melee when slot == 2: ExtinctSlime(b, BodyPalette.Driftworlds.StoneWorld, 1); return true;
+                case Role.Ranged when slot == 0: RiftMarksman(b); return true;
+                case Role.Ranged when slot == 1: ExtinctSlime(b, BodyPalette.Driftworlds.StormWorld, 2); return true;
+                case Role.Ranged when slot == 2: VineShard(b); return true;
+                case Role.Ranged when slot == 3: ExtinctWindSlime(b); return true;
+                case Role.Signature when slot == 0: BoundaryToad(b); return true;
+                case Role.Signature when slot == 1: WanderingIsland(b); return true;
+                case Role.Signature when slot == 2: StrataObserver(b); return true;
+                case Role.Signature when slot == 3: ExtinctNatureSlime(b); return true;
+                default: return false;
             }
         }
 
@@ -2212,27 +2206,23 @@ namespace WordCraft.View
 
         // ---- 인간 마법 문명 ----
 
-        private static void HumanUnit(Blueprint b, Role role, int slot)
+        private static bool HumanUnit(Blueprint b, Role role, int slot)
         {
             switch (role)
             {
-                case Role.Worker: Apprentice(b); break;
-                case Role.Ranged:
-                    if (slot == 1) Crossbowman(b);
-                    else if (slot == 2) ArcaneMage(b);
-                    else if (slot == 3) StoneWalker(b);
-                    else if (slot == 4) TowedCannon(b);
-                    else if (slot == 5) ArcaneBomber(b);
-                    else if (slot == 6) ArcaneRider(b);
-                    else Commando(b);
-                    break;
-                case Role.Signature:
-                    if (slot == 1) ScoutDrone(b);
-                    else if (slot == 2) WorkshopEngineer(b);
-                    else if (slot == 3) ManaAmplifier(b);
-                    else Towerback(b);
-                    break;
-                default: GenericUnit(b, Faction.Humans); break;
+                case Role.Worker when slot == 0: Apprentice(b); return true;
+                case Role.Ranged when slot == 0: Commando(b); return true;
+                case Role.Ranged when slot == 1: Crossbowman(b); return true;
+                case Role.Ranged when slot == 2: ArcaneMage(b); return true;
+                case Role.Ranged when slot == 3: StoneWalker(b); return true;
+                case Role.Ranged when slot == 4: TowedCannon(b); return true;
+                case Role.Ranged when slot == 5: ArcaneBomber(b); return true;
+                case Role.Ranged when slot == 6: ArcaneRider(b); return true;
+                case Role.Signature when slot == 0: Towerback(b); return true;
+                case Role.Signature when slot == 1: ScoutDrone(b); return true;
+                case Role.Signature when slot == 2: WorkshopEngineer(b); return true;
+                case Role.Signature when slot == 3: ManaAmplifier(b); return true;
+                default: return false;
             }
         }
 
@@ -2584,14 +2574,20 @@ namespace WordCraft.View
         {
             Dress(b, faction);
             if (slot > 0 && ExtraBuilding(b, faction, role, slot)) return;
+            if (!FactionBuilding(b, faction, role)) GenericBuilding(b, faction, Cells(role));
+        }
+
+        /// <summary>True when entry 0 of this slot has a building written for it, now drawn into <paramref name="b"/>.</summary>
+        private static bool FactionBuilding(Blueprint b, Faction faction, Role role)
+        {
             switch (faction)
             {
-                case Faction.TreeSpirits: TreeSpiritBuilding(b, role); return;
-                case Faction.Hellfire: HellfireBuilding(b, role); return;
-                case Faction.WaterSlimes: WaterSlimeBuilding(b, role); return;
-                case Faction.RockGolems: RockGolemBuilding(b, role); return;
-                case Faction.Driftworlds: DriftworldBuilding(b, role); return;
-                default: HumanBuilding(b, role); return;
+                case Faction.TreeSpirits: return TreeSpiritBuilding(b, role);
+                case Faction.Hellfire: return HellfireBuilding(b, role);
+                case Faction.WaterSlimes: return WaterSlimeBuilding(b, role);
+                case Faction.RockGolems: return RockGolemBuilding(b, role);
+                case Faction.Driftworlds: return DriftworldBuilding(b, role);
+                default: return HumanBuilding(b, role);
             }
         }
 
@@ -2669,7 +2665,7 @@ namespace WordCraft.View
 
         // ---- 세계수 정령 ----
 
-        private static void TreeSpiritBuilding(Blueprint b, Role role)
+        private static bool TreeSpiritBuilding(Blueprint b, Role role)
         {
             Solids hull = b.Hull;
             Color bark = BodyPalette.TreeSpirits.Bark, barkShade = BodyPalette.TreeSpirits.BarkShade;
@@ -2780,9 +2776,9 @@ namespace WordCraft.View
                     break;
 
                 default:
-                    GenericBuilding(b, Faction.TreeSpirits, Cells(role));
-                    break;
+                    return false;
             }
+            return true;
         }
 
         private static bool TreeSpiritExtraBuilding(Blueprint b, Role role, int slot)
@@ -2920,7 +2916,7 @@ namespace WordCraft.View
 
         // ---- 지옥불 군단 ----
 
-        private static void HellfireBuilding(Blueprint b, Role role)
+        private static bool HellfireBuilding(Blueprint b, Role role)
         {
             Solids hull = b.Hull;
             Color shell = BodyPalette.Hellfire.Shell, charcoal = BodyPalette.Hellfire.Charcoal;
@@ -3012,9 +3008,9 @@ namespace WordCraft.View
                     break;
 
                 default:
-                    GenericBuilding(b, Faction.Hellfire, Cells(role));
-                    break;
+                    return false;
             }
+            return true;
         }
 
         private static bool HellfireExtraBuilding(Blueprint b, Role role, int slot)
@@ -3140,7 +3136,7 @@ namespace WordCraft.View
 
         // ---- 물 슬라임 ----
 
-        private static void WaterSlimeBuilding(Blueprint b, Role role)
+        private static bool WaterSlimeBuilding(Blueprint b, Role role)
         {
             Solids hull = b.Hull;
             Color foam = BodyPalette.WaterSlimes.Foam, pale = BodyPalette.WaterSlimes.Pale;
@@ -3240,9 +3236,9 @@ namespace WordCraft.View
                 }
 
                 default:
-                    GenericBuilding(b, Faction.WaterSlimes, Cells(role));
-                    break;
+                    return false;
             }
+            return true;
         }
 
         private static bool WaterSlimeExtraBuilding(Blueprint b, Role role, int slot)
@@ -3326,7 +3322,7 @@ namespace WordCraft.View
 
         // ---- 돌 골렘 부족 ----
 
-        private static void RockGolemBuilding(Blueprint b, Role role)
+        private static bool RockGolemBuilding(Blueprint b, Role role)
         {
             Solids hull = b.Hull;
             Color tan = BodyPalette.RockGolems.Tan, stone = BodyPalette.RockGolems.Stone, shade = BodyPalette.RockGolems.StoneShade;
@@ -3409,9 +3405,9 @@ namespace WordCraft.View
                     break;
 
                 default:
-                    GenericBuilding(b, Faction.RockGolems, Cells(role));
-                    break;
+                    return false;
             }
+            return true;
         }
 
         private static bool RockGolemExtraBuilding(Blueprint b, Role role, int slot)
@@ -3513,7 +3509,7 @@ namespace WordCraft.View
 
         // ---- 차원 유랑종 ----
 
-        private static void DriftworldBuilding(Blueprint b, Role role)
+        private static bool DriftworldBuilding(Blueprint b, Role role)
         {
             Solids hull = b.Hull;
             Color shell = BodyPalette.Driftworlds.Shell, shade = BodyPalette.Driftworlds.ShellShade, deep = BodyPalette.Driftworlds.ShellDeep;
@@ -3623,9 +3619,9 @@ namespace WordCraft.View
                 }
 
                 default:
-                    GenericBuilding(b, Faction.Driftworlds, Cells(role));
-                    break;
+                    return false;
             }
+            return true;
         }
 
         private static bool DriftworldExtraBuilding(Blueprint b, Role role, int slot)
@@ -3734,7 +3730,7 @@ namespace WordCraft.View
 
         // ---- 인간 마법 문명 ----
 
-        private static void HumanBuilding(Blueprint b, Role role)
+        private static bool HumanBuilding(Blueprint b, Role role)
         {
             Solids hull = b.Hull;
             Color stone = BodyPalette.Humans.Stone, stoneMid = BodyPalette.Humans.StoneMid, stoneDark = BodyPalette.Humans.StoneDark;
@@ -3841,9 +3837,9 @@ namespace WordCraft.View
                     break;
 
                 default:
-                    GenericBuilding(b, Faction.Humans, Cells(role));
-                    break;
+                    return false;
             }
+            return true;
         }
 
         private static bool HumanExtraBuilding(Blueprint b, Role role, int slot)

@@ -29,6 +29,7 @@ namespace WordCraft.View
             SameLogSameHashes();
             ViewReadsDoNotMutate();
             RosterArtResolves();
+            RosterBodiesAreWritten();
             RestartIsClean();
 
             ulong final = FinalHash();
@@ -262,6 +263,30 @@ namespace WordCraft.View
                         if (file.Length == 0) continue;
                         Check(Resources.Load<Sprite>(MatchView.SpriteFolder + file) != null,
                             "roster sprite missing: " + (Faction)f + "." + (Role)r + "[" + s + "] -> " + file);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Every roster entry has a body written for it in Models. An entry
+        /// without one still draws, as entry 0 of its slot or as the generic
+        /// body, which is exactly why it goes unnoticed: issue #195 found 65
+        /// such rows drawn as their neighbours.
+        /// </summary>
+        private static void RosterBodiesAreWritten()
+        {
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                for (int r = 1; r < FactionData.RoleCount; r++)
+                {
+                    int slots = FactionData.SlotCount((Faction)f, (Role)r);
+                    for (int s = 0; s < slots; s++)
+                    {
+                        if (!FactionData.Has((Faction)f, (Role)r, s)) continue;
+                        Check(Models.HasBuilder((Faction)f, (Role)r, s),
+                            "roster entry has no body of its own: " + (Faction)f + "." + (Role)r + "[" + s + "] " +
+                            FactionData.Name((Faction)f, (Role)r, s));
                     }
                 }
             }
