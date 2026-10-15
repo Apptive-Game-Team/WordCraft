@@ -39,6 +39,11 @@ namespace WordCraft.Replay
             ResearchedWarlordsSpawnEverySeventyTicks();
             ResearchedPassageArrivesInFortyTicks();
             ResearchedCaptureTakesFortyTicks();
+            ResearchedGolemsHitAtThreeCells();
+            ResearchedCannonsHitAtEightCells();
+            ResearchedDebrisStillBlocksAtTick599();
+            ResearchedPillarsAcceptAPointSevenCellsOut();
+            ResearchedVolleysHitHarder();
             TheAiResearchesInTheSoloMatch();
             ScriptedLogResearches();
         }
@@ -498,6 +503,168 @@ namespace WordCraft.Replay
             int ticks = 1;
             while (world.GetEntity(rock).Owner < 0 && ticks < 200) { world.Step(Idle); ticks++; }
             return ticks;
+        }
+
+        /// <summary>
+        /// 골렘 사거리 in a fight: a 돌 골렘 melee unit held three cells from a
+        /// target lands a hit once researched and never does without it. Hold, so
+        /// the control cannot close the gap and hit anyway.
+        /// </summary>
+        private static void ResearchedGolemsHitAtThreeCells()
+        {
+            Check(!HitsAtDistance(Faction.RockGolems, 3, researched: false, cannon: false, 3),
+                "an unresearched 돌 골렘 melee unit hit at three cells");
+            Check(HitsAtDistance(Faction.RockGolems, 3, researched: true, cannon: false, 3),
+                "골렘 사거리 did not let a 돌 골렘 melee unit hit at three cells");
+        }
+
+        /// <summary>대포 사거리 in a fight: 대포 reaches eight cells once researched, seven without.</summary>
+        private static void ResearchedCannonsHitAtEightCells()
+        {
+            Check(!HitsAtDistance(Faction.Humans, 3, researched: false, cannon: true, 8),
+                "an unresearched 대포 hit at eight cells");
+            Check(HitsAtDistance(Faction.Humans, 3, researched: true, cannon: true, 8),
+                "대포 사거리 did not let 대포 hit at eight cells");
+        }
+
+        /// <summary>
+        /// Whether peer 0's melee unit, held in place, or its 대포 lands any hit
+        /// in 60 ticks on a 지옥불 supply building standing exactly this many
+        /// cells east of it.
+        /// </summary>
+        private static bool HitsAtDistance(Faction faction, int index, bool researched, bool cannon, int cells)
+        {
+            World world = TechWorld(faction, out int tech);
+            if (researched) ResearchToCompletion(world, tech, index);
+            int shooter = cannon
+                ? world.SpawnBuilding(0, Role.Defense, At(30, 30), complete: true)
+                : world.SpawnUnit(0, Role.Melee, At(30, 30));
+            int target = world.SpawnBuilding(1, Role.Supply, At(30 + cells, 30), complete: true);
+            if (!cannon) world.Step(One(0, 60, CommandType.HoldPosition, shooter, 0));
+            int full = world.GetEntity(target).Hp;
+            Run(world, 60);
+            return world.GetEntity(target).Hp < full;
+        }
+
+        /// <summary>
+        /// 오래 남는 잔해 in a fight: a 돌 골렘 body killed by combat leaves debris
+        /// that still stands 599 ticks after the tick it fell and is gone on the
+        /// 600th. The control, unresearched, is gone at 400.
+        /// </summary>
+        private static void ResearchedDebrisStillBlocksAtTick599()
+        {
+            Check(DebrisLifetime(researched: false) == World.RemnantTicks, "unresearched debris did not last 400 ticks");
+            Check(DebrisLifetime(researched: true) == World.RemnantTicksResearched,
+                "오래 남는 잔해 debris did not last 600 ticks");
+        }
+
+        /// <summary>How many ticks after the fall the debris cell stays blocked.</summary>
+        private static int DebrisLifetime(bool researched)
+        {
+            World world = TechWorld(Faction.RockGolems, out int tech);
+            if (researched) ResearchToCompletion(world, tech, 2);
+            int golem = world.SpawnUnit(0, Role.Melee, At(40, 40), hpOverride: 1);
+            world.SpawnUnit(1, Role.Melee, At(41, 40));
+            int cell = World.CellOf(At(40, 40));
+
+            int fell = -1;
+            for (int t = 0; t < 60 && fell < 0; t++)
+            {
+                int tick = world.Tick;
+                world.Step(Idle);
+                if (!world.GetEntity(golem).Alive) fell = tick;
+            }
+            Check(fell >= 0, "the 돌 골렘 body never died");
+
+            // Walked tick by tick, asking the ground rule itself, so the last
+            // blocked tick is read rather than inferred from the expiry number.
+            int lifetime = 0;
+            while (world.HasRemnant(cell) && lifetime < 1000)
+            {
+                Check(!world.IsPassable(cell, air: false), "debris stood on tick " + world.Tick + " but did not block");
+                world.Step(Idle);
+                lifetime = world.Tick - fell;
+            }
+            Check(world.IsPassable(cell, air: false), "the cell stayed blocked after its debris lapsed");
+            return lifetime;
+        }
+
+        /// <summary>
+        /// 도착 반경 in play: a Produce aimed seven cells from a 굴절 기둥 is kept
+        /// and the body stands up there once researched. Unresearched, the same
+        /// point is refused and the body comes out at the 통로.
+        /// </summary>
+        private static void ResearchedPillarsAcceptAPointSevenCellsOut()
+        {
+            FixVec2 aim = At(37, 30);
+            Check(!ArrivesAt(aim, researched: false), "an unresearched 굴절 기둥 accepted a point seven cells out");
+            Check(ArrivesAt(aim, researched: true), "도착 반경 did not accept a point seven cells out");
+        }
+
+        private static bool ArrivesAt(FixVec2 aim, bool researched)
+        {
+            World world = TechWorld(Faction.Driftworlds, out int tech);
+            if (researched) ResearchToCompletion(world, tech, 2);
+            world.SpawnBuilding(0, Role.Base, At(10, 10), complete: true);
+            int passage = world.SpawnBuilding(0, World.PassageRole, At(14, 10), complete: true);
+            world.SpawnBuilding(0, World.PillarRole, World.PillarSlot, At(30, 30), complete: true);
+            world.Step(new List<Command>
+            {
+                new Command(0, 0, 70, CommandType.Produce, passage, aim, Command.RosterArg(Role.Melee, 0))
+            });
+            bool kept = world.GetEntity(passage).HasArrivalPoint;
+            int born = world.EntityCount;
+            for (int t = 0; t < 100 && world.EntityCount == born; t++) world.Step(Idle);
+            Check(world.EntityCount == born + 1, "the 통로 never produced");
+            bool landed = world.GetEntity(born).Position.Equals(aim);
+            Check(kept == landed, "the point was " + (kept ? "kept" : "refused") + " but the body " +
+                (landed ? "landed on it" : "did not land on it"));
+            return landed;
+        }
+
+        /// <summary>
+        /// 밀집 강화 and 밀집 반경 in a fight, measured on the first volley.
+        /// Eight archers packed in a 3x3 block each have seven allies within
+        /// three cells, so the cap is what limits them: 4 unresearched, 6
+        /// researched. Two archers exactly four cells apart count each other only
+        /// under 밀집 반경.
+        /// </summary>
+        private static void ResearchedVolleysHitHarder()
+        {
+            int shot = FactionData.Stats(Faction.WaterSlimes, Role.Ranged).Damage;
+
+            var block = new List<FixVec2>();
+            for (int y = 31; y <= 33; y++)
+            {
+                for (int x = 27; x <= 29; x++)
+                {
+                    if (x != 28 || y != 32) block.Add(At(x, y));
+                }
+            }
+            Check(FirstVolley(block, -1) == 8 * (shot + World.VolleyMaxBonus), "the packed block is not capped at +4");
+            Check(FirstVolley(block, 2) == 8 * (shot + World.VolleyMaxBonusResearched),
+                "밀집 강화 did not raise the packed block to +6");
+
+            var pair = new List<FixVec2> { At(28, 30), At(28, 34) };
+            Check(FirstVolley(pair, -1) == 2 * shot, "two archers four cells apart counted each other unresearched");
+            Check(FirstVolley(pair, 3) == 2 * (shot + 1), "밀집 반경 did not let two archers four cells apart count each other");
+        }
+
+        /// <summary>
+        /// Damage the first tick of fire does to a dummy at (32, 32), with the
+        /// given row researched first, or none for -1. Every archer spawns with
+        /// its cooldown at zero and the dummy in reach, so all of them fire on
+        /// that tick from where they were placed.
+        /// </summary>
+        private static int FirstVolley(List<FixVec2> archers, int index)
+        {
+            World world = TechWorld(Faction.WaterSlimes, out int tech);
+            if (index >= 0) ResearchToCompletion(world, tech, index);
+            int dummy = world.SpawnUnit(1, Role.None, At(32, 32), hpOverride: 1000000);
+            foreach (FixVec2 where in archers) world.SpawnUnit(0, Role.Ranged, where);
+            world.Step(Idle);
+            Entity hit = world.GetEntity(dummy);
+            return hit.MaxHp - hit.Hp;
         }
 
         // ---------------------------------------------------------------------
