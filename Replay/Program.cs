@@ -5139,10 +5139,16 @@ namespace WordCraft.Replay
         /// that is the run the regression actually appeared in. Two peers each, so
         /// this is not one lucky side.
         ///
-        /// 세계수 정령 is the control and it is not decoration: a fallback written
-        /// as a replacement — any order that put ranged ahead of melee — would pass
-        /// every 인간 assertion here and quietly change what all five other factions
-        /// buy. The ladder still has to want melee wherever melee exists.
+        /// The ladder no longer names a role at all. Each building orders, of every
+        /// entry it can make now (World.CanProduce) and the bank can pay for, the
+        /// one at the highest tier, with melee, ranged, signature as the order
+        /// among equals. A blank row is never a candidate, because CanProduce
+        /// refuses it for the same reason Produce does.
+        ///
+        /// 세계수 정령 is the control and it is not decoration. Its melee entry 0,
+        /// 잎날 정령, is the tier-2 body its 풀씨 둥지 makes before the 뿌리 회당
+        /// stands, so a ladder that stopped wanting melee where melee is the best
+        /// it can make would pass every 인간 assertion here and fail this one.
         /// </summary>
         private static void TheAiAsksOnlyForRolesItsFactionFields()
         {

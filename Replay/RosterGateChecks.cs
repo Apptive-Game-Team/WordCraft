@@ -31,6 +31,7 @@ namespace WordCraft.Replay
             EveryNamedBuildingIsFieldedAndNoChainLoops();
             TwoEntriesOfOneRoleOpenAtDifferentTiers();
             APrerequisiteGatesUntilItStandsAndAgainOnceItFalls();
+            APrerequisiteRefusesWhereTheTierWouldAllow();
             AnUnfinishedPrerequisiteOpensNothing();
             ABuildingProducesOnlyWhatIsOnItsList();
             ResearchRunsOnlyInTheRowsBuilding();
@@ -242,11 +243,9 @@ namespace WordCraft.Replay
         /// <summary>
         /// 지옥불 군단장 needs the 용암 도가니: refused before it, taken while it
         /// stands, refused again on the tick after it falls. HasStanding is pinned
-        /// directly as well. Every prerequisite on the table today is also the
-        /// building that opens the entry's tier, so in play the two refusals
-        /// coincide; what tells them apart is the table, which
-        /// EveryNamedBuildingIsFieldedAndNoChainLoops reads, and HasStanding,
-        /// which this reads.
+        /// directly as well. The 용암 도가니 is also what opens 군단장's tier, so
+        /// here the two refusals land together; the check after this one is the
+        /// world where they do not.
         /// </summary>
         private static void APrerequisiteGatesUntilItStandsAndAgainOnceItFalls()
         {
@@ -287,10 +286,74 @@ namespace WordCraft.Replay
         }
 
         /// <summary>
-        /// A prerequisite under construction is not standing. Asked through all
-        /// three gates that a building can satisfy: a Produce, a Build and a
-        /// Research row's tier, each on the tick before the site finishes and on
-        /// the tick it does.
+        /// The prerequisite refuses on its own, at a tier that would allow the
+        /// entry. A 세계수 정령 peer whose 뿌리 회당 stands and whose 풀씨 둥지
+        /// does not is at tier 3, past what a second 뿌리 회당 (tier 2) and a 고목
+        /// 수호자 (tier 2) ask for, and both are refused because the 풀씨 둥지 they
+        /// name is missing. Once one stands, both are taken. With the prerequisite
+        /// test removed from the gate this check is the one that fails: every
+        /// other prerequisite in play is also the building that opens the tier.
+        ///
+        /// Played twice: once with the 풀씨 둥지 never built, once with it built
+        /// and then destroyed by an enemy squad, which is how a match gets here.
+        /// </summary>
+        private static void APrerequisiteRefusesWhereTheTierWouldAllow()
+        {
+            // Never built.
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.TreeSpirits);
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);
+            world.SpawnBuilding(0, Role.Tech, At(9, 5), complete: true);
+            int worker = world.SpawnWorker(0, At(20, 20));
+            world.GrantResources(0, 2000);
+            RefusedWithoutTheNest(world, worker, "with no 풀씨 둥지 ever built");
+            world.SpawnBuilding(0, Role.Production, At(5, 9), complete: true);
+            TakenWithTheNest(world, worker, 1);
+
+            // Built, then lost.
+            var lost = new World(Seed);
+            lost.SetPeerFaction(0, Faction.TreeSpirits);
+            lost.SetPeerFaction(1, Faction.Hellfire);
+            lost.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);
+            lost.SpawnBuilding(0, Role.Tech, At(9, 5), complete: true);
+            int nest = lost.SpawnBuilding(0, Role.Production, At(40, 40), complete: true);
+            int spirit = lost.SpawnWorker(0, At(20, 20));
+            lost.GrantResources(0, 2000);
+            for (int i = 0; i < 8; i++) lost.SpawnUnit(1, Role.Melee, At(41, 39 + i % 3));
+            var idle = new List<Command>();
+            for (int t = 0; t < 400 && lost.GetEntity(nest).Alive; t++) lost.Step(idle);
+            Check(!lost.GetEntity(nest).Alive, "the squad never destroyed the 풀씨 둥지");
+            RefusedWithoutTheNest(lost, spirit, "after the 풀씨 둥지 fell");
+            lost.SpawnBuilding(0, Role.Production, At(5, 9), complete: true);
+            TakenWithTheNest(lost, spirit, 1);
+        }
+
+        private static void RefusedWithoutTheNest(World world, int worker, string when)
+        {
+            Check(world.TierOf(0) == FactionData.MaxTier,
+                "the 뿌리 회당 alone holds tier " + world.TierOf(0) + " " + when + ", so this proves nothing about the prerequisite");
+            Check(FactionData.Tier(Faction.TreeSpirits, Role.Tech, 0) < FactionData.MaxTier &&
+                  FactionData.Tier(Faction.TreeSpirits, World.GuardianRole, World.GuardianSlot) < FactionData.MaxTier,
+                "the 뿌리 회당 or 고목 수호자 opens at tier 3, so the tier and not the prerequisite refuses below");
+            Check(!world.CanBuild(0, Role.Tech, 0, At(30, 30)), "a second 뿌리 회당 could be placed " + when);
+            int banked = world.GetResources(0);
+            world.Step(Grow(worker, 0, 0, World.GuardianRole, World.GuardianSlot));
+            Check(!World.IsGrowing(world.GetEntity(worker)) && world.GetResources(0) == banked,
+                "고목 수호자 grew " + when);
+        }
+
+        private static void TakenWithTheNest(World world, int worker, int seq)
+        {
+            Check(world.CanBuild(0, Role.Tech, 0, At(30, 30)), "the 풀씨 둥지 did not let a 뿌리 회당 be placed");
+            world.Step(Grow(worker, 0, seq, World.GuardianRole, World.GuardianSlot));
+            Check(World.IsGrowing(world.GetEntity(worker)), "the 풀씨 둥지 did not open 고목 수호자");
+        }
+
+        /// <summary>
+        /// A prerequisite under construction is not standing. Asked through the
+        /// two gates a half-built building can be the answer to here, a Produce
+        /// and a Build, each before the site finishes and on the tick it does.
+        /// No Research row names a Requires today, so there is no third.
         /// </summary>
         private static void AnUnfinishedPrerequisiteOpensNothing()
         {
