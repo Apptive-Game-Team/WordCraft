@@ -3,7 +3,7 @@
 - Date: 2026-10-16
 - GitHub Issue: #206
 - Base: `feat/206` = `fix/201`(PR #204) + `feat/200`(PR #205). 이 PR 은 두 PR 위에 쌓인다.
-- Status: In progress
+- Status: Implemented (draft PR, #204 과 #205 위에 쌓음)
 
 ## Goal
 
@@ -30,6 +30,22 @@
   치유 원천과 다친 아군(`hpOverride`), 진영의 오라 원천(선택), 연쇄를 가진 진영은 연구를 끝낸
   연쇄 공격자와 적 몸 셋. 선택은 `Selection` 을 harness 에서 만들어 넣는다.
 - `strip-match-status`: 스크립트 로그에서 묶음 5 효과가 발동하는 틱을 찾고, 없으면 쓰지 않는다.
+- `strip-<faction>-chain`: 연쇄 연구를 끝낸 공격자와 2칸 안쪽 간격의 적 건물 셋.
+
+## 결과
+
+- 치유 확인용 아군은 `hpOverride` 로 만들 수 없다. `World.Add` 가 `MaxHp` 도 같은 값으로 두므로
+  덜 다친 몸이 아니라 약한 몸이 된다. Replay 의 `Wound` 처럼 시나리오 화상으로 체력의 절반을 깎고
+  나서 치유 원천을 세운다.
+- 첫 strip 에서 선택된 몸과 거의 가득 찬 체력바의 채움이 검은 바탕 뒤로 숨는 것을 봤다. 둘 다 깊이
+  검사가 없는 overlay 이고 같은 자리에 있어서 카메라 거리 정렬이 순서를 정했다. 채움 billboard 에
+  `sortingOrder` 1 을 주어 고쳤다(별도 commit).
+- 연쇄 strip 의 표적 간격이 처음에 2.02칸이라 시뮬레이션이 튀지 않았다. 1.87칸과 1.79칸으로 줄였다.
+- 스크립트 로그는 감속, 화상, 치유, 연쇄를 하나도 일으키지 않는다. 그래서 `strip-match-status` 는
+  쓰지 않는다. 첫 탐색은 공사가 끝나는 틱의 체력 상승을 치유로 읽었고, 직전 틱의 공사 여부를 같이
+  보도록 고쳤다.
+- 연쇄를 가진 진영(세계수 정령, 인간)은 `strip-<faction>-chain` 을 따로 쓴다. 지옥불 군단과 인간은
+  치유 오라 행이 없어 status strip 에 치유가 없다.
 
 ## Non-goals
 
