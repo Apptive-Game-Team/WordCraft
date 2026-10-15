@@ -115,7 +115,20 @@ namespace WordCraft.View
         public CardSlot[] Card()
         {
             SyncPage();
-            return CommandCard.Of(Kind(), runner.World.FactionOf(runner.LocalPeer), Page);
+            return CommandCard.Of(Kind(), runner.World.FactionOf(runner.LocalPeer), LeadRole(), Page);
+        }
+
+        /// <summary>
+        /// The role of the entity the card speaks for, Role.None when nothing
+        /// qualifies. Only the building card reads it (Tech has its own title and
+        /// rows); the entity is the same one Kind() ranks, so title and cells are
+        /// about one building.
+        /// </summary>
+        public Role LeadRole()
+        {
+            if (runner == null || selection == null) return Role.None;
+            int id = CommandCard.Representative(runner.World, selection.Selected, runner.LocalPeer);
+            return id < 0 ? Role.None : runner.World.GetEntity(id).Role;
         }
 
         /// <summary>

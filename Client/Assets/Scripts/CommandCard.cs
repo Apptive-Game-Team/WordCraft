@@ -168,15 +168,17 @@ namespace WordCraft.View
         /// The card for this selection kind, laid out for this faction. Always
         /// Cells long. The HUD and the keys both get it through Orders.Card, so
         /// what a key fires is always what the button under it says. Page is the
-        /// production list's page and means nothing to any other card.
+        /// production list's page and means nothing to any other card. Lead is the
+        /// role of the entity the card speaks for, which only the building card
+        /// reads: a Tech building has its own title and no production list.
         /// </summary>
-        public static CardSlot[] Of(CardKind kind, Faction faction, int page)
+        public static CardSlot[] Of(CardKind kind, Faction faction, Role lead, int page)
         {
             switch (kind)
             {
                 case CardKind.Fighter: return fighter;
                 case CardKind.Worker: return worker;
-                case CardKind.Building: return Building(faction, page);
+                case CardKind.Building: return Building(faction, lead, page);
                 case CardKind.BuildMenu: return buildMenu;
                 default: return none;
             }
@@ -189,6 +191,8 @@ namespace WordCraft.View
         /// interesting question — does every faction's list still fit the card
         /// — runs headless in Replay/ProductionMenuChecks.cs. This method only
         /// turns that list into CardSlots and keys.
+        ///
+        /// A Tech building (<paramref name="lead"/>) lists nothing: see below.
         ///
         /// Rows 1 and 2 (<see cref="ProductionMenu.Cells"/>, eight) are the whole
         /// budget, column 3 included: the card was widened to four columns so a
@@ -213,13 +217,20 @@ namespace WordCraft.View
         /// appeared only for 차원 유랑종 would move nothing today and everything the
         /// day row 0 grows a fourth entry.
         /// </summary>
-        public static CardSlot[] Building(Faction faction, int page)
+        public static CardSlot[] Building(Faction faction, Role lead, int page)
         {
             for (int i = 0; i < Cells; i++) building[i] = Empty;
             building[0] = Cmd("Rally", CommandType.SetRallyPoint);
             building[1] = Cmd("Cancel", CommandType.CancelProduction);
             // Type stays None: nothing leaves the client when this cell is pressed.
             building[2] = new CardSlot { Label = "Arrive", Aim = true };
+
+            // Rows 1 and 2 are held for research, which lands with #164's tech tree
+            // and a follow-up issue. Left empty rather than hidden so the position
+            // is already the card's by the time the buttons arrive. Still the
+            // Building card, not a new CardKind: selection ranking, the keys and
+            // row 0 are all the building's, and only the title differs.
+            if (lead == Role.Tech) return building;
 
             List<ProductionMenu.Entry> entries = ProductionMenu.For(faction);
             int pages = ProductionMenu.Pages(entries.Count);
@@ -256,14 +267,18 @@ namespace WordCraft.View
         public static int PageCount(Faction faction) =>
             ProductionMenu.Pages(ProductionMenu.For(faction).Count);
 
-        /// <summary>What the card is for, drawn over it so the player is never guessing.</summary>
-        public static string Title(CardKind kind)
+        /// <summary>
+        /// What the card is for, drawn over it so the player is never guessing. A
+        /// Tech building reads "research" because that is the one thing its rows 1
+        /// and 2 are for; every other building produces.
+        /// </summary>
+        public static string Title(CardKind kind, Role lead)
         {
             switch (kind)
             {
                 case CardKind.Fighter: return "orders";
                 case CardKind.Worker: return "worker";
-                case CardKind.Building: return "produce";
+                case CardKind.Building: return lead == Role.Tech ? "research" : "produce";
                 case CardKind.BuildMenu: return "build  ·  esc to cancel";
                 default: return "";
             }

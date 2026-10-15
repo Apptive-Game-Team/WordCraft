@@ -627,7 +627,7 @@ namespace WordCraft.View
             // The card changes under the same rectangle, so it says what it is.
             // Without this a build submenu and a produce row look alike.
             UiStyle.Header(new Rect(area.x, area.y, area.width, UiStyle.Micro + UiStyle.S1),
-                CommandCard.Title(kind));
+                CommandCard.Title(kind, orders.LeadRole()));
 
             float top = area.y + UiStyle.Micro + UiStyle.S1;
             float step = UiStyle.CardCellSize + UiStyle.S1;
