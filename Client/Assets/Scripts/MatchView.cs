@@ -811,7 +811,14 @@ namespace WordCraft.View
         /// zero is missed; both are rare and both only move a bolt.
         ///
         /// The bolts wait for the shot's tracer to land, and each hop a moment
-        /// more. Only between two seen bodies.
+        /// more. Only between two seen bodies. The body a bolt jumps to is the
+        /// bolt's target in Effects, so it flinches, flashes and falls when the
+        /// bolt appears, not at the tick, as the first target waits for its
+        /// tracer: Chains runs before Consequences reads Effects.Incoming.
+        ///
+        /// Lightning yellow (세계수's Bolt) whichever faction fires, 인간's
+        /// 전기 타워 included: issue #206 names the chain's colour, and a jump
+        /// in the shooter's own tracer colour would read as a second shot.
         /// </summary>
         private void Chains(World world)
         {
@@ -847,7 +854,7 @@ namespace WordCraft.View
                     if (Seen(world, from) && Seen(world, best))
                     {
                         effects.Jump(Chest(from), Chest(best), BodyPalette.TreeSpirits.Bolt,
-                                     chainLands[c] + hop * ChainHopDelay);
+                                     chainLands[c] + (hop + 1) * ChainHopDelay, best);
                     }
                     hops[count++] = best;
                     from = best;
