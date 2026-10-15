@@ -805,7 +805,8 @@ namespace WordCraft.View
         /// <summary>거대 덩쿨: a vine column twisting up from its roots to a budded head, rooted where it grew. Slot 3, the siege.</summary>
         private static void GiantVine(Blueprint b)
         {
-            b.Gait = Gait.Float;
+            // Walk with no legs: rooted where it grew, it never moves and must not hover.
+            b.Gait = Gait.Walk;
             b.Strike = Strike.Recoil;
             Solids hull = b.Hull;
             Color leaf = BodyPalette.TreeSpirits.Leaf, shade = BodyPalette.TreeSpirits.LeafShade, light = BodyPalette.TreeSpirits.LeafLight;
@@ -2411,10 +2412,11 @@ namespace WordCraft.View
             part.Box(Point(x, 0.03f, z + 0.02f), Extent(0.17f, 0.06f, 0.2f), BodyPalette.Humans.Steel);
         }
 
-        /// <summary>견인 대포: a long barrel on a wooden carriage between two wheels, a trail bar dragging behind. Rolls rather than walks.</summary>
+        /// <summary>견인 대포: a long barrel on a wooden carriage between two wheels, a trail bar dragging behind.</summary>
         private static void TowedCannon(Blueprint b)
         {
-            b.Gait = Gait.Float;
+            // Walk with no legs: the wheels stay on the ground and the cart bobs over it.
+            b.Gait = Gait.Walk;
             b.Strike = Strike.Recoil;
             Solids hull = b.Hull;
             Color wood = BodyPalette.Humans.Wood, steel = BodyPalette.Humans.Steel, bronze = BodyPalette.Humans.Bronze;
@@ -2524,10 +2526,11 @@ namespace WordCraft.View
             b.Arm.Box(Point(0.27f, 0.76f, 0.34f), Extent(0.07f, 0.1f, 0.05f), BodyPalette.Humans.Stone, Turn(25f, 0f, 0f));
         }
 
-        /// <summary>마나 증폭기: a wheeled steel cart carrying a stone pillar, a guarded crystal and two antennas. Rolls; weaponless.</summary>
+        /// <summary>마나 증폭기: a wheeled steel cart carrying a stone pillar, a guarded crystal and two antennas. Weaponless.</summary>
         private static void ManaAmplifier(Blueprint b)
         {
-            b.Gait = Gait.Float;
+            // Walk with no legs: the wheels stay on the ground and the cart bobs over it.
+            b.Gait = Gait.Walk;
             b.Strike = Strike.Pulse;
             Solids hull = b.Hull;
             Color stone = BodyPalette.Humans.Stone, steel = BodyPalette.Humans.Steel, bronze = BodyPalette.Humans.Bronze;
