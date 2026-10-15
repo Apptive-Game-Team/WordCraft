@@ -89,10 +89,33 @@ namespace WordCraft.Sim
                     {
                         if (x < 0 || x >= GridSize) continue;
                         int cell = y * GridSize + x;
-                        if (HasRemnant(cell) && remnantExpiry[cell] < hold) remnantExpiry[cell] = hold;
+                        if (HasRemnant(cell)) WriteRemnant(cell, hold);
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// docs/TECH-TREE.md 동점과 경계 "가장 많이 다친": the living body of these
+        /// targets this peer owns within the radius of this point that has lost
+        /// the most hp, MaxHp - Hp, and at least minLost; the lower id on a tie,
+        /// because only a strictly larger loss replaces the one found first.
+        /// -1 when none has. 잔해 수리 and 수리 both ask it.
+        /// </summary>
+        private int MostWounded(int owner, AbilityTargets targets, FixVec2 at, Fix radius, int minLost)
+        {
+            int best = -1, bestLost = 0;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity t = entities[i];
+                if (!t.Alive || t.Owner != owner || !AuraTargets(targets, t)) continue;
+                int lost = t.MaxHp - t.Hp;
+                if (lost < minLost || lost <= bestLost) continue;
+                if (!WithinRange(at, t.Position, radius)) continue;
+                best = i;
+                bestLost = lost;
+            }
+            return best;
         }
 
         /// <summary>
@@ -112,17 +135,7 @@ namespace WordCraft.Sim
                 if (row < 0) continue;
                 AbilityRow r = FactionData.AbilityRowAt(row);
                 if (Tick % r.Period != 0) continue;
-                Fix radius = Fix.FromInt(AbilityRadius(src.Owner, r));
-                int best = -1, bestLost = 0;
-                for (int i = 0; i < entities.Count; i++)
-                {
-                    Entity t = entities[i];
-                    if (!t.Alive || t.Owner != src.Owner || !AuraTargets(r.Targets, t)) continue;
-                    int lost = t.MaxHp - t.Hp;
-                    if (lost <= bestLost || !WithinRange(src.Position, t.Position, radius)) continue;
-                    best = i;
-                    bestLost = lost;
-                }
+                int best = MostWounded(src.Owner, r.Targets, src.Position, Fix.FromInt(AbilityRadius(src.Owner, r)), 1);
                 if (best < 0) continue;
                 Entity mended = entities[best];
                 mended.Hp += AbilityAmount(src.Owner, r);
@@ -301,18 +314,7 @@ namespace WordCraft.Sim
             Entity e = entities[id];
             if (e.AbilityCooldown > 0) return;
             AbilityRow r = FactionData.AbilityRowAt(row);
-            Fix radius = Fix.FromInt(AbilityRadius(e.Owner, r));
-            int best = -1, bestLost = 0;
-            for (int i = 0; i < entities.Count; i++)
-            {
-                Entity t = entities[i];
-                if (!t.Alive || t.Owner != e.Owner || !AuraTargets(r.Targets, t)) continue;
-                int lost = t.MaxHp - t.Hp;
-                if (lost < r.Limit || lost <= bestLost) continue;
-                if (!WithinRange(e.Position, t.Position, radius)) continue;
-                best = i;
-                bestLost = lost;
-            }
+            int best = MostWounded(e.Owner, r.Targets, e.Position, Fix.FromInt(AbilityRadius(e.Owner, r)), r.Limit);
             if (best < 0) return;
             int cell = RemnantNear(e.Position);
             if (cell < 0) return;
