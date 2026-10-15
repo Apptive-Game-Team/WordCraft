@@ -3266,6 +3266,7 @@ namespace WordCraft.View
                 case Role.Defense when slot == 2:
                     // 거품 장벽: a low wide mound of three big bubbles in a row. A wall: no crown.
                     hull.Prism(Vector3.zero, 10, 1.15f, 1.1f, 0.08f, sky, Quaternion.identity, 0.6f);
+                    hull.Ball(Point(-1.05f, 0.14f, 0.25f), 0.16f, foam);
                     Band(b, hull, Point(0f, 0.01f, 0f), 10, 1.17f, 0.06f, 0.6f);
                     hull = b.Tier(Point(-0.55f, 0f, 0f));
                     hull.Ball(Point(-0.5f, 0.44f, 0f), Extent(0.6f, 0.5f, 0.55f), pale);
@@ -3275,7 +3276,6 @@ namespace WordCraft.View
                     hull.Ball(Point(0.14f, 0.5f, -0.36f), Extent(0.08f, 0.1f, 0.05f), foam);
                     hull = b.Tier(Point(0.85f, 0f, 0f));
                     hull.Ball(Point(0.86f, 0.24f, -0.02f), Extent(0.34f, 0.28f, 0.34f), pale);
-                    hull.Ball(Point(-1.05f, 0.14f, 0.25f), 0.16f, foam);
                     return true;
 
                 case Role.Tech when slot == 1:
@@ -3628,9 +3628,8 @@ namespace WordCraft.View
                     hull.Taper(Point(-0.78f, 0f, 0f), Pair(0.9f, 0.7f), Pair(0.32f, 0.36f), 2.9f, shell, Turn(0f, 0f, -12f));
                     hull = b.Tier(Point(0.78f, 0f, 0f));
                     hull.Taper(Point(0.78f, 0f, 0f), Pair(0.9f, 0.7f), Pair(0.32f, 0.36f), 2.75f, shade, Turn(0f, 0f, 12f));
-                    hull = b.Tier(Point(0f, 0f, -0.2f));
-                    hull.Taper(Point(-0.36f, 0f, -0.2f), Pair(0.32f, 0.22f), Pair(0.12f, 0.12f), 1.55f, deep, Turn(0f, 0f, 6f));
-                    hull.Taper(Point(0.36f, 0f, -0.2f), Pair(0.32f, 0.22f), Pair(0.12f, 0.12f), 1.4f, shade, Turn(0f, 0f, -6f));
+                    b.Tier(Point(-0.36f, 0f, -0.2f)).Taper(Point(-0.36f, 0f, -0.2f), Pair(0.32f, 0.22f), Pair(0.12f, 0.12f), 1.55f, deep, Turn(0f, 0f, 6f));
+                    b.Tier(Point(0.36f, 0f, -0.2f)).Taper(Point(0.36f, 0f, -0.2f), Pair(0.32f, 0.22f), Pair(0.12f, 0.12f), 1.4f, shade, Turn(0f, 0f, -6f));
                     return true;
 
                 case Role.Defense when slot == 1:
