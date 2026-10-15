@@ -440,8 +440,9 @@ Unity 건설 메뉴의 라벨(`Client/Assets/Scripts/CommandCard.cs`)이었으�
 
 ## 업그레이드
 
-기술 건물(`Role.Tech`)은 T3를 여는 것 말고도 연구를 한다. 여섯 진영 모두 연구 표가
-네 줄이다. 0번 `공격력`, 1번 `방어력`, 2번과 3번은 진영 고유 연구다. 표는
+기술 건물(`Role.Tech`)은 T3를 여는 것 말고도 연구를 한다. 여섯 진영 모두 연구 표의 앞
+네 줄은 같은 모양이다. 0번 `공격력`, 1번 `방어력`, 2번과 3번은 진영 고유 연구다. 4번부터는
+`docs/TECH-TREE.md` 묶음 3(#180)이 더한 수치 연구 행이고, 진영마다 행 수가 다르다. 표는
 `FactionData.upgrades`에 있고 `UpgradeCount(faction)`·`Upgrade(faction, index)`로
 읽는다. 표 밖의 index는 `MaxLevel` 0인 행을 돌려줘서 연구할 수 없다.
 
@@ -464,6 +465,22 @@ Unity 건설 메뉴의 라벨(`Client/Assets/Scripts/CommandCard.cs`)이었으�
 수치는 출발값이다. 1단계 가격 50은 솔로 매치 AI가 기술 건물을 세운 뒤 보유 자원을 90
 넘게 모으지 못해서 정했다. 100이었을 때 AI는 연구를 한 번도 하지 못했다.
 
+**묶음 3 연구 행(#180).** 한 로스터 항목의 사거리, 공격 주기, 속도, 방어를 바꾸는 행 20개다.
+이름, 가격, 틱, 단계, 연구 건물은 `docs/TECH-TREE.md` 진영별 업그레이드 표가 정본이고, 어느
+항목의 어느 수치를 무엇으로 바꾸는지는 `FactionData.entryUpgrades` 표 한 곳에 있다.
+`World.RangeFor`, `AttackTicksFor`, `SpeedFor`, `ArmorFor`가 그 표를 읽는다. 행은 대부분
+`Tech` 1번이나 2번(바람 토템, 재 분화구, 물결 수련장, 이끼 정원, 외피 연마장, 마도 학당,
+결속대 등)에서 연구한다.
+
+| 진영 | 연구 행 수 | 4번 이후 |
+|---|---|---|
+| 세계수 정령 | 8 | 덩쿨 사거리, 거대 덩쿨 사거리, 번개새 공격 주기, 잎날 속도 |
+| 지옥불 군단 | 7 | 용암 투석 사거리, 재날개 공격 주기, 갑각 경화 |
+| 물 슬라임 | 7 | 물결 궁수 사거리, 침 사거리, 물대포 사거리 |
+| 돌 골렘 부족 | 6 | 돌팔매 사거리, 부유석 사거리 |
+| 차원 유랑종 | 8 | 폭풍편 공격 주기, 덩쿨편 사거리, 틈새 포대 사거리, 도주 가속 |
+| 인간 마법 문명 | 8 | 석궁 사거리, 마도 기수 속도, 결속 강화, 결속 갑주 |
+
 **명령.** `CommandType.Research`(값 14)가 `EntityId`로 기술 건물을, `Arg`로 index를
 받는다. `Command`에 새 필드를 만들지 않았다. Net과 리플레이 파일이 필드 단위로
 직렬화하므로 새 필드는 보낸 피어 밖에서 0, 즉 `공격력`으로 읽힌다. 거부 순서는
@@ -473,15 +490,16 @@ Unity 건설 메뉴의 라벨(`Client/Assets/Scripts/CommandCard.cs`)이었으�
 2. 건물이고 완공.
 3. 이 건물이 이미 연구 중이면 거부. 대기열이 없어서 두 번째 명령은 줄을 서지 않는다.
 4. 단계가 최대면 거부. 표 밖 index도 여기서 거부된다.
-5. 건물의 역할·슬롯이 행의 `ResearchAt`과 다르면 거부. 오늘 모든 행이 `Tech` 0번이다.
+5. 건물의 역할·슬롯이 행의 `ResearchAt`과 다르면 거부. 0~3번 행은 `Tech` 0번이고 묶음 3
+   행은 각자의 연구 건물이다.
    어느 건물이 연구하는지는 이 줄 하나가 정한다. 역할 검사가 따로 없다.
 6. 같은 피어의 다른 기술 건물이 같은 index를 연구 중이면 거부. 이 줄이 없으면 기술
    건물 두 채가 1단계 가격 두 번으로 2단계를 산다.
 7. 행의 `Tier`가 `TierOf(peer)`보다 높으면 거부. 완공된 기술 건물이 곧 T3이고 모든
    행이 Tier 3이라 오늘은 이 줄이 앞의 줄들이 통과시킨 명령을 거부하는 경우가 없다.
    나중에 더 늦게 열리는 행을 숫자 하나로 적게 하려고 둔 검사다.
-8. 행의 `Requires`가 `Role.None`이 아니고 그 건물이 서 있지 않으면 거부. 오늘은 모든
-   행이 `Role.None`이다.
+8. 행의 `Requires`가 `Role.None`이 아니고 그 건물이 서 있지 않으면 거부. 오늘은 갑각
+   경화(용암 도가니) 하나만 `Role.None`이 아니다.
 9. 자원이 `Resources * (현재 단계 + 1)`보다 적으면 거부.
 
 통과하면 그 가격을 즉시 전액 차감하고 `ResearchIndex`·`ResearchTicksLeft`를 세운다.
@@ -509,23 +527,26 @@ Unity 건설 메뉴의 라벨(`Client/Assets/Scripts/CommandCard.cs`)이었으�
   시계를 다시 세울 때 읽어서, 돌던 주기는 그대로 끝난다.
 - 물 슬라임: `VolleyMaxBonusFor(peer)`, `VolleyRadiusFor(peer)`.
 - 돌 골렘 부족: `RemnantTicksFor(peer)`는 몸이 쓰러지는 틱에 읽는다.
-  `RangeOf(entity)`가 근접 유닛 사거리에 1칸을 더한다.
+  `RangeFor(entity)`가 근접 유닛 사거리에 1칸을 더한다.
 - 차원 유랑종: `ArrivalRadiusFor(peer)`는 `ArrivalValid`의 두 검사 모두가 읽는다.
   `ArrivalTicksFor(peer)`(기본 `FactionData.PassageArrivalTicks` 60)는 통로에서
   나오는 틈새 사수(`MarksmanRole` `Role.Ranged`, `MarksmanSlot` 0)에만 적용된다.
   값이 아니라 역할과 슬롯으로 고른다. 폭풍편(50틱)과 경계 운반자(90틱)는 그대로다.
 - 인간 마법 문명: `CaptureTicksFor(peer)`는 포획 시계가 시작할 때 읽는다.
-  `RangeOf(entity)`가 대포(방어 슬롯 0번)에만 1칸을 더하고 전기 타워와 돌 포탑은
+  `RangeFor(entity)`가 대포(방어 슬롯 0번)에만 1칸을 더하고 전기 타워와 돌 포탑은
   그대로다.
 
-**AI.** `AiThink`가 T2가 서면 기술 건물을 하나 짓고, 생산보다 먼저 연구를 건다.
+**AI.** `AiThink`가 T2가 서면 기술 건물을 하나 짓고, 생산보다 먼저 연구를 건다. 인구 건물
+주문도 생산보다 먼저다(#180). 묶음 3 뒤로 다섯 진영의 본진이 전투 유닛도 만들어 생산이 매번
+보유 자원을 다 쓰기 때문이다.
 완공된, 연구 중이 아닌 기술 건물마다 보유 자원이 연구비보다 **많은** 가장 낮은 index를
 고른다. 낼 수 없는 행은 기다리지 않고 건너뛴다. 보유 자원이 75면 100짜리 공격력
 2단계 대신 50짜리 방어력 1단계를 산다. 한 번 생각할 때 명령은 하나다.
 
 **해시.** 새로 해시되는 필드는 셋뿐이다. 엔티티별 `ResearchIndex`(-1이 없음)와
-`ResearchTicksLeft`, 피어별 `upgradeLevels[peer, index]`(피어 0..7, index 0..3,
-`FactionData.MaxUpgrades`가 4). 규칙이 바뀌었으므로 `ContentVersion`이 30이 됐다.
+`ResearchTicksLeft`, 피어별 `upgradeLevels[peer, index]`(피어 0..7, index 0..7,
+`FactionData.MaxUpgrades`가 8). 규칙이 바뀌었으므로 `ContentVersion`이 30이 됐다. 묶음 3이
+`MaxUpgrades`를 4에서 8로 올려 해시하는 칸이 피어마다 4개 늘었다(`ContentVersion` 33).
 
 ## 테크트리
 
