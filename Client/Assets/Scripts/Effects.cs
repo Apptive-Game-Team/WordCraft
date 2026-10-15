@@ -12,12 +12,14 @@ namespace WordCraft.View
     /// frame, and a GameObject or a mesh per shot would be garbage every frame;
     /// here every tracer and every shard is made once, the first time the pool
     /// runs short, and reused from then on. Nothing in <see cref="Animate"/> or in
-    /// the two calls that start an effect allocates once the pool is big enough.
+    /// the three calls that start an effect (<see cref="Shot"/>,
+    /// <see cref="Impact"/>, <see cref="Crumble"/>) allocates once the pool is
+    /// big enough.
     ///
     /// Drawn with the body material and lit like a body: a tracer is a sliver of
     /// cut paper in the faction's colour, not a glow. .art/STYLE.md bans the
     /// ember and spark scatter that a particle system would reach for, so a
-    /// burst is five shards that fly out and shrink to nothing, big enough to
+    /// burst is seven shards that fly out and shrink to nothing, big enough to
     /// read at the zoom a fight is watched from, with a ring on the ground
     /// under it. A 돌 골렘 body that dies breaks into chunks here too
     /// (<see cref="Crumble"/>), pooled the same way.
@@ -104,6 +106,10 @@ namespace WordCraft.View
             public Vector3 From, To;
             public float Started, Flight;
             public Color Colour;
+            /// <summary>The entity id it is flying at, reported in <see cref="Landed"/> when it arrives; -1 for none.</summary>
+            public int Target;
+            /// <summary>Whether it bursts where it lands. Not into the fog: a burst there would show where a hidden body stands.</summary>
+            public bool Bursts;
         }
 
         private struct Chunk
@@ -138,6 +144,15 @@ namespace WordCraft.View
 
         private int burstCounter;
 
+        private readonly List<int> landed = new List<int>(TracerWarm);
+
+        /// <summary>
+        /// The target ids of the tracers that arrived in the last <see cref="Animate"/>,
+        /// one entry per tracer. The caller starts the hit reaction from here, so
+        /// a ranged flinch begins the moment the shot is seen to land.
+        /// </summary>
+        public IReadOnlyList<int> Landed => landed;
+
         public Effects(Transform parent)
         {
             this.parent = parent;
@@ -152,13 +167,14 @@ namespace WordCraft.View
         /// Returns the seconds from now until it lands, so the target's hit
         /// reaction can be timed to the arrival.
         /// </summary>
-        public float Shot(Vector3 from, Vector3 to, Color colour, float delay = 0f)
+        public float Shot(Vector3 from, Vector3 to, Color colour, float delay = 0f, int target = -1, bool bursts = true)
         {
             int i = FreeTracer();
             float flight = Mathf.Clamp(Vector3.Distance(from, to) / TracerSpeed, MinFlight, MaxFlight);
             tracers[i] = new Tracer
             {
                 Live = true, From = from, To = to, Started = ViewClock.Now + delay, Flight = flight, Colour = colour,
+                Target = target, Bursts = bursts,
             };
 
             Colour(tracerRenderers[i], colour);
@@ -176,7 +192,7 @@ namespace WordCraft.View
         /// that fall, bounce once, lie for a moment and shrink away, leaving the
         /// rubble pile MatchView draws on the cell.
         /// </summary>
-        public void Crumble(Vector3 foot, float size, Color colour, float yaw)
+        public void Crumble(Vector3 foot, float size, Color colour, float yaw, float delay = 0f)
         {
             for (int k = 0; k < ChunksPerCrumble; k++)
             {
@@ -189,7 +205,7 @@ namespace WordCraft.View
                     Live = true,
                     From = foot + outward * (size * 0.1f) + Vector3.up * (size * (0.35f + 0.15f * k)),
                     Velocity = outward * (size * (0.45f + 0.2f * k)) + Vector3.up * (size * 0.5f),
-                    Started = ViewClock.Now + 0.04f * k,
+                    Started = ViewClock.Now + delay + 0.04f * k,
                     Rest = foot.y + radius * 0.55f,
                     Radius = radius,
                     Spin = (k % 2 == 0 ? 1f : -1f) * (300f + 120f * k),
@@ -229,6 +245,7 @@ namespace WordCraft.View
         public void Animate()
         {
             float now = ViewClock.Now;
+            landed.Clear();
 
             for (int i = 0; i < tracers.Count; i++)
             {
@@ -245,7 +262,8 @@ namespace WordCraft.View
                     tracers[i] = t;
                     r.enabled = false;
                     trail.enabled = false;
-                    Impact(t.To, t.Colour);
+                    if (t.Bursts) Impact(t.To, t.Colour);
+                    if (t.Target >= 0) landed.Add(t.Target);
                     continue;
                 }
                 Fly(r.transform, t.From, t.To, p);
@@ -276,7 +294,7 @@ namespace WordCraft.View
                 // Out fast and slowing, falling a little, and shrinking to
                 // nothing: one ease and one shrink, no fade, since a fade would
                 // need the see-through material and its second pass.
-                float spread = 1f - (1f - p) * (1f - p);
+                float spread = BodyRig.EaseOut(p);
                 float size = ShardSize * (1f - p);
 
                 Decal ring = rings[i];
@@ -336,6 +354,23 @@ namespace WordCraft.View
         }
 
         /// <summary>
+        /// Seconds until the last tracer flying at <paramref name="target"/>
+        /// lands, counting one that has not left yet; zero when none is. What a
+        /// death waits for, and what tells a hit flash to wait for the landing.
+        /// </summary>
+        public float Incoming(int target)
+        {
+            float now = ViewClock.Now, latest = 0f;
+            for (int i = 0; i < tracers.Count; i++)
+            {
+                Tracer t = tracers[i];
+                if (!t.Live || t.Target != target) continue;
+                latest = Mathf.Max(latest, t.Started + t.Flight - now);
+            }
+            return latest;
+        }
+
+        /// <summary>
         /// Where a chunk is <paramref name="t"/> seconds after it was thrown: out
         /// and down on a parabola to its resting height, one bounce at a third of
         /// the speed it landed with and less than half the drift, then still.
@@ -389,6 +424,7 @@ namespace WordCraft.View
                 chunks[i] = default;
                 chunkRenderers[i].enabled = false;
             }
+            landed.Clear();
         }
 
         // ------------------------------------------------------------------

@@ -189,6 +189,8 @@ namespace WordCraft.View
         private float diedAt;
         private Vector3 fellAt;
         private Quaternion fellFacing;
+        /// <summary>The fall has begun: past <see cref="diedAt"/>, with the pose it fell from captured.</summary>
+        private bool falling;
         private bool swelling;
         private float swellStarted;
         private bool spent;
@@ -374,11 +376,12 @@ namespace WordCraft.View
         public void Attack() => attackStarted = ViewClock.Now;
 
         /// <summary>
-        /// The hit reaction, now or after <paramref name="delay"/> seconds: a
-        /// ranged hit is drawn when the tracer arrives, not when the simulation
-        /// dealt the damage.
+        /// The hit reaction, starting now. A ranged hit is not delayed here:
+        /// MatchView calls this when the tracer lands (Effects reports the
+        /// landing), so a start is never pushed into the future and a stream of
+        /// shots cannot keep a flinch from ever happening.
         /// </summary>
-        public void Hit(float delay = 0f) => hitStarted = ViewClock.Now + delay;
+        public void Hit() => hitStarted = ViewClock.Now;
 
         /// <summary>The body's height in world units: what a death's chunks are sized from.</summary>
         public float Size => design != null ? design.Size : 1f;
@@ -400,15 +403,26 @@ namespace WordCraft.View
         /// switches itself off. <paramref name="toRubble"/> is 돌 골렘 부족's combat
         /// unit, which leaves debris on its cell: the body sinks in the rubble's
         /// colour into the pile rather than fading out on top of it.
+        ///
+        /// <paramref name="delay"/> holds the fall back until the shot that killed
+        /// it lands: the simulation deals ranged damage at once and the tracer
+        /// arrives a third of a second later, and a body already lying down when
+        /// its killing shot reaches it reads backwards. Until then it goes on
+        /// standing and breathing where it stood. A later call can only bring the
+        /// fall nearer, never push it further away.
         /// </summary>
-        public void Die(bool toRubble)
+        public void Die(bool toRubble, float delay = 0f)
         {
-            if (dying || design == null) return;
+            if (design == null) return;
+            float at = ViewClock.Now + Mathf.Max(delay, 0f);
+            if (dying)
+            {
+                if (!falling && at < diedAt) diedAt = at;
+                return;
+            }
             dying = true;
             rubble = toRubble;
-            diedAt = ViewClock.Now;
-            fellAt = transform.position;
-            fellFacing = transform.rotation;
+            diedAt = at;
         }
 
         /// <summary>
@@ -551,8 +565,14 @@ namespace WordCraft.View
             float now = ViewClock.Now;
             float deltaTime = ViewClock.Delta;
 
-            if (dying)
+            if (dying && now >= diedAt)
             {
+                if (!falling)
+                {
+                    falling = true;
+                    fellAt = transform.position;
+                    fellFacing = transform.rotation;
+                }
                 Fall(now);
                 return;
             }
@@ -816,7 +836,7 @@ namespace WordCraft.View
             // A shot is a kick at once and an easing return, like a unit's recoil.
             float attack = Phase(attackStarted, AttackSeconds, now);
             float fire = attack >= 0f ? (1f - attack) * (1f - attack) : 0f;
-            if (crown == null) scale *= 1f + 0.05f * Bump(Mathf.Max(attack, 0f), 0f, 1f) * (attack >= 0f ? 1f : 0f);
+            if (crown == null && attack >= 0f) scale *= 1f + 0.05f * Bump(attack, 0f, 1f);
             hull.localScale = scale;
 
             if (crown == null) return;
@@ -1039,6 +1059,6 @@ namespace WordCraft.View
         private static float Smooth(float t) => t * t * (3f - 2f * t);
 
         /// <summary>Fast at first, slow at the end: a quadratic ease out on 0..1.</summary>
-        private static float EaseOut(float t) => 1f - (1f - t) * (1f - t);
+        internal static float EaseOut(float t) => 1f - (1f - t) * (1f - t);
     }
 }

@@ -133,6 +133,23 @@ namespace WordCraft.View
         private Effects effects;
 
         /// <summary>
+        /// This frame's hit ids, copied out of HitDetection's shared list at the
+        /// top of the frame and applied after every shot of the frame has been
+        /// fired, so a hit whose tracer is still in the air waits for it.
+        /// </summary>
+        private readonly List<int> struck = new List<int>();
+
+        /// <summary>Entities seen dying this frame, given their death after every shot of the frame.</summary>
+        private readonly List<int> fallen = new List<int>();
+
+        /// <summary>
+        /// Per entity: a hit flash is owed when the tracer now flying at it lands.
+        /// Parallel to bodies. HitDetection decides who gets a flash (the local
+        /// peer's own bodies); the landing only decides when.
+        /// </summary>
+        private readonly List<bool> flashOnLanding = new List<bool>();
+
+        /// <summary>
         /// False until the first frame of a world has built its bodies. Everything
         /// built on that frame was already standing when the match began; only a
         /// body built after it was produced, and only that one rises out of the ground.
@@ -144,7 +161,17 @@ namespace WordCraft.View
         /// gives melee a reach of exactly two cells; the issue draws a tracer for
         /// anything that reaches further.
         /// </summary>
-        private static readonly Fix TracerReach = Fix.FromInt(2);
+        public static readonly Fix TracerReach = Fix.FromInt(2);
+
+        /// <summary>Whether a weapon with these stats throws a tracer rather than landing a blow. The one test, shared with ViewShots.</summary>
+        public static bool Throws(UnitStats stats) => stats.Range > TracerReach;
+
+        /// <summary>
+        /// 돌 골렘 부족's combat unit leaves rubble where it falls (Sim/World.cs
+        /// DropRemnant), so it dies into rubble. The one test, shared with ViewShots.
+        /// </summary>
+        public static bool Rubble(Faction faction, EntityKind kind) =>
+            kind == EntityKind.Unit && faction == Faction.RockGolems;
 
         /// <summary>Unscaled time each entity's flash goes dark. -1 means never armed; parallel to bodies.</summary>
         private readonly List<float> hitUntil = new List<float>();
@@ -189,7 +216,9 @@ namespace WordCraft.View
 
         private void Awake()
         {
-            DontDestroyOnLoad(gameObject);
+            // Only in play mode: ViewShots builds a view in the editor, where
+            // DontDestroyOnLoad throws.
+            if (Application.isPlaying) DontDestroyOnLoad(gameObject);
 
             // A perspective camera; the rig puts it where it goes. Built here
             // rather than in a scene so that no gameplay change ever has to touch
@@ -200,7 +229,7 @@ namespace WordCraft.View
             Cam.fieldOfView = CameraRig.FieldOfView;
             Cam.nearClipPlane = 0.5f;
             Cam.farClipPlane = 400f;
-            DontDestroyOnLoad(Cam.gameObject);
+            if (Application.isPlaying) DontDestroyOnLoad(Cam.gameObject);
             Sky.Build(Cam);
 
             hover = Decal.Make(transform, "Hover", ring: true, UiStyle.HoverRing);
@@ -208,6 +237,24 @@ namespace WordCraft.View
         }
 
         private void Start() => runner = MatchRunner.Instance;
+
+        /// <summary>
+        /// A view over <paramref name="over"/> built outside play mode, for the
+        /// screenshot harness: the editor never calls Awake, Start or LateUpdate
+        /// on a component added from a batch method, so this does the first two
+        /// and <see cref="Draw"/> stands in for the third. The game never calls
+        /// either; it boots its view from <see cref="Boot"/>.
+        /// </summary>
+        public static MatchView Detached(MatchRunner over)
+        {
+            var view = new GameObject("WordCraft View (detached)").AddComponent<MatchView>();
+            view.Awake();
+            view.runner = over;
+            return view;
+        }
+
+        /// <summary>One frame of the view, exactly as LateUpdate draws it. For <see cref="Detached"/> views.</summary>
+        public void Draw() => LateUpdate();
 
         /// <summary>
         /// LateUpdate, so the interpolated draw position is read after the frame's
@@ -238,6 +285,7 @@ namespace WordCraft.View
                 cooldowns.Clear();  // same
                 hitUntil.Clear();   // same: a restart's ids owe nothing to the match before it
                 alive.Clear();      // same
+                flashOnLanding.Clear(); // same
                 DropBodies(retiring);
                 effects.Clear();
                 primed = false;
@@ -264,11 +312,9 @@ namespace WordCraft.View
             // hit already lit up off-screen feedback does not walk World a second
             // time to also light up on-screen feedback (issue #104).
             IReadOnlyList<int> hits = HitDetection.HitIds(world, runner.LocalPeer);
-            for (int h = 0; h < hits.Count; h++)
-            {
-                hitUntil[hits[h]] = Time.unscaledTime + HitFlashSeconds;
-                bodies[hits[h]].Hit();
-            }
+            struck.Clear();
+            for (int h = 0; h < hits.Count; h++) struck.Add(hits[h]);
+            fallen.Clear();
 
             Fog.Update(runner);
 
@@ -306,18 +352,25 @@ namespace WordCraft.View
                 // plays out where it fell, then the body switches itself off and
                 // the fog's Hidden below takes over. One that happened in the
                 // fog, or to a remembered building, is not news and plays nothing.
+                //
+                // The death itself is given after the loop, once every shot of
+                // the frame has been fired, so a body killed by a tracer that
+                // leaves this frame waits for it whatever order the ids run in.
                 bool was = alive[i];
                 alive[i] = e.Alive;
-                if (was && !e.Alive && body.Shown && !body.Remembered)
-                {
-                    bool rubble = Rubble(world, e);
-                    body.Die(rubble);
-                    if (rubble) effects.Crumble(Field.At(runner.DrawPosition(i)), body.Size, UiStyle.Remnant, body.transform.eulerAngles.y);
-                }
+                bool falls = was && !e.Alive && body.Shown && !body.Remembered;
+                if (falls) fallen.Add(i);
+
+                // Every entity, seen or not, so a cooldown that reset in the fog
+                // is not taken for a fresh shot the frame the shooter comes into
+                // sight. Pose only compares.
+                bool fired = e.AttackCooldown > cooldowns[i];
+                cooldowns[i] = e.AttackCooldown;
+
                 // A dead body that is not playing its death has nothing left to
                 // move; switched off, so a long match's dead cost no Update.
-                if (!e.Alive && !body.Dying && body.enabled) body.enabled = false;
-                if (!e.Alive && body.Dying)
+                if (!e.Alive && !falls && !body.Dying && body.enabled) body.enabled = false;
+                if (!e.Alive && (falls || body.Dying))
                 {
                     rings[i].Visible = false;
                     rangeRings[i].Visible = false;
@@ -359,7 +412,7 @@ namespace WordCraft.View
 
                 Vector2 p = runner.DrawPosition(i);
                 body.Place(Field.At(p));
-                Pose(world, i, e, body);
+                Pose(world, i, e, body, fired);
 
                 shadows[i].Visible = body.Flying;
                 if (body.Flying) shadows[i].Set(p, body.Footprint * ShadowRatio, 0f);
@@ -379,13 +432,13 @@ namespace WordCraft.View
                     rangeRings[i].Visible = false;
                 }
 
-                bool flashing = hitUntil[i] > Time.unscaledTime;
+                bool flashing = hitUntil[i] > ViewClock.Now;
                 hitFlashes[i].Visible = flashing;
                 if (flashing)
                 {
                     hitFlashes[i].Set(p, body.Footprint * 0.5f + band, band);
                     Color flash = UiStyle.Danger;
-                    flash.a = Mathf.Clamp01((hitUntil[i] - Time.unscaledTime) / HitFlashSeconds);
+                    flash.a = Mathf.Clamp01((hitUntil[i] - ViewClock.Now) / HitFlashSeconds);
                     hitFlashes[i].Colour = flash;
                 }
 
@@ -398,7 +451,7 @@ namespace WordCraft.View
             }
 
             for (int i = markers; i < rallyMarkers.Count; i++) rallyMarkers[i].enabled = false;
-            effects.Animate();
+            Consequences(world);
             Remnants(world);
             Hover(world);
             Ghost(world);
@@ -412,14 +465,13 @@ namespace WordCraft.View
         /// reading of state the simulation already holds; nothing here is a
         /// second clock.
         /// </summary>
-        private void Pose(World world, int i, Entity e, BodyRig body)
+        private void Pose(World world, int i, Entity e, BodyRig body, bool fired)
         {
-            if (e.AttackCooldown > cooldowns[i])
+            if (fired)
             {
                 body.Attack();
                 Shoot(world, e, body);
             }
-            cooldowns[i] = e.AttackCooldown;
 
             if (e.TargetId >= 0 && e.TargetId < world.EntityCount && e.Target.Equals(e.Position))
             {
@@ -479,22 +531,91 @@ namespace WordCraft.View
             if (toward.sqrMagnitude > 1e-6f) to += toward.normalized * (victim.Footprint * 0.35f);
             Vector3 hit = Field.At(to, victim.ChestLift + (victim.Flying ? BodyRig.HoverHeight : 0f));
 
-            if (FactionData.Stats(faction, e.Role, e.Slot).Range > TracerReach)
+            // Asked of a copy marked alive, because the shot that killed it is
+            // still a shot at something the player could see. The copy is the
+            // view's own; the world is not written.
+            Entity target = world.GetEntity(e.TargetId);
+            target.Alive = true;
+            bool seen = Fog.Show(e.TargetId, target) == Fog.Seen;
+
+            if (Throws(FactionData.Stats(faction, e.Role, e.Slot)))
             {
                 // A tower kicks the instant it fires and has no wind-up to wait for.
                 float leave = e.Kind == EntityKind.Building ? 0f : BodyRig.StrikeDelay;
-                victim.Hit(effects.Shot(body.Muzzle, hit, colour, leave));
+                if (seen)
+                {
+                    effects.Shot(body.Muzzle, hit, colour, leave, e.TargetId);
+                }
+                else
+                {
+                    // Into the fog: the tracer leaves, and is gone before it
+                    // could say where the hidden body stands. No burst, no
+                    // ring, no landing.
+                    Vector3 muzzle = body.Muzzle;
+                    effects.Shot(muzzle, Vector3.Lerp(muzzle, hit, HiddenShotReach), colour, leave, -1, bursts: false);
+                }
             }
             else
             {
                 victim.Hit();
-                effects.Impact(hit, colour, BodyRig.LungeLandDelay);
+                if (seen) effects.Impact(hit, colour, BodyRig.LungeLandDelay);
             }
         }
 
-        /// <summary>돌 골렘 부족's combat unit leaves rubble where it falls (Sim/World.cs DropRemnant), so it dies into rubble.</summary>
-        private static bool Rubble(World world, Entity e) =>
-            e.Kind == EntityKind.Unit && e.Owner >= 0 && world.FactionOf(e.Owner) == Faction.RockGolems;
+        /// <summary>How far toward a target hidden in the fog its tracer is drawn before it vanishes.</summary>
+        private const float HiddenShotReach = 0.6f;
+
+        /// <summary>
+        /// What follows from this frame's shots, after all of them are fired:
+        /// hits flinch and flash now, or when the tracer at them lands; the dead
+        /// fall now, or when the last tracer at them lands; and the tracers that
+        /// landed this frame start their targets' flinch. Order matters only
+        /// here, and here it is fixed, whatever order the entity ids ran in.
+        /// </summary>
+        private void Consequences(World world)
+        {
+            float now = ViewClock.Now;
+            for (int h = 0; h < struck.Count; h++)
+            {
+                int id = struck[h];
+                if (effects.Incoming(id) > 0f)
+                {
+                    flashOnLanding[id] = true;
+                    continue;
+                }
+                hitUntil[id] = now + HitFlashSeconds;
+                bodies[id].Hit();
+            }
+
+            for (int d = 0; d < fallen.Count; d++)
+            {
+                int id = fallen[d];
+                Entity e = world.GetEntity(id);
+                BodyRig body = bodies[id];
+                float wait = effects.Incoming(id);
+                bool rubble = e.Owner >= 0 && Rubble(world.FactionOf(e.Owner), e.Kind);
+                body.Die(rubble, wait);
+                if (rubble)
+                {
+                    effects.Crumble(Field.At(runner.DrawPosition(id)), body.Size, UiStyle.Remnant,
+                                    body.transform.eulerAngles.y, wait);
+                }
+            }
+
+            effects.Animate();
+            IReadOnlyList<int> landed = effects.Landed;
+            for (int l = 0; l < landed.Count; l++)
+            {
+                int id = landed[l];
+                if (id < 0 || id >= bodies.Count) continue;
+                bodies[id].Hit();
+                if (flashOnLanding[id])
+                {
+                    flashOnLanding[id] = false;
+                    hitUntil[id] = now + HitFlashSeconds;
+                }
+            }
+        }
 
         /// <summary>Destroys the retiring bodies that have played out. Swap-removes, so nothing here allocates.</summary>
         private void Retire()
@@ -878,6 +999,7 @@ namespace WordCraft.View
                 skins.Add(SkinOf(e));
                 cooldowns.Add(e.AttackCooldown);
                 alive.Add(e.Alive);
+                flashOnLanding.Add(false);
                 hitUntil.Add(-1f);
                 rings.Add(Decal.Make(transform, "Ring", ring: true, UiStyle.Ring));
                 rangeRings.Add(Decal.Make(transform, "Range", ring: true, UiStyle.RangeRing));
