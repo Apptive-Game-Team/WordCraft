@@ -151,13 +151,6 @@ namespace WordCraft.View
         /// An empty name is a slot docs/FACTIONS.md marks as still a concept.
         /// Every entry of a slot is checked, not only the one the view draws, or
         /// a typo in the second unit of a role waits until that unit ships.
-        ///
-        /// A name with no sprite yet has to name a concept sheet instead:
-        /// .art/TECH-TREE-ART.md gives every docs/TECH-TREE.md 묶음 3 entry its
-        /// resource name before the PNG is imported, and the sheet
-        /// .art/concept/Name-v1.png is what proves the name is not a typo.
-        /// Unity runs with the project folder as its working directory, so the
-        /// repository root is one level up.
         /// </summary>
         private static void RosterArtResolves()
         {
@@ -170,8 +163,7 @@ namespace WordCraft.View
                     {
                         string file = FactionData.Sprite((Faction)f, (Role)r, s);
                         if (file.Length == 0) continue;
-                        Check(Resources.Load<Sprite>(MatchView.SpriteFolder + file) != null ||
-                              System.IO.File.Exists(System.IO.Path.Combine("..", ".art", "concept", file + "-v1.png")),
+                        Check(Resources.Load<Sprite>(MatchView.SpriteFolder + file) != null,
                             "roster sprite missing: " + (Faction)f + "." + (Role)r + "[" + s + "] -> " + file);
                     }
                 }
