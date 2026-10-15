@@ -81,7 +81,7 @@ namespace WordCraft.View
 
         /// <summary>A slowed body's vine ring: its radius as a share of the footprint, and its band, in cells.</summary>
         private const float SlowRingRatio = 0.42f;
-        private const float SlowRingBand = 0.16f;
+        private const float SlowRingBand = 0.22f;
 
         /// <summary>The vine ring's alpha with the whole slow ahead of it and with none left: it fades as the slow runs out.</summary>
         private const float SlowAlphaFull = 0.95f;
@@ -106,11 +106,19 @@ namespace WordCraft.View
         /// <summary>Seconds between one hop of a chain and the next, so the jump is seen to travel.</summary>
         private const float ChainHopDelay = 0.07f;
 
-        private static readonly Color SlowColour = BodyPalette.TreeSpirits.LeafLight;
+        /// <summary>
+        /// The vine ring: 세계수's lightest leaf, lifted a fifth toward white so
+        /// it still reads on the dark ground under a 지옥불 hull.
+        /// </summary>
+        private static readonly Color SlowColour = BodyPalette.Lighter(BodyPalette.TreeSpirits.LeafLight, 0.2f);
         private static readonly Color HealRing = WithAlpha(UiStyle.Good, 0.8f);
 
         /// <summary>A heal's motes: the Good green lifted toward white, so they read on grass, which is green too.</summary>
         private static readonly Color HealMote = BodyPalette.Lighter(UiStyle.Good, 0.45f);
+
+        /// <summary>A heal's ring, and its alpha: stronger than a building's dust, so a heal reads at 64 px.</summary>
+        private static readonly Color HealDust = BodyPalette.Lighter(UiStyle.Good, 0.3f);
+        private const float HealDustAlpha = 0.95f;
         private static readonly Color AuraRing = WithAlpha(UiStyle.Accent, 0.7f);
         private static readonly Color BurnAuraRing = WithAlpha(BodyPalette.Hellfire.Ember, 0.35f);
 
@@ -500,8 +508,7 @@ namespace WordCraft.View
                     rangeRings[i].Visible = false;
                     hitFlashes[i].Visible = false;
                     shadows[i].Visible = false;
-                    slowRings[i].Visible = false;
-                    auraRings[i].Visible = false;
+                    StatusesOff(i, body);
                     Overlays(i);
                     continue;
                 }
@@ -513,8 +520,7 @@ namespace WordCraft.View
                     rangeRings[i].Visible = false;
                     hitFlashes[i].Visible = false;
                     shadows[i].Visible = false;
-                    slowRings[i].Visible = false;
-                    auraRings[i].Visible = false;
+                    StatusesOff(i, body);
                     Overlays(i);
                     continue;
                 }
@@ -530,8 +536,7 @@ namespace WordCraft.View
                     rings[i].Visible = false;
                     rangeRings[i].Visible = false;
                     hitFlashes[i].Visible = false;
-                    slowRings[i].Visible = false;
-                    auraRings[i].Visible = false;
+                    StatusesOff(i, body);
                     Overlays(i);
                     continue;
                 }
@@ -755,10 +760,14 @@ namespace WordCraft.View
             body.Burning(e.BurnTicksLeft > 0);
             body.Slowed(e.SlowTicksLeft > 0);
 
-            Decal vine = slowRings[i];
-            vine.Visible = e.SlowTicksLeft > 0;
-            if (vine.Visible)
+            if (e.SlowTicksLeft <= 0)
             {
+                Off(slowRings, i);
+            }
+            else
+            {
+                Decal vine = Lazy(slowRings, i, "Slow", SlowColour);
+                vine.Visible = true;
                 vine.Set(p, body.Footprint * SlowRingRatio, SlowRingBand);
                 float left = Mathf.Clamp01(e.SlowTicksLeft / (float)Mathf.Max(vitals[i].SlowPeak, 1));
                 vine.Colour = WithAlpha(SlowColour, Mathf.Lerp(SlowAlphaLast, SlowAlphaFull, left));
@@ -777,10 +786,9 @@ namespace WordCraft.View
                 Vector3 chest = body.Chest;
                 effects.Mend(chest + side, HealMote);
                 effects.Mend(chest - side + Vector3.up * 0.2f, HealMote);
-                effects.Dust(Field.At(p), body.Footprint * 0.5f, BodyPalette.Lighter(UiStyle.Good, 0.25f));
+                effects.Dust(Field.At(p), body.Footprint * 0.5f, HealDust, 0f, HealDustAlpha);
             }
 
-            Decal reach = auraRings[i];
             int aura = auraRows[i];
             bool ringed = false;
             if (aura >= 0)
@@ -790,12 +798,39 @@ namespace WordCraft.View
                 if ((picked || burns) && AuraWorks(world, e, row))
                 {
                     float radius = world.AbilityRadius(e.Owner, row);
+                    Decal reach = Lazy(auraRings, i, "Aura", AuraRing);
+                    reach.Visible = true;
                     reach.Set(p, radius, burns ? BurnAuraBand : radius * AuraBandRatio);
                     reach.Colour = burns ? BurnAuraRing : row.Kind == AbilityKind.HealAura ? HealRing : AuraRing;
                     ringed = true;
                 }
             }
-            reach.Visible = ringed;
+            if (!ringed) Off(auraRings, i);
+        }
+
+        /// <summary>A body that is dead, unseen or only remembered: no status marks and no embers.</summary>
+        private void StatusesOff(int i, BodyRig body)
+        {
+            Off(slowRings, i);
+            Off(auraRings, i);
+            body.Burning(false);
+            body.Slowed(false);
+        }
+
+        /// <summary>
+        /// The status ring of entity <paramref name="i"/> in this list, made the
+        /// first time it is wanted: most entities are never slowed and hold no
+        /// aura, so a node or a wall of buildings carries none.
+        /// </summary>
+        private Decal Lazy(List<Decal> list, int i, string name, Color colour)
+        {
+            if (list[i] == null) list[i] = Decal.Make(transform, name, ring: true, colour);
+            return list[i];
+        }
+
+        private static void Off(List<Decal> list, int i)
+        {
+            if (list[i] != null) list[i].Visible = false;
         }
 
         /// <summary>
@@ -1388,8 +1423,8 @@ namespace WordCraft.View
                 vitals.Add(VitalOf(e, default));
                 dropped.Add(false);
                 auraRows.Add(AuraRow(world, e));
-                slowRings.Add(Decal.Make(transform, "Slow", ring: true, SlowColour));
-                auraRings.Add(Decal.Make(transform, "Aura", ring: true, AuraRing));
+                slowRings.Add(null); // made on first use: Lazy
+                auraRings.Add(null);
                 rings.Add(Decal.Make(transform, "Ring", ring: true, UiStyle.Ring));
                 rangeRings.Add(Decal.Make(transform, "Range", ring: true, UiStyle.RangeRing));
                 hitFlashes.Add(Decal.Make(transform, "HitFlash", ring: true, UiStyle.Danger));
