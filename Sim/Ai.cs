@@ -95,25 +95,32 @@ namespace WordCraft.Sim
 
             // 3. Production. Every finished building of its own with an empty queue
             //    gets an order, so nothing that can build anything sits still.
+            //    What it may order there is the roster's answer: a building makes
+            //    what is on its list and nothing else, so workers come out of the
+            //    building that makes workers and fighters out of the ones that
+            //    make fighters.
             int workers = AiCountWorkers(peer);
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity b = entities[i];
                 if (!b.Alive || b.Owner != peer || b.Kind != EntityKind.Building) continue;
                 if (b.BuildTicksLeft > 0 || b.QueueCount > 0) continue;
-                if (b.Role != Role.Base && b.Role != Role.Production) continue;
 
-                Role want = workers < AiWorkerTarget ? Role.Worker : AiFighterRole(peer);
-                if (want == Role.None) continue; // nothing this faction fields to ask for
-                // ponytail: entry 0 of whatever it wants. It cannot see that
-                // 차원 유랑종 melee holds three entries or that 지옥불 fields a
-                // second ranged unit, so half the roster is invisible to it. Give
-                // it a choice of entry the day the ladder is meant to be a plan
-                // rather than a fallback.
-                AiIssue(peer, CommandType.Produce, i, FixVec2.Zero, Command.RosterArg(want, 0));
-                // Counted as made the moment it is queued, or two buildings both
-                // order the last worker and the economy overshoots by a building.
-                if (want == Role.Worker) workers++;
+                if (workers < AiWorkerTarget)
+                {
+                    // Workers first, the way it always was: until the target is
+                    // met a building that cannot make one waits rather than
+                    // spending the bank the next worker needs.
+                    if (!CanProduce(peer, i, Role.Worker, 0)) continue;
+                    AiIssue(peer, CommandType.Produce, i, FixVec2.Zero, Command.RosterArg(Role.Worker, 0));
+                    // Counted as made the moment it is queued, or two buildings both
+                    // order the last worker and the economy overshoots by a building.
+                    workers++;
+                    continue;
+                }
+
+                if (!AiFighterAt(peer, i, out Role role, out int slot)) continue; // nothing here it can make
+                AiIssue(peer, CommandType.Produce, i, FixVec2.Zero, Command.RosterArg(role, slot));
             }
 
             // 4. Supply before the cap, not after it. A cap reached is production
@@ -175,49 +182,61 @@ namespace WordCraft.Sim
         }
 
         /// <summary>
-        /// The combat roles the ladder will settle for, in the order it prefers
-        /// them. Melee first, which is what it always asked for; the two behind it
-        /// are what it falls back to. Static data rather than state: never written,
-        /// walked by index, and the same list on every peer.
+        /// The combat roles the ladder looks through, in the order it prefers them
+        /// when two entries open at the same tier. Melee first, which is what it
+        /// always asked for. Static data rather than state: never written, walked
+        /// by index, and the same list on every peer.
         /// </summary>
         private static readonly Role[] AiFighterRoles = { Role.Melee, Role.Ranged, Role.Signature };
 
         /// <summary>
-        /// The fighter this peer asks for: the first role on that list its own
-        /// faction actually fields. Role.None when it fields none of them, which
-        /// no roster does today and which the caller reads as nothing to order.
+        /// The fighter this building should make: of every entry of the three
+        /// combat roles that this building can make right now and the bank can
+        /// pay for, the one at the highest tier. Ties go to the first in
+        /// AiFighterRoles order and then the lowest entry. False when there is
+        /// none, which the caller reads as nothing to order here.
         ///
-        /// The whole of the fallback, and it exists because 인간 마법 문명 leaves
-        /// its melee row blank on purpose. Asking for Melee by name was harmless
-        /// only while Produce would build a nameless body anyway; now that it
-        /// refuses one, a 인간 opponent that kept asking would make workers and
-        /// nothing else and never fight at all.
+        /// CanProduce is the test, the same gate TryQueueUnit takes, so the ladder
+        /// cannot come to a different opinion about what this building makes than
+        /// the command layer that answers it. That is what keeps it off 인간's
+        /// blank melee row and off 지옥불 자손, which no building makes, and what
+        /// sends it to build the 기술 건물 before it can ask for anything behind
+        /// one: step 6 below builds it, and the think after it stands, this asks
+        /// for the tier-3 entry it opened.
         ///
-        /// FactionData.Has is the test, which is the same gate TryQueueUnit takes
-        /// and the same one CanBuild takes, so the ladder cannot come to a
-        /// different opinion about what its faction owns than the command layer
-        /// that answers it.
+        /// The bank is asked here, unlike anywhere else on the ladder, because the
+        /// highest tier is also where the most expensive bodies are. 지옥불 군단장
+        /// is 220 and the opponent rarely banks that much: asking for it regardless
+        /// would be refused every think, and the production building would sit
+        /// idle for the rest of the match.
         /// </summary>
-        // ponytail: still a fixed order with no memory. It asks for melee wherever
-        // melee exists and never weighs one role against what it is walking into,
-        // because there is nothing here that looks at the opponent at all. Give it
-        // a reason to prefer one the day the ladder is meant to be a plan.
-        //
-        // ponytail: Has is only half of what the command layer asks. A faction can
-        // field an entry that no building makes — 지옥불's ranged entry 0 is 군단장의
-        // 자손, which is spawned — and this would ask for it and be refused. Melee
-        // first is what keeps it away from that one today, so the order of the list
-        // above is load-bearing rather than a preference: reversing it makes the
-        // 지옥불 opponent stop fighting, which MirrorMatchesAreReproducible and
-        // TheAiPlaysARealGame both catch. Ask Production(...).Produced here as well
-        // the day the order is meant to be free.
-        private Role AiFighterRole(int peer)
+        // ponytail: still a fixed preference with no memory. It wants the highest
+        // tier it can afford and never weighs one body against what it is walking
+        // into, because there is nothing here that looks at the opponent at all.
+        // Give it a reason to prefer one the day the ladder is meant to be a plan.
+        private bool AiFighterAt(int peer, int buildingId, out Role role, out int slot)
         {
-            for (int i = 0; i < AiFighterRoles.Length; i++)
+            Faction faction = factions[peer];
+            role = Role.None;
+            slot = 0;
+            int bestTier = 0;
+            for (int r = 0; r < AiFighterRoles.Length; r++)
             {
-                if (FactionData.Has(factions[peer], AiFighterRoles[i])) return AiFighterRoles[i];
+                Role candidate = AiFighterRoles[r];
+                int count = FactionData.SlotCount(faction, candidate);
+                for (int s = 0; s < count; s++)
+                {
+                    if (!CanProduce(peer, buildingId, candidate, s)) continue;
+                    if (FactionData.Production(faction, candidate, s).Resources > resources[peer]) continue;
+                    int tier = FactionData.Tier(faction, candidate, s);
+                    // Strictly higher, so the first entry at a tier keeps it.
+                    if (tier <= bestTier) continue;
+                    bestTier = tier;
+                    role = candidate;
+                    slot = s;
+                }
             }
-            return Role.None;
+            return role != Role.None;
         }
 
         /// <summary>
@@ -351,10 +370,10 @@ namespace WordCraft.Sim
 
                         var at = new FixVec2(from.X + Fix.FromInt(dx), from.Y + Fix.FromInt(dy));
                         if (!CanBuild(peer, role, at)) continue;
-                        // ponytail: entry 0 of whatever it wants, for the same reason
-                        // its production ladder is. It cannot see that 인간 fields
-                        // three defense buildings. Give it a choice of entry the day
-                        // the ladder is meant to be a plan rather than a fallback.
+                        // ponytail: entry 0 of whatever it wants. It cannot see that
+                        // 인간 fields three defense buildings. Give it a choice of
+                        // entry the day the ladder is meant to be a plan rather than
+                        // a fallback.
                         AiIssue(peer, CommandType.Build, -1, at, Command.RosterArg(role, 0));
                         return;
                     }
