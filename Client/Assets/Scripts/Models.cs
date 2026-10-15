@@ -2570,6 +2570,8 @@ namespace WordCraft.View
         // a fissure), and there the concept wins.
         // ------------------------------------------------------------------
 
+        // A building stands unturned and the default camera (yaw 0) looks from -z,
+        // so every builder, old and new, puts its door, window, flag or mouth on -z.
         private static void Building(Blueprint b, Faction faction, Role role, int slot)
         {
             Dress(b, faction);
@@ -2685,14 +2687,14 @@ namespace WordCraft.View
                     hull.Prism(Vector3.zero, 7, 0.55f, 0.4f, 1.9f, bark);
                     hull.Taper(Point(-0.25f, 1.6f, 0f), Pair(0.3f, 0.3f), Pair(0.14f, 0.14f), 0.7f, bark, Turn(0f, 0f, 35f));
                     hull.Taper(Point(0.25f, 1.6f, 0f), Pair(0.3f, 0.3f), Pair(0.14f, 0.14f), 0.7f, bark, Turn(0f, 0f, -35f));
-                    hull.Ball(Point(0.12f, 0.9f, 0.43f), Extent(0.12f, 0.14f, 0.08f), BodyPalette.TreeSpirits.Bolt);
+                    hull.Ball(Point(0.12f, 0.9f, -0.43f), Extent(0.12f, 0.14f, 0.08f), BodyPalette.TreeSpirits.Bolt);
                     Band(b, hull, Point(0f, 0.45f, 0f), 7, 0.545f, 0.16f);
                     hull = b.Tier(Point(0f, 1.85f, 0f));
                     hull.Ball(Point(0f, 2.5f, 0f), Extent(1.25f, 0.72f, 1.15f), leaf);
                     hull.Ball(Point(-0.85f, 2.25f, 0.25f), Extent(0.7f, 0.5f, 0.65f), leafShade);
                     hull.Ball(Point(0.85f, 2.3f, -0.1f), Extent(0.75f, 0.5f, 0.7f), leaf);
                     hull.Ball(Point(0.15f, 2.92f, 0.1f), Extent(0.75f, 0.42f, 0.7f), leafLight);
-                    if (b.HasAccent) hull.Ball(Point(0.35f, 2.62f, 1.08f), 0.24f, b.Accent);
+                    if (b.HasAccent) hull.Ball(Point(0.35f, 2.62f, -1.08f), 0.24f, b.Accent);
                     break;
 
                 case Role.Production:
@@ -2950,7 +2952,7 @@ namespace WordCraft.View
 
                 case Role.Production:
                     // 악마 산란장: a low wide shell sac, ridged, split along the bottom.
-                    hull.Box(Point(0f, 0.18f, 1.08f), Extent(1.5f, 0.06f, 0.2f), ember);
+                    hull.Box(Point(0f, 0.18f, -1.08f), Extent(1.5f, 0.06f, 0.2f), ember);
                     Band(b, hull, Point(0f, 0.04f, 0f), 9, 1.33f, 0.1f, 1.15f / 1.3f);
                     hull = b.Tier(Vector3.zero);
                     hull.Dome(Vector3.zero, Extent(1.3f, 1.1f, 1.15f), 9, 3, shell);
@@ -2964,15 +2966,15 @@ namespace WordCraft.View
                 case Role.Defense:
                     // 용암 아가리: a half-buried shell jaw. The upper jaw is the crown and gapes when it fires.
                     hull.Taper(Vector3.zero, Pair(1.6f, 1.5f), Pair(1.0f, 0.9f), 0.9f, charcoal);
-                    hull.Box(Point(0f, 0.92f, 0.1f), Extent(0.85f, 0.06f, 0.6f), ember);
+                    hull.Box(Point(0f, 0.92f, -0.1f), Extent(0.85f, 0.06f, 0.6f), ember);
                     Strap(b, hull, Point(0f, 0.45f, 0f), Extent(1.34f, 0.1f, 1.24f));
 
-                    b.Crown.Origin = Point(0f, 0.9f, -0.4f);
-                    b.Crown.Taper(Point(0f, 0.9f, 0f), Pair(1.1f, 1.0f), Pair(0.2f, 0.3f), 1.7f, shell, Quaternion.identity, Pair(0f, -0.3f));
-                    b.Crown.Taper(Point(0f, 1.4f, -0.05f), Pair(0.6f, 0.5f), Pair(0.1f, 0.15f), 1.0f, facet, Quaternion.identity, Pair(0f, -0.2f));
+                    b.Crown.Origin = Point(0f, 0.9f, 0.4f);
+                    b.Crown.Taper(Point(0f, 0.9f, 0f), Pair(1.1f, 1.0f), Pair(0.2f, 0.3f), 1.7f, shell, Quaternion.identity, Pair(0f, 0.3f));
+                    b.Crown.Taper(Point(0f, 1.4f, 0.05f), Pair(0.6f, 0.5f), Pair(0.1f, 0.15f), 1.0f, facet, Quaternion.identity, Pair(0f, 0.2f));
                     for (int i = 0; i < 4; i++)
-                        b.Crown.Prism(Point(-0.33f + i * 0.22f, 0.92f, 0.42f), 4, 0f, 0.07f, 0.17f, ash, Turn(180f, 0f, 0f));
-                    b.CrownKick = -24f;
+                        b.Crown.Prism(Point(-0.33f + i * 0.22f, 0.92f, -0.42f), 4, 0f, 0.07f, 0.17f, ash, Turn(180f, 0f, 0f));
+                    b.CrownKick = 24f;
                     break;
 
                 case Role.Supply:
@@ -3178,7 +3180,7 @@ namespace WordCraft.View
                     hull.Prism(Point(0f, 2.18f, 0f), 6, 0.1f, 0f, 0.25f, bronze);
                     hull = b.Tier(Point(0f, 1.35f, 0f));
                     hull.Ball(Point(0f, 1.35f, 0f), 0.52f, pale);
-                    hull.Ball(Point(-0.2f, 1.55f, 0.32f), Extent(0.1f, 0.13f, 0.08f), foam);
+                    hull.Ball(Point(-0.2f, 1.55f, -0.32f), Extent(0.1f, 0.13f, 0.08f), foam);
                     break;
                 }
 
@@ -3332,33 +3334,33 @@ namespace WordCraft.View
             {
                 case Role.Base:
                     // 이끼바위 성소: boulders leaning in on each other, a shaded recess in front that does not go through.
-                    hull.Lump(Point(0f, 0.9f, -0.75f), Extent(0.95f, 0.95f, 0.7f), tan, Turn(10f, 40f, 0f));
-                    hull.Box(Point(0f, 0.55f, 0.62f), Extent(0.7f, 0.9f, 0.1f), mossDeep);
-                    hull = b.Tier(Point(-0.9f, 0f, 0.05f));
-                    hull.Lump(Point(-0.9f, 0.9f, 0.05f), Extent(0.9f, 1.0f, 0.85f), tan, Turn(0f, 20f, 15f));
-                    hull.Dome(Point(-0.9f, 1.65f, 0.05f), Extent(0.55f, 0.18f, 0.5f), 8, 2, moss);
-                    hull = b.Tier(Point(0.9f, 0f, -0.1f));
-                    hull.Lump(Point(0.9f, 0.85f, -0.1f), Extent(0.85f, 0.95f, 0.85f), stone, Turn(0f, -10f, -15f));
-                    hull.Dome(Point(0.85f, 1.6f, -0.1f), Extent(0.5f, 0.16f, 0.5f), 8, 2, mossDeep);
-                    hull = b.Tier(Point(0f, 1.65f, -0.15f));
-                    hull.Lump(Point(0f, 2.3f, -0.15f), Extent(0.75f, 0.65f, 0.7f), stone, Turn(0f, 15f, 5f));
-                    hull.Dome(Point(0f, 2.82f, -0.15f), Extent(0.5f, 0.2f, 0.45f), 8, 2, moss);
+                    hull.Lump(Point(0f, 0.9f, 0.75f), Extent(0.95f, 0.95f, 0.7f), tan, Turn(-10f, -40f, 0f));
+                    hull.Box(Point(0f, 0.55f, -0.62f), Extent(0.7f, 0.9f, 0.1f), mossDeep);
+                    hull = b.Tier(Point(-0.9f, 0f, -0.05f));
+                    hull.Lump(Point(-0.9f, 0.9f, -0.05f), Extent(0.9f, 1.0f, 0.85f), tan, Turn(0f, -20f, 15f));
+                    hull.Dome(Point(-0.9f, 1.65f, -0.05f), Extent(0.55f, 0.18f, 0.5f), 8, 2, moss);
+                    hull = b.Tier(Point(0.9f, 0f, 0.1f));
+                    hull.Lump(Point(0.9f, 0.85f, 0.1f), Extent(0.85f, 0.95f, 0.85f), stone, Turn(0f, 10f, -15f));
+                    hull.Dome(Point(0.85f, 1.6f, 0.1f), Extent(0.5f, 0.16f, 0.5f), 8, 2, mossDeep);
+                    hull = b.Tier(Point(0f, 1.65f, 0.15f));
+                    hull.Lump(Point(0f, 2.3f, 0.15f), Extent(0.75f, 0.65f, 0.7f), stone, Turn(0f, -15f, 5f));
+                    hull.Dome(Point(0f, 2.82f, 0.15f), Extent(0.5f, 0.2f, 0.45f), 8, 2, moss);
                     if (b.HasAccent)
                     {
-                        hull.Box(Point(0f, 1.55f, 0.66f), Extent(0.6f, 0.06f, 0.08f), shade);
-                        hull.Box(Point(0f, 1.2f, 0.65f), Extent(0.46f, 0.66f, 0.04f), b.Accent);
+                        hull.Box(Point(0f, 1.55f, -0.66f), Extent(0.6f, 0.06f, 0.08f), shade);
+                        hull.Box(Point(0f, 1.2f, -0.65f), Extent(0.46f, 0.66f, 0.04f), b.Accent);
                     }
                     break;
 
                 case Role.Production:
                     // 각성 바위: an egg of stone, cracked with warm light, moss on its crown. Waking, not assembling.
-                    hull.Lump(Point(-0.7f, 0.25f, 0.3f), Extent(0.35f, 0.3f, 0.35f), stone, Turn(0f, 30f, 0f));
-                    hull.Lump(Point(0.7f, 0.25f, 0.25f), Extent(0.32f, 0.28f, 0.32f), shade, Turn(0f, -20f, 0f));
+                    hull.Lump(Point(-0.7f, 0.25f, -0.3f), Extent(0.35f, 0.3f, 0.35f), stone, Turn(0f, -30f, 0f));
+                    hull.Lump(Point(0.7f, 0.25f, -0.25f), Extent(0.32f, 0.28f, 0.32f), shade, Turn(0f, 20f, 0f));
                     hull = b.Tier(Vector3.zero);
                     hull.Ball(Point(0f, 1.15f, 0f), Extent(0.95f, 1.15f, 0.9f), tan);
-                    hull.Box(Point(0.1f, 1.2f, 0.88f), Extent(0.05f, 0.9f, 0.06f), BodyPalette.RockGolems.Waking, Turn(0f, 0f, 20f));
-                    hull.Box(Point(-0.25f, 0.9f, 0.85f), Extent(0.05f, 0.5f, 0.06f), BodyPalette.RockGolems.Waking, Turn(0f, 0f, -35f));
-                    hull.Box(Point(0.3f, 1.6f, 0.76f), Extent(0.05f, 0.4f, 0.06f), BodyPalette.RockGolems.Waking, Turn(0f, 0f, -20f));
+                    hull.Box(Point(0.1f, 1.2f, -0.88f), Extent(0.05f, 0.9f, 0.06f), BodyPalette.RockGolems.Waking, Turn(0f, 0f, 20f));
+                    hull.Box(Point(-0.25f, 0.9f, -0.85f), Extent(0.05f, 0.5f, 0.06f), BodyPalette.RockGolems.Waking, Turn(0f, 0f, -35f));
+                    hull.Box(Point(0.3f, 1.6f, -0.76f), Extent(0.05f, 0.4f, 0.06f), BodyPalette.RockGolems.Waking, Turn(0f, 0f, -20f));
                     Band(b, hull, Point(0f, 0.5f, 0f), 10, 0.84f, 0.1f, 0.9f / 0.95f);
                     hull = b.Tier(Point(0f, 2.0f, 0f));
                     hull.Dome(Point(0f, 2.05f, 0f), Extent(0.6f, 0.22f, 0.55f), 9, 2, moss);
@@ -3384,7 +3386,7 @@ namespace WordCraft.View
                     hull.Lump(Point(0.5f, 0.1f, 0.25f), Extent(0.14f, 0.12f, 0.14f), stone, Turn(0f, 20f, 0f));
                     hull = b.Tier(Vector3.zero);
                     hull.Taper(Vector3.zero, Pair(0.55f, 0.3f), Pair(0.42f, 0.24f), 1.85f, tan, Turn(0f, 0f, 4f));
-                    hull.Box(Point(-0.1f, 1.1f, 0.14f), Extent(0.04f, 0.5f, 0.03f), shade, Turn(0f, 0f, 14f));
+                    hull.Box(Point(-0.1f, 1.1f, -0.14f), Extent(0.04f, 0.5f, 0.03f), shade, Turn(0f, 0f, 14f));
                     hull.Dome(Point(-0.14f, 1.83f, 0f), Extent(0.16f, 0.06f, 0.14f), 6, 1, moss);
                     Strap(b, hull, Point(-0.035f, 0.5f, 0f), Extent(0.54f, 0.1f, 0.31f), Turn(0f, 0f, 4f));
                     break;
@@ -3401,7 +3403,7 @@ namespace WordCraft.View
                     hull = b.Tier(Point(0f, 1.1f, 0f));
                     hull.Box(Point(0f, 1.25f, 0f), Extent(1.55f, 0.3f, 0.75f), tan, Turn(0f, 0f, 3f));
                     hull.Dome(Point(0f, 1.38f, 0f), Extent(0.65f, 0.14f, 0.32f), 9, 2, moss);
-                    hull.Box(Point(0.55f, 1.15f, 0.38f), Extent(0.3f, 0.35f, 0.03f), mossDeep);
+                    hull.Box(Point(0.55f, 1.15f, -0.38f), Extent(0.3f, 0.35f, 0.03f), mossDeep);
                     break;
 
                 default:
@@ -3523,7 +3525,7 @@ namespace WordCraft.View
                     hull.Dome(Vector3.zero, Extent(1.35f, 1.85f, 1.15f), 10, 3, lilac);
                     hull.Prism(Vector3.zero, 10, 1.3f, 1.05f, 0.5f, teal);
                     for (int i = 0; i < 3; i++)
-                        hull.Prism(Point(-0.5f + i * 0.5f, 0.45f, 0.75f), 4, 0.18f, 0f, 0.4f + (i % 2) * 0.2f, tealLight);
+                        hull.Prism(Point(-0.5f + i * 0.5f, 0.45f, -0.75f), 4, 0.18f, 0f, 0.4f + (i % 2) * 0.2f, tealLight);
                     Band(b, hull, Point(0f, 0.04f, 0f), 10, 1.72f, 0.1f);
                     // The plates close in two rounds, every other one first.
                     Solids first = b.Tier(Vector3.zero), second = b.Tier(Vector3.zero);
@@ -3542,9 +3544,9 @@ namespace WordCraft.View
                     // 통로: two plates parting on a vertical crack; through it, the other side.
                     hull.Box(Point(0f, 1.15f, 0f), Extent(0.36f, 2.1f, 0.12f), teal);
                     hull.Box(Point(0f, 1.95f, 0f), Extent(0.3f, 0.6f, 0.13f), lilac);
-                    hull.Prism(Point(-0.06f, 0.15f, 0.02f), 4, 0.1f, 0f, 0.35f, tealLight);
-                    hull.Prism(Point(0.08f, 0.15f, 0.02f), 4, 0.08f, 0f, 0.25f, tealLight);
-                    hull.Lump(Point(-0.95f, 0.18f, 0.4f), Extent(0.28f, 0.2f, 0.25f), deep, Turn(0f, 20f, 0f));
+                    hull.Prism(Point(-0.06f, 0.15f, -0.02f), 4, 0.1f, 0f, 0.35f, tealLight);
+                    hull.Prism(Point(0.08f, 0.15f, -0.02f), 4, 0.08f, 0f, 0.25f, tealLight);
+                    hull.Lump(Point(-0.95f, 0.18f, -0.4f), Extent(0.28f, 0.2f, 0.25f), deep, Turn(0f, -20f, 0f));
                     b.Tier(Point(-0.48f, 0f, 0f)).Taper(Point(-0.48f, 0f, 0f), Pair(0.8f, 0.55f), Pair(0.35f, 0.3f), 2.65f, shell, Turn(0f, 0f, 8f));
                     hull = b.Tier(Point(0.48f, 0f, 0f));
                     hull.Taper(Point(0.48f, 0f, 0f), Pair(0.8f, 0.55f), Pair(0.35f, 0.3f), 2.5f, shade, Turn(0f, 0f, -8f));
@@ -3573,7 +3575,7 @@ namespace WordCraft.View
                 case Role.Supply:
                 {
                     // 계류 닻: a hooked claw driven into the ground, a sliver of the interior at its root.
-                    hull.Box(Point(0.05f, 0.25f, 0.1f), Extent(0.12f, 0.36f, 0.3f), teal);
+                    hull.Box(Point(0.05f, 0.25f, -0.1f), Extent(0.12f, 0.36f, 0.3f), teal);
                     Strap(b, hull, Point(0f, 0.18f, -0.4f), Extent(0.68f, 0.1f, 0.5f));
                     hull = b.Tier(Point(0f, 0f, -0.4f));
                     Vector3 position = Point(0f, 0f, -0.4f);
@@ -3606,9 +3608,9 @@ namespace WordCraft.View
                         hull = i % 2 == 0 ? even : odd;
                         hull.Taper(foot, Pair(0.36f, 0.22f), Pair(0.12f, 0.1f), height, i % 2 == 0 ? shell : shade,
                                    Outward(yaw, -6f));
-                        if (i == 0 || i == 4)
+                        if (i == 3 || i == 5)
                             hull.Box(foot + Around(yaw) * 0.1f + Point(0f, height * 0.4f, 0f), Extent(0.14f, height * 0.35f, 0.05f),
-                                     i == 0 ? lilac : tealLight, Quaternion.Euler(0f, yaw, 0f));
+                                     i == 3 ? lilac : tealLight, Quaternion.Euler(0f, yaw, 0f));
                     }
 
                     b.Crown.Origin = Point(0f, 1.3f, 0f);
@@ -3758,7 +3760,7 @@ namespace WordCraft.View
                     hull.Ball(Point(0f, 3.3f, 0f), 0.13f, mana);
                     // On the foundation, not the posts: a banner planted with the
                     // first stone, rather than one that floats while posts go up.
-                    Pennant(b, b.Hull, Point(1.55f, 0f, 0.9f), 2.7f, wood);
+                    Pennant(b, b.Hull, Point(1.55f, 0f, -0.9f), 2.7f, wood);
                     break;
 
                 case Role.Production:
@@ -3766,17 +3768,17 @@ namespace WordCraft.View
                     // Three courses of 0.6, the seams under the stoneMid string courses,
                     // so a site goes up a course at a time.
                     hull.Box(Point(0f, 0.3f, 0f), Extent(1.4f, 0.6f, 1.4f), stone);
-                    hull.Box(Point(0f, 0.36f, 0.71f), Extent(0.42f, 0.72f, 0.04f), wood);
-                    hull.Box(Point(0f, 0.74f, 0.715f), Extent(0.5f, 0.06f, 0.04f), bronze);
+                    hull.Box(Point(0f, 0.36f, -0.71f), Extent(0.42f, 0.72f, 0.04f), wood);
+                    hull.Box(Point(0f, 0.74f, -0.715f), Extent(0.5f, 0.06f, 0.04f), bronze);
                     hull = b.Tier(Point(0f, 0.58f, 0f));
                     hull.Box(Point(0f, 0.6f, 0f), Extent(1.44f, 0.05f, 1.44f), stoneMid);
                     hull.Box(Point(0f, 0.9f, 0f), Extent(1.4f, 0.6f, 1.4f), stone);
-                    if (b.HasAccent) hull.Box(Point(0.45f, 1.0f, 0.715f), Extent(0.24f, 0.5f, 0.03f), b.Accent);
+                    if (b.HasAccent) hull.Box(Point(0.45f, 1.0f, -0.715f), Extent(0.24f, 0.5f, 0.03f), b.Accent);
                     hull = b.Tier(Point(0f, 1.18f, 0f));
                     hull.Box(Point(0f, 1.2f, 0f), Extent(1.44f, 0.05f, 1.44f), stoneMid);
                     hull.Box(Point(0f, 1.5f, 0f), Extent(1.4f, 0.6f, 1.4f), stone);
                     hull.Box(Point(0f, 1.85f, 0f), Extent(1.56f, 0.12f, 1.56f), stoneMid);
-                    hull.Box(Point(0f, 1.42f, 0.71f), Extent(0.22f, 0.32f, 0.03f), mana);
+                    hull.Box(Point(0f, 1.42f, -0.71f), Extent(0.22f, 0.32f, 0.03f), mana);
                     Strap(b, hull, Point(0f, 1.7f, 0f), Extent(1.46f, 0.12f, 1.46f));
                     hull = b.Tier(Point(0f, 1.91f, 0f));
                     hull.Prism(Point(0f, 1.91f, 0f), 4, 1.0f, 0f, 0.95f, steel);
@@ -3785,11 +3787,11 @@ namespace WordCraft.View
                 case Role.Supply:
                     // 마법 탑, 인구: the same masonry as a round silo under a steel cone. Shorter than the 생산 tower.
                     hull.Prism(Vector3.zero, 8, 0.72f, 0.704f, 0.45f, stone);
-                    hull.Box(Point(0f, 0.3f, 0.66f), Extent(0.3f, 0.6f, 0.04f), wood);
+                    hull.Box(Point(0f, 0.3f, -0.66f), Extent(0.3f, 0.6f, 0.04f), wood);
                     hull = b.Tier(Point(0f, 0.43f, 0f));
                     hull.Prism(Point(0f, 0.45f, 0f), 8, 0.71f, 0.71f, 0.05f, stoneMid);
                     hull.Prism(Point(0f, 0.45f, 0f), 8, 0.704f, 0.68f, 0.7f, stone);
-                    hull.Box(Point(0f, 0.85f, 0.665f), Extent(0.16f, 0.22f, 0.03f), mana);
+                    hull.Box(Point(0f, 0.85f, -0.665f), Extent(0.16f, 0.22f, 0.03f), mana);
                     Band(b, hull, Point(0f, 0.9f, 0f), 8, 0.71f, 0.1f);
                     hull = b.Tier(Point(0f, 1.15f, 0f));
                     hull.Prism(Point(0f, 1.15f, 0f), 8, 0.8f, 0.8f, 0.08f, bronze);
@@ -3824,13 +3826,13 @@ namespace WordCraft.View
                 case Role.Tech:
                     // 공방: a long stone workshop framed in timber, a slanted steel roof, a chimney.
                     hull.Box(Point(0f, 0.5f, 0f), Extent(1.5f, 1.0f, 1.1f), stone);
-                    hull.Box(Point(-0.72f, 0.5f, 0.56f), Extent(0.08f, 1.0f, 0.04f), wood);
-                    hull.Box(Point(0.72f, 0.5f, 0.56f), Extent(0.08f, 1.0f, 0.04f), wood);
-                    hull.Box(Point(0f, 1.0f, 0.56f), Extent(1.5f, 0.08f, 0.04f), wood);
-                    hull.Box(Point(0f, 0.38f, 0.56f), Extent(0.5f, 0.5f, 0.03f), stoneDark);
-                    hull.Box(Point(0f, 0.38f, 0.57f), Extent(0.16f, 0.16f, 0.03f), mana);
+                    hull.Box(Point(-0.72f, 0.5f, -0.56f), Extent(0.08f, 1.0f, 0.04f), wood);
+                    hull.Box(Point(0.72f, 0.5f, -0.56f), Extent(0.08f, 1.0f, 0.04f), wood);
+                    hull.Box(Point(0f, 1.0f, -0.56f), Extent(1.5f, 0.08f, 0.04f), wood);
+                    hull.Box(Point(0f, 0.38f, -0.56f), Extent(0.5f, 0.5f, 0.03f), stoneDark);
+                    hull.Box(Point(0f, 0.38f, -0.57f), Extent(0.16f, 0.16f, 0.03f), mana);
                     Strap(b, hull, Point(0f, 0.08f, 0f), Extent(1.54f, 0.12f, 1.14f));
-                    if (b.HasAccent) hull.Box(Point(-0.45f, 0.55f, 0.575f), Extent(0.22f, 0.42f, 0.03f), b.Accent);
+                    if (b.HasAccent) hull.Box(Point(-0.45f, 0.55f, -0.575f), Extent(0.22f, 0.42f, 0.03f), b.Accent);
                     hull = b.Tier(Point(0f, 1.0f, 0f));
                     hull.Taper(Point(0f, 1.0f, 0f), Pair(1.66f, 1.26f), Pair(1.66f, 0.06f), 0.6f, steel);
                     hull.Box(Point(0.5f, 1.5f, -0.25f), Extent(0.22f, 0.8f, 0.22f), stoneMid);
