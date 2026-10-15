@@ -18,8 +18,11 @@ namespace WordCraft.Sim
 
         /// <summary>
         /// No body walks faster than this, whatever multiplies its speed. Keeps
-        /// every speed under one cell, which WalkableStep and the separation
-        /// push clamp both assume.
+        /// every step under one cell, which WalkableStep assumes. The separation
+        /// push is clamped to half the hashed e.Speed, not to this speed, so a
+        /// slowed body is pushed as far as it would be unslowed: the push answers
+        /// how much ground two footprints overlap, not how fast the body walks,
+        /// and half of any roster speed is already under half a cell.
         /// </summary>
         public static readonly Fix MaxMoveSpeed = Fix.Ratio(3, 4);
 
