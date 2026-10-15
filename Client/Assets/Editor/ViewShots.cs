@@ -458,14 +458,18 @@ namespace WordCraft.View
         /// <summary>Construction progress a build strip shows <paramref name="since"/> seconds after it starts.</summary>
         private static float BuildAt(float since) => Mathf.Clamp01(since / BuildSeconds);
 
-        /// <summary>Every defense entry: the buildings that turn, fire and kick.</summary>
+        /// <summary>
+        /// Every defense entry that has a weapon: the buildings that turn, fire
+        /// and kick. A defense with no weapon (잠듦의 고리) never fires, so a
+        /// strip of firing would show a motion it does not have.
+        /// </summary>
         private static List<(Role Role, int Slot)> Towers(Faction faction)
         {
             var list = new List<(Role Role, int Slot)>();
             int slots = FactionData.SlotCount(faction, Role.Defense);
             for (int slot = 0; slot < slots; slot++)
             {
-                if (FactionData.Has(faction, Role.Defense, slot)) list.Add((Role.Defense, slot));
+                if (FactionData.Has(faction, Role.Defense, slot) && FactionData.Stats(faction, Role.Defense, slot).HasWeapon) list.Add((Role.Defense, slot));
             }
             return list;
         }
