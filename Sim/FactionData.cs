@@ -681,9 +681,13 @@ namespace WordCraft.Sim
         /// 36 is docs/TECH-TREE.md 묶음 5: statuses and auras. A 용암 갑각 악마
         /// burns enemy ground bodies within 2 cells for 2 every 20 ticks, so a
         /// peer on 35 and a peer on 36 disagree about a 잎날 정령's hp on the
-        /// first twentieth tick the two stand that close.
+        /// first twentieth tick the two stand that close. 37 is docs/TECH-TREE.md
+        /// 묶음 6: the five 멸종 슬라임 lapse 600 ticks after they arrive, and
+        /// 찌릿쥐, 멸종한 화염 슬라임 and 멸종한 번개 슬라임 burst. A peer on 36
+        /// keeps a 멸종한 화염 슬라임 on the field that a peer on 37 removed on
+        /// its 600th tick, and the population the two count differs by one.
         /// </summary>
-        public const uint ContentVersion = 36;
+        public const uint ContentVersion = 37;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
