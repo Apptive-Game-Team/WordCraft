@@ -127,6 +127,7 @@ namespace WordCraft.Replay
                 RosterNumbersChecks.Check();
                 RosterChecks.Check();
                 ResearchMenuChecks.Check();
+                ConstructionChecks.Check();
                 SimAssemblyIsClean();
             }
             catch (Exception ex)
