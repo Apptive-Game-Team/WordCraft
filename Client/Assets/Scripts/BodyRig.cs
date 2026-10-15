@@ -104,7 +104,19 @@ namespace WordCraft.View
         public const float SwellSeconds = 0.15f;
 
         private const float TurnDegreesPerSecond = 540f;
-        private const float AttackSeconds = 0.36f;
+        private const float AttackSeconds = 0.35f;
+
+        /// <summary>The share of a strike spent winding up before it goes: a pull back and a crouch.</summary>
+        private const float WindupShare = 0.25f;
+
+        /// <summary>
+        /// Seconds from <see cref="Attack"/> to the moment a strike goes: the end
+        /// of the wind-up. A shot leaves the muzzle here, not when Attack is called.
+        /// </summary>
+        public const float StrikeDelay = AttackSeconds * WindupShare;
+
+        /// <summary>Seconds from <see cref="Attack"/> to a lunge's furthest reach, where a melee blow lands.</summary>
+        public const float LungeLandDelay = AttackSeconds * 0.55f;
         private const float HitSeconds = 0.3f;
         private const float DeathSeconds = 0.6f;
         private const float SpawnSeconds = 0.3f;
@@ -249,7 +261,13 @@ namespace WordCraft.View
             this.design = design;
             seed = (variation & 1023) * 0.618f;
             tempo = 0.85f + 0.3f * Mathf.Repeat(seed * 1.37f, 1f);
-            side = (variation & 1) == 0 ? 1f : -1f;
+            // Which way a death tips: away from the arm when there is one, so
+            // the arm goes up with the body rather than folding under it and
+            // showing below the silhouette as a part come loose; otherwise by
+            // id, so a crowd does not all fall the same way.
+            side = design.Arm != null && Mathf.Abs(design.ArmPivot.x) > 1e-3f
+                ? Mathf.Sign(design.ArmPivot.x)
+                : (variation & 1) == 0 ? 1f : -1f;
             targetYaw = transform.eulerAngles.y;
             lastYaw = targetYaw;
             aimYaw = targetYaw;
@@ -355,7 +373,15 @@ namespace WordCraft.View
 
         public void Attack() => attackStarted = ViewClock.Now;
 
-        public void Hit() => hitStarted = ViewClock.Now;
+        /// <summary>
+        /// The hit reaction, now or after <paramref name="delay"/> seconds: a
+        /// ranged hit is drawn when the tracer arrives, not when the simulation
+        /// dealt the damage.
+        /// </summary>
+        public void Hit(float delay = 0f) => hitStarted = ViewClock.Now + delay;
+
+        /// <summary>The body's height in world units: what a death's chunks are sized from.</summary>
+        public float Size => design != null ? design.Size : 1f;
 
         /// <summary>
         /// The body comes up out of the ground: scaled from nothing at its feet to
@@ -606,7 +632,7 @@ namespace WordCraft.View
                 case Gait.Walk:
                     // Highest as the legs pass under the hip, lowest at full stride.
                     offset.y = Mathf.Abs(Mathf.Cos(phase)) * 0.04f * size * gait;
-                    scale = new Vector3(1f - breath * 0.008f * idle, 1f + breath * 0.018f * idle, 1f - breath * 0.008f * idle);
+                    scale = new Vector3(1f - breath * 0.015f * idle, 1f + breath * 0.035f * idle, 1f - breath * 0.015f * idle);
                     pitch += 5f * gait;
                     break;
                 case Gait.Hop:
@@ -620,10 +646,12 @@ namespace WordCraft.View
                     float land = Mathf.Exp(-u * 11f) * 0.2f * gait;
                     float flight = air * 0.08f * gait;
 
-                    // Standing, a slime settles under its own weight now and
-                    // then: a short press and release every second and a half.
-                    float press = Mathf.Max(0f, Mathf.Sin(now * 4.2f * tempo + seed));
-                    press = press * press * press * 0.09f * idle;
+                    // Standing, a slime settles under its own weight and gathers
+                    // itself again, once every second and a half: a slow press
+                    // with a quick release, large enough to differ between two
+                    // frames an eighth of a second apart.
+                    float press = 0.5f + 0.5f * Mathf.Sin(now * 4.2f * tempo + seed);
+                    press = press * press * 0.11f * idle;
 
                     float squash = land + press - flight;
                     scale = new Vector3(1f + squash * 0.6f, 1f - squash, 1f + squash * 0.6f);
@@ -631,7 +659,9 @@ namespace WordCraft.View
                     break;
                 }
                 case Gait.Float:
-                    offset.y = (0.05f + Mathf.Sin(now * 1.8f * tempo + seed) * 0.04f) * size;
+                    // Plus or minus 0.06 world units whatever the body's size, so a
+                    // small spirit drifts as visibly as a large one.
+                    offset.y = 0.05f * size + Mathf.Sin(now * 1.8f * tempo + seed) * 0.06f;
                     pitch += 12f * gait;
                     roll += Mathf.Sin(now * 1.3f * tempo + seed * 2f) * 4f * (0.4f + idle * 0.6f);
                     twist = Mathf.Sin(now * 0.9f * tempo + seed) * 5f * idle;
@@ -647,40 +677,50 @@ namespace WordCraft.View
             float attack = Phase(attackStarted, AttackSeconds, now);
             if (attack >= 0f)
             {
+                // The wind-up: in over the first quarter, held at its peak, out
+                // over the next tenth while the strike goes.
+                float wind = attack < WindupShare
+                    ? Smooth(attack / WindupShare)
+                    : 1f - Smooth(Mathf.Clamp01((attack - WindupShare) / 0.12f));
                 switch (design.Strike)
                 {
                     case Strike.Lunge:
                     {
-                        // Draw back, then throw the whole body forward past where
-                        // it stood and bring the arm down through the swing.
-                        float draw = Bump(attack, 0f, 0.38f);
-                        float thrust = Bump(attack, 0.28f, 0.9f);
-                        offset.z += (-0.1f * draw + 0.3f * thrust) * size;
-                        offset.y += 0.05f * thrust * size;
-                        pitch += -12f * draw + 20f * thrust;
-                        armPitch = -60f * draw + 95f * thrust;
+                        // Crouch and pull back for the wind-up, then throw the
+                        // whole body forward past where it stood and bring the
+                        // arm down through a swing of about 160 degrees.
+                        float thrust = Bump(attack, WindupShare, 0.9f);
+                        offset.z += (-0.12f * wind + 0.32f * thrust) * size;
+                        offset.y += (-0.06f * wind + 0.04f * thrust) * size;
+                        pitch += -14f * wind + 22f * thrust;
+                        armPitch = -70f * wind + 90f * thrust;
+                        scale = Vector3.Scale(scale, new Vector3(1f + 0.05f * wind, 1f - 0.1f * wind, 1f + 0.05f * wind));
                         break;
                     }
                     case Strike.Recoil:
                     {
-                        // A kick back at the instant of the shot and an easing
-                        // return: the opposite of a lunge's direction and of its
-                        // timing, so the two never read alike.
-                        float kick = 1f - attack;
+                        // Brace for the wind-up — crouched, leaning in, the arm
+                        // levelled — then a kick back at the shot and an easing
+                        // return. The arm travels about 70 degrees from the brace
+                        // to the top of the kick. The opposite direction and the
+                        // opposite timing of a lunge, so the two never read alike.
+                        float kick = attack < WindupShare ? 0f : 1f - (attack - WindupShare) / (1f - WindupShare);
                         kick = kick * kick * kick;
-                        offset.z -= 0.14f * kick * size;
-                        pitch -= 16f * kick;
-                        armPitch = -24f * kick;
-                        scale = Vector3.Scale(scale, new Vector3(1f + 0.06f * kick, 1f - 0.08f * kick, 1f - 0.04f * kick));
+                        offset.z += (0.04f * wind - 0.15f * kick) * size;
+                        offset.y -= 0.05f * wind * size;
+                        pitch += 7f * wind - 12f * kick;
+                        armPitch = 30f * wind - 40f * kick;
+                        scale = Vector3.Scale(scale, new Vector3(1f + 0.05f * wind + 0.06f * kick, 1f - 0.1f * wind - 0.08f * kick, 1f + 0.05f * wind - 0.04f * kick));
                         break;
                     }
                     case Strike.Pulse:
                     {
-                        // Swell, then contract below rest, then settle: the
-                        // whole body is the weapon.
-                        float swell = 0.26f * Bump(attack, 0f, 0.5f) - 0.12f * Bump(attack, 0.45f, 0.95f);
+                        // Gather in for the wind-up, swell past rest, contract
+                        // below it, settle: the whole body is the weapon.
+                        float swell = 0.28f * Bump(attack, WindupShare, 0.65f) - 0.12f * Bump(attack, 0.6f, 0.95f);
+                        scale = Vector3.Scale(scale, new Vector3(1f + 0.1f * wind, 1f - 0.14f * wind, 1f + 0.1f * wind));
                         scale *= 1f + swell;
-                        offset.y += 0.06f * Bump(attack, 0f, 0.5f) * size;
+                        offset.y += 0.06f * Bump(attack, WindupShare, 0.65f) * size;
                         break;
                     }
                 }
@@ -806,9 +846,20 @@ namespace WordCraft.View
 
         /// <summary>
         /// The death, from <see cref="Die"/> to switched off. Four ways down,
-        /// each the body's own: a walker crumples sideways and sinks, a flyer
-        /// drops out of the air first, a building shudders and settles into the
-        /// ground, and a golem becomes the rubble it leaves.
+        /// each the body's own: a walker tips over and collapses with its legs
+        /// splayed, a flyer drops out of the air and bounces once, a building
+        /// shudders and settles into the ground, and a golem breaks into the
+        /// rubble it leaves (the chunks are Effects.Crumble; the body itself only
+        /// shrinks away under them).
+        ///
+        /// Opaque for the first sixty percent: a see-through body is a ghost, not
+        /// a fall, and the see-through material also drops the shadow. Only the
+        /// last forty percent fades.
+        ///
+        /// The root carries the tip and the sink, so legs hanging from it go down
+        /// with the body. The hull carries the collapse, so the non-uniform scale
+        /// is applied under the rotation and nothing riding the hull is sheared
+        /// off it.
         /// </summary>
         private void Fall(float now)
         {
@@ -822,23 +873,25 @@ namespace WordCraft.View
 
             float size = design.Building ? Mathf.Max(design.Top - 0.25f, 0.5f) : design.Size;
             Vector3 offset = Vector3.zero;
-            Vector3 scale = Vector3.one;
+            Vector3 squash = Vector3.one;
+            float sag = 0f;
             float pitch = 0f, roll = 0f;
-            float opacity = 1f;
+            float splay = 0f;
+            float opacity = 1f - Mathf.Clamp01((t - 0.6f) / 0.4f);
             float washed = 0f;
             Color toward = BodyPalette.HitFlash;
 
             if (rubble)
             {
-                // Grey first, then down into a heap: wide and low, the shape of
-                // the pile that is already lying on the cell.
-                float crumble = EaseOut(Mathf.Clamp01(t / 0.55f));
-                washed = 0.7f * Mathf.Clamp01(t / 0.3f);
+                // Rubble-coloured at once, then shrunk away over the first
+                // three quarters while the chunks Effects.Crumble throws fall
+                // around it, so one frame holds both the body and its pieces.
+                float crumble = Smooth(Mathf.Clamp01(t / 0.45f));
+                washed = 0.8f * Mathf.Clamp01(t / 0.1f);
                 toward = UiStyle.Remnant;
-                scale = new Vector3(1f + 0.35f * crumble, 1f - 0.72f * crumble, 1f + 0.35f * crumble);
-                offset.y = -0.12f * size * t * t;
-                roll = side * 8f * crumble;
-                opacity = 1f - Mathf.Clamp01((t - 0.6f) / 0.4f);
+                float left = Mathf.Max(1f - crumble, 0.02f);
+                squash = new Vector3(left * (1f + 0.3f * crumble), left * left, left * (1f + 0.3f * crumble));
+                opacity = 1f;
             }
             else if (design.Building)
             {
@@ -846,45 +899,75 @@ namespace WordCraft.View
                 offset.x = Mathf.Sin(now * 57f + seed) * shake;
                 offset.z = Mathf.Sin(now * 43f + seed * 3f) * shake * 0.6f;
                 offset.y = -t * t * size * 0.6f;
-                scale.y = 1f - 0.3f * t;
+                squash.y = 1f - 0.3f * t;
                 roll = Mathf.Sin(now * 31f + seed) * 2.5f * (1f - t);
-                opacity = 1f - Mathf.Clamp01((t - 0.35f) / 0.65f);
             }
             else if (design.Flying)
             {
-                // Out of the air in the first half, accelerating, nose down and
-                // rolling; then into the ground like anything else.
-                float drop = Mathf.Clamp01(t / 0.45f);
-                float sink = Mathf.Clamp01((t - 0.45f) / 0.55f);
-                offset.y = -HoverHeight * drop * drop - sink * sink * size * 0.6f;
+                // Out of the air, nose down and rolling; one bounce off the
+                // ground with a squash on each landing; then down into it.
+                const float land = 0.3f, rest = 0.5f;
+                float drop = Mathf.Clamp01(t / land);
+                float bounce = t > land && t < rest ? (t - land) / (rest - land) : -1f;
+                float sink = Mathf.Clamp01((t - rest) / (1f - rest));
+                offset.y = -HoverHeight * drop * drop - sink * sink * size * 0.55f;
+                if (bounce >= 0f) offset.y += 4f * bounce * (1f - bounce) * 0.2f * size;
+                float impact = Mathf.Max(Spike(t, land, 0.07f), Spike(t, rest, 0.07f));
                 pitch = 25f * drop;
-                roll = side * 55f * drop;
-                scale = new Vector3(1f + 0.2f * sink, 1f - 0.45f * sink, 1f + 0.2f * sink);
-                opacity = 1f - sink;
+                roll = side * 50f * drop;
+                float collapse = Smooth(sink);
+                squash = new Vector3(1f + 0.2f * impact + 0.15f * collapse, 1f - 0.3f * impact - 0.4f * collapse,
+                                     1f + 0.2f * impact + 0.15f * collapse);
+                splay = drop;
             }
             else
             {
-                // Topple to one side and buckle in the first part, then sink and
-                // fade. The topple is what reads as dying at a distance; the sink
-                // is what says the body will not get up again.
-                float buckle = EaseOut(Mathf.Clamp01(t / 0.4f));
-                float sink = Mathf.Clamp01((t - 0.2f) / 0.8f);
-                roll = side * 38f * buckle;
-                pitch = -12f * buckle;
-                scale = new Vector3(1f + 0.15f * buckle, 1f - 0.4f * buckle, 1f + 0.15f * buckle);
-                offset.y = -sink * sink * size * 0.7f;
-                opacity = 1f - Mathf.Clamp01((t - 0.3f) / 0.7f);
+                // Over onto one side, the hull buckling down into the hip and
+                // the legs splaying out, then down into the ground. The tip is
+                // what reads as dying at a distance; the sink says it will not
+                // get up again.
+                float tip = EaseOut(Mathf.Clamp01(t / 0.35f));
+                float collapse = EaseOut(Mathf.Clamp01((t - 0.08f) / 0.4f));
+                float sink = Mathf.Clamp01((t - 0.35f) / 0.65f);
+                roll = side * 55f * tip;
+                pitch = -10f * tip;
+                squash = new Vector3(1f + 0.12f * collapse, 1f - 0.35f * collapse, 1f + 0.12f * collapse);
+                sag = -0.08f * size * collapse;
+                offset.y = -sink * sink * size * 0.55f;
+                splay = collapse;
             }
 
-            // The root turns, not the hull, so legs hanging from the root fall
-            // with the body instead of standing on where it was.
             transform.position = fellAt + offset;
             transform.rotation = fellFacing * Quaternion.Euler(pitch, 0f, roll);
-            transform.localScale = new Vector3(scale.x, scale.y * siteHeight, scale.z);
-            hull.localPosition = hullRest;
+            transform.localScale = new Vector3(1f, siteHeight, 1f);
+            hull.localPosition = hullRest + new Vector3(0f, sag, 0f);
             hull.localRotation = Quaternion.identity;
-            hull.localScale = Vector3.one;
+            hull.localScale = squash;
+            if (arm != null) arm.localRotation = Quaternion.identity;
+            Splay(splay);
             Look(toward, washed, opacity);
+        }
+
+        /// <summary>
+        /// Limbs going limp as a body dies: legs out to the sides, wings and fins
+        /// drooping, by <paramref name="amount"/> from 0 to 1.
+        /// </summary>
+        private void Splay(float amount)
+        {
+            if (limbLeft == null && limbRight == null) return;
+            float degrees = design.Limbs == LimbMotion.Flap ? 30f : 35f;
+            float angle = amount * degrees;
+            if (design.Limbs == LimbMotion.Flap) angle = -angle; // a wing droops the other way a leg splays
+            if (limbLeft != null)
+            {
+                limbLeft.localPosition = limbLeftRest;
+                limbLeft.localRotation = Quaternion.Euler(0f, 0f, -angle);
+            }
+            if (limbRight != null)
+            {
+                limbRight.localPosition = limbRightRest;
+                limbRight.localRotation = Quaternion.Euler(0f, 0f, angle);
+            }
         }
 
         /// <summary>A growth's old body: up a quarter and lightening, then gone.</summary>
@@ -948,6 +1031,9 @@ namespace WordCraft.View
             float local = (t - from) / (to - from);
             return Mathf.Sin(local * Mathf.PI);
         }
+
+        /// <summary>A short triangular spike, 1 at <paramref name="at"/> and 0 more than <paramref name="width"/> either side.</summary>
+        private static float Spike(float t, float at, float width) => Mathf.Max(0f, 1f - Mathf.Abs(t - at) / width);
 
         /// <summary>Slow, fast, slow: the smoothstep on 0..1.</summary>
         private static float Smooth(float t) => t * t * (3f - 2f * t);
