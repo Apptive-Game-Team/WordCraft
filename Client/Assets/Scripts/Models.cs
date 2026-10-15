@@ -858,9 +858,23 @@ namespace WordCraft.View
             switch (role)
             {
                 case Role.Worker: EmberDemon(b); break;
-                case Role.Melee: MagmaDemon(b); break;
-                case Role.Ranged: if (slot == 1) RiftWarden(b); else WarlordSpawn(b); break;
-                case Role.Signature: Warlord(b); break;
+                case Role.Melee:
+                    if (slot == 1) FireDemon(b);
+                    else if (slot == 2) RiftHound(b);
+                    else if (slot == 3) EmberWhelp(b);
+                    else MagmaDemon(b);
+                    break;
+                case Role.Ranged:
+                    if (slot == 1) RiftWarden(b);
+                    else if (slot == 2) LavaCatapult(b);
+                    else if (slot == 3) AshWingDemon(b);
+                    else WarlordSpawn(b);
+                    break;
+                case Role.Signature:
+                    if (slot == 1) BroodDemon(b);
+                    else if (slot == 2) MeteorInvoker(b);
+                    else Warlord(b);
+                    break;
                 default: GenericUnit(b, Faction.Hellfire); break;
             }
         }
@@ -1014,6 +1028,219 @@ namespace WordCraft.View
                 wing.Prism(Point(side * 0.45f, 0.38f, 0.1f), 4, 0.04f, 0f, 0.16f, facet, Turn(-60f, 0f, 0f));
                 wing.Prism(Point(side * 0.68f, 0.42f, -0.05f), 4, 0.035f, 0f, 0.14f, facet, Turn(-60f, 0f, 0f));
             }
+        }
+
+        /// <summary>화염 악마: a lean, hunched biped with a crest of shell blades swept back off its head and long claws. Slot 1.</summary>
+        private static void FireDemon(Blueprint b)
+        {
+            Color shell = BodyPalette.Hellfire.Shell, charcoal = BodyPalette.Hellfire.Charcoal;
+            Color facet = BodyPalette.Hellfire.Facet, ember = BodyPalette.Hellfire.Ember;
+            Solids hull = b.Hull;
+
+            Legs(b, 0.26f, 0.13f, 0.12f, charcoal, shell);
+            hull.Taper(Point(0f, 0.24f, -0.04f), Pair(0.34f, 0.26f), Pair(0.44f, 0.3f), 0.32f, shell, Turn(20f, 0f, 0f));
+            hull.Taper(Point(0f, 0.52f, 0.1f), Pair(0.2f, 0.2f), Pair(0.13f, 0.13f), 0.16f, charcoal, Turn(14f, 0f, 0f));
+            for (int k = 0; k < 4; k++)
+                hull.Prism(Point(0f, 0.66f - k * 0.07f, 0.1f - k * 0.12f), 4, 0.055f, 0f, 0.28f - k * 0.03f,
+                           k % 2 == 0 ? facet : shell, Turn(-62f, 0f, 0f));
+            hull.Prism(Point(-0.07f, 0.64f, 0.14f), 4, 0.035f, 0f, 0.2f, facet, Turn(-20f, 0f, 32f));
+            Slits(hull, Point(0f, 0.61f, 0.21f), 0.08f, 0.045f);
+            hull.Ball(Point(0f, 0.42f, 0.16f), 0.045f, ember);
+            hull.Taper(Point(-0.24f, 0.5f, 0.06f), Pair(0.08f, 0.08f), Pair(0.05f, 0.05f), 0.3f, charcoal, Turn(155f, 0f, -12f));
+            hull.Prism(Point(-0.26f, 0.22f, 0.2f), 4, 0.03f, 0f, 0.12f, facet, Turn(120f, 0f, 0f));
+            Strap(b, hull, Point(0f, 0.27f, -0.02f), Extent(0.36f, 0.05f, 0.28f));
+
+            b.Arm.Origin = Point(0.24f, 0.52f, 0.06f);
+            b.Arm.Taper(Point(0.24f, 0.5f, 0.06f), Pair(0.09f, 0.09f), Pair(0.06f, 0.06f), 0.3f, charcoal, Turn(155f, 0f, 12f));
+            for (int k = -1; k <= 1; k++)
+                b.Arm.Prism(Point(0.27f + k * 0.04f, 0.24f, 0.2f), 4, 0.025f, 0f, 0.14f, facet, Turn(120f, 0f, 0f));
+        }
+
+        /// <summary>균열 사냥개: a lean four-legged hound, long snout, uneven horns, a whip of a tail. Slot 2, the chaser.</summary>
+        private static void RiftHound(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Step;
+            b.Strike = Strike.Lunge;
+            Color shell = BodyPalette.Hellfire.Shell, charcoal = BodyPalette.Hellfire.Charcoal, facet = BodyPalette.Hellfire.Facet;
+            Solids hull = b.Hull;
+
+            hull.Taper(Point(0f, 0.4f, -0.34f), Pair(0.22f, 0.22f), Pair(0.3f, 0.3f), 0.56f, shell, Lying);
+            hull.Taper(Point(0f, 0.5f, 0.2f), Pair(0.22f, 0.2f), Pair(0.12f, 0.1f), 0.36f, charcoal, Turn(68f, 0f, 0f));
+            for (int k = 0; k < 3; k++)
+                hull.Prism(Point(0f, 0.53f, -0.24f + k * 0.16f), 4, 0.05f, 0f, 0.15f, k == 1 ? facet : charcoal, Turn(-35f, 0f, 0f));
+            hull.Prism(Point(-0.07f, 0.6f, 0.24f), 4, 0.04f, 0f, 0.26f, facet, Turn(-62f, 0f, 22f));
+            hull.Prism(Point(0.07f, 0.6f, 0.24f), 4, 0.035f, 0f, 0.14f, facet, Turn(-55f, 0f, -20f));
+            Slits(hull, Point(0f, 0.6f, 0.36f), 0.09f, 0.04f);
+            hull.Taper(Point(0f, 0.44f, -0.32f), Pair(0.07f, 0.07f), Pair(0.01f, 0.01f), 0.42f, charcoal, Turn(-125f, 0f, 0f));
+            Strap(b, hull, Point(0f, 0.46f, 0.18f), Extent(0.26f, 0.26f, 0.05f));
+
+            HoundLeg(b.LimbLeft, -0.13f, 0.14f, charcoal, facet);
+            HoundLeg(b.LimbLeft, 0.13f, -0.26f, charcoal, facet);
+            HoundLeg(b.LimbRight, 0.13f, 0.14f, charcoal, facet);
+            HoundLeg(b.LimbRight, -0.13f, -0.26f, charcoal, facet);
+
+            b.Arm.Origin = Point(0f, 0.44f, 0.3f);
+            b.Arm.Taper(Point(0f, 0.42f, 0.28f), Pair(0.14f, 0.05f), Pair(0.07f, 0.03f), 0.24f, shell, Lying);
+            b.Arm.Prism(Point(-0.04f, 0.44f, 0.46f), 4, 0.02f, 0f, 0.06f, BodyPalette.Hellfire.Ash);
+            b.Arm.Prism(Point(0.04f, 0.44f, 0.46f), 4, 0.02f, 0f, 0.06f, BodyPalette.Hellfire.Ash);
+        }
+
+        private static void HoundLeg(Solids part, float x, float z, Color leg, Color claw)
+        {
+            part.Taper(Point(x, 0f, z), Pair(0.08f, 0.1f), Pair(0.1f, 0.12f), 0.4f, leg);
+            part.Prism(Point(x, 0.02f, z + 0.05f), 4, 0.03f, 0f, 0.08f, claw, Turn(80f, 0f, 0f));
+        }
+
+        /// <summary>잿불 새끼: a small two-legged imp, two stub horns, a cracked chest with one small light. Hatched, not bought.</summary>
+        private static void EmberWhelp(Blueprint b)
+        {
+            Color shell = BodyPalette.Hellfire.Shell, charcoal = BodyPalette.Hellfire.Charcoal, facet = BodyPalette.Hellfire.Facet;
+            Solids hull = b.Hull;
+
+            Legs(b, 0.16f, 0.09f, 0.09f, charcoal, shell);
+            hull.Taper(Point(0f, 0.15f, 0f), Pair(0.26f, 0.2f), Pair(0.3f, 0.22f), 0.2f, shell);
+            hull.Box(Point(0f, 0.26f, 0.11f), Extent(0.03f, 0.12f, 0.02f), facet, Turn(0f, 0f, 20f));
+            hull.Ball(Point(0f, 0.27f, 0.115f), 0.03f, BodyPalette.Hellfire.Ember);
+            hull.Taper(Point(0f, 0.35f, 0.02f), Pair(0.2f, 0.18f), Pair(0.14f, 0.13f), 0.13f, charcoal);
+            hull.Prism(Point(-0.06f, 0.47f, 0.02f), 4, 0.03f, 0f, 0.1f, facet, Turn(-15f, 0f, 30f));
+            hull.Prism(Point(0.06f, 0.47f, 0.02f), 4, 0.03f, 0f, 0.1f, facet, Turn(-15f, 0f, -30f));
+            Slits(hull, Point(0f, 0.42f, 0.1f), 0.07f, 0.035f);
+            hull.Taper(Point(0f, 0.18f, -0.08f), Pair(0.05f, 0.05f), Pair(0.01f, 0.01f), 0.18f, charcoal, Turn(-130f, 0f, 0f));
+            hull.Taper(Point(-0.17f, 0.32f, 0.02f), Pair(0.06f, 0.06f), Pair(0.05f, 0.05f), 0.16f, charcoal, Turn(160f, 0f, 0f));
+            Strap(b, hull, Point(0f, 0.17f, 0f), Extent(0.28f, 0.04f, 0.22f));
+
+            b.Arm.Origin = Point(0.17f, 0.32f, 0.02f);
+            b.Arm.Taper(Point(0.17f, 0.32f, 0.02f), Pair(0.06f, 0.06f), Pair(0.05f, 0.05f), 0.16f, charcoal, Turn(160f, 0f, 0f));
+            b.Arm.Prism(Point(0.17f, 0.15f, 0.08f), 4, 0.025f, 0f, 0.08f, facet, Turn(130f, 0f, 0f));
+        }
+
+        /// <summary>용암 투석 악마: a low four-legged demon under a great curved launching shell, a lava pool in its back. Slot 2, the siege.</summary>
+        private static void LavaCatapult(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Step;
+            b.Strike = Strike.Recoil;
+            Color shell = BodyPalette.Hellfire.Shell, charcoal = BodyPalette.Hellfire.Charcoal;
+            Color facet = BodyPalette.Hellfire.Facet, ember = BodyPalette.Hellfire.Ember;
+            Solids hull = b.Hull;
+
+            hull.Taper(Point(0f, 0.26f, -0.34f), Pair(0.5f, 0.34f), Pair(0.42f, 0.3f), 0.62f, shell, Lying);
+            hull.Prism(Point(0f, 0.42f, -0.12f), 6, 0.17f, 0.15f, 0.06f, charcoal);
+            hull.Prism(Point(0f, 0.47f, -0.12f), 6, 0.12f, 0.12f, 0.02f, ember);
+            hull.Box(Point(-0.21f, 0.44f, -0.12f), Extent(0.12f, 0.05f, 0.5f), facet, Turn(0f, 0f, 18f));
+            hull.Box(Point(0.21f, 0.44f, -0.12f), Extent(0.12f, 0.05f, 0.5f), facet, Turn(0f, 0f, -18f));
+            hull.Taper(Point(0f, 0.24f, 0.24f), Pair(0.22f, 0.18f), Pair(0.13f, 0.1f), 0.2f, charcoal, Lying);
+            hull.Prism(Point(-0.07f, 0.32f, 0.36f), 4, 0.035f, 0f, 0.12f, facet, Turn(-50f, 0f, 25f));
+            hull.Prism(Point(0.07f, 0.32f, 0.36f), 4, 0.035f, 0f, 0.12f, facet, Turn(-50f, 0f, -25f));
+            Slits(hull, Point(0f, 0.28f, 0.43f), 0.09f, 0.04f);
+            Strap(b, hull, Point(0f, 0.27f, 0.24f), Extent(0.46f, 0.3f, 0.05f));
+
+            CrawlerLeg(b.LimbLeft, -0.22f, 0.14f, charcoal, facet);
+            CrawlerLeg(b.LimbLeft, 0.22f, -0.28f, charcoal, facet);
+            CrawlerLeg(b.LimbRight, 0.22f, 0.14f, charcoal, facet);
+            CrawlerLeg(b.LimbRight, -0.22f, -0.28f, charcoal, facet);
+
+            b.Arm.Origin = Point(0f, 0.44f, -0.34f);
+            Vector3 position = Point(0f, 0.42f, -0.34f);
+            float pitch = -12f, width = 0.26f;
+            for (int i = 0; i < 4; i++)
+            {
+                Quaternion rotation = Turn(pitch, 0f, 0f);
+                b.Arm.Taper(position, Pair(width, width * 0.6f), Pair(width * 0.86f, width * 0.52f), 0.22f, i % 2 == 0 ? shell : facet, rotation);
+                position += rotation * Point(0f, 0.2f, 0f);
+                pitch += 34f;
+                width *= 0.86f;
+            }
+            b.Arm.Prism(position + Point(0f, -0.04f, 0f), 6, 0.08f, 0.13f, 0.08f, charcoal);
+            b.Arm.Ball(position + Point(0f, 0.04f, 0f), 0.07f, ember);
+        }
+
+        /// <summary>재날개 악마: a slender demon on two long angular wings of ash membrane, a pointed head, claws hanging. Airborne, slot 3.</summary>
+        private static void AshWingDemon(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Flap;
+            b.LimbsRideHull = true;
+            b.Strike = Strike.Recoil;
+            Color shell = BodyPalette.Hellfire.Shell, charcoal = BodyPalette.Hellfire.Charcoal;
+            Color facet = BodyPalette.Hellfire.Facet, ash = BodyPalette.Hellfire.Ash;
+            Solids hull = b.Hull;
+
+            hull.Taper(Point(0f, 0.38f, -0.28f), Pair(0.12f, 0.12f), Pair(0.2f, 0.18f), 0.42f, shell, Lying);
+            hull.Taper(Point(0f, 0.42f, 0.12f), Pair(0.14f, 0.13f), Pair(0.02f, 0.03f), 0.3f, charcoal, Turn(78f, 0f, 0f));
+            hull.Prism(Point(-0.05f, 0.47f, 0.14f), 4, 0.03f, 0f, 0.16f, facet, Turn(-70f, 0f, 20f));
+            hull.Prism(Point(0.05f, 0.47f, 0.14f), 4, 0.03f, 0f, 0.16f, facet, Turn(-70f, 0f, -20f));
+            Slits(hull, Point(0f, 0.46f, 0.24f), 0.07f, 0.035f);
+            hull.Ball(Point(0f, 0.34f, 0.08f), 0.035f, BodyPalette.Hellfire.Ember);
+            hull.Taper(Point(0f, 0.37f, -0.26f), Pair(0.06f, 0.06f), Pair(0.01f, 0.01f), 0.5f, charcoal, Turn(-96f, 0f, 0f));
+            hull.Prism(Point(0f, 0.38f, -0.74f), 3, 0.06f, 0f, 0.12f, facet, Turn(-90f, 0f, 0f));
+            hull.Prism(Point(-0.06f, 0.3f, 0f), 4, 0.03f, 0f, 0.16f, charcoal, Turn(160f, 0f, 0f));
+            hull.Prism(Point(0.06f, 0.3f, 0f), 4, 0.03f, 0f, 0.16f, charcoal, Turn(160f, 0f, 0f));
+            Strap(b, hull, Point(0f, 0.38f, -0.02f), Extent(0.22f, 0.2f, 0.05f));
+
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Solids wing = side < 0 ? b.LimbLeft : b.LimbRight;
+                Wing(wing, side, Point(0.08f, 0.44f, 0f), 0.8f, 0.44f, 0.08f, -0.34f, 20f, ash);
+                wing.Prism(Point(side * 0.36f, 0.56f, 0.12f), 4, 0.035f, 0f, 0.14f, facet, Turn(-60f, 0f, 0f));
+                wing.Prism(Point(side * 0.66f, 0.66f, 0.02f), 4, 0.035f, 0f, 0.16f, facet, Turn(-60f, 0f, 0f));
+            }
+        }
+
+        /// <summary>산란 악마: a squat, wide-bellied demon on short thick legs, a cluster of egg sacs on its back, a glowing crack under the belly.</summary>
+        private static void BroodDemon(Blueprint b)
+        {
+            Color shell = BodyPalette.Hellfire.Shell, charcoal = BodyPalette.Hellfire.Charcoal;
+            Color facet = BodyPalette.Hellfire.Facet, ember = BodyPalette.Hellfire.Ember, ash = BodyPalette.Hellfire.Ash;
+            Solids hull = b.Hull;
+
+            Legs(b, 0.2f, 0.2f, 0.17f, charcoal, shell);
+            hull.Taper(Point(0f, 0.16f, 0f), Pair(0.6f, 0.46f), Pair(0.68f, 0.5f), 0.36f, shell);
+            hull.Box(Point(0f, 0.24f, 0.24f), Extent(0.32f, 0.04f, 0.04f), ember, Turn(0f, 0f, -6f));
+            hull.Taper(Point(0f, 0.52f, -0.04f), Pair(0.66f, 0.48f), Pair(0.4f, 0.3f), 0.2f, charcoal);
+            hull.Taper(Point(0f, 0.4f, 0.24f), Pair(0.24f, 0.18f), Pair(0.18f, 0.12f), 0.16f, charcoal, Turn(22f, 0f, 0f));
+            hull.Prism(Point(-0.08f, 0.54f, 0.3f), 4, 0.045f, 0f, 0.2f, facet, Turn(-20f, 0f, 38f));
+            hull.Prism(Point(0.08f, 0.54f, 0.3f), 4, 0.04f, 0f, 0.13f, facet, Turn(-20f, 0f, -30f));
+            Slits(hull, Point(0f, 0.49f, 0.36f), 0.09f, 0.045f);
+            Vector3[] eggs = { Point(-0.18f, 0.78f, -0.14f), Point(0.17f, 0.76f, -0.2f), Point(0f, 0.84f, 0.02f), Point(0.02f, 0.72f, -0.36f), Point(-0.24f, 0.66f, -0.36f) };
+            for (int i = 0; i < eggs.Length; i++)
+            {
+                hull.Ball(eggs[i], Extent(0.14f, 0.12f, 0.14f) * (i == 2 ? 1.15f : 1f), i % 2 == 0 ? ash : shell, Turn(0f, i * 40f, 0f), 1);
+                hull.Box(eggs[i] + Point(0f, 0.04f, i == 2 ? 0.14f : 0.12f), Extent(0.03f, 0.1f, 0.02f), i == 2 ? ember : facet, Turn(0f, 0f, 15f));
+            }
+            hull.Taper(Point(-0.38f, 0.44f, 0.06f), Pair(0.13f, 0.13f), Pair(0.15f, 0.15f), 0.24f, shell, Turn(170f, 0f, 0f));
+            Strap(b, hull, Point(0f, 0.2f, 0f), Extent(0.64f, 0.06f, 0.5f));
+
+            b.Arm.Origin = Point(0.38f, 0.46f, 0.04f);
+            b.Arm.Taper(Point(0.38f, 0.46f, 0.06f), Pair(0.13f, 0.13f), Pair(0.15f, 0.15f), 0.24f, shell, Turn(170f, 0f, 0f));
+            b.Arm.Box(Point(0.38f, 0.2f, 0.1f), Extent(0.17f, 0.12f, 0.17f), charcoal);
+        }
+
+        /// <summary>운석 술사: a tall thin figure in a triangular shell cape, one arm raised, a light in its chest. Weaponless caster.</summary>
+        private static void MeteorInvoker(Blueprint b)
+        {
+            b.Strike = Strike.Pulse;
+            Color shell = BodyPalette.Hellfire.Shell, charcoal = BodyPalette.Hellfire.Charcoal, facet = BodyPalette.Hellfire.Facet;
+            Solids hull = b.Hull;
+
+            Legs(b, 0.3f, 0.08f, 0.09f, charcoal, shell);
+            hull.Taper(Point(0f, 0.1f, -0.06f), Pair(0.56f, 0.34f), Pair(0.18f, 0.14f), 0.66f, shell);
+            hull.Prism(Point(-0.27f, 0.1f, -0.04f), 4, 0.05f, 0f, 0.24f, facet, Turn(0f, 0f, 20f));
+            hull.Prism(Point(0.27f, 0.1f, -0.04f), 4, 0.05f, 0f, 0.24f, facet, Turn(0f, 0f, -20f));
+            hull.Taper(Point(0f, 0.36f, 0.04f), Pair(0.2f, 0.14f), Pair(0.26f, 0.16f), 0.36f, charcoal);
+            hull.Ball(Point(0f, 0.58f, 0.12f), 0.045f, BodyPalette.Hellfire.Ember);
+            hull.Prism(Point(-0.14f, 0.72f, 0f), 4, 0.05f, 0f, 0.18f, facet, Turn(0f, 0f, 35f));
+            hull.Prism(Point(0.14f, 0.72f, 0f), 4, 0.05f, 0f, 0.14f, facet, Turn(0f, 0f, -35f));
+            hull.Taper(Point(0f, 0.74f, 0.02f), Pair(0.14f, 0.14f), Pair(0.09f, 0.09f), 0.15f, charcoal);
+            hull.Prism(Point(0.02f, 0.86f, 0f), 4, 0.05f, 0f, 0.36f, facet, Turn(-22f, 0f, -12f));
+            hull.Prism(Point(-0.04f, 0.86f, 0f), 4, 0.03f, 0f, 0.14f, shell, Turn(-10f, 0f, 30f));
+            Slits(hull, Point(0f, 0.81f, 0.09f), 0.06f, 0.035f);
+            hull.Taper(Point(-0.16f, 0.66f, 0.02f), Pair(0.06f, 0.06f), Pair(0.04f, 0.04f), 0.3f, charcoal, Turn(170f, 0f, 0f));
+            Strap(b, hull, Point(0f, 0.68f, 0.03f), Extent(0.26f, 0.05f, 0.18f));
+
+            b.Arm.Origin = Point(0.16f, 0.66f, 0.02f);
+            b.Arm.Taper(Point(0.16f, 0.64f, 0.02f), Pair(0.07f, 0.07f), Pair(0.05f, 0.05f), 0.34f, charcoal, Turn(0f, 0f, -18f));
+            for (int k = -1; k <= 1; k++)
+                b.Arm.Prism(Point(0.27f + k * 0.03f, 0.95f, 0.02f), 4, 0.02f, 0f, 0.09f, facet, Turn(0f, 0f, -18f - k * 20f));
+            b.Arm.Lump(Point(0.32f, 1.1f, 0.03f), Extent(0.08f, 0.07f, 0.08f), facet, Turn(20f, 30f, 0f));
         }
 
         // ---- 물 슬라임 ----
@@ -1583,6 +1810,7 @@ namespace WordCraft.View
             switch (faction)
             {
                 case Faction.TreeSpirits: return TreeSpiritExtraBuilding(b, role, slot);
+                case Faction.Hellfire: return HellfireExtraBuilding(b, role, slot);
                 default: return false;
             }
         }
@@ -1987,6 +2215,123 @@ namespace WordCraft.View
                 default:
                     GenericBuilding(b, Faction.Hellfire, Cells(role));
                     break;
+            }
+        }
+
+        private static bool HellfireExtraBuilding(Blueprint b, Role role, int slot)
+        {
+            Solids hull = b.Hull;
+            Color shell = BodyPalette.Hellfire.Shell, charcoal = BodyPalette.Hellfire.Charcoal;
+            Color facet = BodyPalette.Hellfire.Facet, ember = BodyPalette.Hellfire.Ember, ash = BodyPalette.Hellfire.Ash;
+
+            switch (role)
+            {
+                case Role.Production when slot == 1:
+                    // 큰 균열: an uneven shell arch round a dark opening rimmed in light, two split spires. Taller than 균열 제단.
+                    hull.Taper(Vector3.zero, Pair(2.5f, 1.5f), Pair(2.1f, 1.2f), 0.24f, charcoal);
+                    for (int i = 0; i < 6; i++)
+                    {
+                        float yaw = 30f + i * 60f;
+                        hull.Prism(Point(Around(yaw).x * 1.15f, 0.15f, Around(yaw).z * 0.7f), 4, 0.14f, 0f, 0.4f + (i % 3) * 0.12f,
+                                   i % 2 == 0 ? charcoal : facet, Outward(yaw, 24f));
+                    }
+                    Strap(b, hull, Point(0f, 0.08f, 0f), Extent(2.4f, 0.08f, 1.46f));
+                    hull = b.Tier(Point(0f, 0.2f, 0f));
+                    hull.Box(Point(0f, 1.15f, 0.04f), Extent(1.1f, 1.95f, 0.1f), ember);
+                    hull.Box(Point(0f, 1.02f, -0.05f), Extent(0.66f, 1.5f, 0.08f), charcoal);
+                    hull = b.Tier(Point(-0.8f, 0.2f, 0f));
+                    hull.Taper(Point(-0.8f, 0.2f, 0f), Pair(0.8f, 0.9f), Pair(0.46f, 0.56f), 1.8f, shell, Turn(0f, 0f, -6f));
+                    hull.Taper(Point(-0.61f, 1.98f, 0f), Pair(0.46f, 0.56f), Pair(0.06f, 0.1f), 1.3f, facet, Turn(0f, 0f, 16f));
+                    hull.Prism(Point(-1.1f, 0.9f, 0f), 4, 0.1f, 0f, 0.5f, facet, Turn(0f, 0f, 50f));
+                    hull = b.Tier(Point(0.8f, 0.2f, 0f));
+                    hull.Taper(Point(0.8f, 0.2f, 0f), Pair(0.72f, 0.8f), Pair(0.42f, 0.5f), 1.45f, charcoal, Turn(0f, 0f, 9f));
+                    hull.Taper(Point(0.57f, 1.63f, 0f), Pair(0.42f, 0.5f), Pair(0.08f, 0.12f), 0.95f, shell, Turn(0f, 0f, -32f));
+                    hull.Prism(Point(1.1f, 0.7f, 0f), 4, 0.09f, 0f, 0.42f, facet, Turn(0f, 0f, -55f));
+                    hull = b.Tier(Point(-0.4f, 1.9f, 0f));
+                    hull.Taper(Point(-0.45f, 1.85f, 0f), Pair(0.36f, 0.5f), Pair(0.2f, 0.3f), 0.95f, shell, Turn(0f, 0f, -64f));
+                    return true;
+
+                case Role.Defense when slot == 1:
+                    // 집결의 횃불: a shell stake ringed with spikes, a flaring cup on top with an ember tongue. Unarmed: no crown.
+                    hull.Taper(Vector3.zero, Pair(1.0f, 0.9f), Pair(0.6f, 0.55f), 0.4f, charcoal);
+                    for (int i = 0; i < 3; i++)
+                    {
+                        float yaw = 30f + i * 120f;
+                        hull.Taper(Around(yaw) * 0.45f, Pair(0.3f, 0.36f), Pair(0.06f, 0.08f), 0.7f, facet, Outward(yaw, 28f));
+                    }
+                    Strap(b, hull, Point(0f, 0.3f, 0f), Extent(0.7f, 0.08f, 0.64f));
+                    hull = b.Tier(Point(0f, 0.4f, 0f));
+                    hull.Taper(Point(0f, 0.4f, 0f), Pair(0.34f, 0.3f), Pair(0.22f, 0.2f), 1.6f, shell, Turn(0f, 0f, 3f));
+                    for (int i = 0; i < 4; i++)
+                    {
+                        float yaw = 45f + i * 90f;
+                        hull.Prism(Around(yaw) * 0.12f + Point(0f, 1.0f + (i % 2) * 0.3f, 0f), 4, 0.05f, 0f, 0.22f, i % 2 == 0 ? facet : charcoal, Outward(yaw, 60f));
+                    }
+                    hull = b.Tier(Point(0f, 1.95f, 0f));
+                    hull.Taper(Point(0.08f, 1.95f, 0f), Pair(0.28f, 0.26f), Pair(0.72f, 0.66f), 0.38f, charcoal);
+                    for (int i = 0; i < 5; i++)
+                    {
+                        float yaw = i * 72f;
+                        hull.Prism(Around(yaw) * 0.32f + Point(0.08f, 2.28f, 0f), 4, 0.07f, 0f, 0.28f + (i % 2) * 0.12f, i % 2 == 0 ? facet : shell, Outward(yaw, 25f));
+                    }
+                    hull.Prism(Point(0.08f, 2.3f, 0f), 6, 0.2f, 0f, 0.5f, ember);
+                    return true;
+
+                case Role.Defense when slot == 2:
+                {
+                    // 화염 첨탑: a tall narrow shell spire on three splayed feet, the top aims at the sky with one lit slit.
+                    for (int i = 0; i < 3; i++)
+                    {
+                        float yaw = 30f + i * 120f;
+                        hull.Taper(Around(yaw) * 0.5f, Pair(0.5f, 0.45f), Pair(0.16f, 0.16f), 1.1f, i == 0 ? charcoal : shell, Outward(yaw, -24f));
+                    }
+                    Strap(b, hull, Point(0f, 0.25f, 0f), Extent(0.9f, 0.08f, 0.9f));
+                    hull = b.Tier(Point(0f, 0.3f, 0f));
+                    hull.Taper(Point(0f, 0.3f, 0f), Pair(0.62f, 0.56f), Pair(0.4f, 0.36f), 1.55f, charcoal);
+                    hull.Prism(Point(-0.3f, 1.1f, 0f), 4, 0.07f, 0f, 0.35f, facet, Turn(0f, 0f, 40f));
+                    hull.Prism(Point(0.3f, 1.4f, 0f), 4, 0.07f, 0f, 0.3f, facet, Turn(0f, 0f, -40f));
+
+                    Solids crown = b.Crown;
+                    crown.Origin = Point(0f, 1.85f, 0f);
+                    crown.Taper(Point(0f, 1.82f, 0f), Pair(0.42f, 0.38f), Pair(0.08f, 0.1f), 1.25f, shell, Turn(10f, 0f, 0f));
+                    crown.Box(Point(0f, 2.25f, 0.2f), Extent(0.09f, 0.55f, 0.04f), ember, Turn(10f, 0f, 0f));
+                    crown.Prism(Point(-0.18f, 2.0f, 0f), 4, 0.06f, 0f, 0.4f, facet, Turn(0f, 0f, 22f));
+                    crown.Prism(Point(0.18f, 2.0f, 0f), 4, 0.06f, 0f, 0.32f, facet, Turn(0f, 0f, -22f));
+                    b.CrownAims = true;
+                    b.CrownKick = -10f;
+                    return true;
+                }
+
+                case Role.Tech when slot == 1:
+                {
+                    // 재 분화구: a thick round shell rim with an ash chimney, three shell blades along the back, ash cinders circling the vent.
+                    hull.Prism(Vector3.zero, 8, 0.85f, 0.75f, 0.45f, shell);
+                    hull.Prism(Point(0f, 0.45f, 0f), 8, 0.75f, 0.6f, 0.15f, charcoal);
+                    Band(b, hull, Point(0f, 0.08f, 0f), 8, 0.84f, 0.1f);
+                    hull = b.Tier(Point(0f, 0.5f, 0f));
+                    hull.Prism(Point(0f, 0.5f, 0f), 6, 0.32f, 0.22f, 0.85f, charcoal);
+                    hull.Prism(Point(0f, 1.35f, 0f), 6, 0.2f, 0.2f, 0.04f, ember);
+                    hull = b.Tier(Point(0f, 0.45f, 0.5f));
+                    for (int i = -1; i <= 1; i++)
+                    {
+                        float yaw = i * 45f;
+                        hull.Taper(Around(yaw) * 0.58f + Point(0f, 0.4f, 0f), Pair(0.34f, 0.24f), Pair(0.06f, 0.06f), 0.9f + (i == 0 ? 0.35f : 0f),
+                                   i == 0 ? facet : shell, Outward(yaw, 18f));
+                    }
+
+                    Solids crown = b.Crown;
+                    crown.Origin = Point(0f, 1.45f, 0f);
+                    for (int i = 0; i < 4; i++)
+                    {
+                        float yaw = i * 90f;
+                        crown.Lump(Around(yaw) * 0.42f + Point(0f, 1.6f + (i % 2) * 0.12f, 0f), Extent(0.1f, 0.08f, 0.1f), ash, Turn(0f, yaw, 20f));
+                    }
+                    b.CrownSpin = 40f;
+                    return true;
+                }
+
+                default:
+                    return false;
             }
         }
 
