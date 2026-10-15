@@ -53,17 +53,23 @@ namespace WordCraft.View
             string output = Arg("-shotsOutput");
             if (string.IsNullOrEmpty(output)) output = "shots";
             int ticks = int.TryParse(Arg("-shotsTicks"), out int parsed) ? parsed : 900;
+            only = Arg("-shotsOnly");
 
             try
             {
                 Directory.CreateDirectory(output);
-                World world = Advance(ticks);
-                Shoot(world, output);
-                int lineups = Lineups(output);
+                int fields = 0;
+                if (Wanted("field"))
+                {
+                    World world = Advance(ticks);
+                    Shoot(world, output);
+                    fields = Shots.Length;
+                }
+                int lineups = Wanted("lineup") ? Lineups(output) : 0;
                 int strips = Strips(output);
-                int matches = MatchStrips(output);
-                Debug.Log("OK: " + (Shots.Length + lineups + strips + matches) + " shots written to " + Path.GetFullPath(output) +
-                          " (" + Shots.Length + " field, " + lineups + " lineup, " + strips + " strip, " + matches + " match strip)");
+                int matches = Wanted("match") ? MatchStrips(output) : 0;
+                Debug.Log("OK: " + (fields + lineups + strips + matches) + " shots written to " + Path.GetFullPath(output) +
+                          " (" + fields + " field, " + lineups + " lineup, " + strips + " strip, " + matches + " match strip)");
                 EditorApplication.Exit(0);
             }
             catch (Exception e)
@@ -75,6 +81,23 @@ namespace WordCraft.View
             {
                 ViewClock.Release();
             }
+        }
+
+        /// <summary>
+        /// -shotsOnly: a comma-separated list of the kinds to write — field,
+        /// lineup, match, or a strip motion such as build — so one motion can be
+        /// looked at again without rendering all of them. Everything when absent.
+        /// </summary>
+        private static string only;
+
+        private static bool Wanted(string kind)
+        {
+            if (string.IsNullOrEmpty(only)) return true;
+            foreach (string part in only.Split(','))
+            {
+                if (part.Trim() == kind) return true;
+            }
+            return false;
         }
 
         /// <summary>The scripted match, some way in, so there is something on the field to look at.</summary>
@@ -236,6 +259,22 @@ namespace WordCraft.View
         /// </summary>
         private static readonly string[] Motions = { "walk", "attack", "hit", "death", "idle", "spawn", "tower" };
 
+        /// <summary>
+        /// The building motions of issue #186, each over three buildings of one
+        /// faction: a site assembling, a building at work, a building razed.
+        /// </summary>
+        private static readonly string[] BuildingMotions = { "build", "work", "destroy" };
+
+        /// <summary>
+        /// How long a build strip takes to go from nothing to finished: six of the
+        /// seven frame gaps, so the last frame shows the settle and the dust ring
+        /// rather than the instant of completion.
+        /// </summary>
+        private const float BuildSeconds = StripSeconds * 6f / 7f;
+
+        /// <summary>Cells between two buildings' footprints in a building strip.</summary>
+        private const float BuildingGap = 1.6f;
+
         private static int Strips(string output)
         {
             int written = 0;
@@ -248,15 +287,23 @@ namespace WordCraft.View
                 foreach (string motion in Motions)
                 {
                     List<(Role Role, int Slot)> cast = motion == "tower" ? towers : walkers;
-                    if (cast.Count == 0) continue;
+                    if (cast.Count == 0 || !Wanted(motion)) continue;
                     Strip(output, faction, motion, cast);
                     written++;
                 }
 
                 List<(Role Role, int Slot)> growth = Growths(faction);
-                if (growth.Count > 0)
+                if (growth.Count > 0 && Wanted("growth"))
                 {
                     Strip(output, faction, "growth", growth);
+                    written++;
+                }
+
+                foreach (string motion in BuildingMotions)
+                {
+                    List<(Role Role, int Slot)> cast = Buildings(faction, motion);
+                    if (cast.Count == 0 || !Wanted(motion)) continue;
+                    Strip(output, faction, motion, cast);
                     written++;
                 }
             }
@@ -308,6 +355,27 @@ namespace WordCraft.View
             return list;
         }
 
+        /// <summary>
+        /// Entry 0 of the base, the production building, and a third: the
+        /// defense building for build and destroy, the tech building for work,
+        /// because a defense building never queues or researches anything.
+        /// </summary>
+        private static List<(Role Role, int Slot)> Buildings(Faction faction, string motion)
+        {
+            var list = new List<(Role Role, int Slot)>();
+            Role[] roles = { Role.Base, Role.Production, motion == "work" ? Role.Tech : Role.Defense };
+            foreach (Role role in roles)
+            {
+                if (FactionData.Has(faction, role, 0)) list.Add((role, 0));
+            }
+            return list;
+        }
+
+        private static bool IsBuildingMotion(string motion) => Array.IndexOf(BuildingMotions, motion) >= 0;
+
+        /// <summary>Construction progress a build strip shows <paramref name="since"/> seconds after it starts.</summary>
+        private static float BuildAt(float since) => Mathf.Clamp01(since / BuildSeconds);
+
         /// <summary>Every defense entry: the buildings that turn, fire and kick.</summary>
         private static List<(Role Role, int Slot)> Towers(Faction faction)
         {
@@ -327,15 +395,35 @@ namespace WordCraft.View
             // A growth strip's cast is worker and grown body in pairs, and each
             // pair stands on one spot: the grown body replaces the worker there.
             bool growth = motion == "growth";
+            bool buildings = IsBuildingMotion(motion);
             int places = growth ? cast.Count / 2 : cast.Count;
             float spacing = towers ? 4.5f : growth ? StripSpacing * 1.4f : StripSpacing;
             float left = World.GridSize * 0.5f - (places - 1) * spacing * 0.5f;
             var homes = new List<Vector2>(cast.Count);
-            for (int i = 0; i < cast.Count; i++)
+            if (buildings)
             {
-                var home = new Vector2(left + (growth ? i / 2 : i) * spacing, Row);
-                Spawn(world, cast[i].Role, cast[i].Slot, home);
-                homes.Add(home);
+                // Footprint by footprint, as a lineup stands, since a base is
+                // half again as wide as the defense beside it.
+                float span = -BuildingGap;
+                foreach (var entry in cast) span += MatchView.Cells(entry.Role) + BuildingGap;
+                float x = World.GridSize * 0.5f - span * 0.5f;
+                for (int i = 0; i < cast.Count; i++)
+                {
+                    float width = MatchView.Cells(cast[i].Role);
+                    var home = new Vector2(x + width * 0.5f, Row);
+                    Spawn(world, cast[i].Role, cast[i].Slot, home);
+                    homes.Add(home);
+                    x += width + BuildingGap;
+                }
+            }
+            else
+            {
+                for (int i = 0; i < cast.Count; i++)
+                {
+                    var home = new Vector2(left + (growth ? i / 2 : i) * spacing, Row);
+                    Spawn(world, cast[i].Role, cast[i].Slot, home);
+                    homes.Add(home);
+                }
             }
 
             using (var studio = new Studio(world, FrameWidth * Frames, FrameHeight, FrameWidth, FrameHeight))
@@ -345,8 +433,9 @@ namespace WordCraft.View
                 var speeds = new float[rigs.Count];
                 for (int i = 0; i < rigs.Count; i++)
                 {
-                    if (!towers) Turn(rigs[i], FacingYaw);
+                    if (!towers && !buildings) Turn(rigs[i], FacingYaw);
                     if (growth && i % 2 == 1) rigs[i].Spawn(1e6f); // not there until the worker has swelled
+                    if (motion == "build") rigs[i].Progress(0f); // a bare site through the preroll
                     // Fix is cells a tick; a strip walks at the roster's own pace.
                     speeds[i] = FactionData.Stats(faction, cast[i].Role, cast[i].Slot).Speed.Raw / (float)Fix.One * World.TicksPerSecond;
                 }
@@ -406,6 +495,9 @@ namespace WordCraft.View
                         break;
                     case "spawn":
                         rigs[i].Spawn();
+                        break;
+                    case "destroy":
+                        rigs[i].Die(false);
                         break;
                 }
             }
@@ -469,6 +561,7 @@ namespace WordCraft.View
                     Vector2 at = homes[i];
                     if (motion == "walk" && since > 0f) at += Walk(since, speeds[i]);
                     rigs[i].Place(Field.At(at));
+                    if (motion == "build") rigs[i].Progress(BuildAt(since));
 
                     if (motion == "tower")
                     {
@@ -517,11 +610,12 @@ namespace WordCraft.View
                 Include(ref min, ref max, homes[i]);
                 if (motion == "walk") Include(ref min, ref max, homes[i] + Walk(WalkSeconds, speeds[i]));
             }
-            float margin = motion == "tower" ? 3f : 2.2f;
+            bool buildings = IsBuildingMotion(motion);
+            float margin = motion == "tower" ? 3f : buildings ? 3.4f : 2.2f;
             width = max.x - min.x + margin * 2f;
             // Pushed away from the camera by about a body's height, so the frame
             // centres on the bodies rather than on the ground at their feet.
-            return new Vector2((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f + 1.8f);
+            return new Vector2((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f + (buildings ? 2.4f : 1.8f));
         }
 
         private static void Include(ref Vector2 min, ref Vector2 max, Vector2 p)
