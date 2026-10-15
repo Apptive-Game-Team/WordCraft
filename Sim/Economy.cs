@@ -411,6 +411,10 @@ namespace WordCraft.Sim
             if (!OwnedAndAlive(buildingId, peer)) return false;
             Entity b = entities[buildingId];
             if (b.Kind != EntityKind.Building || b.QueueCount <= 0) return false;
+            // 씨앗 요람: the queue was filled for free, so there is nothing to pay
+            // back, and a cancel that paid the entry's price would mint resources.
+            // Refused whole, the way a Produce the building cannot take is.
+            if (HasFreeQueue(b)) return false;
 
             b.QueueCount--;
             // The queue holds one roster entry, so the price it was bought at is

@@ -335,6 +335,88 @@ namespace WordCraft.Sim
         }
 
         /// <summary>
+        /// 씨앗 귀환: a 세계수 정령 unit that dies within reach of its owner's 씨앗
+        /// 요람 comes back as a 풀씨 정령 on that 요람's queue, free. docs/TECH-TREE.md
+        /// 씨앗 귀환 row and M10; FactionData.freeQueues is the table.
+        ///
+        /// Called from Kill, after the dead body's population has been given back,
+        /// so the population cap is asked of the peer as it stands without that
+        /// body. The rules, in the order they are asked:
+        ///
+        /// - Units only. A worker is the body the 요람 gives back, and a building
+        ///   is not a 전투 유닛.
+        /// - The nearest finished, living free-queue building of the dead body's
+        ///   owner whose radius reaches the body, measured with WithinRange from the
+        ///   building's position. Nearest is the least squared distance, a tie going
+        ///   to the lower id: the scan is by ascending id and only a strictly
+        ///   nearer building replaces the one held, as AcquireTarget does.
+        /// - That one building or none. A full nearest 요람 drops the body rather
+        ///   than passing it to the next one, so a death has one place it can go.
+        /// - Dropped when that queue holds MaxQueue already or the peer is at its
+        ///   population cap, the two refusals a Produce has that are not about money.
+        ///
+        /// Writing straight into the building is safe for the reason
+        /// ReleaseOffspringSlot's write into the parent is: the only Kill is in
+        /// CombatSystem, a 씨앗 요람 is no Defense building so it is never the
+        /// attacker that loop writes back, and it is not the body that died.
+        /// </summary>
+        private void ReturnSeed(Entity dead)
+        {
+            if (dead.Kind != EntityKind.Unit) return;
+            int peer = dead.Owner;
+            if (peer < 0 || peer >= MaxPeers) return;
+
+            int best = -1;
+            Fix bestSqr = Fix.Zero;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity b = entities[i];
+                if (!b.Alive || b.Kind != EntityKind.Building || b.Owner != peer || b.BuildTicksLeft > 0) continue;
+                FreeQueueRow row = FactionData.FreeQueue(factions[peer], b.Role, b.Slot);
+                if (!row.Free) continue;
+                if (!WithinRange(dead.Position, b.Position, FreeQueueRadiusFor(peer, row))) continue;
+                Fix d = (b.Position - dead.Position).SqrMagnitude;
+                if (best < 0 || d < bestSqr)
+                {
+                    best = i;
+                    bestSqr = d;
+                }
+            }
+            if (best < 0) return;
+
+            Entity cradle = entities[best];
+            FreeQueueRow give = FactionData.FreeQueue(factions[peer], cradle.Role, cradle.Slot);
+            if (cradle.QueueCount >= MaxQueue) return;
+            if (population[peer] >= PopulationCap(peer)) return;
+            // Nothing else can be on this queue: no Produce names a free-queue
+            // building (it is on no unit's producer list), so the entry is always
+            // the one the row gives. Asked anyway, for the rule TryQueueUnit keeps.
+            if (cradle.QueueCount > 0 && (cradle.ProduceRole != give.GiveRole || cradle.ProduceSlot != give.GiveSlot)) return;
+
+            cradle.QueueCount++;
+            cradle.ProduceRole = give.GiveRole;
+            cradle.ProduceSlot = give.GiveSlot;
+            entities[best] = cradle;
+        }
+
+        /// <summary>
+        /// 씨앗 요람 반경: how far a free-queue building reaches for this peer, the
+        /// row's radius or its researched radius.
+        /// </summary>
+        public Fix FreeQueueRadiusFor(int peer, FreeQueueRow row) =>
+            Fix.FromInt(row.RadiusEffect != UpgradeEffect.None && UpgradeLevelOf(peer, row.RadiusEffect) > 0
+                ? row.RadiusResearched
+                : row.Radius);
+
+        /// <summary>
+        /// True for a building whose queue is free: a 씨앗 요람. The queue was never
+        /// paid for, so CancelProduction on it is refused rather than refunded.
+        /// </summary>
+        public bool HasFreeQueue(Entity b) =>
+            b.Kind == EntityKind.Building && b.Owner >= 0 && b.Owner < MaxPeers &&
+            FactionData.FreeQueue(factions[b.Owner], b.Role, b.Slot).Free;
+
+        /// <summary>
         /// Puts a body back in the not-growing state. Static and by ref for the
         /// reason ClearCapture is: it is called from inside loops that hold an
         /// entity by value and write it back once.

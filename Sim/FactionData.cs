@@ -233,6 +233,34 @@ namespace WordCraft.Sim
     }
 
     /// <summary>
+    /// A building whose queue is filled for free by deaths around it rather than
+    /// by Produce: docs/TECH-TREE.md M10 FreeQueue, 세계수 정령 씨앗 요람. When one
+    /// of its owner's units dies within Radius, one Give body joins its queue at
+    /// no cost. A queue that was never paid for is never refunded, so
+    /// CancelProduction is refused on it. Default on the struct has Free false.
+    /// </summary>
+    public struct FreeQueueRow
+    {
+        public Faction Faction;
+        public Role Role;
+        public int Slot;
+
+        /// <summary>The entry each death puts on the queue.</summary>
+        public Role GiveRole;
+        public int GiveSlot;
+
+        /// <summary>How far from the building a death still counts, in whole cells.</summary>
+        public int Radius;
+
+        /// <summary>The research row that widens Radius, or None.</summary>
+        public UpgradeEffect RadiusEffect;
+        public int RadiusResearched;
+
+        /// <summary>Whether this is a row at all. False on the default struct.</summary>
+        public bool Free;
+    }
+
+    /// <summary>
     /// What one row of the upgrade table changes. Not hashed — a level is hashed,
     /// and the effect is read back off the row the level belongs to — but kept
     /// in a fixed order anyway, because the harness names rows by it.
@@ -1472,6 +1500,45 @@ namespace WordCraft.Sim
         public static ArrivalRow ArrivalAt(int index) => arrivals[index];
 
         /// <summary>
+        /// Every building with a free queue, docs/TECH-TREE.md M10 and 씨앗 귀환:
+        /// 씨앗 요람 gives back a 풀씨 정령 for a 세계수 정령 unit that dies within 8
+        /// cells. The body comes off the queue on 풀씨 정령's own production clock
+        /// (30 ticks), the number the document's 씨앗 귀환 row gives. Walked in
+        /// declaration order, for the reason <see cref="growthTargets"/> is.
+        /// </summary>
+        private static readonly FreeQueueRow[] freeQueues =
+        {
+            // 씨앗 요람 → 풀씨 정령. 반경 8칸.
+            new FreeQueueRow
+            {
+                Faction = Faction.TreeSpirits, Role = Role.Production, Slot = 1,
+                GiveRole = Role.Worker, GiveSlot = 0,
+                Radius = 8, RadiusEffect = UpgradeEffect.None, RadiusResearched = 0,
+                Free = true,
+            },
+        };
+
+        /// <summary>
+        /// The free queue row of one building entry, or a default row with Free
+        /// false. A linear scan in declaration order.
+        /// </summary>
+        public static FreeQueueRow FreeQueue(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < freeQueues.Length; i++)
+            {
+                FreeQueueRow row = freeQueues[i];
+                if (row.Faction == faction && row.Role == role && row.Slot == slot) return row;
+            }
+            return new FreeQueueRow();
+        }
+
+        /// <summary>How many rows the free queue table holds, for the harness.</summary>
+        public static int FreeQueueCount => freeQueues.Length;
+
+        /// <summary>One row of the free queue table, in declaration order.</summary>
+        public static FreeQueueRow FreeQueueAt(int index) => freeQueues[index];
+
+        /// <summary>
         /// The most rows any faction's upgrade table holds. Sizes the per-peer
         /// level array World hashes, so a faction given a ninth row has to move
         /// this too, and the type load refuses a table that outgrows it. Eight
@@ -1943,6 +2010,7 @@ namespace WordCraft.Sim
             }
             RequireArrivals();
             RequireGrowthSources();
+            RequireFreeQueues();
         }
 
         private static void RequireGrowthSources()
@@ -1954,6 +2022,20 @@ namespace WordCraft.Sim
                 RequireFielded(faction, cost.FromRole, cost.FromSlot, "growthTargets");
                 Require(!IsBuilding(role) && !IsBuilding(cost.FromRole), "growthTargets row " + i + " names a building");
                 Require(cost.FromRole != role || cost.FromSlot != slot, "growthTargets row " + i + " grows into itself");
+            }
+        }
+
+        private static void RequireFreeQueues()
+        {
+            for (int i = 0; i < freeQueues.Length; i++)
+            {
+                FreeQueueRow row = freeQueues[i];
+                RequireFielded(row.Faction, row.Role, row.Slot, "freeQueues");
+                RequireFielded(row.Faction, row.GiveRole, row.GiveSlot, "freeQueues");
+                Require(IsBuilding(row.Role) && !IsBuilding(row.GiveRole), "freeQueues row " + i + " is not a building giving a body");
+                Require(Production(row.Faction, row.GiveRole, row.GiveSlot).Ticks > 0, "freeQueues row " + i + " gives an untimed body");
+                Require(row.Radius > 0, "freeQueues row " + i + " has no radius");
+                RequireResearchable(row.Faction, row.RadiusEffect, "freeQueues");
             }
         }
 

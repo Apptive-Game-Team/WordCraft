@@ -461,6 +461,9 @@ namespace WordCraft.Sim
             ReleasePopulation(e);
             ReleaseOffspringSlot(e);
             DropRemnant(e);
+            // 씨앗 귀환, after the population line above so the cap is asked of
+            // the peer without this body.
+            ReturnSeed(e);
             // A capture this body was running dies with it, per
             // docs/FACTION-MECHANICS.md: 둘 중 하나가 죽으면 진행도는 사라진다.
             // Here rather than in the capture loop, so a corpse never carries a
