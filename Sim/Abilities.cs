@@ -22,6 +22,12 @@ namespace WordCraft.Sim
         public static readonly Fix RollSpeed = Fix.Ratio(1, 2);
 
         /// <summary>
+        /// 잔해 투척 and 잔해 수리 take debris whose cell centre is within this
+        /// many cells of the 바위 술사, docs/TECH-TREE.md 돌 골렘 능력.
+        /// </summary>
+        public static readonly Fix RemnantUseReach = Fix.FromInt(2);
+
+        /// <summary>
         /// Runs after ExpirySystem and before CombatSystem, docs/TECH-TREE.md
         /// 시스템 순서 10. Every body by ascending id: its cooldown comes down one
         /// tick, then the one ability with state it holds runs its clock.
@@ -44,6 +50,7 @@ namespace WordCraft.Sim
                     case AbilityKind.GaleAfterAttack: CountDownGale(i); break;
                     case AbilityKind.SteadyAim: CountStillTicks(i, row); break;
                     case AbilityKind.RollCharge: Roll(i, row); break;
+                    case AbilityKind.RemnantRepair: RepairFromRemnant(i, row); break;
                 }
             }
         }
@@ -154,6 +161,89 @@ namespace WordCraft.Sim
         }
 
         /// <summary>
+        /// The standing debris cell of lowest index whose centre is within
+        /// RemnantUseReach of this point, or -1. Rows ascending and cells
+        /// ascending within a row is index order, so the first found is the one.
+        /// </summary>
+        private int RemnantNear(FixVec2 at)
+        {
+            int center = CellOf(at);
+            int cx = center % GridSize, cy = center / GridSize;
+            int span = RemnantUseReach.ToInt() + 1;
+            for (int y = cy - span; y <= cy + span; y++)
+            {
+                if (y < 0 || y >= GridSize) continue;
+                for (int x = cx - span; x <= cx + span; x++)
+                {
+                    if (x < 0 || x >= GridSize) continue;
+                    int cell = y * GridSize + x;
+                    if (HasRemnant(cell) && WithinRange(at, CellCenter(cell), RemnantUseReach)) return cell;
+                }
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// docs/TECH-TREE.md 잔해 규칙: using debris writes its expiry to 0, so the
+        /// cell opens on this tick and every walk asks WalkableStep again.
+        /// </summary>
+        private void ConsumeRemnant(int cell) => remnantExpiry[cell] = 0;
+
+        /// <summary>
+        /// 잔해 투척, called by CombatSystem as a 바위 술사 fires: consumes the
+        /// debris RemnantNear finds and answers the row, so the shot adds the
+        /// row's amount and splashes; -1, and nothing consumed, when the body
+        /// has no such row or no debris is near.
+        /// </summary>
+        private int ThrowRemnant(Entity a)
+        {
+            int row = ActiveAbility(a, AbilityKind.RemnantThrow);
+            if (row < 0) return -1;
+            int cell = RemnantNear(a.Position);
+            if (cell < 0) return -1;
+            ConsumeRemnant(cell);
+            return row;
+        }
+
+        /// <summary>
+        /// 잔해 수리. With the cooldown at 0: the allied body of the row's
+        /// targets within its radius that has lost the most hp, at least the
+        /// row's Limit (lower id on a tie), and the debris RemnantNear finds.
+        /// With both, the body is healed by the row's amount up to MaxHp, the
+        /// debris is consumed and the cooldown starts; with either missing,
+        /// nothing happens and the caster asks again next tick.
+        /// </summary>
+        private void RepairFromRemnant(int id, int row)
+        {
+            Entity e = entities[id];
+            if (e.AbilityCooldown > 0) return;
+            AbilityRow r = FactionData.AbilityRowAt(row);
+            Fix radius = Fix.FromInt(AbilityRadius(e.Owner, r));
+            int best = -1, bestLost = 0;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity t = entities[i];
+                if (!t.Alive || t.Owner != e.Owner || !AuraTargets(r.Targets, t)) continue;
+                int lost = t.MaxHp - t.Hp;
+                if (lost < r.Limit || lost <= bestLost) continue;
+                if (!WithinRange(e.Position, t.Position, radius)) continue;
+                best = i;
+                bestLost = lost;
+            }
+            if (best < 0) return;
+            int cell = RemnantNear(e.Position);
+            if (cell < 0) return;
+
+            ConsumeRemnant(cell);
+            e.AbilityCooldown = r.Cooldown;
+            entities[id] = e;
+            Entity mended = entities[best];
+            mended.Hp += AbilityAmount(e.Owner, r);
+            if (mended.Hp > mended.MaxHp) mended.Hp = mended.MaxHp;
+            entities[best] = mended;
+        }
+
+        /// <summary>
         /// Scenario setup only. Never call this from a system. Lets a harness put
         /// two worlds one ability clock apart, or a body in the middle of a roll,
         /// which no order can do.
@@ -165,5 +255,12 @@ namespace WordCraft.Sim
             e.AbilityTicksLeft = ticksLeft;
             entities[id] = e;
         }
+
+        /// <summary>
+        /// Scenario setup only. Never call this from a system. Lays debris on a
+        /// cell without a body falling there, which is what the remnant checks
+        /// need: a 바위 술사 beside debris and nothing dead on the field.
+        /// </summary>
+        public void SetRemnantForScenario(int cell, int expiry) => remnantExpiry[cell] = expiry;
     }
 }

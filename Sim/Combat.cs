@@ -78,11 +78,15 @@ namespace WordCraft.Sim
                         // 피 냄새, 집결 and 증폭 are read here, when the cooldown
                         // is set, against the target's hp before this shot.
                         a.AttackCooldown = AttackTicksAgainst(a, t);
+                        // 잔해 투척: debris near the shooter makes this one shot
+                        // harder and splash, per docs/TECH-TREE.md 피해 계산.
+                        int thrown = ThrowRemnant(a);
+                        int throwBonus = thrown >= 0 ? AbilityAmount(a.Owner, FactionData.AbilityRowAt(thrown)) : 0;
                         // 공격력 belongs to the shooter's owner and 방어력 to the
                         // target's. A neutral target has no owner, so no level.
                         // 표식 joins the attack side, and 물막이, 거품 벽 and 굳은 몸
                         // the armor side, per docs/TECH-TREE.md 피해 계산.
-                        int dealt = DamageAfterArmor(s.Damage + VolleyBonus(a) + MarkBonus(a, t), AttackBonus(a.Owner),
+                        int dealt = DamageAfterArmor(s.Damage + VolleyBonus(a) + MarkBonus(a, t) + throwBonus, AttackBonus(a.Owner),
                             ArmorFor(t) + AuraArmor(t), ArmorBonus(t.Owner));
                         // Where the hit landed, kept before Kill so a chain
                         // starts from the body even when the body is gone.
@@ -93,6 +97,7 @@ namespace WordCraft.Sim
                         entities[t.Id] = t;
                         ChainFrom(a, t.Id, hitAt, dealt);
                         SplashFrom(a, t.Id, hitAt, dealt, ActiveAbility(a, AbilityKind.SplashOnHit));
+                        SplashFrom(a, t.Id, hitAt, dealt, thrown);
                         // 질풍: every attack sets the clock back to its full length.
                         int gale = ActiveAbility(a, AbilityKind.GaleAfterAttack);
                         if (gale >= 0) a.AbilityTicksLeft = AbilityTicks(a.Owner, FactionData.AbilityRowAt(gale));
