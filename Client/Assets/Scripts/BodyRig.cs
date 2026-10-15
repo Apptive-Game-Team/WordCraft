@@ -84,8 +84,9 @@ namespace WordCraft.View
     /// which keeps the simulation the only thing that decides where anything
     /// goes: this never predicts, it only follows.
     ///
-    /// Time is unscaled, like every other effect in the view, so a paused or
-    /// slowed match still breathes rather than freezing mid-stride.
+    /// Time is <see cref="ViewClock"/>: unscaled, like every other effect in the
+    /// view, so a paused or slowed match still breathes rather than freezing
+    /// mid-stride, and holdable, so a screenshot can step it frame by frame.
     /// </summary>
     public sealed class BodyRig : MonoBehaviour
     {
@@ -238,7 +239,7 @@ namespace WordCraft.View
             float distance = delta.magnitude;
             if (distance > TeleportDistance) distance = 0f;
 
-            float deltaTime = Time.unscaledDeltaTime;
+            float deltaTime = ViewClock.Delta;
             float measured = deltaTime > 1e-5f ? distance / deltaTime : 0f;
             float blend = deltaTime > 0f ? 1f - Mathf.Exp(-deltaTime / SpeedSmoothingSeconds) : 0f;
             speed = Mathf.Lerp(speed, measured, blend);
@@ -264,9 +265,9 @@ namespace WordCraft.View
             targetYaw = yawDegrees;
         }
 
-        public void Attack() => attackStarted = Time.unscaledTime;
+        public void Attack() => attackStarted = ViewClock.Now;
 
-        public void Hit() => hitStarted = Time.unscaledTime;
+        public void Hit() => hitStarted = ViewClock.Now;
 
         /// <summary>
         /// Construction from 0 to 1. The body grows out of the ground — scaled up
@@ -353,12 +354,19 @@ namespace WordCraft.View
         // Motion
         // ------------------------------------------------------------------
 
-        private void Update()
+        private void Update() => Animate();
+
+        /// <summary>
+        /// One frame of motion at <see cref="ViewClock.Now"/>. Unity calls it from
+        /// Update; the screenshot harness, which runs in an editor that never
+        /// calls Update, calls it itself after stepping the clock.
+        /// </summary>
+        public void Animate()
         {
             if (design == null || remembered || hull == null) return;
 
-            float now = Time.unscaledTime;
-            float deltaTime = Time.unscaledDeltaTime;
+            float now = ViewClock.Now;
+            float deltaTime = ViewClock.Delta;
 
             if (design.Building) Stand(now, deltaTime);
             else Move(now, deltaTime);
