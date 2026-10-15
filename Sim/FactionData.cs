@@ -96,8 +96,9 @@ namespace WordCraft.Sim
         public bool HitsGround;
 
         /// <summary>
-        /// Whether this row carries a weapon at all. 지옥불 군단장 is 비전투 per
-        /// docs/FACTION-MECHANICS.md and its row is the only one that answers no.
+        /// Whether this row carries a weapon at all. 지옥불 군단장, 경계 운반자
+        /// and 마도 정찰기 are 비전투 per the documents, and their rows are the
+        /// combat-slot rows that answer no.
         ///
         /// Damage is the test rather than a flag of its own, because a flag would
         /// be a second place to say what the row already says, and the two are
@@ -295,9 +296,11 @@ namespace WordCraft.Sim
         /// 나무 that a peer on 31 refuses, and the two banks differ by twenty on the
         /// tick the order was given. 32 is the roster catching up with its
         /// documents: the rows docs/TECH-TREE.md marks † took the numbers
-        /// docs/FACTION-MECHANICS.md gives them. A peer on 31 sells a 용암 갑각
-        /// 악마 for 20 that a peer on 32 charges 90 for, and the banks differ by
-        /// 70 on the tick the order is given.
+        /// docs/FACTION-MECHANICS.md gives them, 바람 정령 and 구름 용 fly, 용암
+        /// 아가리 and 굴림바위 언덕 stop reaching the air, and 마도 정찰기 loses its
+        /// weapon. A peer on 31 sells a 용암 갑각 악마 for 20 that a peer on 32
+        /// charges 90 for, and the banks differ by 70 on the tick the order is
+        /// given.
         /// </summary>
         public const uint ContentVersion = 32;
 
@@ -360,8 +363,9 @@ namespace WordCraft.Sim
         /// docs/FACTION-MECHANICS.md 공중: a ranged weapon reaches air unless its
         /// row says otherwise, and reach is the one thing melee does not have.
         /// HitsGround is set on everything that shoots at all, melee included,
-        /// which is what makes the two exceptions the document names — 대포 지상
-        /// 전용, Towerback 공중 전용 — the only rows that turn one of them off.
+        /// which is what makes the exceptions the documents name — 대포, 용암
+        /// 아가리 and 굴림바위 언덕 지상 전용, Towerback 공중 전용 — the only rows
+        /// that turn one of them off.
         /// </summary>
         /// <summary>
         /// The footprint every walking row starts from: three eighths of a cell,
@@ -446,6 +450,25 @@ namespace WordCraft.Sim
                     HitsGround = true,
                 }),
 
+            // 세계수 정령 바람 정령. 공중, per docs/FACTIONS.md, which lists it with
+            // the faction's fliers; docs/TECH-TREE.md follows it and wins over
+            // docs/FACTION-MECHANICS.md 공중, which leaves it off. Every number is
+            // the shared signature row's, written out because the row has to
+            // exist to carry the flag.
+            (Faction.TreeSpirits, Role.Signature, 0,
+                new UnitStats
+                {
+                    Hp = 130,
+                    Speed = Fix.Ratio(3, 8),
+                    Footprint = BodyRadius,
+                    Damage = 10,
+                    Range = Fix.FromInt(3),
+                    AttackTicks = 22,
+                    Air = true,
+                    HitsAir = true,
+                    HitsGround = true,
+                }),
+
             // 지옥불 용암 갑각 악마. 체력 260, 근접, 피해 14, 속도 1/6칸/틱, per
             // docs/FACTION-MECHANICS.md 지옥불 표: 개체가 적고 하나하나가 크다,
             // written into the one body the faction buys to hold the line. The
@@ -460,6 +483,19 @@ namespace WordCraft.Sim
                     Damage = 14,
                     Range = Fix.FromInt(2),
                     AttackTicks = 15,
+                    HitsGround = true,
+                }),
+
+            // 지옥불 용암 아가리. 지상 전용, per docs/FACTIONS.md 공중 규칙, which
+            // names it with 대포 and 굴림바위 언덕. The shared defense weapon is
+            // kept and written out; only the air reach is gone.
+            (Faction.Hellfire, Role.Defense, 0,
+                new UnitStats
+                {
+                    Hp = 300,
+                    Damage = 9,
+                    Range = Fix.FromInt(6),
+                    AttackTicks = 20,
                     HitsGround = true,
                 }),
 
@@ -491,6 +527,23 @@ namespace WordCraft.Sim
                     Damage = 4,
                     Range = Fix.FromInt(6),
                     AttackTicks = 18,
+                    HitsAir = true,
+                    HitsGround = true,
+                }),
+
+            // 물 슬라임 구름 용. 공중, per docs/FACTIONS.md and
+            // docs/FACTION-MECHANICS.md 공중, which both name it a flier. The
+            // shared signature numbers, written out for the reason 바람 정령's are.
+            (Faction.WaterSlimes, Role.Signature, 0,
+                new UnitStats
+                {
+                    Hp = 130,
+                    Speed = Fix.Ratio(3, 8),
+                    Footprint = BodyRadius,
+                    Damage = 10,
+                    Range = Fix.FromInt(3),
+                    AttackTicks = 22,
+                    Air = true,
                     HitsAir = true,
                     HitsGround = true,
                 }),
@@ -528,6 +581,19 @@ namespace WordCraft.Sim
                     Range = Fix.FromInt(5),
                     AttackTicks = 18,
                     HitsAir = true,
+                    HitsGround = true,
+                }),
+
+            // 돌 골렘 굴림바위 언덕. 지상 전용, per docs/FACTIONS.md 공중 규칙, for
+            // the reason 용암 아가리 is: the shared defense weapon without its
+            // air reach.
+            (Faction.RockGolems, Role.Defense, 0,
+                new UnitStats
+                {
+                    Hp = 300,
+                    Damage = 9,
+                    Range = Fix.FromInt(6),
+                    AttackTicks = 20,
                     HitsGround = true,
                 }),
 
@@ -679,6 +745,14 @@ namespace WordCraft.Sim
                     AttackTicks = 22,
                     HitsAir = true,
                 }),
+
+            // 인간 마도 정찰기. 비전투, per docs/FACTIONS.md (정찰, 비전투): no
+            // Damage, so HasWeapon is false and CanAttack refuses it every path
+            // into a fight, as it refuses 지옥불 군단장. Still walks:
+            // docs/TECH-TREE.md proposes it 공중 and marks that a proposal, and
+            // this row does not take it. Entry 1 of the slot, behind Towerback.
+            (Faction.Humans, Role.Signature, 1,
+                new UnitStats { Hp = 130, Speed = Fix.Ratio(3, 8), Footprint = BodyRadius }),
         };
 
         /// <summary>

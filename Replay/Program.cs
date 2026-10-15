@@ -1460,8 +1460,8 @@ namespace WordCraft.Replay
         };
 
         /// <summary>
-        /// The roster entries the documents call 비전투: 지옥불 군단장 and 차원
-        /// 유랑종 경계 운반자, and nothing else.
+        /// The roster entries the documents call 비전투: 지옥불 군단장, 차원
+        /// 유랑종 경계 운반자 and 인간 마도 정찰기, and nothing else.
         ///
         /// Written through the constants the simulation identifies each body with
         /// rather than as a second copy of the roster coordinates. World.CarrierRole
@@ -1477,7 +1477,18 @@ namespace WordCraft.Replay
         private static bool IsNonCombatant(Faction faction, Role role, int slot) =>
             (faction == Faction.Hellfire && role == World.WarlordRole && slot == 0) ||
             (faction == World.PassageFaction && role == World.CarrierRole &&
-             slot == World.CarrierSlot);
+             slot == World.CarrierSlot) ||
+            IsScout(faction, role, slot);
+
+        /// <summary>
+        /// 인간 마도 정찰기, entry 1 of the signature slot behind Towerback. A
+        /// literal for the reason the warlord's entry is: nothing in the
+        /// simulation names it yet. docs/FACTIONS.md calls it 정찰, 비전투, and
+        /// docs/TECH-TREE.md gives it 표식 in 묶음 5; until then it is unarmed and
+        /// has no mechanic, which EveryUnarmedSlotIsWorthSomethingElse names.
+        /// </summary>
+        private static bool IsScout(Faction faction, Role role, int slot) =>
+            faction == Faction.Humans && role == World.TowerbackRole && slot == 1;
 
         /// <summary>
         /// The disarm reaches exactly the rows above and no others. Every other
@@ -1570,9 +1581,9 @@ namespace WordCraft.Replay
         /// </summary>
         private static void EveryUnarmedSlotIsWorthSomethingElse()
         {
-            Check(NonCombatantCount() == 2,
+            Check(NonCombatantCount() == 3,
                 "the roster hands this check " + NonCombatantCount() + " non-combatants, " +
-                "expected 2: IsNonCombatant has grown a name, or names a slot no faction fields");
+                "expected 3: IsNonCombatant has grown a name, or names a slot no faction fields");
 
             for (int f = 0; f < FactionData.FactionCount; f++)
             {
@@ -1596,6 +1607,16 @@ namespace WordCraft.Replay
 
                         Check(!world.Armed(body),
                             name + " is armed in the world the table disarmed it in");
+
+                        // 마도 정찰기 is the one name let through without a
+                        // mechanic, and only until 묶음 5 of docs/TECH-TREE.md
+                        // gives it 표식. The disarm came first because the
+                        // document calls it 비전투 today; what it is worth
+                        // arrives with the status system. When it does, this
+                        // line goes and the scout answers the disjunction below
+                        // like the other two.
+                        if (IsScout(faction, role, s)) continue;
+
                         bool warlord = world.IsWarlord(body);
                         bool anchor = world.ProvidesArrival(body, 0);
                         Check(warlord || anchor,
@@ -2110,7 +2131,7 @@ namespace WordCraft.Replay
         /// and fires nothing — the exact defect HasWeapon was made to answer,
         /// reintroduced one field over.
         ///
-        /// The two named exceptions are pinned by name, and everything else is
+        /// The named exceptions are pinned by name, and everything else is
         /// pinned against them. Without that second half a rule written one row
         /// too wide — every defense building ground-only, say — would pass, and so
         /// would the two checks below it, because a world where nothing shoots air
@@ -2134,20 +2155,32 @@ namespace WordCraft.Replay
                         Check(stats.HitsAir || stats.HitsGround,
                             "a weapon that reaches neither layer at " + where);
 
-                        // 대포 is the one armed row that gives up the air, and
-                        // Towerback the one that gives up the ground. Melee gives
-                        // up the air too, and always has.
-                        bool cannon = faction == Faction.Humans && role == Role.Defense && s == 0;
+                        // 대포, 용암 아가리 and 굴림바위 언덕 are the armed rows
+                        // that give up the air, per docs/FACTIONS.md 공중 규칙,
+                        // and Towerback the one that gives up the ground. Melee
+                        // gives up the air too, and always has. 공수 특공대 and
+                        // 돌 포탑 still reach both: docs/TECH-TREE.md leaves
+                        // their ground-only proposal an open decision.
+                        bool groundOnly = IsGroundOnlyDefense(faction, role, s);
                         bool towerback = faction == Faction.Humans &&
                                          role == World.TowerbackRole && s == World.TowerbackSlot;
 
-                        Check(stats.HitsAir == !(cannon || role == Role.Melee),
+                        Check(stats.HitsAir == !(groundOnly || role == Role.Melee),
                             "wrong air reach at " + where);
                         Check(stats.HitsGround == !towerback, "wrong ground reach at " + where);
                     }
                 }
             }
         }
+
+        /// <summary>
+        /// The three defense buildings docs/FACTIONS.md 공중 규칙 calls 지상 전용:
+        /// 인간 대포, 지옥불 용암 아가리 and 돌 골렘 굴림바위 언덕, each entry 0 of
+        /// its faction's defense slot.
+        /// </summary>
+        internal static bool IsGroundOnlyDefense(Faction faction, Role role, int slot) =>
+            role == Role.Defense && slot == 0 &&
+            (faction == Faction.Humans || faction == Faction.Hellfire || faction == Faction.RockGolems);
 
         private const int CannonTicks = 300;
         private const int CannonId = 0;
@@ -3135,9 +3168,9 @@ namespace WordCraft.Replay
             // pinning 지옥불 군단장's price.
             //
             // 물 슬라임 rather than 세계수 정령 on purpose. A shared-row retune trips
-            // ProductionStopsAtThePopulationCap long before this line, because the
-            // default faction is 세계수 정령 and half the harness spends
-            // World.ProduceCost through it. What this assertion is left holding is
+            // TechTiersGateProduction long before this line, because the default
+            // faction is 세계수 정령 and that check spends World.ProduceCost on
+            // its signature unit. What this assertion is left holding is
             // the narrower mistake: an override row written against the wrong
             // faction, on a faction quiet enough that nothing above would notice.
             Check(FactionData.Production(Faction.WaterSlimes, Role.Worker, 0).Resources ==
