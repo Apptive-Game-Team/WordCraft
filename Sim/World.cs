@@ -1182,6 +1182,8 @@ namespace WordCraft.Sim
 
         private void MoveSystem()
         {
+            // 덩굴 지대 is read per step, so its sources are gathered once.
+            CollectAuraSources();
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
@@ -1195,8 +1197,9 @@ namespace WordCraft.Sim
                 FixVec2 goal = e.PathIndex < path.Count ? CellCenter(path[e.PathIndex]) : e.Target;
 
                 // Researched speed is read here and nowhere else that moves a
-                // body; e.Speed stays the hashed value. See World.SpeedFor.
-                Fix speed = SpeedFor(e);
+                // body; e.Speed stays the hashed value. See World.SpeedFor. The
+                // slow of 휘감기 and 덩굴 지대 rides on top, in MoveSpeedFor.
+                Fix speed = MoveSpeedFor(e);
                 FixVec2 delta = goal - e.Position;
                 bool arrives = delta.Magnitude <= speed;
                 FixVec2 next = arrives ? goal : e.Position + delta.Normalized() * speed;

@@ -26,6 +26,37 @@ namespace WordCraft.Sim
         }
 
         /// <summary>
+        /// 휘감기 and 화염탄: what a landed hit leaves on a target that survived
+        /// it. 휘감기 takes ground bodies only, so a flier or a building shot by
+        /// a 덩쿨 정령 walks on; 화염탄 sets anything it hits alight. Both refresh
+        /// to the longer clock rather than adding.
+        /// </summary>
+        private void ApplyHitStatus(Entity a, ref Entity t)
+        {
+            int slow = ActiveAbility(a, AbilityKind.SlowOnHit);
+            if (slow >= 0)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(slow);
+                if (AuraTargets(row.Targets, t)) Refresh(ref t.SlowTicksLeft, AbilityTicks(a.Owner, row));
+            }
+            int burn = ActiveAbility(a, AbilityKind.BurnOnHit);
+            if (burn >= 0) Refresh(ref t.BurnTicksLeft, AbilityTicks(a.Owner, FactionData.AbilityRowAt(burn)));
+        }
+
+        /// <summary>
+        /// How far this body walks this tick: SpeedFor, halved while it is
+        /// slowed by 휘감기 or stands in a hostile 덩굴 지대 (the two together
+        /// still halve it once), and never past MaxMoveSpeed. Asked by
+        /// MoveSystem after CollectAuraSources.
+        /// </summary>
+        private Fix MoveSpeedFor(Entity e)
+        {
+            Fix speed = SpeedFor(e);
+            if (e.SlowTicksLeft > 0 || InHostileAura(AbilityKind.SlowAura, e)) speed = speed * SlowFactor;
+            return speed > MaxMoveSpeed ? MaxMoveSpeed : speed;
+        }
+
+        /// <summary>
         /// Runs right after CombatSystem and before FleeSystem, by ascending
         /// entity id. First the clocks every body carries: a tick off 휘감기, a
         /// tick off the burn and, when what is left lands on a multiple of

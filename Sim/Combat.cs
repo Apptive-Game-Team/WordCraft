@@ -77,6 +77,7 @@ namespace WordCraft.Sim
                         t.Hp -= DamageAfterArmor(s.Damage + VolleyBonus(a), AttackBonus(a.Owner),
                             ArmorFor(t), ArmorBonus(t.Owner));
                         if (t.Hp <= 0) Kill(ref t);
+                        else ApplyHitStatus(a, ref t);
                         entities[t.Id] = t;
                     }
                 }
