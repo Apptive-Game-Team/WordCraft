@@ -36,10 +36,11 @@ namespace WordCraft.Sim
     /// renumber them. Open is 0 so a world nobody painted is all open ground,
     /// which is what every harness fixture relies on.
     /// </summary>
-    // ponytail: passable or not, and nothing else. No movement cost, no elevation,
-    // no vision blocking. Adding a cost is the one that reaches furthest: the
-    // pathfinder's uniform step cost of 1 and its Manhattan heuristic are only
-    // admissible while every open cell costs the same.
+    // ponytail: passable or not, and nothing else. Elevation lives beside this in
+    // its own layer (World.HeightAt), and its cost lives in the pathfinder, which
+    // charges an uphill step more and keeps an octile heuristic that stays
+    // admissible because no step costs less than a flat one. Still no vision
+    // blocking and no per-kind movement cost.
     public enum TileKind : byte
     {
         Open = 0,
@@ -354,6 +355,20 @@ namespace WordCraft.Sim
         // indirection. Written only while the map is being built.
         private readonly byte[] terrain = new byte[GridCells];
 
+        /// <summary>
+        /// The highest elevation level a cell can carry. Levels run 0..MaxHeight;
+        /// 0 is the default, so a world nobody raised is flat and every harness
+        /// fixture written before elevation existed stands on level ground.
+        /// </summary>
+        public const int MaxHeight = 3;
+
+        // The elevation layer, one byte per cell beside terrain and for the same
+        // reasons: read on every pathfinding step, hashed on every tick, written
+        // only while the map is being built. Kept apart from terrain rather than
+        // packed into its byte, because TileKind values are hashed as written and
+        // renumbering them to make room would change what every existing map is.
+        private readonly byte[] heights = new byte[GridCells];
+
         // 돌 골렘 부족 잔해. The tick each cell's debris lapses on, or 0 for a cell
         // that never had any. Hashed: it is what every path is computed against,
         // so two peers that disagreed here would route two different armies.
@@ -457,10 +472,49 @@ namespace WordCraft.Sim
         /// </summary>
         public void SetTerrain(int x, int y, TileKind kind) => terrain[y * GridSize + x] = (byte)kind;
 
+        /// <summary>The elevation level of a cell, 0..MaxHeight.</summary>
+        public int HeightAt(int cell) => heights[cell];
+
+        /// <summary>
+        /// Scenario setup only, and only before the first tick, the same contract
+        /// as SetTerrain: heights are hashed, so a peer that raised a cell
+        /// mid-match would desync every other peer.
+        ///
+        /// A level outside 0..MaxHeight is clamped rather than refused. Both are
+        /// deterministic; clamping is the one that cannot leave a half-painted map
+        /// behind a scenario that got one number wrong, and the harness's symmetry
+        /// and reachability checks are what catch the wrong number.
+        /// </summary>
+        public void SetHeight(int x, int y, int level) =>
+            heights[y * GridSize + x] = (byte)(level < 0 ? 0 : (level > MaxHeight ? MaxHeight : level));
+
+        /// <summary>
+        /// Whether a mover standing in from may step into to. The one place the
+        /// cliff rule lives: the pathfinder asks it of every neighbour it expands
+        /// and every straight line it smooths a route into, and MoveSystem asks it
+        /// of every tick's step, so a route and the walk along it can never
+        /// disagree about a cliff.
+        ///
+        /// A height difference of one is a slope and is walked, in either
+        /// direction; two or more is a cliff and is not. The pathfinder charges the
+        /// uphill slope more, but passability itself is symmetric, so a body that
+        /// walked down a ramp can always walk back up it.
+        ///
+        /// Air ignores elevation the same way it ignores terrain and debris.
+        /// </summary>
+        public bool StepPassable(int from, int to, bool air)
+        {
+            if (!IsPassable(to, air)) return false;
+            if (air) return true;
+            int rise = heights[to] - heights[from];
+            return rise >= -1 && rise <= 1;
+        }
+
         /// <summary>
         /// Whether a mover may occupy this cell. Terrain is a wall or it is
-        /// nothing: there is no movement cost, so a route is decided by length
-        /// alone and the pathfinder stays on integer costs.
+        /// nothing: it carries no movement cost of its own. Elevation is what
+        /// costs, and it belongs to a step rather than to a cell, so it is asked
+        /// through StepPassable rather than here.
         ///
         /// air is the seam docs/FACTION-MECHANICS.md asks for ("공중 유닛은 지형과
         /// 잔해를 무시하고 이동한다"). There are no air units yet, so every caller
@@ -1013,20 +1067,79 @@ namespace WordCraft.Sim
                 FixVec2 next = arrives ? goal : e.Position + delta.Normalized() * e.Speed;
 
                 // The last word on where a body may stand. The pathfinder already
-                // routes around terrain, so this only ever catches the straight
-                // line an entity walks when no route exists, which is exactly the
-                // case that would otherwise put a unit in the middle of a lake.
+                // routes around terrain and cliffs, so this only ever catches the
+                // straight line an entity walks when no route exists, which is
+                // exactly the case that would otherwise put a unit in the middle of
+                // a lake or on top of a cliff.
+                //
+                // Waypoints are not neighbours: the pathfinder smooths a route into
+                // straight runs several cells long, and the walk to each one is the
+                // same straight line this has always been. Nothing here assumes
+                // adjacency. What keeps the test honest is that every Speed in the
+                // roster is under one cell, so one tick crosses at most one cell
+                // edge in each axis, and WalkableStep asks the cliff rule of every
+                // edge the step actually crosses.
                 // ponytail: it stops dead rather than sliding along the edge, so a
                 // unit with no route parks against the shore and stays there. Give
                 // it a slide the day units are expected to find their own way round
                 // something the path did not know about.
-                if (!IsPassable(CellOf(next), Flies(e))) continue;
+                if (!WalkableStep(e.Position, next, Flies(e))) continue;
 
                 e.Position = next;
                 if (arrives && e.PathIndex < path.Count) e.PathIndex++;
                 entities[i] = e;
             }
         }
+
+        /// <summary>
+        /// Whether one tick's movement from p to q may be taken. Within one cell,
+        /// or into an orthogonal neighbour, that is StepPassable of the two cells.
+        ///
+        /// Into a diagonal neighbour the step really passes through one of the two
+        /// side cells on the way, and which one is decided by which cell edge the
+        /// segment crosses first. That side is asked too, from both ends: testing
+        /// the two corner cells alone would let a body slip past the corner of a
+        /// cliff it never had the right to touch, and the cells either side of a
+        /// diagonal can differ by two levels even when both ends are one level
+        /// apart. A step that runs exactly through the corner asks both sides,
+        /// which is the rule the pathfinder applies to a diagonal neighbour.
+        ///
+        /// Compared on raw Q16.16 values, which are longs; on a 64-cell map every
+        /// factor is under 2^22, so the products stay far inside the range.
+        /// </summary>
+        private bool WalkableStep(FixVec2 p, FixVec2 q, bool air)
+        {
+            int from = CellOf(p);
+            int to = CellOf(q);
+            int fx = from % GridSize, fy = from / GridSize;
+            int tx = to % GridSize, ty = to / GridSize;
+            if (!StepPassable(from, to, air)) return false;
+            // Same cell, an orthogonal neighbour, or a step longer than a cell,
+            // which no roster Speed takes today; for that last one the two ends
+            // are all there is to ask.
+            if (fx == tx || fy == ty) return true;
+            if (tx - fx > 1 || fx - tx > 1 || ty - fy > 1 || fy - ty > 1) return true;
+
+            int sideX = fy * GridSize + tx; // entered by crossing the vertical edge first
+            int sideY = ty * GridSize + fx; // entered by crossing the horizontal edge first
+            bool viaX = StepPassable(from, sideX, air) && StepPassable(sideX, to, air);
+            bool viaY = StepPassable(from, sideY, air) && StepPassable(sideY, to, air);
+
+            long edgeX = Fix.FromInt(tx > fx ? tx : fx).Raw;
+            long edgeY = Fix.FromInt(ty > fy ? ty : fy).Raw;
+            long runX = AbsLong(q.X.Raw - p.X.Raw);
+            long runY = AbsLong(q.Y.Raw - p.Y.Raw);
+            // The vertical edge comes first when |edgeX - px| / runX is the smaller
+            // fraction of the step, compared cross-multiplied so nothing divides.
+            long toEdgeX = AbsLong(edgeX - p.X.Raw) * runY;
+            long toEdgeY = AbsLong(edgeY - p.Y.Raw) * runX;
+
+            if (toEdgeX < toEdgeY) return viaX;
+            if (toEdgeY < toEdgeX) return viaY;
+            return viaX && viaY;
+        }
+
+        private static long AbsLong(long v) => v < 0 ? -v : v;
 
         public static int CellOf(FixVec2 p)
         {
@@ -1076,6 +1189,16 @@ namespace WordCraft.Sim
             {
                 ulong word = 0;
                 for (int b = 0; b < 8; b++) word |= (ulong)terrain[c + b] << (b * 8);
+                Mix(ref h, word);
+            }
+            // Elevation, for the same reason and in the same shape: fixed once the
+            // map is built, hashed every tick anyway, so two peers that raised
+            // different cells diverge on tick 1 rather than on the tick a unit
+            // first meets a cliff only one of them has.
+            for (int c = 0; c < GridCells; c += 8)
+            {
+                ulong word = 0;
+                for (int b = 0; b < 8; b++) word |= (ulong)heights[c + b] << (b * 8);
                 Mix(ref h, word);
             }
             // Debris expiry, the one field the faction mechanics add. Sparse, so

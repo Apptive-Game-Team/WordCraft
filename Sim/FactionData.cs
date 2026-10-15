@@ -168,9 +168,13 @@ namespace WordCraft.Sim
         /// leaves blank. A peer that puts 인간's nameless melee body on the field
         /// and a peer that spends nothing have diverged on the tick the order was
         /// given, and the roster is the same on both — what differs is whether it
-        /// is consulted.
+        /// is consulted. 28 is the map and a rule together: cells carry an
+        /// elevation that MatchScenario paints, and the pathfinder walks eight
+        /// directions with a climb cost and smooths what it finds. A peer on 27
+        /// routes a unit one cell at a time through a lane a peer on 28 cuts
+        /// diagonally, and the two have diverged on the first tick anything moves.
         /// </summary>
-        public const uint ContentVersion = 27;
+        public const uint ContentVersion = 28;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
