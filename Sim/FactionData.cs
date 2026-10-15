@@ -354,9 +354,14 @@ namespace WordCraft.Sim
         /// 아가리 and 굴림바위 언덕 stop reaching the air, and 마도 정찰기 loses its
         /// weapon. A peer on 31 sells a 용암 갑각 악마 for 20 that a peer on 32
         /// charges 90 for, and the banks differ by 70 on the tick the order is
-        /// given.
+        /// given. 33 is the tech tree's rows: sixty-five entries docs/TECH-TREE.md
+        /// 묶음 3 adds behind the existing ones, twenty research rows that change
+        /// one entry's reach, rate, speed or armor, and second production
+        /// buildings for five existing entries. A peer on 32 refuses a Build of a
+        /// 석조 병영 that a peer on 33 charges 120 for, and the banks differ by 120
+        /// on the tick the order is given.
         /// </summary>
-        public const uint ContentVersion = 32;
+        public const uint ContentVersion = 33;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
