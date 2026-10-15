@@ -763,6 +763,7 @@ namespace WordCraft.View
         // cells the day a profile disagrees.
         private void Remnants(World world)
         {
+            int longest = LongestRemnant(world);
             int used = 0;
             for (int cell = 0; cell < World.GridCells; cell++)
             {
@@ -772,11 +773,37 @@ namespace WordCraft.View
                 pile.Show(true);
                 pile.Place(Field.At(MatchRunner.ToView(World.CellCenter(cell))));
 
-                float left = (world.RemnantExpiry(cell) - world.Tick) / (float)World.RemnantTicks;
+                float left = (world.RemnantExpiry(cell) - world.Tick) / (float)longest;
                 pile.Alpha(Mathf.Lerp(UiStyle.RemnantFade, 1f, Mathf.Clamp01(left)));
             }
 
             for (int i = used; i < remnants.Count; i++) remnants[i].Show(false);
+        }
+
+        /// <summary>
+        /// The longest a pile of debris can stand in this world, which is what its
+        /// remaining life is divided by to get an alpha.
+        ///
+        /// A cell stores only when it lapses (RemnantExpiry), not how long it was
+        /// given, and the debris has no owner to ask World.RemnantTicksFor about.
+        /// So this takes the largest answer over every peer: 400 until anyone
+        /// researches 오래 남는 잔해, 600 after. Dividing by 400 once a pile can
+        /// last 600 would leave it fully opaque for its first 200 ticks; dividing
+        /// by 600 has it fade from the first tick. The cost is that a pile dropped
+        /// before the research, which lasts 400, starts at two thirds of full
+        /// instead of full, and a peer that never researched but whose rival did
+        /// sees the same. Both are a lower start for a pile, never an opaque one
+        /// that is about to vanish.
+        /// </summary>
+        private static int LongestRemnant(World world)
+        {
+            int longest = World.RemnantTicks;
+            for (int peer = 0; peer < World.MaxPeers; peer++)
+            {
+                int ticks = world.RemnantTicksFor(peer);
+                if (ticks > longest) longest = ticks;
+            }
+            return longest;
         }
 
         private BodyRig Debris(int index)
