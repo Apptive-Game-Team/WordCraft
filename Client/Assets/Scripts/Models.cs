@@ -1879,9 +1879,16 @@ namespace WordCraft.View
                     break;
                 case Role.Ranged:
                     if (slot == 1) ExtinctSlime(b, BodyPalette.Driftworlds.StormWorld, 2);
+                    else if (slot == 2) VineShard(b);
+                    else if (slot == 3) ExtinctWindSlime(b);
                     else RiftMarksman(b);
                     break;
-                case Role.Signature: BoundaryToad(b); break;
+                case Role.Signature:
+                    if (slot == 1) WanderingIsland(b);
+                    else if (slot == 2) StrataObserver(b);
+                    else if (slot == 3) ExtinctNatureSlime(b);
+                    else BoundaryToad(b);
+                    break;
                 default: GenericUnit(b, Faction.Driftworlds); break;
             }
         }
@@ -2034,6 +2041,161 @@ namespace WordCraft.View
             hull.Box(Point(-0.17f, 0.71f, -0.14f), Extent(0.26f, 0.08f, 0.52f), shell, Turn(0f, 0f, 22f));
             hull.Box(Point(0.17f, 0.71f, -0.14f), Extent(0.26f, 0.08f, 0.52f), BodyPalette.Driftworlds.ShellShade, Turn(0f, 0f, -22f));
             Band(b, hull, Point(0f, 0.44f, 0.18f), 10, 0.35f, 0.05f, 0.8f);
+        }
+
+        /// <summary>덩쿨편: a round-backed crawler on six legs, two domed plates parting on the world inside, a vine of that world for a snout.</summary>
+        private static void VineShard(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Step;
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color shell = BodyPalette.Driftworlds.Shell, shade = BodyPalette.Driftworlds.ShellShade, deep = BodyPalette.Driftworlds.ShellDeep;
+
+            hull.Box(Point(0f, 0.3f, -0.02f), Extent(0.3f, 0.2f, 0.52f), BodyPalette.Driftworlds.Teal);
+            hull.Dome(Point(0f, 0.22f, -0.2f), Extent(0.34f, 0.3f, 0.24f), 8, 2, shell);
+            hull.Dome(Point(0f, 0.22f, 0.16f), Extent(0.3f, 0.26f, 0.2f), 8, 2, shade);
+            hull.Box(Point(0f, 0.44f, -0.02f), Extent(0.14f, 0.05f, 0.08f), BodyPalette.Driftworlds.Lilac);
+            hull.Prism(Point(0.04f, 0.42f, -0.02f), 4, 0.04f, 0f, 0.1f, BodyPalette.Driftworlds.TealLight);
+            hull.Taper(Point(0f, 0.24f, 0.32f), Pair(0.22f, 0.14f), Pair(0.16f, 0.1f), 0.1f, deep, Lying);
+            hull.Ball(Point(-0.07f, 0.3f, 0.42f), 0.03f, BodyPalette.Driftworlds.TealLight);
+            hull.Ball(Point(0.07f, 0.3f, 0.42f), 0.03f, BodyPalette.Driftworlds.TealLight);
+            Strap(b, hull, Point(0f, 0.32f, 0.3f), Extent(0.3f, 0.2f, 0.04f));
+
+            float[] rows = { 0.16f, -0.04f, -0.24f };
+            for (int i = 0; i < rows.Length; i++)
+            {
+                bool first = i % 2 == 0;
+                MarksmanLeg(first ? b.LimbLeft : b.LimbRight, -1f, rows[i], deep);
+                MarksmanLeg(first ? b.LimbRight : b.LimbLeft, 1f, rows[i], deep);
+            }
+
+            b.Arm.Origin = Point(0f, 0.26f, 0.42f);
+            Vector3 position = Point(0f, 0.26f, 0.4f);
+            float pitch = 80f, width = 0.045f;
+            for (int i = 0; i < 4; i++)
+            {
+                Quaternion rotation = Turn(pitch, 0f, 0f);
+                b.Arm.Prism(position, 5, width, width * 0.85f, 0.13f, BodyPalette.TreeSpirits.LeafShade, rotation);
+                position += rotation * Point(0f, 0.12f, 0f);
+                pitch -= 32f;
+                width *= 0.85f;
+            }
+            b.Arm.Ball(position, Extent(0.06f, 0.025f, 0.04f), BodyPalette.TreeSpirits.LeafLight);
+            b.Arm.Ball(Point(0.08f, 0.32f, 0.54f), Extent(0.05f, 0.02f, 0.04f), BodyPalette.TreeSpirits.Leaf);
+        }
+
+        /// <summary>멸종한 바람 슬라임: a pale teal slime under two shell plates, wisps of its wind trailing behind. Airborne, a temporary summon.</summary>
+        private static void ExtinctWindSlime(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Flap;
+            b.LimbsRideHull = true;
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color body = BodyPalette.Driftworlds.TealLight, wisp = BodyPalette.Lighter(BodyPalette.Driftworlds.TealLight, 0.45f);
+            Color shell = BodyPalette.Driftworlds.Shell, shade = BodyPalette.Driftworlds.ShellShade;
+
+            hull.Ball(Point(0f, 0.4f, 0.04f), Extent(0.26f, 0.22f, 0.28f), body);
+            hull.Box(Point(-0.1f, 0.58f, -0.06f), Extent(0.26f, 0.07f, 0.4f), shell, Turn(0f, 0f, 18f));
+            hull.Box(Point(0.12f, 0.57f, -0.04f), Extent(0.24f, 0.07f, 0.36f), shade, Turn(0f, 0f, -20f));
+            hull.Box(Point(0f, 0.2f, -0.04f), Extent(0.3f, 0.06f, 0.34f), shade);
+            Eyes(hull, Point(0f, 0.42f, 0.3f), 0.15f, 0.055f);
+            hull.Ball(Point(0.06f, 0.42f, -0.3f), Extent(0.12f, 0.08f, 0.18f), wisp);
+            hull.Ball(Point(0.13f, 0.48f, -0.5f), Extent(0.07f, 0.05f, 0.12f), wisp);
+            hull.Ball(Point(-0.1f, 0.34f, -0.36f), Extent(0.08f, 0.06f, 0.14f), body);
+            Band(b, hull, Point(0f, 0.3f, 0.04f), 10, 0.24f, 0.04f, 1.08f);
+
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Solids plate = side < 0 ? b.LimbLeft : b.LimbRight;
+                Wing(plate, side, Point(0.22f, 0.44f, 0f), 0.2f, 0.22f, 0.12f, -0.06f, 18f, shade);
+            }
+        }
+
+        /// <summary>
+        /// 떠도는 섬: a broad shell cap over a narrowing underside, a ring of the
+        /// world inside showing between them, roots hanging down into the air.
+        /// Airborne and weaponless; two small plates beat at its sides.
+        /// </summary>
+        private static void WanderingIsland(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Flap;
+            b.LimbsRideHull = true;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color shell = BodyPalette.Driftworlds.Shell, shade = BodyPalette.Driftworlds.ShellShade, deep = BodyPalette.Driftworlds.ShellDeep;
+
+            hull.Dome(Point(0f, 0.52f, 0f), Extent(0.46f, 0.24f, 0.42f), 9, 2, shell);
+            hull.Prism(Point(0f, 0.44f, 0f), 9, 0.44f, 0.44f, 0.09f, BodyPalette.Driftworlds.Teal);
+            hull.Prism(Point(0f, 0.46f, 0f), 9, 0.4f, 0.4f, 0.04f, BodyPalette.Driftworlds.Dusk);
+            for (int i = 0; i < 5; i++)
+            {
+                float yaw = 160f + i * 22f;
+                hull.Prism(Around(yaw) * 0.38f + Point(0f, 0.5f, 0f), 4, 0.05f, 0f, 0.14f, BodyPalette.Driftworlds.TealLight);
+            }
+            hull.Prism(Point(0f, 0.45f, 0f), 8, 0.42f, 0.1f, 0.3f, shade, Turn(180f, 0f, 0f));
+            float[] xs = { -0.18f, 0.02f, 0.2f, -0.06f, 0.12f };
+            float[] zs = { 0.04f, 0.14f, -0.02f, -0.16f, -0.1f };
+            for (int i = 0; i < xs.Length; i++)
+                hull.Taper(Point(xs[i], 0.24f, zs[i]), Pair(0.05f, 0.05f), Pair(0.015f, 0.015f), 0.22f + (i % 3) * 0.06f, deep,
+                           Turn(180f + (i % 2 == 0 ? 10f : -10f), 0f, i * 7f - 14f));
+            hull.Lump(Point(0.1f, 0.74f, -0.05f), Extent(0.14f, 0.07f, 0.12f), shade, Turn(0f, 30f, 0f));
+            Shard(b, hull, Point(-0.12f, 0.86f, 0.05f), 0.06f);
+
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Solids plate = side < 0 ? b.LimbLeft : b.LimbRight;
+                Wing(plate, side, Point(0.42f, 0.5f, 0f), 0.16f, 0.2f, 0.1f, 0f, 10f, shade);
+            }
+        }
+
+        /// <summary>층위 관측자: a six-legged shell walker under a tall head plate split by a slit of stacked strata. Weaponless caster.</summary>
+        private static void StrataObserver(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Step;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color shell = BodyPalette.Driftworlds.Shell, shade = BodyPalette.Driftworlds.ShellShade, deep = BodyPalette.Driftworlds.ShellDeep;
+
+            hull.Taper(Point(0f, 0.22f, -0.32f), Pair(0.4f, 0.3f), Pair(0.34f, 0.26f), 0.5f, shell, Lying);
+            hull.Box(Point(0f, 0.4f, -0.12f), Extent(0.36f, 0.06f, 0.36f), shade, Turn(-6f, 0f, 0f));
+            Quaternion lean = Turn(-18f, 0f, 0f);
+            hull.Taper(Point(0f, 0.28f, 0.14f), Pair(0.34f, 0.18f), Pair(0.14f, 0.1f), 0.66f, shade, lean);
+            Color[] strata = { BodyPalette.Driftworlds.Lilac, BodyPalette.Driftworlds.Dusk, BodyPalette.Driftworlds.TealLight, BodyPalette.Driftworlds.Teal };
+            for (int k = 0; k < strata.Length; k++)
+            {
+                Vector3 local = Point(0f, 0.16f + k * 0.11f, 0.09f - k * 0.006f);
+                hull.Box(Point(0f, 0.28f, 0.14f) + lean * local, Extent(0.08f, 0.1f, 0.03f), strata[k], lean);
+            }
+            hull.Taper(Point(0f, 0.22f, 0.22f), Pair(0.2f, 0.12f), Pair(0.16f, 0.1f), 0.12f, deep, Lying);
+            Eyes(hull, Point(0f, 0.28f, 0.33f), 0.14f, 0.04f);
+            Strap(b, hull, Point(0f, 0.25f, 0.18f), Extent(0.36f, 0.12f, 0.04f));
+
+            float[] rows = { 0.12f, -0.1f, -0.32f };
+            for (int i = 0; i < rows.Length; i++)
+            {
+                bool first = i % 2 == 0;
+                MarksmanLeg(first ? b.LimbLeft : b.LimbRight, -1f, rows[i], deep);
+                MarksmanLeg(first ? b.LimbRight : b.LimbLeft, 1f, rows[i], deep);
+            }
+        }
+
+        /// <summary>멸종한 자연 슬라임: a leaf-green slime peeking out of a shell of plates, a broad leaf-shaped plate on top. Weaponless healer.</summary>
+        private static void ExtinctNatureSlime(Blueprint b)
+        {
+            b.Gait = Gait.Hop;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color shell = BodyPalette.Driftworlds.Shell, shade = BodyPalette.Driftworlds.ShellShade;
+
+            hull.Dome(Vector3.zero, Extent(0.4f, 0.48f, 0.38f), 10, 3, BodyPalette.TreeSpirits.LeafLight);
+            hull.Box(Point(-0.27f, 0.26f, -0.16f), Extent(0.12f, 0.44f, 0.36f), shell, Turn(0f, 0f, 12f));
+            hull.Box(Point(0.27f, 0.24f, -0.16f), Extent(0.12f, 0.4f, 0.34f), shade, Turn(0f, 0f, -12f));
+            hull.Box(Point(0f, 0.26f, -0.32f), Extent(0.46f, 0.44f, 0.1f), shell);
+            hull.Box(Point(0f, 0.5f, -0.22f), Extent(0.08f, 0.06f, 0.2f), BodyPalette.Driftworlds.Teal);
+            hull.Ball(Point(0f, 0.58f, -0.14f), Extent(0.34f, 0.05f, 0.26f), shell, Turn(-14f, 0f, 0f), 1);
+            hull.Box(Point(0f, 0.63f, -0.12f), Extent(0.035f, 0.03f, 0.42f), BodyPalette.Driftworlds.ShellDeep, Turn(-14f, 0f, 0f));
+            Eyes(hull, Point(0f, 0.28f, 0.35f), 0.16f, 0.06f);
+            Band(b, hull, Point(0f, 0.02f, 0f), 10, 0.41f, 0.06f, 0.95f);
         }
 
         // ---- 인간 마법 문명 ----
@@ -2194,6 +2356,7 @@ namespace WordCraft.View
                 case Faction.Hellfire: return HellfireExtraBuilding(b, role, slot);
                 case Faction.WaterSlimes: return WaterSlimeExtraBuilding(b, role, slot);
                 case Faction.RockGolems: return RockGolemExtraBuilding(b, role, slot);
+                case Faction.Driftworlds: return DriftworldExtraBuilding(b, role, slot);
                 default: return false;
             }
         }
@@ -3212,6 +3375,111 @@ namespace WordCraft.View
                 default:
                     GenericBuilding(b, Faction.Driftworlds, Cells(role));
                     break;
+            }
+        }
+
+        private static bool DriftworldExtraBuilding(Blueprint b, Role role, int slot)
+        {
+            Solids hull = b.Hull;
+            Color shell = BodyPalette.Driftworlds.Shell, shade = BodyPalette.Driftworlds.ShellShade, deep = BodyPalette.Driftworlds.ShellDeep;
+            Color teal = BodyPalette.Driftworlds.Teal, tealLight = BodyPalette.Driftworlds.TealLight;
+            Color dusk = BodyPalette.Driftworlds.Dusk, lilac = BodyPalette.Driftworlds.Lilac;
+
+            switch (role)
+            {
+                case Role.Production when slot == 1:
+                    // 깊은 통로: two thick plates leaning in to a tall passage, a smaller pair inside it, the other world receding behind.
+                    hull.Box(Point(0f, 1.2f, 0.12f), Extent(1.0f, 2.3f, 0.12f), teal);
+                    hull.Box(Point(0f, 2.0f, 0.1f), Extent(0.7f, 0.8f, 0.13f), lilac);
+                    hull.Box(Point(0f, 1.55f, 0.09f), Extent(0.5f, 0.2f, 0.13f), dusk);
+                    for (int i = 0; i < 3; i++)
+                        hull.Prism(Point(-0.25f + i * 0.25f, 0.15f, 0.06f), 4, 0.1f - i * 0.02f, 0f, 0.4f - i * 0.08f, tealLight);
+                    hull.Lump(Point(-1.1f, 0.15f, -0.4f), Extent(0.26f, 0.18f, 0.24f), deep, Turn(0f, 20f, 0f));
+                    Strap(b, hull, Point(0f, 0.08f, 0f), Extent(2.2f, 0.1f, 0.7f));
+                    hull = b.Tier(Point(-0.78f, 0f, 0f));
+                    hull.Taper(Point(-0.78f, 0f, 0f), Pair(0.9f, 0.7f), Pair(0.32f, 0.36f), 2.9f, shell, Turn(0f, 0f, -12f));
+                    hull = b.Tier(Point(0.78f, 0f, 0f));
+                    hull.Taper(Point(0.78f, 0f, 0f), Pair(0.9f, 0.7f), Pair(0.32f, 0.36f), 2.75f, shade, Turn(0f, 0f, 12f));
+                    hull = b.Tier(Point(0f, 0f, -0.2f));
+                    hull.Taper(Point(-0.36f, 0f, -0.2f), Pair(0.32f, 0.22f), Pair(0.12f, 0.12f), 1.55f, deep, Turn(0f, 0f, 6f));
+                    hull.Taper(Point(0.36f, 0f, -0.2f), Pair(0.32f, 0.22f), Pair(0.12f, 0.12f), 1.4f, shade, Turn(0f, 0f, -6f));
+                    return true;
+
+                case Role.Defense when slot == 1:
+                {
+                    // 위상 닻: three tall narrow plates rising to one height round a sliver of the inside, small plates turning round them. Unarmed.
+                    hull.Prism(Vector3.zero, 6, 0.75f, 0.65f, 0.12f, deep);
+                    for (int i = 0; i < 3; i++)
+                        hull.Prism(Around(60f + i * 120f) * 0.18f + Point(0f, 0.1f, 0f), 5, 0.14f, 0f, 0.7f + (i % 2) * 0.25f, i == 1 ? teal : tealLight);
+                    Band(b, hull, Point(0f, 0.02f, 0f), 6, 0.76f, 0.08f);
+                    for (int i = 0; i < 3; i++)
+                    {
+                        float yaw = i * 120f;
+                        Vector3 foot = Around(yaw) * 0.42f;
+                        hull = b.Tier(foot);
+                        hull.Taper(foot, Pair(0.34f, 0.24f), Pair(0.12f, 0.1f), 2.3f, i == 0 ? shade : shell, Outward(yaw, -5f));
+                    }
+
+                    Solids crown = b.Crown;
+                    crown.Origin = Point(0f, 1.0f, 0f);
+                    for (int i = 0; i < 3; i++)
+                    {
+                        float yaw = 60f + i * 120f;
+                        crown.Taper(Around(yaw) * 0.78f + Point(0f, 0.85f + i * 0.2f, 0f), Pair(0.24f, 0.06f), Pair(0.12f, 0.05f), 0.34f,
+                                    i == 1 ? lilac : shade, Quaternion.Euler(0f, yaw + 90f, 0f));
+                    }
+                    b.CrownSpin = 30f;
+                    return true;
+                }
+
+                case Role.Defense when slot == 2:
+                    // 틈새 포대: plates splayed open toward the target, the world inside where a muzzle would be. The upper plate aims.
+                    hull.Lump(Point(-0.6f, 0.1f, -0.5f), Extent(0.2f, 0.12f, 0.18f), deep, Turn(0f, 30f, 0f));
+                    hull.Taper(Vector3.zero, Pair(1.5f, 1.3f), Pair(1.15f, 1.0f), 0.55f, shade);
+                    hull.Prism(Point(0f, 0.55f, 0.1f), 8, 0.5f, 0.5f, 0.05f, teal);
+                    Band(b, hull, Point(0f, 0.08f, 0f), 4, 0.98f, 0.1f);
+                    hull = b.Tier(Point(-0.55f, 0.2f, 0f));
+                    hull.Taper(Point(-0.6f, 0.2f, 0f), Pair(0.35f, 1.1f), Pair(0.15f, 0.8f), 1.0f, shell, Turn(0f, 0f, 28f));
+                    hull = b.Tier(Point(0.55f, 0.2f, 0f));
+                    hull.Taper(Point(0.6f, 0.2f, 0f), Pair(0.35f, 1.1f), Pair(0.15f, 0.8f), 0.9f, shell, Turn(0f, 0f, -28f));
+
+                    b.Crown.Origin = Point(0f, 0.8f, -0.35f);
+                    b.Crown.Ball(Point(0f, 0.85f, 0.05f), Extent(0.38f, 0.26f, 0.38f), teal);
+                    b.Crown.Box(Point(0f, 0.98f, 0.22f), Extent(0.42f, 0.16f, 0.12f), lilac);
+                    b.Crown.Prism(Point(0.1f, 0.9f, 0.3f), 4, 0.08f, 0f, 0.2f, tealLight);
+                    b.Crown.Taper(Point(0f, 1.0f, -0.42f), Pair(1.2f, 0.3f), Pair(0.86f, 0.2f), 1.2f, shell, Turn(68f, 0f, 0f));
+                    b.CrownAims = true;
+                    b.CrownKick = -16f;
+                    return true;
+
+                case Role.Tech when slot == 1:
+                {
+                    // 외피 연마장: low plates laid open round a floor of the inside, one raised on the right, a polished plate turning on a peg.
+                    hull.Prism(Vector3.zero, 8, 0.8f, 0.78f, 0.1f, teal);
+                    hull.Box(Point(-0.1f, 0.11f, 0.15f), Extent(0.5f, 0.02f, 0.3f), lilac);
+                    hull.Prism(Point(0.25f, 0.1f, -0.2f), 4, 0.08f, 0f, 0.2f, tealLight);
+                    Band(b, hull, Point(0f, 0.02f, 0f), 8, 0.81f, 0.06f);
+                    Solids low = b.Tier(Vector3.zero);
+                    float[] yaws = { 180f, 235f, 300f };
+                    for (int i = 0; i < yaws.Length; i++)
+                    {
+                        Vector3 foot = Around(yaws[i]) * 0.6f;
+                        low.Taper(foot, Pair(0.75f, 0.32f), Pair(0.55f, 0.24f), 0.5f, i == 1 ? shade : shell, Outward(yaws[i], 58f));
+                    }
+                    hull = b.Tier(Point(0.6f, 0f, 0f));
+                    hull.Taper(Point(0.62f, 0f, 0.05f), Pair(0.34f, 0.8f), Pair(0.16f, 0.5f), 1.25f, shade, Turn(0f, 0f, -14f));
+
+                    Solids crown = b.Crown;
+                    crown.Origin = Point(-0.1f, 0.12f, 0.15f);
+                    crown.Prism(Point(-0.1f, 0.12f, 0.15f), 6, 0.06f, 0.05f, 0.5f, deep);
+                    crown.Prism(Point(-0.1f, 0.62f, 0.15f), 6, 0.34f, 0.34f, 0.06f, shell, Turn(22f, 0f, 0f));
+                    crown.Prism(Point(-0.1f, 0.66f, 0.15f), 6, 0.2f, 0.2f, 0.03f, BodyPalette.Lighter(shell, 0.3f), Turn(22f, 0f, 0f));
+                    b.CrownSpin = 45f;
+                    return true;
+                }
+
+                default:
+                    return false;
             }
         }
 
