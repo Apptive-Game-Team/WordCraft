@@ -2,7 +2,7 @@
 
 - Date: 2026-10-16
 - GitHub Issue: #197
-- Status: In progress (draft PR, #196 위에 쌓음)
+- Status: Implemented (draft PR, #196 위에 쌓음)
 
 ## Goal
 
@@ -42,3 +42,11 @@
 
 `dotnet build`, `dotnet run --project Replay`(새 `Replay/MechanicsChecks.cs`), `Host selfcheck`,
 `Host arena -games 2`, Unity `ViewSelfCheck`.
+
+## Result
+
+- 골든 해시 `0xF3DE07A6B0241E8D` → `0x42E9F28F9B63D88D`, CoreCLR와 Unity Mono가 같은 값. 규칙 변경이 아니라
+  `MaxUpgrades` 9 때문에 움직였다(규칙만 바꾼 커밋들에서는 해시가 그대로였다).
+- 기존 검사 고정값 갱신: `RosterChecks`(성장 행 셋 `Grown`, 연구 행 수와 묶음 4 행), `UpgradeChecks`(행 35개),
+  `ResearchMenuChecks`(진영 전체가 아니라 연구 건물마다 한 쪽), `ArrivalOrderChecks`(고리 검사 지점을 앵커 옆 칸으로).
+- arena 결과는 `fix/191`과 같다. AI가 새 메커니즘을 쓰지 않는다(묶음 9).
