@@ -489,6 +489,10 @@ namespace WordCraft.Sim
         /// </summary>
         private void Kill(ref Entity e)
         {
+            // 전격 과부하 and 화염 분출: queued, never landed here, per
+            // docs/TECH-TREE.md 능력 공통 규칙. First, while the body still
+            // counts as alive and able, which is what asks whether it bursts.
+            QueueDeathBurst(e);
             e.Hp = 0;
             e.Alive = false;
             ReleasePopulation(e);
@@ -831,6 +835,7 @@ namespace WordCraft.Sim
                 ExpirySystem();
                 CombatSystem();
                 StatusSystem();
+                BurstSystem();
                 FleeSystem();
                 MoveSystem();
                 VictorySystem();

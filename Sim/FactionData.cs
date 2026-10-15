@@ -394,6 +394,12 @@ namespace WordCraft.Sim
 
         // 차원 유랑종: 층위 고정 반경 4 → 6칸.
         StrataHoldRadius = 51,
+
+        // 세계수 정령: 전격 과부하 12 → 18.
+        OverloadDamage = 52,
+
+        // 차원 유랑종: 화염 분출 12 → 18.
+        FireBurstDamage = 53,
     }
 
     /// <summary>
@@ -513,6 +519,20 @@ namespace WordCraft.Sim
         /// many sources reach it. With Period 2 the body lapses at half speed.
         /// </summary>
         ExpiryAura = 14,
+
+        /// <summary>
+        /// 전격 과부하, 화염 분출: when the body dies, Kill queues a burst of
+        /// Amount fixed damage to hostile Targets within Radius of where it fell,
+        /// and BurstSystem lands it later in the tick.
+        /// </summary>
+        DeathBurst = 15,
+
+        /// <summary>
+        /// 도착 방전: when the body comes off a queue, ProductionSystem queues a
+        /// burst of Amount fixed damage to hostile Targets within Radius of where
+        /// it stands, and BurstSystem lands it later in the tick.
+        /// </summary>
+        ArrivalBurst = 16,
     }
 
     /// <summary>
@@ -1915,8 +1935,10 @@ namespace WordCraft.Sim
             (Faction.Humans, ResearchRow("표식 강화", 100, 160, 2, UpgradeEffect.MarkAmount, (Role.Tech, 1), NoBuilding)),
 
             // docs/TECH-TREE.md 묶음 6 (#202): summons that lapse and bursts.
+            (Faction.TreeSpirits, ResearchRow("과부하 강화", 75, 120, 2, UpgradeEffect.OverloadDamage, (Role.Tech, 2), NoBuilding)),
             (Faction.Driftworlds, ResearchRow("소환 수명", 150, 200, 3, UpgradeEffect.SummonLifetime, (Role.Tech, 0), NoBuilding)),
             (Faction.Driftworlds, ResearchRow("층위 고정 반경", 100, 160, 3, UpgradeEffect.StrataHoldRadius, (Role.Tech, 0), NoBuilding)),
+            (Faction.Driftworlds, ResearchRow("화염 분출 강화", 75, 120, 2, UpgradeEffect.FireBurstDamage, (Role.Tech, 1), NoBuilding)),
         };
 
         /// <summary>
@@ -2091,6 +2113,9 @@ namespace WordCraft.Sim
             // 회복: 회복 토템, 4칸 아군 유닛과 완공 건물, 20틱마다 +2.
             Ability("회복", Faction.TreeSpirits, Role.Defense, 1, AbilityKind.HealAura, AbilityTargets.BodiesAndBuildings,
                 UpgradeEffect.None, radius: 4, amount: 2, period: 20),
+            // 전격 과부하: 찌릿쥐, 죽을 때 2칸 적 지상·공중 고정 12. 과부하 강화 18. 묶음 6 (#202).
+            Ability("전격 과부하", Faction.TreeSpirits, Role.Melee, 2, AbilityKind.DeathBurst, AbilityTargets.Bodies,
+                UpgradeEffect.None, radius: 2, amount: 12, boost: UpgradeEffect.OverloadDamage, boostedAmount: 18),
 
             // 지옥불 군단
             // 화상 오라: 용암 갑각 악마, 2칸 적 지상, 20틱마다 고정 2. 화상 오라 강화 3.
@@ -2132,6 +2157,12 @@ namespace WordCraft.Sim
             // 층위 고정: 층위 관측자, 4칸 아군 한시 소환, 짝수 틱마다 ExpireTick +1. 층위 고정 반경 6칸. 묶음 6 (#202).
             Ability("층위 고정", Faction.Driftworlds, Role.Signature, 2, AbilityKind.ExpiryAura, AbilityTargets.Bodies,
                 UpgradeEffect.None, radius: 4, period: 2, boost: UpgradeEffect.StrataHoldRadius, boostedRadius: 6),
+            // 화염 분출: 멸종한 화염 슬라임, 죽거나 만료될 때 2칸 적 지상 고정 12. 화염 분출 강화 18. 묶음 6.
+            Ability("화염 분출", Faction.Driftworlds, Role.Melee, 1, AbilityKind.DeathBurst, AbilityTargets.GroundBodies,
+                UpgradeEffect.None, radius: 2, amount: 12, boost: UpgradeEffect.FireBurstDamage, boostedAmount: 18),
+            // 도착 방전: 멸종한 번개 슬라임, 도착한 자리 2칸 적 지상·공중 고정 10. 묶음 6.
+            Ability("도착 방전", Faction.Driftworlds, Role.Ranged, 1, AbilityKind.ArrivalBurst, AbilityTargets.Bodies,
+                UpgradeEffect.None, radius: 2, amount: 10),
 
             // 인간 마법 문명
             // 표식: 마도 정찰기, 5칸 적 유닛이 인간의 일반 공격에서 +1. 표식 강화 +2.
@@ -2446,8 +2477,11 @@ namespace WordCraft.Sim
                 if (row.Kind == AbilityKind.HealAura || row.Kind == AbilityKind.BurnAura ||
                     row.Kind == AbilityKind.SlowAura || row.Kind == AbilityKind.RateAura ||
                     row.Kind == AbilityKind.ArmorAura || row.Kind == AbilityKind.MarkAura ||
-                    row.Kind == AbilityKind.GrowthAura || row.Kind == AbilityKind.ExpiryAura)
+                    row.Kind == AbilityKind.GrowthAura || row.Kind == AbilityKind.ExpiryAura ||
+                    row.Kind == AbilityKind.DeathBurst || row.Kind == AbilityKind.ArrivalBurst)
                     Require(row.Targets != AbilityTargets.None, where + " names no targets");
+                if (row.Kind == AbilityKind.DeathBurst || row.Kind == AbilityKind.ArrivalBurst)
+                    Require(row.Amount > 0, where + " bursts for nothing");
                 for (int j = 0; j < i; j++)
                 {
                     Require(abilities[j].Faction != row.Faction || abilities[j].Role != row.Role ||
