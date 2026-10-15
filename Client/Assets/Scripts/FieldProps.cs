@@ -26,6 +26,9 @@ namespace WordCraft.View
         private const int StoneOdds = 4;
         private const int TuftOdds = 5;
 
+        /// <summary>Odds per hundred slope cells of a low stone beside the way up.</summary>
+        private const int RampStoneOdds = 45;
+
         /// <summary>
         /// Places nothing may grow near, as (x, y, radius in cells) for peer 0;
         /// each is mirrored through the map centre for peer 1, the way
@@ -59,6 +62,12 @@ namespace WordCraft.View
             if (Cleared(cx, cy)) return;
 
             int roll = FieldMesh.Hash(cx * 31 + 7, cy * 17 + 3) % 100;
+            if (Climb(cell) >= 0.3f)
+            {
+                // A ramp: low flat stones along the way up, nothing tall.
+                if (roll < RampStoneOdds) Slab(f, cx, cy);
+                return;
+            }
             if (roll < TreeOdds)
             {
                 if (Sheltered(cx, cy)) Tree(f, cx, cy);
@@ -71,6 +80,18 @@ namespace WordCraft.View
             {
                 Tuft(f, cx, cy);
             }
+        }
+
+        /// <summary>How far a cell's surface climbs across it, in world units. Zero on flat ground.</summary>
+        private static float Climb(int cell)
+        {
+            float c0 = Field.Corner(cell, 0);
+            float c1 = Field.Corner(cell, 1);
+            float c2 = Field.Corner(cell, 2);
+            float c3 = Field.Corner(cell, 3);
+            float dx = ((c1 - c0) + (c3 - c2)) * 0.5f;
+            float dz = ((c2 - c0) + (c3 - c1)) * 0.5f;
+            return Mathf.Sqrt(dx * dx + dz * dz);
         }
 
         private static bool Cleared(int cx, int cy)
@@ -191,10 +212,20 @@ namespace WordCraft.View
         {
             float px = cx + 0.25f + 0.5f * FieldMesh.Unit(cx, cy, 1);
             float pz = cy + 0.25f + 0.5f * FieldMesh.Unit(cx, cy, 2);
-            float yaw = FieldMesh.Unit(cx, cy, 3) * 90f * Mathf.Deg2Rad;
             float width = 0.16f + 0.12f * FieldMesh.Unit(cx, cy, 4);
             float depth = 0.14f + 0.10f * FieldMesh.Unit(cx, cy, 5);
             float height = 0.10f + 0.10f * FieldMesh.Unit(cx, cy, 6);
+            Block(f, cx, cy, px, pz, width, depth, height, 0.7f);
+        }
+
+        /// <summary>
+        /// The stone build every rock prop shares: a box of width × depth ×
+        /// height at (px, pz), its top corners pulled in by pull and nudged by the
+        /// cell's hash so no two are the same block, sunk a little into the ground.
+        /// </summary>
+        private static void Block(Facets f, int cx, int cy, float px, float pz, float width, float depth, float height, float pull)
+        {
+            float yaw = FieldMesh.Unit(cx, cy, 3) * 90f * Mathf.Deg2Rad;
             float ground = Field.Height(px, pz) - 0.04f;
 
             var right = new Vector3(Mathf.Cos(yaw), 0f, Mathf.Sin(yaw));
@@ -208,10 +239,10 @@ namespace WordCraft.View
                 float sx = (i & 1) == 0 ? -0.5f : 0.5f;
                 float sz = (i & 2) == 0 ? -0.5f : 0.5f;
                 bool top = (i & 4) != 0;
-                float pull = top ? 0.7f : 1f;
+                float squeeze = top ? pull : 1f;
                 float lift = top ? height + (FieldMesh.Unit(cx + i, cy, 7) - 0.5f) * 0.06f : 0f;
                 float nudge = top ? (FieldMesh.Unit(cx, cy + i, 8) - 0.5f) * 0.04f : 0f;
-                p[i] = centre + right * (sx * width * pull + nudge) + ahead * (sz * depth * pull - nudge)
+                p[i] = centre + right * (sx * width * squeeze + nudge) + ahead * (sz * depth * squeeze - nudge)
                        + Vector3.up * lift;
             }
 
@@ -224,6 +255,23 @@ namespace WordCraft.View
             Split(f, p[1], p[3], p[7], p[5], side, right);
             Split(f, p[3], p[2], p[6], p[7], side, ahead);
             Split(f, p[2], p[0], p[4], p[6], side, -right);
+        }
+
+        /// <summary>
+        /// A low flat stone at the side of a ramp: the loose stone's build, half
+        /// its height and a little wider, so it reads as a step or an edging stone
+        /// on the way up and never as a block in it. Sits near one edge of the cell
+        /// rather than in the middle, where the ruts run.
+        /// </summary>
+        private static void Slab(Facets f, int cx, int cy)
+        {
+            float side = FieldMesh.Unit(cx, cy, 12) < 0.5f ? 0.18f : 0.82f;
+            float along = 0.25f + 0.5f * FieldMesh.Unit(cx, cy, 13);
+            bool acrossX = FieldMesh.Unit(cx, cy, 14) < 0.5f;
+            float px = cx + (acrossX ? side : along);
+            float pz = cy + (acrossX ? along : side);
+            Block(f, cx, cy, px, pz, 0.20f + 0.08f * FieldMesh.Unit(cx, cy, 4), 0.16f + 0.06f * FieldMesh.Unit(cx, cy, 5),
+                  0.05f + 0.03f * FieldMesh.Unit(cx, cy, 6), 0.75f);
         }
 
         /// <summary>A four sided face that may not be planar, as two flat triangles.</summary>

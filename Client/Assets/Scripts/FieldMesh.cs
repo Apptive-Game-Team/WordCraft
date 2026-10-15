@@ -226,8 +226,10 @@ namespace WordCraft.View
                     break;
                 default:
                     int level = Field.Level(cell);
-                    Color colour = Flat(p0, p1, p2, p3) ? FieldPalette.Grass(level) : FieldPalette.Slope(level);
+                    bool flat = Flat(p0, p1, p2, p3);
+                    Color colour = flat ? FieldPalette.Grass(level) : FieldPalette.Slope(level);
                     Surface(solid, p0, p1, p2, p3, FieldPalette.Grained(colour, grain));
+                    if (!flat) Ruts(solid, cx, cy, p0, p1, p2, p3);
                     break;
             }
 
@@ -301,6 +303,149 @@ namespace WordCraft.View
                 f.Triangle(p0, p1, p2, colour, Vector3.up);
                 f.Triangle(p1, p3, p2, colour, Vector3.up);
             }
+        }
+
+        // ------------------------------------------------------------------ ramps
+
+        /// <summary>The least rise across a cell, in world units, that gets ruts. Half a level: a ramp cell and the cells it leans into, not the slight tilt at a ramp's side.</summary>
+        private const float RutMinRise = 0.3f;
+
+        /// <summary>Distance between two ruts, across the climb. Gives a cell two, or three when it climbs diagonally.</summary>
+        private const float RutSpacing = 0.5f;
+
+        /// <summary>A rut's width. Thin enough to be a worn line and not a second ground colour.</summary>
+        private const float RutWidth = 0.075f;
+
+        /// <summary>How far a rut floats over the ground, so it never fights the facet under it for depth.</summary>
+        private const float RutLift = 0.012f;
+
+        /// <summary>
+        /// Worn earth lines running up a slope cell, so a ramp reads as the way up
+        /// before the light has said anything. Parallel to the climb, with the
+        /// climb rounded to one of eight directions, and placed on lines fixed in
+        /// world space — every RutSpacing across that direction — so the cells of
+        /// one ramp, which all climb the same way, carry the same lines across
+        /// their borders and the ruts run as one path from the foot to the top.
+        /// </summary>
+        private static void Ruts(Facets f, int cx, int cy, Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3)
+        {
+            float dx = ((p1.y - p0.y) + (p3.y - p2.y)) * 0.5f;
+            float dz = ((p2.y - p0.y) + (p3.y - p1.y)) * 0.5f;
+            if (dx * dx + dz * dz < RutMinRise * RutMinRise) return;
+
+            // The way the whole ramp climbs rather than this cell's own tilt: a
+            // ramp running diagonally across the grid is a staircase of cells, and
+            // read one at a time they tilt along x, along z and diagonally by
+            // turns, which scatters the ruts like hatching. Rounded to one of
+            // eight directions so neighbouring cells of one ramp agree exactly.
+            Vector2 climb = Climb(cx, cy);
+            if (climb.sqrMagnitude < 1e-4f) climb = new Vector2(dx, dz);
+            float angle = Mathf.Round(Mathf.Atan2(climb.y, climb.x) / (Mathf.PI * 0.25f)) * (Mathf.PI * 0.25f);
+            var along = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+            var across = new Vector2(-along.y, along.x);
+            int heading = ((int)Mathf.Round(angle / (Mathf.PI * 0.25f)) + 8) % 4;
+
+            // The cell's extent across the climb, and the lines that fall inside it.
+            float lo = float.MaxValue;
+            float hi = float.MinValue;
+            for (int c = 0; c < 4; c++)
+            {
+                float d = Vector2.Dot(new Vector2(cx + (c & 1), cy + (c >> 1)), across);
+                lo = Mathf.Min(lo, d);
+                hi = Mathf.Max(hi, d);
+            }
+
+            Color colour = FieldPalette.Rut;
+            for (int k = Mathf.CeilToInt(lo / RutSpacing); k * RutSpacing <= hi; k++)
+            {
+                // Each line wanders a little off its slot, the same wander in every cell it crosses.
+                float offset = k * RutSpacing + (Unit(k, heading, 31) - 0.5f) * 0.12f;
+                if (!Clip(cx, cy, across * offset, along, out float t0, out float t1)) continue;
+                if (t1 - t0 < 0.2f) continue;
+
+                Vector2 start = across * offset + along * t0;
+                Vector2 side = across * (RutWidth * 0.5f);
+                const int steps = 3;
+                for (int i = 0; i < steps; i++)
+                {
+                    Vector2 a = start + along * ((t1 - t0) * i / steps);
+                    Vector2 b = start + along * ((t1 - t0) * (i + 1) / steps);
+                    f.Quad(OnCell(cx, cy, a - side), OnCell(cx, cy, b - side),
+                           OnCell(cx, cy, b + side), OnCell(cx, cy, a + side), colour, Vector3.up);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Which way the ground climbs around cell (cx, cy): a Sobel gradient of
+        /// the simulation's levels over the 3 by 3 block of open cells round it.
+        /// Rock and water stand in at the cell's own level, so the ridge and the
+        /// lakes do not pull a ramp sideways. A cliff does count, which is right:
+        /// it is the same climb, only too steep to walk.
+        /// </summary>
+        private static Vector2 Climb(int cx, int cy)
+        {
+            int own = Field.Level(cy * Field.Cells + cx);
+            float gx = 0f;
+            float gz = 0f;
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    if (dx == 0 && dy == 0) continue;
+                    int x = cx + dx;
+                    int y = cy + dy;
+                    int level = own;
+                    if (x >= 0 && y >= 0 && x < Field.Cells && y < Field.Cells)
+                    {
+                        int cell = y * Field.Cells + x;
+                        if (Field.Kind(cell) == TileKind.Open) level = Field.Level(cell);
+                    }
+                    float weight = dx == 0 || dy == 0 ? 2f : 1f;
+                    gx += dx * weight * level;
+                    gz += dy * weight * level;
+                }
+            }
+            return new Vector2(gx, gz);
+        }
+
+        /// <summary>
+        /// Where the line origin + t·direction enters and leaves cell (cx, cy).
+        /// Each rut vertex is then held inside the cell (<see cref="OnCell"/>), so
+        /// a rut ends at a border where a wall drops away instead of hanging
+        /// over it.
+        /// </summary>
+        private static bool Clip(int cx, int cy, Vector2 origin, Vector2 direction, out float t0, out float t1)
+        {
+            const float inset = 0f;
+            t0 = float.MinValue;
+            t1 = float.MaxValue;
+            for (int axis = 0; axis < 2; axis++)
+            {
+                float o = axis == 0 ? origin.x : origin.y;
+                float d = axis == 0 ? direction.x : direction.y;
+                float min = (axis == 0 ? cx : cy) + inset;
+                float max = (axis == 0 ? cx : cy) + 1 - inset;
+                if (Mathf.Abs(d) < 1e-5f)
+                {
+                    if (o < min || o > max) return false;
+                    continue;
+                }
+                float a = (min - o) / d;
+                float b = (max - o) / d;
+                if (a > b) (a, b) = (b, a);
+                t0 = Mathf.Max(t0, a);
+                t1 = Mathf.Min(t1, b);
+            }
+            return t1 > t0;
+        }
+
+        /// <summary>A plane point inside cell (cx, cy), lifted onto that cell's own surface by <see cref="RutLift"/>.</summary>
+        private static Vector3 OnCell(int cx, int cy, Vector2 p)
+        {
+            float x = Mathf.Clamp(p.x, cx + 0.001f, cx + 0.999f);
+            float z = Mathf.Clamp(p.y, cy + 0.001f, cy + 0.999f);
+            return new Vector3(x, Field.Height(x, z) + RutLift, z);
         }
 
         // ------------------------------------------------------------------ walls

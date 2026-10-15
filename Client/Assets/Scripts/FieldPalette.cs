@@ -91,6 +91,13 @@ namespace WordCraft.View
         /// </summary>
         public static readonly Color SlopeTint = Rgb(0x8E7D58);
 
+        /// <summary>
+        /// The worn lines up a ramp. Darker and browner than the slope under them,
+        /// trodden earth with the grass gone, so the lines read as a path and not
+        /// as more grass of another colour.
+        /// </summary>
+        public static readonly Color Rut = Rgb(0x76674D);
+
         /// <summary>How far a slope cell moves from its level's grass toward <see cref="SlopeTint"/>.</summary>
         public const float SlopeShift = 0.3f;
 
