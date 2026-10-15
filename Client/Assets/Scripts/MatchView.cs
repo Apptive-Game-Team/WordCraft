@@ -178,7 +178,7 @@ namespace WordCraft.View
         public static bool Throws(UnitStats stats) => Throws(stats.Range);
 
         /// <summary>
-        /// The same test on a reach alone, for a caller holding a live body: World.RangeOf
+        /// The same test on a reach alone, for a caller holding a live body: World.RangeFor
         /// is the researched reach, and 골렘 사거리 lifts a golem's 2 cells to 3, so a
         /// swing that has become a throw gets a tracer.
         /// </summary>
@@ -453,13 +453,13 @@ namespace WordCraft.View
                 // "이게 저걸 때릴 수 있나" is a question the simulation already
                 // answers; this only ever reads it, never a re-typed number of its
                 // own, so the ring can never say something the shot does not. It is
-                // World.RangeOf and not the roster's Range: a researched range
+                // World.RangeFor and not the roster's Range: a researched range
                 // upgrade moves the reach the shot is tested against, and a ring
                 // left at the base number would draw a boundary the unit hits past
                 // (issues #104, #182).
                 if (picked && world.Armed(e))
                 {
-                    RangeRing(rangeRings[i], world.RangeOf(e), p);
+                    RangeRing(rangeRings[i], world.RangeFor(e), p);
                 }
                 else
                 {
@@ -609,7 +609,7 @@ namespace WordCraft.View
             target.Alive = true;
             bool seen = Fog.Show(e.TargetId, target) == Fog.Seen;
 
-            if (Throws(world.RangeOf(e)))
+            if (Throws(world.RangeFor(e)))
             {
                 // A tower kicks the instant it fires and has no wind-up to wait for.
                 float leave = e.Kind == EntityKind.Building ? 0f : BodyRig.StrikeDelay;
