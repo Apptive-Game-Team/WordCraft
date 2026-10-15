@@ -53,6 +53,43 @@ namespace WordCraft.Sim
                     case AbilityKind.RemnantRepair: RepairFromRemnant(i, row); break;
                 }
             }
+            RepairDevices();
+        }
+
+        /// <summary>
+        /// 수리: on a tick the row's period divides, every 공방 기술자 by
+        /// ascending id heals the allied finished building or 장치 유닛 within
+        /// its radius that has lost the most hp (lower id on a tie) by the row's
+        /// amount, up to MaxHp. A building under construction is not mended: its
+        /// hp is the build's to raise. No state; two technicians on one wall
+        /// both mend it.
+        /// </summary>
+        private void RepairDevices()
+        {
+            for (int s = 0; s < entities.Count; s++)
+            {
+                Entity src = entities[s];
+                int row = ActiveAbility(src, AbilityKind.Repair);
+                if (row < 0) continue;
+                AbilityRow r = FactionData.AbilityRowAt(row);
+                if (Tick % r.Period != 0) continue;
+                Fix radius = Fix.FromInt(AbilityRadius(src.Owner, r));
+                int best = -1, bestLost = 0;
+                for (int i = 0; i < entities.Count; i++)
+                {
+                    Entity t = entities[i];
+                    if (!t.Alive || t.Owner != src.Owner || !AuraTargets(r.Targets, t)) continue;
+                    int lost = t.MaxHp - t.Hp;
+                    if (lost <= bestLost || !WithinRange(src.Position, t.Position, radius)) continue;
+                    best = i;
+                    bestLost = lost;
+                }
+                if (best < 0) continue;
+                Entity mended = entities[best];
+                mended.Hp += AbilityAmount(src.Owner, r);
+                if (mended.Hp > mended.MaxHp) mended.Hp = mended.MaxHp;
+                entities[best] = mended;
+            }
         }
 
         /// <summary>
