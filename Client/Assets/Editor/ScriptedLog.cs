@@ -20,7 +20,7 @@ namespace WordCraft.View
         /// on. Update it only when the simulation intentionally changes, and only
         /// after both runtimes agree on the new value.
         /// </summary>
-        public const ulong GoldenHash = 0x45FA012D9A76F9ABUL;
+        public const ulong GoldenHash = 0xE77E7D309B69368DUL;
 
         /// <summary>
         /// The factions the golden hash was taken over. Factions are hashed, so
@@ -86,10 +86,12 @@ namespace WordCraft.View
             Add(log, 480, 0, seq, CommandType.Build, -1, At(22, 22), (int)Role.Defense);
             Add(log, 480, 1, seq, CommandType.Build, -1, At(42, 42), (int)Role.Defense);
 
+            // Peer 1 orders one 용암 갑각 악마 rather than two. It costs 90 per
+            // docs/FACTION-MECHANICS.md, and a second one at 420 would leave
+            // peer 1 with 35 at 480, short of the defense building below.
             Add(log, 300, 0, seq, CommandType.Produce, Works0, FixVec2.Zero, 0);
             Add(log, 300, 1, seq, CommandType.Produce, Works1, FixVec2.Zero, 0);
             Add(log, 420, 0, seq, CommandType.Produce, Works0, FixVec2.Zero, 0);
-            Add(log, 420, 1, seq, CommandType.Produce, Works1, FixVec2.Zero, 0);
 
             // One research, on the 기술 건물 that finished at 369, so the golden
             // hash covers the Research command, the price it takes, the

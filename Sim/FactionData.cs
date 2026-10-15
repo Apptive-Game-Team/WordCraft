@@ -293,9 +293,13 @@ namespace WordCraft.Sim
         /// tech tree: tier, prerequisite and producing building are asked of the
         /// entry rather than the role. A peer on 30 queues a 잎날 정령 at the 생명의
         /// 나무 that a peer on 31 refuses, and the two banks differ by twenty on the
-        /// tick the order was given.
+        /// tick the order was given. 32 is the roster catching up with its
+        /// documents: the rows docs/TECH-TREE.md marks † took the numbers
+        /// docs/FACTION-MECHANICS.md gives them. A peer on 31 sells a 용암 갑각
+        /// 악마 for 20 that a peer on 32 charges 90 for, and the banks differ by
+        /// 70 on the tick the order is given.
         /// </summary>
-        public const uint ContentVersion = 31;
+        public const uint ContentVersion = 32;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -385,9 +389,10 @@ namespace WordCraft.Sim
 
         /// <summary>
         /// Where a faction departs from the shared row, per entry rather than per
-        /// role. Nearly empty today: the six factions still field identical
-        /// numbers, and an entry arrives with the mechanic that needs it rather
-        /// than ahead of it.
+        /// role. Every row is a number or a flag a document gives:
+        /// docs/FACTION-MECHANICS.md's faction tables, the 공중 rule of
+        /// docs/FACTIONS.md, and the rows docs/TECH-TREE.md marks † — and nothing
+        /// here is a number the documents do not name.
         ///
         /// The key is Faction, Role and Slot together, and the slot is what makes
         /// the table able to say what it means. 지옥불's ranged list holds two
@@ -435,6 +440,91 @@ namespace WordCraft.Sim
                     Speed = Fix.Ratio(1, 4),
                     Footprint = BodyRadius,
                     Damage = 6,
+                    Range = Fix.FromInt(5),
+                    AttackTicks = 18,
+                    HitsAir = true,
+                    HitsGround = true,
+                }),
+
+            // 지옥불 용암 갑각 악마. 체력 260, 근접, 피해 14, 속도 1/6칸/틱, per
+            // docs/FACTION-MECHANICS.md 지옥불 표: 개체가 적고 하나하나가 크다,
+            // written into the one body the faction buys to hold the line. The
+            // shared melee reach and rate are written out for the reason 고목
+            // 수호자's row writes them out.
+            (Faction.Hellfire, Role.Melee, 0,
+                new UnitStats
+                {
+                    Hp = 260,
+                    Speed = Fix.Ratio(1, 6),
+                    Footprint = BodyRadius,
+                    Damage = 14,
+                    Range = Fix.FromInt(2),
+                    AttackTicks = 15,
+                    HitsGround = true,
+                }),
+
+            // 물 슬라임 거품 정령. 체력 130, 근접, 피해 6, per
+            // docs/FACTION-MECHANICS.md 물 슬라임 표: the wall the archers stand
+            // behind, tougher than the shared melee row and lighter in the hand.
+            (Faction.WaterSlimes, Role.Melee, 0,
+                new UnitStats
+                {
+                    Hp = 130,
+                    Speed = Fix.Ratio(1, 4),
+                    Footprint = BodyRadius,
+                    Damage = 6,
+                    Range = Fix.FromInt(2),
+                    AttackTicks = 15,
+                    HitsGround = true,
+                }),
+
+            // 물 슬라임 물결 궁수. 체력 70, 사거리 6, 기본 피해 4, per
+            // docs/FACTION-MECHANICS.md. 기본 is the word that matters: 일제 사격
+            // adds up to 4 on top of this, so one archer alone hits for 4 and a
+            // massed one for 8.
+            (Faction.WaterSlimes, Role.Ranged, 0,
+                new UnitStats
+                {
+                    Hp = 70,
+                    Speed = Fix.Ratio(1, 4),
+                    Footprint = BodyRadius,
+                    Damage = 4,
+                    Range = Fix.FromInt(6),
+                    AttackTicks = 18,
+                    HitsAir = true,
+                    HitsGround = true,
+                }),
+
+            // 돌 골렘 꼬마돌. 체력 80, per docs/FACTION-MECHANICS.md 돌 골렘 표,
+            // the same 80 the neutral 꼬마돌 인간 captures carries as
+            // World.NeutralRockHp, which is the same creature on no side.
+            (Faction.RockGolems, Role.Worker, 0,
+                new UnitStats { Hp = 80, Speed = Fix.Ratio(1, 4), Footprint = BodyRadius }),
+
+            // 돌 골렘 이끼바위 골렘. 체력 300, 근접, 피해 9, 속도 1/6칸/틱, per
+            // docs/FACTION-MECHANICS.md. The shared melee reach and rate are kept
+            // and written out; 골렘 사거리 adds to the reach in World.RangeOf.
+            (Faction.RockGolems, Role.Melee, 0,
+                new UnitStats
+                {
+                    Hp = 300,
+                    Speed = Fix.Ratio(1, 6),
+                    Footprint = BodyRadius,
+                    Damage = 9,
+                    Range = Fix.FromInt(2),
+                    AttackTicks = 15,
+                    HitsGround = true,
+                }),
+
+            // 돌 골렘 바위 술사. 체력 120, 사거리 5, 피해 7, per
+            // docs/FACTION-MECHANICS.md. A ranged row, so it reaches both layers.
+            (Faction.RockGolems, Role.Ranged, 0,
+                new UnitStats
+                {
+                    Hp = 120,
+                    Speed = Fix.Ratio(1, 4),
+                    Footprint = BodyRadius,
+                    Damage = 7,
                     Range = Fix.FromInt(5),
                     AttackTicks = 18,
                     HitsAir = true,
@@ -527,6 +617,34 @@ namespace WordCraft.Sim
             // meaning what that one already means.
             (Faction.Driftworlds, Role.Signature, 0,
                 new UnitStats { Hp = 240, Speed = Fix.Ratio(3, 8), Footprint = BodyRadius }),
+
+            // 인간 수습 마법생. 체력 55, per docs/FACTION-MECHANICS.md 인간 표: five
+            // under the shared worker row, for the one worker that also captures.
+            (Faction.Humans, Role.Worker, 0,
+                new UnitStats { Hp = 55, Speed = Fix.Ratio(1, 4), Footprint = BodyRadius }),
+
+            // 인간 마법 탑, the 생산 one. 체력 220, per docs/FACTION-MECHANICS.md 인간
+            // 표, which prices it at 60자원 80틱 in the same row; buildOverrides
+            // carries that half. The supply slot's 마법 탑 is another entry and
+            // keeps the shared 200, because no document gives it a number.
+            (Faction.Humans, Role.Production, 0, new UnitStats { Hp = 220 }),
+
+            // 인간 공수 특공대. 체력 90, 사거리 5, 피해 7, per
+            // docs/FACTION-MECHANICS.md. Still reaches both layers: docs/TECH-TREE.md
+            // proposes it ground-only and leaves that an open decision, and this
+            // row does not take it.
+            (Faction.Humans, Role.Ranged, 0,
+                new UnitStats
+                {
+                    Hp = 90,
+                    Speed = Fix.Ratio(1, 4),
+                    Footprint = BodyRadius,
+                    Damage = 7,
+                    Range = Fix.FromInt(5),
+                    AttackTicks = 18,
+                    HitsAir = true,
+                    HitsGround = true,
+                }),
 
             // 인간 대포. 지상 전용, per docs/FACTION-MECHANICS.md 공중, which is
             // the whole reason this row exists: everything else about it could
@@ -633,8 +751,9 @@ namespace WordCraft.Sim
         /// <summary>
         /// Where a faction departs from the shared production row, keyed by entry
         /// rather than by role for the same reason <see cref="statOverrides"/> is.
-        /// Balance past "matches finish" is still a non-goal, so an entry arrives
-        /// with the mechanic that needs it: 지옥불 군단장 is the whole list today.
+        /// Balance past "matches finish" is still a non-goal, so every row here is
+        /// a number a document gives: docs/FACTION-MECHANICS.md's faction tables,
+        /// marked † in docs/TECH-TREE.md.
         ///
         /// Narrowing this key is what puts 균열 파수병 on the production list. The
         /// row below closes 지옥불's ranged slot because 자손 is spawned rather
@@ -654,10 +773,18 @@ namespace WordCraft.Sim
             (Faction.TreeSpirits, Role.Melee, 1, new ProductionCost()),
             (Faction.TreeSpirits, Role.Ranged, 1, new ProductionCost()),
 
+            // 세계수 정령 풀씨 정령. 40자원 30틱, per docs/FACTION-MECHANICS.md 세계수
+            // 표. Twice the shared worker price, because this worker is also every
+            // combat body the faction will ever have.
+            (Faction.TreeSpirits, Role.Worker, 0, Produce(40, 30)),
+
             // 지옥불 군단장. 220자원 140틱, per docs/FACTION-MECHANICS.md. The most
             // expensive unit in the game, and it kills nothing itself: it pays for
             // itself with what it spawns.
             (Faction.Hellfire, Role.Signature, 0, Produce(220, 140)),
+
+            // 지옥불 용암 갑각 악마. 90자원 80틱, per docs/FACTION-MECHANICS.md.
+            (Faction.Hellfire, Role.Melee, 0, Produce(90, 80)),
 
             // 지옥불 군단장의 자손. Free, and off the production list altogether: it
             // comes out of a warlord every World.WarlordSpawnTicks and there is no
@@ -665,6 +792,17 @@ namespace WordCraft.Sim
             // then 무료 is only a discount on a unit you can also just buy. Entry 0
             // only: 균열 파수병 behind it is bought at the shared ranged price.
             (Faction.Hellfire, Role.Ranged, 0, new ProductionCost()),
+
+            // 물 슬라임, per docs/FACTION-MECHANICS.md 물 슬라임 표. 거품 정령
+            // 35자원 30틱, 물결 궁수 55자원 45틱.
+            (Faction.WaterSlimes, Role.Melee, 0, Produce(35, 30)),
+            (Faction.WaterSlimes, Role.Ranged, 0, Produce(55, 45)),
+
+            // 돌 골렘 부족, per docs/FACTION-MECHANICS.md 돌 골렘 표. 꼬마돌
+            // 40자원 35틱, 이끼바위 골렘 80자원 70틱, 바위 술사 70자원 60틱.
+            (Faction.RockGolems, Role.Worker, 0, Produce(40, 35)),
+            (Faction.RockGolems, Role.Melee, 0, Produce(80, 70)),
+            (Faction.RockGolems, Role.Ranged, 0, Produce(70, 60)),
 
             // 차원 유랑종. The faction that does not make units but lets them cross,
             // and until now every one of them crossed at the shared 20자원 40틱.
@@ -697,6 +835,11 @@ namespace WordCraft.Sim
             // would cost the opponent nothing. Entry 0 only: 마도 정찰기 behind it
             // is bought at the shared signature price.
             (Faction.Humans, Role.Signature, 0, new ProductionCost()),
+
+            // 인간, per docs/FACTION-MECHANICS.md 인간 표. 수습 마법생 45자원 35틱,
+            // 공수 특공대 65자원 55틱.
+            (Faction.Humans, Role.Worker, 0, Produce(45, 35)),
+            (Faction.Humans, Role.Ranged, 0, Produce(65, 55)),
         };
 
         private static ProductionCost Produce(int resources, int ticks) =>

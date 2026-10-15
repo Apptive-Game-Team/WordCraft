@@ -594,8 +594,11 @@ namespace WordCraft.Replay
             Check(world.PopulationCap(0) == World.PopulationPerBase + World.PopulationPerSupply,
                 "a supply building did not grant its population");
 
+            // Charged at the 풀씨 정령's own price, which docs/FACTION-MECHANICS.md
+            // sets apart from the shared worker row.
             world.Step(Produce(0, 0, 1, Role.Worker));
-            Check(world.GetResources(0) == banked - World.ProduceCost, "produce under the cap spent nothing");
+            Check(world.GetResources(0) == banked - FactionData.Production(Faction.TreeSpirits, Role.Worker).Resources,
+                "produce under the cap spent nothing");
             Check(world.GetEntity(0).QueueCount == 1, "produce under the cap queued nothing");
         }
 
@@ -955,15 +958,17 @@ namespace WordCraft.Replay
             {
                 queue.Add(new Command(0, 0, i, CommandType.Produce, QueueBase, FixVec2.Zero, (int)Role.Worker));
             }
+            // The 풀씨 정령's own price, not the shared worker row's.
+            int price = FactionData.Production(Faction.TreeSpirits, Role.Worker).Resources;
             int banked = world.GetResources(0);
             world.Step(queue);
             Check(world.GetEntity(QueueBase).QueueCount == 3, "three produce orders did not queue three units");
-            Check(world.GetResources(0) == banked - 3 * World.ProduceCost, "queueing did not charge three units");
+            Check(world.GetResources(0) == banked - 3 * price, "queueing did not charge three units");
 
             banked = world.GetResources(0);
             world.Step(Cancel(QueueBase, 0, 3));
             Check(world.GetEntity(QueueBase).QueueCount == 2, "cancelling did not shorten the queue");
-            Check(world.GetResources(0) == banked + World.ProduceCost, "cancelling did not refund in full");
+            Check(world.GetResources(0) == banked + price, "cancelling did not refund in full");
 
             // Down to nothing, then one more: an empty queue has nothing to refund,
             // and a refused cancel must leave the bank exactly as it found it.
@@ -1341,11 +1346,15 @@ namespace WordCraft.Replay
             Check(world.GetEntity(DisarmedPrey).Hp == world.GetEntity(DisarmedPrey).MaxHp,
                 "지옥불 군단장 shot something");
 
+            // 용암 갑각 악마 hits for 14, so the control can finish its 60-hp prey
+            // inside the run and drop the target it no longer needs. A dead prey
+            // is as much proof the control fought as a held target is.
             Entity chaser = world.GetEntity(DisarmedChaser);
-            Check(chaser.TargetId == DisarmedChaserPrey,
+            Entity chaserPrey = world.GetEntity(DisarmedChaserPrey);
+            Check(chaser.TargetId == DisarmedChaserPrey || !chaserPrey.Alive,
                 "the armed control unit acquired " + chaser.TargetId + ", so the check proves nothing");
             Check(!chaser.Position.Equals(At(30, 50)), "the armed control unit never chased either");
-            Check(world.GetEntity(DisarmedChaserPrey).Hp < world.GetEntity(DisarmedChaserPrey).MaxHp,
+            Check(!chaserPrey.Alive || chaserPrey.Hp < chaserPrey.MaxHp,
                 "the armed control unit never got a shot off");
 
             for (int t = 0; t < first.Length; t++)
@@ -3043,11 +3052,18 @@ namespace WordCraft.Replay
         /// id is the count before the step, because ids are handed out in order and
         /// never reused.
         /// </summary>
-        private static Entity StepToArrival(World world, string what)
+        private static Entity StepToArrival(World world, string what) =>
+            StepToArrival(world, what, StormShard.Ticks);
+
+        /// <summary>
+        /// The same wait, timed by the body actually queued. A 지옥불 melee unit is
+        /// a 용암 갑각 악마 at 80 ticks, longer than a 폭풍편's fifty.
+        /// </summary>
+        private static Entity StepToArrival(World world, string what, int produceTicks)
         {
             var idle = new List<Command>();
             int standing = world.EntityCount;
-            for (int t = 0; t < StormShard.Ticks + 5 && world.EntityCount == standing; t++)
+            for (int t = 0; t < produceTicks + 5 && world.EntityCount == standing; t++)
             {
                 world.Step(idle);
             }
@@ -3532,7 +3548,8 @@ namespace WordCraft.Replay
             other.Step(ProduceAt(1, 0, 0, aim));
             Check(!other.GetEntity(1).HasArrivalPoint,
                 "a 지옥불 production building kept an arrival point");
-            Entity fromOther = StepToArrival(other, "the 지옥불 unit");
+            Entity fromOther = StepToArrival(other, "the 지옥불 unit",
+                FactionData.Production(Faction.Hellfire, Role.Melee, 0).Ticks);
             Check(fromOther.Position.Equals(other.GetEntity(1).Position + World.RallyOffset),
                 "a 지옥불 production building arrived its unit at the point the order named");
         }
