@@ -362,7 +362,7 @@ namespace WordCraft.Sim
         /// on the tick the order is given. 34 is two rules the map and the clock
         /// read: a building under construction keeps the damage it takes instead
         /// of having its hp rewritten from progress every tick, and the two
-        /// opening fighters are the faction's first armed produced roster
+        /// opening fighters are the faction's first named, armed roster
         /// entries instead of Melee 0 and Ranged 0. A peer on 33 starts 인간
         /// with a nameless body that a peer on 34 replaces, and a site shot at
         /// stands at different hp on the next tick.

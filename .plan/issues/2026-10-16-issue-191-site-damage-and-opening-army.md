@@ -27,3 +27,13 @@
 
 `dotnet build`, `dotnet run --project Replay`, `Host selfcheck`, Unity `ViewSelfCheck`,
 `arena -games 2`. 새 검사는 `Replay/ConstructionChecks.cs`, `Replay/OpeningArmyChecks.cs`.
+
+## Review follow-ups
+
+- 인간은 근접 0번이 빈 행이라 두 개막 항목이 모두 원거리 0번(공수 특공대)으로 풀린다.
+  `OpeningArmyChecks`가 이 쌍을 일부러 고정한다.
+- 대칭 검사는 개막 항목이 다른 진영 쌍에서 소유자가 있는 유닛만 완화하고, 그 유닛은 자기 진영의
+  `OpeningFighter` 두 행 중 하나여야 한다. 나머지 몸은 전부 엄격하게 비교한다.
+- 램프 검사는 매 틱 닫힌 식 `1 + (MaxHp - 1) * t / 건설틱`을 비교하고, 피해 d는 사수의 쿨다운
+  재설정 횟수와 `DamageAfterArmor`로 센다. `climb = MaxHp` 변이가 실패한다.
+- 도달할 수 없는 `MaxHp` clamp를 지웠다.
