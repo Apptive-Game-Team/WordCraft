@@ -61,16 +61,7 @@ namespace WordCraft.Sim
                 AbilityRow row = FactionData.AbilityRowAt(burst.Row);
                 Fix radius = Fix.FromInt(AbilityRadius(burst.Owner, row));
                 int damage = DamageAfterArmor(AbilityAmount(burst.Owner, row), 0, 0, 0);
-                for (int i = 0; i < entities.Count; i++)
-                {
-                    Entity t = entities[i];
-                    if (!t.Alive || t.Owner < 0 || t.Owner == burst.Owner) continue;
-                    if (!AuraTargets(row.Targets, t)) continue;
-                    if (!WithinRange(burst.Position, t.Position, radius)) continue;
-                    t.Hp -= damage;
-                    if (t.Hp <= 0) Kill(ref t);
-                    entities[i] = t;
-                }
+                DamageHostileBodies(burst.Owner, row.Targets, burst.Position, radius, damage);
             }
             pendingBursts.Clear();
         }
