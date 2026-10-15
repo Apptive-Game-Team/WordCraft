@@ -554,10 +554,12 @@ namespace WordCraft.Replay
         /// fighter is ever ordered at a base that makes only workers.
         ///
         /// And the ladder climbs the tree: in every mirror but 지옥불's, each peer
-        /// builds its 기술 건물 and then produces a body that needs one standing
-        /// (번개 정령, 해일 인도자, 고대 골렘, a 멸종 슬라임, 마도 정찰기). 지옥불's
-        /// only such body is 군단장 at 220, which the opponent never banks, so it
-        /// keeps buying 용암 갑각 악마 and that is the AI being right.
+        /// builds its 기술 건물, and in every mirror but 지옥불's and 인간's it then
+        /// produces a body that needs one standing (번개 정령, 해일 인도자, 고대
+        /// 골렘, a 멸종 슬라임). 지옥불's only such body is 군단장 at 220, which the
+        /// opponent never banks, so it keeps buying 용암 갑각 악마 and that is the
+        /// AI being right. 인간's only such body is the unarmed 마도 정찰기, which the
+        /// ladder skips for 공수 특공대; RosterNumbersChecks pins that.
         /// </summary>
         private static void TheAiOrdersOnlyFromTheListAndBuildsTowardTierThree()
         {
@@ -598,6 +600,7 @@ namespace WordCraft.Replay
                         if (e.Kind == EntityKind.Unit && needs.Role == Role.Tech && needs.Slot == 0 && above < 0) above = i;
                     }
                     Check(tech >= 0, faction + " AI peer " + peer + " never built its 기술 건물");
+                    if (faction == Faction.Humans) continue;
                     Check(above > tech, faction + " AI peer " + peer + " never produced a body behind its 기술 건물");
                 }
             }

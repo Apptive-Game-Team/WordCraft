@@ -209,6 +209,15 @@ namespace WordCraft.Sim
         /// is 220 and the opponent rarely banks that much: asking for it regardless
         /// would be refused every think, and the production building would sit
         /// idle for the rest of the match.
+        ///
+        /// An entry whose row carries no weapon is taken only when this building
+        /// makes nothing armed at all, whatever the bank holds. AiIsFreeFighter
+        /// never sends an unarmed body, so a ladder that bought one at the highest
+        /// tier spent the rest of the match on bodies that never attack: 인간 at
+        /// T3 bought seven 마도 정찰기 in an arena game against 세계수 정령 and
+        /// sent none of them.
+        /// Asked before the bank, so a 20자원 scout does not slip in while the
+        /// bank is short of a 65자원 공수 특공대.
         /// </summary>
         // ponytail: still a fixed preference with no memory. It wants the highest
         // tier it can afford and never weighs one body against what it is walking
@@ -220,6 +229,10 @@ namespace WordCraft.Sim
             role = Role.None;
             slot = 0;
             int bestTier = 0;
+            bool armedHere = false;
+            Role unarmedRole = Role.None;
+            int unarmedSlot = 0;
+            int unarmedTier = 0;
             for (int r = 0; r < AiFighterRoles.Length; r++)
             {
                 Role candidate = AiFighterRoles[r];
@@ -227,14 +240,30 @@ namespace WordCraft.Sim
                 for (int s = 0; s < count; s++)
                 {
                     if (!CanProduce(peer, buildingId, candidate, s)) continue;
+                    bool armed = FactionData.Stats(faction, candidate, s).HasWeapon;
+                    if (armed) armedHere = true;
                     if (FactionData.Production(faction, candidate, s).Resources > resources[peer]) continue;
                     int tier = FactionData.Tier(faction, candidate, s);
+                    if (!armed)
+                    {
+                        // Kept as the fallback, chosen by the same rule.
+                        if (tier <= unarmedTier) continue;
+                        unarmedTier = tier;
+                        unarmedRole = candidate;
+                        unarmedSlot = s;
+                        continue;
+                    }
                     // Strictly higher, so the first entry at a tier keeps it.
                     if (tier <= bestTier) continue;
                     bestTier = tier;
                     role = candidate;
                     slot = s;
                 }
+            }
+            if (!armedHere)
+            {
+                role = unarmedRole;
+                slot = unarmedSlot;
             }
             return role != Role.None;
         }

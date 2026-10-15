@@ -9,14 +9,15 @@ namespace WordCraft.Replay
     /// the documents give them. Kept out of Program.cs the way the other
     /// per-issue files are.
     ///
-    /// Four kinds of question. The numbers: every row docs/TECH-TREE.md marks †,
+    /// Five kinds of question. The numbers: every row docs/TECH-TREE.md marks †,
     /// and every row this issue gave a flag, is written out here column by column
     /// and compared with FactionData, because a check that read the table back
     /// against itself would pin nothing. The fliers: 바람 정령 and 구름 용 cross
     /// rock and a cliff that stop a walker of their own faction. The ground-only
     /// defenses: 용암 아가리 and 굴림바위 언덕 neither take an attack order at a
     /// flier nor acquire one, while a defense that reaches the air shoots the same
-    /// flier. And 마도 정찰기: it refuses both attack orders and never acquires.
+    /// flier. 마도 정찰기: it refuses both attack orders and never acquires. And
+    /// the AI: with tier 3 open, 인간 still buys an armed body over the scout.
     /// </summary>
     internal static class RosterNumbersChecks
     {
@@ -30,6 +31,7 @@ namespace WordCraft.Replay
             TheNewFliersCrossRockAndCliffs();
             TheGroundOnlyDefensesRefuseAir();
             TheScoutNeverFights();
+            TheAiBuysAnArmedBodyOverTheScout();
         }
 
         // ---------------------------------------------------------------------
@@ -428,6 +430,68 @@ namespace WordCraft.Replay
             Check(p.Alive && p.Hp == p.MaxHp, "마도 정찰기 hurt the worker beside it");
             Entity cp = world.GetEntity(commandoPrey);
             Check(!cp.Alive || cp.Hp < cp.MaxHp, "the 공수 특공대 never got a shot off");
+        }
+
+        // ---------------------------------------------------------------------
+        // The AI
+
+        private const int AiTicks = 400;
+        private const int ShortTicks = 30;
+        private const int ShortBank = 40;
+
+        /// <summary>
+        /// An 인간 AI with a finished 공방 has tier 3 open, and the highest-tier
+        /// entry its 마법 탑 makes is the unarmed 마도 정찰기. The ladder has to
+        /// buy 공수 특공대 instead, on every think, because a body it will never
+        /// send to attack is a body that wins nothing. Six workers stand from the
+        /// start so the ladder goes straight to fighters.
+        ///
+        /// Two banks. First 40, which pays for the 20자원 scout and not for the
+        /// 65자원 공수 특공대: the ladder has to wait rather than take the scout as
+        /// the only thing it can afford. Then 5000, where both are affordable and
+        /// the weapon rule alone keeps the scout off the queue.
+        /// </summary>
+        private static void TheAiBuysAnArmedBodyOverTheScout()
+        {
+            var world = new World(Seed);
+            world.SetPeerFaction(0, Faction.Humans);
+            world.SetPeerFaction(1, Faction.TreeSpirits);
+            world.SpawnBuilding(0, Role.Base, At(8, 8), complete: true);
+            int tower = world.SpawnBuilding(0, Role.Production, 0, At(8, 13), complete: true);
+            world.SpawnBuilding(0, Role.Tech, 0, At(13, 8), complete: true);
+            for (int i = 0; i < World.AiWorkerTarget; i++) world.SpawnWorker(0, At(10 + i, 11));
+            world.SpawnBuilding(1, Role.Base, At(55, 55), complete: true);
+            world.GrantResources(0, ShortBank - world.GetResources(0));
+            world.SetPeerAi(0, true);
+
+            Check(world.TierOf(0) == FactionData.MaxTier, "the 공방 did not open tier 3, so this proves nothing");
+            Check(FactionData.IsProducedAt(Faction.Humans, Role.Signature, 1, Role.Production, 0),
+                "the 마법 탑 does not make 마도 정찰기, so this proves nothing");
+
+            int armed = 0;
+            var idle = new List<Command>();
+            // Over the scout's price and under the 공수 특공대's when the short
+            // phase starts.
+            Check(FactionData.Production(Faction.Humans, Role.Signature, 1).Resources <= ShortBank &&
+                  FactionData.Production(Faction.Humans, Role.Ranged, 0).Resources > ShortBank,
+                "the short bank does not sit between the two prices, so this proves nothing");
+            for (int t = 0; t < AiTicks; t++)
+            {
+                if (t == ShortTicks) world.GrantResources(0, 5000);
+                world.Step(idle);
+                Entity b = world.GetEntity(tower);
+                if (b.QueueCount == 0) continue;
+                Check(!(b.ProduceRole == Role.Signature && b.ProduceSlot == 1),
+                    "the 인간 AI queued 마도 정찰기 on tick " + t);
+                if (b.ProduceRole == Role.Ranged && b.ProduceSlot == 0) armed++;
+            }
+            Check(armed > 0, "the 인간 AI never queued 공수 특공대");
+            for (int i = 0; i < world.EntityCount; i++)
+            {
+                Entity e = world.GetEntity(i);
+                Check(!(e.Owner == 0 && e.Role == Role.Signature && e.Slot == 1),
+                    "the 인간 AI fielded 마도 정찰기 as entity " + i);
+            }
         }
 
         // ---------------------------------------------------------------------
