@@ -92,6 +92,9 @@ namespace WordCraft.Sim
                         else ApplyHitStatus(a, ref t);
                         entities[t.Id] = t;
                         ChainFrom(a, t.Id, hitAt, dealt);
+                        // 질풍: every attack sets the clock back to its full length.
+                        int gale = ActiveAbility(a, AbilityKind.GaleAfterAttack);
+                        if (gale >= 0) a.AbilityTicksLeft = AbilityTicks(a.Owner, FactionData.AbilityRowAt(gale));
                     }
                 }
                 else if (a.Kind != EntityKind.Building && a.Mode != OrderMode.Hold && a.Speed.Raw != 0 &&
@@ -291,7 +294,8 @@ namespace WordCraft.Sim
             {
                 return range + RangeUpgrade;
             }
-            return range;
+            // 정조준, docs/TECH-TREE.md 묶음 7: 40 ticks still and the reach is 2 longer.
+            return range + SteadyAimBonus(e);
         }
 
         /// <summary>
