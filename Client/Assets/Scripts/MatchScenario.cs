@@ -36,6 +36,7 @@ namespace WordCraft.View
             // rock is a placement the harness catches rather than a unit that
             // cannot take its first step.
             PaintTerrain(world);
+            PaintHeights(world);
 
             for (int peer = 0; peer < Peers; peer++)
             {
@@ -144,6 +145,103 @@ namespace WordCraft.View
             InLakeRect(x, y) || InLakeRect(MapSize - 1 - x, MapSize - 1 - y);
 
         private static bool InLakeRect(int x, int y) => x >= 16 && x <= 23 && y >= 4 && y <= 9;
+
+        // Elevation levels the map uses. A step of one level is a slope anyone
+        // walks; two is a cliff only a flier crosses (Sim/World.cs StepPassable).
+        // So high ground that is only reachable by its ramp has to stand two
+        // levels above the floor, and the ramp is the level between.
+        private const int Floor = 0;
+        private const int RampLevel = 1;
+        private const int HighGround = 2;
+
+        // The barrier's rock is impassable whatever its height. Lifting it to the
+        // top level is for the view, which builds the spine into a mountain ridge
+        // from this number rather than from a second rule of its own.
+        private const int RidgeLevel = World.MaxHeight;
+
+        // Lane-mouth high ground, in the same spine and lane coordinates the
+        // barrier is written in: spine is the distance from the anti-diagonal,
+        // lane the distance from the main diagonal. One plateau on each side of
+        // each lane, on its outer shoulder, from the barrier's face out to
+        // ShoulderFar. Its ramp is on the face away from the barrier, so the
+        // player whose side it is climbs it from home, and a force coming out of
+        // the lane has to walk round the cliff to reach the top.
+        private const int ShoulderNear = 2;   // touches the barrier's rock at spine 1
+        private const int ShoulderFar = 8;
+        private const int ShoulderLaneNear = 19;
+        private const int ShoulderLaneFar = 24;
+        private const int ShoulderRampNear = 9;
+        private const int ShoulderRampFar = 10;
+        private const int ShoulderRampLaneNear = 20;
+        private const int ShoulderRampLaneFar = 23;
+
+        /// <summary>
+        /// The map's elevation, painted right after its terrain and under the same
+        /// two rules: no World.Random draws, and symmetric by construction. The
+        /// barrier and the lane-mouth high ground read only |spine| and |lane|,
+        /// which the rotation leaves alone; the flank mesa is a rectangle plus its
+        /// rotation, the way the lake is, because it is a place and not a rule.
+        ///
+        /// What it adds to the match is three heights of ground:
+        ///
+        /// - The barrier's rock is the top level. Impassable already; the level
+        ///   is what the view draws.
+        /// - Beside every lane mouth, on the lane's outer shoulder, a plateau two
+        ///   levels up with one ramp on the side facing home. Whoever stands on it
+        ///   looks straight down the lane exit, and the only way to take it off
+        ///   them is the ramp, so the ramp is the cell worth holding.
+        /// - On each player's outer flank, beside that player's far 꼬마돌, a mesa
+        ///   two levels up whose only way in is a ramp facing the 꼬마돌.
+        ///
+        /// Lakes stay at the floor, and so does everything else, including every
+        /// start position: a base on a slope would cost its own workers a climb on
+        /// every trip, which is a handicap one map cell decides.
+        /// </summary>
+        private static void PaintHeights(World world)
+        {
+            for (int y = 0; y < MapSize; y++)
+            {
+                for (int x = 0; x < MapSize; x++)
+                {
+                    int spine = Abs(x + y - (MapSize - 1));
+                    int lane = Abs(x - y);
+                    int level = Floor;
+
+                    if (spine <= 1 && (lane < LaneNear || lane > LaneFar)) level = RidgeLevel;
+                    else if (InLake(x, y)) level = Floor;
+                    else if (Within(spine, ShoulderNear, ShoulderFar) && Within(lane, ShoulderLaneNear, ShoulderLaneFar))
+                        level = HighGround;
+                    else if (Within(spine, ShoulderRampNear, ShoulderRampFar) &&
+                             Within(lane, ShoulderRampLaneNear, ShoulderRampLaneFar))
+                        level = RampLevel;
+                    else level = Mesa(x, y);
+
+                    world.SetHeight(x, y, level);
+                }
+            }
+        }
+
+        /// <summary>
+        /// The flank mesa and its rotation: x 45..50, y 7..11 two levels up, and a
+        /// two-cell ramp at x 51 on its east face, three cells from the far
+        /// 꼬마돌 at (54, 6). The top overlooks the cell a capturing worker has to
+        /// stand still on, and the only way up faces that worker. Every cell of
+        /// both stays inside its own half: x + y is at most 61, and the barrier's
+        /// rock starts at 62.
+        /// </summary>
+        private static int Mesa(int x, int y) =>
+            Max(MesaRect(x, y), MesaRect(MapSize - 1 - x, MapSize - 1 - y));
+
+        private static int MesaRect(int x, int y)
+        {
+            if (x >= 45 && x <= 50 && y >= 7 && y <= 11) return HighGround;
+            if (x == 51 && y >= 8 && y <= 9) return RampLevel;
+            return Floor;
+        }
+
+        private static bool Within(int v, int low, int high) => v >= low && v <= high;
+
+        private static int Max(int a, int b) => a > b ? a : b;
 
         private static int Abs(int v) => v < 0 ? -v : v;
 

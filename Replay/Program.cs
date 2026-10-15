@@ -120,6 +120,7 @@ namespace WordCraft.Replay
                 SelectionMatchChecks.Check();
                 CaptureOrderChecks.Check();
                 ArrivalOrderChecks.Check();
+                TerrainChecks.Check();
                 SimAssemblyIsClean();
             }
             catch (Exception ex)
