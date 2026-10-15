@@ -24,6 +24,7 @@ namespace WordCraft.View
             failures = 0;
 
             ConversionRoundTripsExactly();
+            FieldAgreesWithSim();
             SameLogSameHashes();
             ViewReadsDoNotMutate();
             RosterArtResolves();
@@ -64,6 +65,56 @@ namespace WordCraft.View
                     Check(back.Equals(p), "fixed point did not survive the view round trip at " + x + "," + y);
                 }
             }
+        }
+
+        /// <summary>
+        /// The field the player sees and the rules the simulation enforces are two
+        /// readings of the same heights, and this is where they are held to agree:
+        /// wherever Field puts a cliff face between two open cells, World refuses
+        /// the step, and wherever it does not, World allows it. A mesh that showed
+        /// a slope where the pathfinder saw a wall would be a map that lies.
+        /// </summary>
+        private static void FieldAgreesWithSim()
+        {
+            World world = MatchScenario.Build(new MatchConfig().Seed,
+                ScriptedLog.Peer0Faction, ScriptedLog.Peer1Faction);
+            Field.Build(world);
+
+            int cliffs = 0;
+            for (int y = 0; y < World.GridSize; y++)
+            {
+                for (int x = 0; x < World.GridSize; x++)
+                {
+                    int cell = y * World.GridSize + x;
+                    if (!world.IsPassable(cell, false)) continue;
+                    if (x + 1 < World.GridSize) cliffs += Agree(world, cell, cell + 1);
+                    if (y + 1 < World.GridSize) cliffs += Agree(world, cell, cell + World.GridSize);
+                }
+            }
+            Check(cliffs > 0, "the map has no cliff between two open cells, so this check proves nothing");
+
+            // A body stands on the surface the mesh draws, never in the air over a
+            // lake or inside the ridge: the walkable surface is always the cell's own level or a slope between levels.
+            for (int cell = 0; cell < World.GridCells; cell++)
+            {
+                if (!world.IsPassable(cell, false)) continue;
+                Vector2 centre = MatchRunner.ToView(World.CellCenter(cell));
+                float h = Field.Height(centre);
+                float level = world.HeightAt(cell) * Field.LevelHeight;
+                Check(Mathf.Abs(h - level) <= Field.LevelHeight * 0.5f + 0.001f,
+                    "cell " + cell + " stands at " + h + " but its level is " + level);
+            }
+        }
+
+        /// <summary>One edge: returns 1 when it is a cliff on both sides of the agreement, 0 otherwise.</summary>
+        private static int Agree(World world, int a, int b)
+        {
+            if (!world.IsPassable(b, false)) return 0;
+            bool wall = Field.Cliff(a, b);
+            Check(wall == !world.StepPassable(a, b, false),
+                "cells " + a + " and " + b + ": the field draws " + (wall ? "a cliff" : "a slope") +
+                " where the simulation " + (wall ? "allows" : "refuses") + " the step");
+            return wall ? 1 : 0;
         }
 
         private static void SameLogSameHashes()
@@ -209,8 +260,11 @@ namespace WordCraft.View
                 Entity e = world.GetEntity(i);
                 Vector2 drawn = MatchRunner.ToView(e.Position);
                 FixVec2 aimed = MatchRunner.ToSim(drawn + Vector2.one * 0.25f);
+                // The field reads heights off the world to place a body; that read
+                // is part of what a frame does, so it is part of what must not perturb.
+                Field.Build(world);
                 sink.Add(e.Kind + " " + e.Hp + " " + e.QueueCount + " " +
-                         Vector2.Distance(drawn, MatchRunner.ToView(aimed)));
+                         Vector2.Distance(drawn, MatchRunner.ToView(aimed)) + " " + Field.At(drawn).y);
             }
             for (int peer = 0; peer < MatchScenario.Peers; peer++) sink.Add(world.GetResources(peer).ToString());
         }
