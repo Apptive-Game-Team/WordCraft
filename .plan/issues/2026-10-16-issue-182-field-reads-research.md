@@ -28,17 +28,25 @@
 - 잔해 셀에는 지속 틱이 저장되지 않고 `RemnantTicksFor(owner)` 는 주인 없는 잔해에
   쓸 수 없다. 그래서 `0..World.MaxPeers-1` 의 `RemnantTicksFor` 최댓값으로 나눈다.
   연구 전에는 400 이라 지금과 같고, 연구 뒤에는 600 으로 나눠 600틱 잔해가 처음부터
-  옅어진다. 400틱 잔해(연구 전에 떨어진 것)는 600 으로 나누면 처음 값이 2/3 가 되어
-  조금 더 옅게 시작하는데, 완전 불투명으로 200틱 머무는 것보다 낫다.
+  옅어진다. 400틱 잔해(연구 전에 떨어진 것)는 600 으로 나누면 fade 비율이 400/600 으로
+  시작한다. alpha 로는 `Lerp(0.5, 1, 2/3)` 약 0.83 이라 조금 더 옅게 시작하는데, 완전
+  불투명으로 200틱 머무는 것보다 낫다.
 - 쓰기 범위: `Client/Assets/Scripts/MatchView.cs`, `CaptureOrder.cs`, `ArrivalOrder.cs`,
   `Replay/CaptureOrderChecks.cs`, `Replay/ArrivalOrderChecks.cs`, `CLAUDE.md`, 이 문서.
+  리뷰 뒤 추가: `Client/Assets/Scripts/RemnantFade.cs`(와 `.meta`), `Replay/RemnantFadeChecks.cs`,
+  `Replay/Replay.csproj` 와 `Replay/Program.cs` 에 한 줄씩.
 
 ## Approach (Checklist)
 
 - [x] **Step 0: Recon** — 호출자 전부 찾기(`MatchView.cs` 와 두 harness 뿐).
 - [x] **Step 1: 사거리 링** — `world.RangeOf(e)`.
 - [x] **Step 2: 포획 막대와 도착 반경** — 새 overload 로 바꾸고 harness 호출도 새 overload 로. 옛 overload 는 남김.
-- [x] **Step 3: 잔해 fade** — 최대 지속 helper 와 주석.
+- [x] **Step 3: 잔해 fade** — 최대 지속 helper 와 주석. 리뷰 뒤 `RemnantFade.LongestTicks(World)`
+      로 옮기고 `RemnantFadeChecks` 가 연구 전 400, 한 peer 연구 뒤 600 을 검사한다.
+- [x] **Step 3b: 투사체 판정** — 리뷰에서 발견. `MatchView.Shoot` 의 투사체 대 타격 판정이
+      기본 사거리를 읽어서 `골렘 사거리` 연구 뒤에도 근접 골렘이 투사체 없이 휘둘렀다.
+      `Throws(Fix)` overload 를 더해 `world.RangeOf(e)` 를 넘긴다. `Throws(UnitStats)` 는
+      연구 없이 도는 `ViewShots` 를 위해 남긴다.
 - [x] **Step 4: 문서** — `CLAUDE.md` "See it".
 
 ## Validation
@@ -53,7 +61,7 @@
 
 ## Risks & Rollback
 
-- **Risks:** 연구 전에 떨어진 400틱 잔해는 연구 뒤에 처음부터 2/3 의 밝기로 시작한다.
+- **Risks:** 연구 전에 떨어진 400틱 잔해는 연구 뒤에 alpha 약 0.83(fade 비율 2/3)으로 시작한다.
   필드 위 표시는 배치 실행으로 연구 상태를 보지 못한다(샷은 연구 없는 스크립트 매치).
 - **Rollback steps:** `git revert`. `Sim/` 과 world hash 에 닿지 않는다.
 
