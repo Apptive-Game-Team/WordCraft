@@ -162,6 +162,73 @@ namespace WordCraft.Sim
     }
 
     /// <summary>
+    /// What one row of the upgrade table changes. Not hashed — a level is hashed,
+    /// and the effect is read back off the row the level belongs to — but kept
+    /// in a fixed order anyway, because the harness names rows by it.
+    ///
+    /// One value per mechanic number rather than a generic "stat plus amount",
+    /// because each of these is read by exactly one system and that system is
+    /// the only place that knows what a level of it means: a second remnant
+    /// level is not a thing, and a generic amount would let a row say it.
+    /// </summary>
+    public enum UpgradeEffect
+    {
+        None = 0,
+        Attack = 1,
+        Armor = 2,
+
+        // 세계수 정령
+        GrowthTime = 3,
+        GrowthHpRamp = 4,
+
+        // 지옥불 군단
+        OffspringCap = 5,
+        OffspringPeriod = 6,
+
+        // 물 슬라임
+        VolleyCap = 7,
+        VolleyRadius = 8,
+
+        // 돌 골렘 부족
+        RemnantTicks = 9,
+        GolemMeleeRange = 10,
+
+        // 차원 유랑종
+        ArrivalRadius = 11,
+        ArrivalTicks = 12,
+
+        // 인간 마법 문명
+        CaptureTicks = 13,
+        CannonRange = 14,
+    }
+
+    /// <summary>
+    /// One thing a 기술 건물 can research. The price is the price of level 1;
+    /// level n costs n times it, on the same clock. Default on the struct is a
+    /// row with MaxLevel 0, so a row nobody wrote — an index past the end of a
+    /// faction's list — fails closed: there is no level it can be raised to.
+    /// </summary>
+    public struct UpgradeRow
+    {
+        /// <summary>View-only. Nothing in the simulation reads it.</summary>
+        public string Name;
+
+        /// <summary>What level 1 costs. Taken in full when the research starts.</summary>
+        public int Resources;
+
+        /// <summary>Whole ticks one level takes. The same for every level.</summary>
+        public int Ticks;
+
+        /// <summary>How many times this row can be researched. Zero is a row that does not exist.</summary>
+        public int MaxLevel;
+
+        /// <summary>What the owner's tier must reach before this row can be started.</summary>
+        public int Tier;
+
+        public UpgradeEffect Effect;
+    }
+
+    /// <summary>
     /// The roster: stats per role, identity per faction and role. A role holds a
     /// list of entries rather than one, because the six factions do not field the
     /// same units. Plain constants on purpose. A parsed file or a ScriptableObject
@@ -656,6 +723,135 @@ namespace WordCraft.Sim
         /// <summary>One entry of the growth table, in declaration order.</summary>
         public static (Faction Faction, Role Role, int Slot, GrowthCost Cost) GrowthTarget(int index) =>
             growthTargets[index];
+
+        /// <summary>
+        /// The most rows any faction's upgrade table holds. Sizes the per-peer
+        /// level array World hashes, so a faction given a fifth row has to move
+        /// this too, and the harness refuses a table that outgrows it.
+        /// </summary>
+        public const int MaxUpgrades = 4;
+
+        /// <summary>
+        /// What level 1 of 공격력 and 방어력 costs and how long a level takes. The
+        /// two shared rows every faction starts its table with, priced alike on
+        /// purpose: neither is a faction's identity, so neither is where one
+        /// faction should find a discount.
+        /// </summary>
+        public const int StatUpgradeCost = 100;
+        public const int StatUpgradeTicks = 160;
+        public const int StatUpgradeLevels = 3;
+
+        /// <summary>What a faction-unique row costs and takes. One level each.</summary>
+        public const int UniqueUpgradeCost = 150;
+        public const int UniqueUpgradeTicks = 200;
+
+        /// <summary>
+        /// Every faction's research, in index order: 공격력, 방어력, then the two
+        /// rows that are the faction's own. Keyed by faction and walked in
+        /// declaration order, never through a keyed collection, for the reason
+        /// <see cref="growthTargets"/> is. Numbers are the starting values issue
+        /// #164 names, written down in docs/FACTION-MECHANICS.md 업그레이드.
+        ///
+        /// Tier 3 on every row, which is what a finished 기술 건물 already is:
+        /// TierOf answers 3 the moment one stands. The column is there so a row
+        /// that is meant to open later can say so in one number, and the command
+        /// checks it in the order Produce checks its own tier.
+        /// </summary>
+        private static readonly (Faction Faction, UpgradeRow Row)[] upgrades =
+        {
+            (Faction.TreeSpirits, StatRow("공격력", UpgradeEffect.Attack)),
+            (Faction.TreeSpirits, StatRow("방어력", UpgradeEffect.Armor)),
+            // 성장 시간 25% 단축: 덩쿨 정령 40 → 30, 고목 수호자 60 → 45틱.
+            (Faction.TreeSpirits, UniqueRow("성장 가속", UpgradeEffect.GrowthTime)),
+            // 성장 중 체력 상승 폭 2배: the ramp reaches the target at half time.
+            (Faction.TreeSpirits, UniqueRow("성장 체력", UpgradeEffect.GrowthHpRamp)),
+
+            (Faction.Hellfire, StatRow("공격력", UpgradeEffect.Attack)),
+            (Faction.Hellfire, StatRow("방어력", UpgradeEffect.Armor)),
+            // 군단장 자손 상한 5 → 7.
+            (Faction.Hellfire, UniqueRow("군단 확장", UpgradeEffect.OffspringCap)),
+            // 자손 방출 주기 100 → 70틱.
+            (Faction.Hellfire, UniqueRow("산란 가속", UpgradeEffect.OffspringPeriod)),
+
+            (Faction.WaterSlimes, StatRow("공격력", UpgradeEffect.Attack)),
+            (Faction.WaterSlimes, StatRow("방어력", UpgradeEffect.Armor)),
+            // 밀집 보너스 상한 4 → 6.
+            (Faction.WaterSlimes, UniqueRow("밀집 강화", UpgradeEffect.VolleyCap)),
+            // 밀집 반경 3 → 4칸.
+            (Faction.WaterSlimes, UniqueRow("밀집 반경", UpgradeEffect.VolleyRadius)),
+
+            (Faction.RockGolems, StatRow("공격력", UpgradeEffect.Attack)),
+            (Faction.RockGolems, StatRow("방어력", UpgradeEffect.Armor)),
+            // 잔해 지속 400 → 600틱.
+            (Faction.RockGolems, UniqueRow("오래 남는 잔해", UpgradeEffect.RemnantTicks)),
+            // 골렘 근접 사거리 +1.
+            (Faction.RockGolems, UniqueRow("골렘 사거리", UpgradeEffect.GolemMeleeRange)),
+
+            (Faction.Driftworlds, StatRow("공격력", UpgradeEffect.Attack)),
+            (Faction.Driftworlds, StatRow("방어력", UpgradeEffect.Armor)),
+            // 도착 반경 6 → 8칸.
+            (Faction.Driftworlds, UniqueRow("도착 반경", UpgradeEffect.ArrivalRadius)),
+            // 통로 도착 시간 60 → 40틱.
+            (Faction.Driftworlds, UniqueRow("도착 가속", UpgradeEffect.ArrivalTicks)),
+
+            (Faction.Humans, StatRow("공격력", UpgradeEffect.Attack)),
+            (Faction.Humans, StatRow("방어력", UpgradeEffect.Armor)),
+            // 포획 시간 60 → 40틱.
+            (Faction.Humans, UniqueRow("포획 가속", UpgradeEffect.CaptureTicks)),
+            // 대포 사거리 +1.
+            (Faction.Humans, UniqueRow("대포 사거리", UpgradeEffect.CannonRange)),
+        };
+
+        private static UpgradeRow StatRow(string name, UpgradeEffect effect) =>
+            new UpgradeRow
+            {
+                Name = name,
+                Resources = StatUpgradeCost,
+                Ticks = StatUpgradeTicks,
+                MaxLevel = StatUpgradeLevels,
+                Tier = 3,
+                Effect = effect,
+            };
+
+        private static UpgradeRow UniqueRow(string name, UpgradeEffect effect) =>
+            new UpgradeRow
+            {
+                Name = name,
+                Resources = UniqueUpgradeCost,
+                Ticks = UniqueUpgradeTicks,
+                MaxLevel = 1,
+                Tier = 3,
+                Effect = effect,
+            };
+
+        /// <summary>How many rows this faction's upgrade table holds.</summary>
+        public static int UpgradeCount(Faction faction)
+        {
+            int count = 0;
+            for (int i = 0; i < upgrades.Length; i++)
+            {
+                if (upgrades[i].Faction == faction) count++;
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// One row of this faction's upgrade table, by index. An index outside the
+        /// table answers a default row, which has MaxLevel 0 and so cannot be
+        /// researched: the table fails closed, the way Production does for an
+        /// entry nobody wrote, and a Research naming one is refused by the same
+        /// line that refuses a row already at its last level.
+        /// </summary>
+        public static UpgradeRow Upgrade(Faction faction, int index)
+        {
+            if (index < 0) return new UpgradeRow { Name = "" };
+            for (int i = 0; i < upgrades.Length; i++)
+            {
+                if (upgrades[i].Faction != faction) continue;
+                if (index-- == 0) return upgrades[i].Row;
+            }
+            return new UpgradeRow { Name = "" };
+        }
 
         /// <summary>
         /// Fills the stats table. A static constructor rather than a field
