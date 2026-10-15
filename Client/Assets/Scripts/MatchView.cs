@@ -537,15 +537,25 @@ namespace WordCraft.View
         }
 
         /// <summary>
+        /// Cells past a building's edge a unit it delivered can stand: a produced
+        /// unit stands up at the building's position plus World.RallyOffset, two
+        /// cells out, so anything further away came out of somewhere else.
+        /// </summary>
+        private const float DoorReach = 2f;
+
+        /// <summary>
         /// A building's queue went down this frame. If a unit of the same owner
-        /// appeared, it came out of here: the building leans toward the nearest
-        /// such unit (issue #186). Two buildings delivering on one frame each
-        /// lean toward their own, since each one's unit stands at its door.
+        /// appeared at its door, it came out of here: the building leans toward
+        /// the nearest such unit (issue #186). Only at its door, so a queue that
+        /// went down because it was cancelled does not lean toward a unit another
+        /// building delivered on the same frame. A 차원 유랑종 통로 that sends its
+        /// unit to a far arrival point does not lean at all.
         /// </summary>
         private void Deliver(World world, Entity e, Vector2 p, BodyRig body)
         {
             if (e.Kind != EntityKind.Building) return;
-            float nearest = float.MaxValue;
+            float reach = Cells(e.Role) * 0.5f + DoorReach;
+            float nearest = reach * reach;
             Vector2 toward = Vector2.zero;
             for (int b = 0; b < born.Count; b++)
             {
@@ -556,7 +566,7 @@ namespace WordCraft.View
                 nearest = to.sqrMagnitude;
                 toward = to;
             }
-            if (nearest == float.MaxValue || toward.sqrMagnitude < 1e-6f) return;
+            if (toward.sqrMagnitude < 1e-6f) return;
             body.Deliver(Mathf.Atan2(toward.x, toward.y) * Mathf.Rad2Deg);
         }
 
