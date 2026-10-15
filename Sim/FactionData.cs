@@ -554,6 +554,67 @@ namespace WordCraft.Sim
         /// it stands, and BurstSystem lands it later in the tick.
         /// </summary>
         ArrivalBurst = 16,
+
+        // docs/TECH-TREE.md 묶음 7: autocasts, area hits and the water field.
+
+        /// <summary>
+        /// 용암 폭발, 폭격: after a hit, every other hostile Targets the weapon can
+        /// reach within Radius of where the first target stood takes half the
+        /// hit's final damage (floor, at least 1).
+        /// </summary>
+        SplashOnHit = 17,
+
+        /// <summary>
+        /// 잔해 투척: a shot consumes the debris cell of lowest index whose centre
+        /// is within World.RemnantUseReach of the shooter, adds Amount to that
+        /// shot, and splashes half of it on hostile Targets within Radius.
+        /// </summary>
+        RemnantThrow = 18,
+
+        /// <summary>질풍: every attack sets AbilityTicksLeft to Ticks, and the body walks Amount times as fast while it is above 0.</summary>
+        GaleAfterAttack = 19,
+
+        /// <summary>
+        /// 굴러 들이받기: with the cooldown at 0 and the target World.RollMinDistance
+        /// to RollMaxDistance cells off, the body rolls for up to Ticks at
+        /// World.RollSpeed; the roll ends within RollEndDistance of the target or
+        /// when the ticks run out, and then deals Amount fixed damage once to each
+        /// hostile Targets within Radius. Cooldown from the start of the roll.
+        /// </summary>
+        RollCharge = 20,
+
+        /// <summary>
+        /// 잔해 수리: with the cooldown at 0, heals the allied Targets within
+        /// Radius that has lost the most hp, at least Limit, by Amount, and
+        /// consumes a debris cell within World.RemnantUseReach. Both or neither.
+        /// </summary>
+        RemnantRepair = 21,
+
+        /// <summary>정조준: AbilityTicksLeft counts the ticks the body stands still up to Ticks, and at Ticks its reach is Amount cells longer.</summary>
+        SteadyAim = 22,
+
+        /// <summary>수리: every Period ticks, the allied Targets within Radius that has lost the most hp is healed by Amount.</summary>
+        Repair = 23,
+
+        /// <summary>
+        /// 이동식 물 지대, 고정 물 지대: every Period ticks, the square of cells
+        /// Radius either side of the holder's cell takes a water field lapsing
+        /// Ticks from now.
+        /// </summary>
+        FieldEmitter = 24,
+
+        /// <summary>급류: from a water field cell the body walks at World.RapidsSpeed.</summary>
+        FieldSpeed = 25,
+
+        /// <summary>물기둥 분수: from a water field cell the weapon reaches Amount cells further.</summary>
+        FieldRange = 26,
+
+        /// <summary>
+        /// 잔해 만료 연장: every Period ticks, standing debris in the square of
+        /// cells Radius either side of the holder's cell that would lapse within
+        /// Ticks is put back to lapse Ticks from now.
+        /// </summary>
+        RemnantHold = 27,
     }
 
     /// <summary>
@@ -570,6 +631,15 @@ namespace WordCraft.Sim
         RangedBodies = 3,
         DefenseBuildings = 4,
         GroundBodies = 5,
+
+        /// <summary>Units, workers and buildings that do not fly: 용암 폭발 and 폭격, 지상만.</summary>
+        Ground = 6,
+
+        /// <summary>Units, workers and buildings: whatever the weapon itself can reach.</summary>
+        Everything = 7,
+
+        /// <summary>수리: finished buildings, and the units FactionData.IsDevice names.</summary>
+        BuildingsAndDevices = 8,
     }
 
     /// <summary>
@@ -598,7 +668,7 @@ namespace WordCraft.Sim
         /// <summary>The upgrade row that unlocks this ability, or -1 when it works from the start.</summary>
         public int Unlock;
 
-        /// <summary>Ticks between casts. Zero on every row of 묶음 5, which are all passive; 묶음 7 reads it.</summary>
+        /// <summary>Ticks between casts. Zero on every row but 잔해 수리 and 굴러 들이받기, the two that wait on AbilityCooldown.</summary>
         public int Cooldown;
 
         /// <summary>Cells. An aura's reach, or a chain's hop.</summary>
@@ -2153,6 +2223,9 @@ namespace WordCraft.Sim
             // 전격 과부하: 찌릿쥐, 죽을 때 2칸 적 지상·공중 고정 12. 과부하 강화 18. 묶음 6 (#202).
             Ability("전격 과부하", Faction.TreeSpirits, Role.Melee, 2, AbilityKind.DeathBurst, AbilityTargets.Bodies,
                 UpgradeEffect.None, radius: 2, amount: 12, boost: UpgradeEffect.OverloadDamage, boostedAmount: 18),
+            // 질풍: 폭풍 기수, 공격할 때마다 10틱 동안 속도 × 2. 묶음 7 (#203).
+            Ability("질풍", Faction.TreeSpirits, Role.Melee, 3, AbilityKind.GaleAfterAttack, AbilityTargets.None,
+                UpgradeEffect.Gale, amount: 2, ticks: 10),
 
             // 지옥불 군단
             // 화상 오라: 용암 갑각 악마, 2칸 적 지상, 20틱마다 고정 2. 화상 오라 강화 3.
@@ -2167,6 +2240,9 @@ namespace WordCraft.Sim
             // 집결: 집결의 횃불, 5칸 아군 유닛 주기 −3, 하한 5. 집결 반경 7칸.
             Ability("집결", Faction.Hellfire, Role.Defense, 1, AbilityKind.RateAura, AbilityTargets.Bodies,
                 UpgradeEffect.None, radius: 5, amount: 3, limit: 5, boost: UpgradeEffect.RallyRadius, boostedRadius: 7),
+            // 용암 폭발: 용암 투석 악마, 명중 시 2칸 광역, 절반 피해, 지상만. 묶음 7.
+            Ability("용암 폭발", Faction.Hellfire, Role.Ranged, 2, AbilityKind.SplashOnHit, AbilityTargets.Ground,
+                UpgradeEffect.None, radius: 2),
 
             // 물 슬라임
             // 물막이: 물막이 슬라임, 2칸 아군 Role.Ranged 유닛 방어 +1.
@@ -2178,11 +2254,35 @@ namespace WordCraft.Sim
             // 회복의 비: 비구름, 3칸 아군 유닛, 20틱마다 +2. 회복의 비 강화 3.
             Ability("회복의 비", Faction.WaterSlimes, Role.Signature, 1, AbilityKind.HealAura, AbilityTargets.Bodies,
                 UpgradeEffect.None, radius: 3, amount: 2, period: 20, boost: UpgradeEffect.HealingRainAmount, boostedAmount: 3),
+            // 급류: 급류 슬라임, 물 지대 위 속도 1/2칸/틱. 묶음 7.
+            Ability("급류", Faction.WaterSlimes, Role.Melee, 2, AbilityKind.FieldSpeed, AbilityTargets.None,
+                UpgradeEffect.Rapids),
+            // 물기둥 분수: 물 지대 위면 사거리 +1. 묶음 7.
+            Ability("물 지대 사거리", Faction.WaterSlimes, Role.Defense, 0, AbilityKind.FieldRange, AbilityTargets.None,
+                UpgradeEffect.None, amount: 1),
+            // 이동식 물 지대: 샘물 운반자, 20틱마다 자기 셀 중심 3×3 셀 200틱. 묶음 7.
+            Ability("이동식 물 지대", Faction.WaterSlimes, Role.Signature, 3, AbilityKind.FieldEmitter, AbilityTargets.None,
+                UpgradeEffect.None, radius: 1, ticks: 200, period: 20),
+            // 고정 물 지대: 솟는 샘, 40틱마다 중심 5×5 셀 80틱. 묶음 7.
+            Ability("고정 물 지대", Faction.WaterSlimes, Role.Defense, 1, AbilityKind.FieldEmitter, AbilityTargets.None,
+                UpgradeEffect.None, radius: 2, ticks: 80, period: 40),
 
             // 돌 골렘 부족
             // 이끼 재생: 이끼 포자 무리, 3칸 아군 유닛, 20틱마다 +3. 이끼 재생 강화 5.
             Ability("이끼 재생", Faction.RockGolems, Role.Signature, 2, AbilityKind.HealAura, AbilityTargets.Bodies,
                 UpgradeEffect.None, radius: 3, amount: 3, period: 20, boost: UpgradeEffect.MossRegrowthAmount, boostedAmount: 5),
+            // 잔해 투척: 바위 술사, 2칸 안 잔해 하나를 소비하고 그 공격 +8, 반경 1칸 광역. 잔해 투척 강화 +12. 묶음 7.
+            Ability("잔해 투척", Faction.RockGolems, Role.Ranged, 0, AbilityKind.RemnantThrow, AbilityTargets.Everything,
+                UpgradeEffect.None, radius: 1, amount: 8, boost: UpgradeEffect.RemnantThrowDamage, boostedAmount: 12),
+            // 잔해 수리: 바위 술사, 4칸 안 가장 많이 다친 아군(잃은 체력 30 이상) +60, 잔해 하나 소비. 쿨다운 100. 묶음 7.
+            Ability("잔해 수리", Faction.RockGolems, Role.Ranged, 0, AbilityKind.RemnantRepair, AbilityTargets.Bodies,
+                UpgradeEffect.RemnantRepair, cooldown: 100, radius: 4, amount: 60, limit: 30),
+            // 굴러 들이받기: 구르는 바위, 대상 3~6칸이면 최대 12틱 1/2칸/틱, 끝날 때 1칸 적 지상 고정 15. 쿨다운 240. 묶음 7.
+            Ability("굴러 들이받기", Faction.RockGolems, Role.Melee, 1, AbilityKind.RollCharge, AbilityTargets.GroundBodies,
+                UpgradeEffect.RollCharge, cooldown: 240, radius: 1, amount: 15, ticks: 12),
+            // 잔해 만료 연장: 잠듦의 고리, 20틱마다 9×9 셀의 잔해 만료를 Tick + 40까지. 묶음 7.
+            Ability("잔해 만료 연장", Faction.RockGolems, Role.Defense, 2, AbilityKind.RemnantHold, AbilityTargets.None,
+                UpgradeEffect.None, radius: 4, ticks: 40, period: 20),
 
             // 차원 유랑종
             // 굳은 몸: 멸종한 바위 슬라임, 걷지 않는 동안 방어 +3.
@@ -2200,6 +2300,9 @@ namespace WordCraft.Sim
             // 도착 방전: 멸종한 번개 슬라임, 도착한 자리 2칸 적 지상·공중 고정 10. 묶음 6.
             Ability("도착 방전", Faction.Driftworlds, Role.Ranged, 1, AbilityKind.ArrivalBurst, AbilityTargets.Bodies,
                 UpgradeEffect.None, radius: 2, amount: 10),
+            // 정조준: 틈새 사수, 40틱 걷지 않으면 사거리 +2. 묶음 7.
+            Ability("정조준", Faction.Driftworlds, Role.Ranged, 0, AbilityKind.SteadyAim, AbilityTargets.None,
+                UpgradeEffect.SteadyAim, amount: 2, ticks: 40),
 
             // 인간 마법 문명
             // 표식: 마도 정찰기, 5칸 적 유닛이 인간의 일반 공격에서 +1. 표식 강화 +2.
@@ -2211,12 +2314,18 @@ namespace WordCraft.Sim
             // 연쇄 방전: 전기 타워, 1번 튐, 2칸.
             Ability("연쇄 방전", Faction.Humans, Role.Defense, 1, AbilityKind.ChainOnHit, AbilityTargets.None,
                 UpgradeEffect.ChainDischarge, radius: 2, limit: 1),
+            // 수리: 공방 기술자, 10틱마다 3칸 안 가장 많이 다친 아군 건물 또는 장치 유닛 +4. 수리 강화 6. 묶음 7.
+            Ability("수리", Faction.Humans, Role.Signature, 2, AbilityKind.Repair, AbilityTargets.BuildingsAndDevices,
+                UpgradeEffect.None, radius: 3, amount: 4, period: 10, boost: UpgradeEffect.RepairAmount, boostedAmount: 6),
+            // 폭격: 마도 폭격선, 명중 시 2칸 광역, 절반 피해, 지상만. 묶음 7.
+            Ability("폭격", Faction.Humans, Role.Ranged, 5, AbilityKind.SplashOnHit, AbilityTargets.Ground,
+                UpgradeEffect.None, radius: 2),
         };
 
         private static AbilityRow Ability(string name, Faction faction, Role role, int slot, AbilityKind kind,
             AbilityTargets targets, UpgradeEffect unlock, int radius = 0, int amount = 0, int ticks = 0,
             int period = 0, int limit = 0, UpgradeEffect boost = UpgradeEffect.None,
-            int boostedRadius = 0, int boostedAmount = 0, int boostedTicks = 0) =>
+            int boostedRadius = 0, int boostedAmount = 0, int boostedTicks = 0, int cooldown = 0) =>
             new AbilityRow
             {
                 Name = name,
@@ -2224,7 +2333,7 @@ namespace WordCraft.Sim
                 Kind = kind, Targets = targets,
                 Unlock = -1, Boost = -1,
                 UnlockEffect = unlock, BoostEffect = boost,
-                Radius = radius, Amount = amount, Ticks = ticks, Period = period, Limit = limit,
+                Radius = radius, Amount = amount, Ticks = ticks, Period = period, Limit = limit, Cooldown = cooldown,
                 BoostedRadius = boostedRadius, BoostedAmount = boostedAmount, BoostedTicks = boostedTicks,
             };
 
@@ -2243,6 +2352,65 @@ namespace WordCraft.Sim
             kind == AbilityKind.ArmorAura || kind == AbilityKind.MarkAura || kind == AbilityKind.RateAura ||
             kind == AbilityKind.HealAura || kind == AbilityKind.BurnAura || kind == AbilityKind.GrowthAura ||
             kind == AbilityKind.SlowAura || kind == AbilityKind.ExpiryAura;
+
+        /// <summary>
+        /// Whether this kind keeps state on the body that holds it, in
+        /// Entity.AbilityCooldown or Entity.AbilityTicksLeft. docs/TECH-TREE.md
+        /// 능력 공통 규칙: a body holds at most one, and the type load refuses a
+        /// second, because the two fields would then mean two things at once.
+        /// </summary>
+        public static bool IsStateful(AbilityKind kind) =>
+            kind == AbilityKind.GaleAfterAttack || kind == AbilityKind.RollCharge ||
+            kind == AbilityKind.RemnantRepair || kind == AbilityKind.SteadyAim;
+
+        /// <summary>The kinds that wait on AbilityCooldown, and so the only rows that carry a Cooldown.</summary>
+        public static bool HasCooldown(AbilityKind kind) =>
+            kind == AbilityKind.RollCharge || kind == AbilityKind.RemnantRepair;
+
+        /// <summary>
+        /// The one row with state this entry holds, or -1. An entry holds at
+        /// most one, which the type load checks.
+        /// </summary>
+        public static int StatefulAbilityOf(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < abilities.Length; i++)
+            {
+                AbilityRow row = abilities[i];
+                if (IsStateful(row.Kind) && row.Faction == faction && row.Role == role && row.Slot == slot) return i;
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// 수리's 장치 유닛, docs/TECH-TREE.md 인간 능력 표: Towerback, 석조 보행
+        /// 포대, 견인 대포, 마도 폭격선, 마도 정찰기, 마나 증폭기. Units that 수리
+        /// mends the way it mends a building. Walked in declaration order.
+        /// </summary>
+        private static readonly (Faction Faction, Role Role, int Slot)[] devices =
+        {
+            (Faction.Humans, Role.Signature, 0), // Towerback
+            (Faction.Humans, Role.Ranged, 3),    // 석조 보행 포대
+            (Faction.Humans, Role.Ranged, 4),    // 견인 대포
+            (Faction.Humans, Role.Ranged, 5),    // 마도 폭격선
+            (Faction.Humans, Role.Signature, 1), // 마도 정찰기
+            (Faction.Humans, Role.Signature, 3), // 마나 증폭기
+        };
+
+        /// <summary>Whether this entry is a 장치 유닛 수리 mends.</summary>
+        public static bool IsDevice(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < devices.Length; i++)
+            {
+                if (devices[i].Faction == faction && devices[i].Role == role && devices[i].Slot == slot) return true;
+            }
+            return false;
+        }
+
+        /// <summary>How many entries the device table holds.</summary>
+        public static int DeviceCount => devices.Length;
+
+        /// <summary>One entry of the device table, in declaration order.</summary>
+        public static (Faction Faction, Role Role, int Slot) Device(int index) => devices[index];
 
         /// <summary>How many rows this faction's ability table holds.</summary>
         public static int AbilityCount(Faction faction)
@@ -2489,6 +2657,11 @@ namespace WordCraft.Sim
 
             RequireMechanicTables();
             ResolveAbilities();
+            for (int i = 0; i < devices.Length; i++)
+            {
+                RequireFielded(devices[i].Faction, devices[i].Role, devices[i].Slot, "devices");
+                Require(!IsBuilding(devices[i].Role) && devices[i].Role != Role.Worker, "devices row " + i + " is not a unit");
+            }
         }
 
         /// <summary>
@@ -2505,7 +2678,9 @@ namespace WordCraft.Sim
                 string where = "abilities row " + i + " (" + row.Name + ")";
                 RequireFielded(row.Faction, row.Role, row.Slot, "abilities");
                 Require(row.Kind != AbilityKind.None, where + " does nothing");
-                Require(row.Cooldown == 0, where + " has a cooldown nothing counts down yet");
+                Require(HasCooldown(row.Kind) == (row.Cooldown > 0),
+                    where + " has a cooldown of " + row.Cooldown + " on a kind that " +
+                    (HasCooldown(row.Kind) ? "waits on one" : "never counts one down"));
                 abilities[i].Unlock = UpgradeIndexOf(row.Faction, row.UnlockEffect, where);
                 abilities[i].Boost = UpgradeIndexOf(row.Faction, row.BoostEffect, where);
                 Require((row.BoostEffect == UpgradeEffect.None) ==
@@ -2515,11 +2690,18 @@ namespace WordCraft.Sim
                 // needs a radius; an aura also says whom it reaches.
                 // A burst goes off around where its holder stood, so it needs
                 // both as well (묶음 6).
+                // So does every 묶음 7 kind that lands on bodies or cells
+                // around its holder, and each of those that lands on bodies
+                // says which.
                 bool burst = row.Kind == AbilityKind.DeathBurst || row.Kind == AbilityKind.ArrivalBurst;
-                bool reaches = IsAura(row.Kind) || burst || row.Kind == AbilityKind.ChainOnHit ||
+                bool around = row.Kind == AbilityKind.SplashOnHit || row.Kind == AbilityKind.RemnantThrow ||
+                              row.Kind == AbilityKind.RemnantRepair || row.Kind == AbilityKind.RollCharge ||
+                              row.Kind == AbilityKind.Repair;
+                bool cells = row.Kind == AbilityKind.FieldEmitter || row.Kind == AbilityKind.RemnantHold;
+                bool reaches = IsAura(row.Kind) || burst || around || cells || row.Kind == AbilityKind.ChainOnHit ||
                                row.Kind == AbilityKind.ArmorPerAlly;
                 Require(!reaches || row.Radius > 0, where + " reaches nothing");
-                Require(!(IsAura(row.Kind) || burst) || row.Targets != AbilityTargets.None, where + " names no targets");
+                Require(!(IsAura(row.Kind) || burst || around) || row.Targets != AbilityTargets.None, where + " names no targets");
                 // Every kind that adds, heals, burns or sets a period carries its
                 // amount in the row. The exceptions carry it elsewhere: 과생장 and
                 // 덩굴 지대 act by being in range, a chain halves the shot it
@@ -2527,24 +2709,40 @@ namespace WordCraft.Sim
                 // constants (SlowFactor, BurnDamage), because the body carrying
                 // the clock does not remember which row set it.
                 // 층위 고정 puts a clock back one tick by definition.
+                // A splash halves the shot it follows, 급류 walks at a World
+                // constant, and a field or a debris hold writes cells, not hp.
                 bool amountless = row.Kind == AbilityKind.GrowthAura || row.Kind == AbilityKind.SlowAura ||
                                   row.Kind == AbilityKind.ChainOnHit || row.Kind == AbilityKind.SlowOnHit ||
-                                  row.Kind == AbilityKind.BurnOnHit || row.Kind == AbilityKind.ExpiryAura;
+                                  row.Kind == AbilityKind.BurnOnHit || row.Kind == AbilityKind.ExpiryAura ||
+                                  row.Kind == AbilityKind.SplashOnHit || row.Kind == AbilityKind.FieldSpeed ||
+                                  row.Kind == AbilityKind.FieldEmitter || row.Kind == AbilityKind.RemnantHold;
                 Require(amountless || row.Amount > 0, where + " has no amount");
-                if (row.Kind == AbilityKind.SlowOnHit || row.Kind == AbilityKind.BurnOnHit)
+                if (row.Kind == AbilityKind.SlowOnHit || row.Kind == AbilityKind.BurnOnHit ||
+                    row.Kind == AbilityKind.GaleAfterAttack || row.Kind == AbilityKind.RollCharge ||
+                    row.Kind == AbilityKind.SteadyAim || cells)
                     Require(row.Ticks > 0, where + " lasts no ticks");
+                if (row.Kind == AbilityKind.RemnantRepair)
+                    Require(row.Limit > 0, where + " mends a body that lost nothing");
                 if (row.Kind == AbilityKind.ChainOnHit)
                     Require(row.Limit > 0 && row.Limit <= MaxChainHops, where + " hops " + row.Limit + " times");
                 if (row.Kind == AbilityKind.RateAura || row.Kind == AbilityKind.ArmorPerAlly)
                     Require(row.Limit > 0, where + " has no floor or cap");
                 if (row.Kind == AbilityKind.HealAura || row.Kind == AbilityKind.BurnAura || row.Kind == AbilityKind.GrowthAura ||
-                    row.Kind == AbilityKind.ExpiryAura)
+                    row.Kind == AbilityKind.ExpiryAura || row.Kind == AbilityKind.Repair || cells)
                     Require(row.Period > 0, where + " has no period");
+                // A body that holds a ticking or cooling ability walks or shoots
+                // with it, so it has to be a unit on the field; a field or a debris
+                // hold is laid from where its holder stands, either kind.
+                if (IsStateful(row.Kind))
+                    Require(!IsBuilding(row.Role) && row.Role != Role.Worker, where + " is held by no combat body");
                 for (int j = 0; j < i; j++)
                 {
                     Require(abilities[j].Faction != row.Faction || abilities[j].Role != row.Role ||
                             abilities[j].Slot != row.Slot || abilities[j].Kind != row.Kind,
                         where + " gives " + row.Faction + " " + row.Role + " " + row.Slot + " a second " + row.Kind);
+                    Require(!IsStateful(row.Kind) || !IsStateful(abilities[j].Kind) || abilities[j].Faction != row.Faction ||
+                            abilities[j].Role != row.Role || abilities[j].Slot != row.Slot,
+                        where + " gives " + row.Faction + " " + row.Role + " " + row.Slot + " a second ability with state");
                 }
             }
         }

@@ -118,6 +118,11 @@ namespace WordCraft.Sim
                 case AbilityTargets.RangedBodies: return t.Kind == EntityKind.Unit && t.Role == Role.Ranged;
                 case AbilityTargets.DefenseBuildings: return finished && t.Role == Role.Defense;
                 case AbilityTargets.GroundBodies: return body && !Flies(t);
+                case AbilityTargets.Ground: return (body || t.Kind == EntityKind.Building) && !Flies(t);
+                case AbilityTargets.Everything: return body || t.Kind == EntityKind.Building;
+                case AbilityTargets.BuildingsAndDevices:
+                    return finished || (t.Kind == EntityKind.Unit && t.Owner >= 0 && t.Owner < MaxPeers &&
+                                        FactionData.IsDevice(factions[t.Owner], t.Role, t.Slot));
                 default: return false;
             }
         }
