@@ -900,16 +900,10 @@ namespace WordCraft.View
             for (int r = 0; r < FactionData.AbilityRowCount; r++)
             {
                 AbilityRow row = FactionData.AbilityRowAt(r);
-                if (row.Faction == faction && row.Role == e.Role && row.Slot == e.Slot && Aura(row.Kind)) return r;
+                if (row.Faction == faction && row.Role == e.Role && row.Slot == e.Slot && FactionData.IsAura(row.Kind)) return r;
             }
             return -1;
         }
-
-        /// <summary>The kinds that reach other bodies across a radius: what gets a radius ring. Sim/Auras.cs IsAura's list.</summary>
-        private static bool Aura(AbilityKind kind) =>
-            kind == AbilityKind.ArmorAura || kind == AbilityKind.MarkAura || kind == AbilityKind.RateAura ||
-            kind == AbilityKind.HealAura || kind == AbilityKind.BurnAura || kind == AbilityKind.GrowthAura ||
-            kind == AbilityKind.SlowAura;
 
         /// <summary>
         /// Whether this source's aura is on right now, the rule Sim/Auras.cs
