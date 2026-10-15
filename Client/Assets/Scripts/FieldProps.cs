@@ -100,6 +100,15 @@ namespace WordCraft.View
             return Mathf.Sqrt(dx * dx + dz * dz);
         }
 
+        /// <summary>How far a plane point is from the nearer of the two bases, in cells.</summary>
+        internal static float BaseDistance(Vector2 at)
+        {
+            int last = Field.Cells - 1;
+            var own = new Vector2(KeepClear[0] + 0.5f, KeepClear[1] + 0.5f);
+            var other = new Vector2(last - KeepClear[0] + 0.5f, last - KeepClear[1] + 0.5f);
+            return Mathf.Min(Vector2.Distance(at, own), Vector2.Distance(at, other));
+        }
+
         private static bool Cleared(int cx, int cy)
         {
             int last = Field.Cells - 1;

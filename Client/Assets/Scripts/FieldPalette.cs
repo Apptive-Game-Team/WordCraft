@@ -102,11 +102,49 @@ namespace WordCraft.View
         public const float SlopeShift = 0.3f;
 
         /// <summary>
-        /// Per cell value grain, as a fraction either way. Far below the 2D bake's
-        /// grain: the light now separates facets on its own, and grain on top of
-        /// that is the fine detail noise the style rules out.
+        /// Large patches of open ground that are not the level's plain grass:
+        /// dry grass, moss, bare earth. Each is what GrassLow becomes at a patch's
+        /// heart, and a patch on higher ground moves its own level's grass by the
+        /// same ratio, so the level still reads by value through a patch.
+        /// Lighter-and-yellower, darker-and-greener, browner: three directions
+        /// away from the sage, none far enough to be mistaken for a ramp's earth
+        /// or a lake's blue.
         /// </summary>
-        public const float Grain = 0.010f;
+        public static readonly Color PatchDry = Rgb(0x8C9160);
+
+        /// <summary>Moss: the darker, greener patch.</summary>
+        public static readonly Color PatchMoss = Rgb(0x5B7449);
+
+        /// <summary>Bare earth: grass worn thin, warm and a touch lighter.</summary>
+        public static readonly Color PatchDirt = Rgb(0x857A5C);
+
+        /// <summary>How many patch kinds there are; FieldMesh deals one of these to each patch.</summary>
+        public const int PatchKinds = 3;
+
+        /// <summary>How far toward its patch colour the heart of a patch goes. A little past half, so a patch is a change in the ground and not a second ground.</summary>
+        public const float PatchStrength = 0.6f;
+
+        /// <summary>
+        /// Moves a ground colour toward patch kind by weight (0..1, the patch's
+        /// falloff at that point): multiplies by the patch colour's ratio to
+        /// GrassLow, so the move is the same on every level's grass.
+        /// </summary>
+        public static Color PatchTint(Color colour, int kind, float weight)
+        {
+            Color target = kind == 0 ? PatchDry : kind == 1 ? PatchMoss : PatchDirt;
+            var moved = new Color(colour.r * target.r / GrassLow.r, colour.g * target.g / GrassLow.g,
+                                  colour.b * target.b / GrassLow.b, colour.a);
+            return Color.Lerp(colour, moved, weight * PatchStrength);
+        }
+
+        /// <summary>
+        /// Per grid point value grain, as a fraction either way. Far below the 2D bake's
+        /// grain: the light now separates facets on its own, and grain on top of
+        /// that is the fine detail noise the style rules out. Per grid point, so it
+        /// fades across a cell rather than stepping at the cell's border; per cell,
+        /// even one percent drew the grid as a faint chequer.
+        /// </summary>
+        public const float Grain = 0.015f;
 
         // ---------------------------------------------------------------- cliffs
 

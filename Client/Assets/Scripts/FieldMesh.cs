@@ -144,6 +144,7 @@ namespace WordCraft.View
             Field.Build(world);
 
             Materials();
+            DealPatches();
             root = new GameObject("Terrain");
             if (parent != null) root.transform.SetParent(parent, false);
 
@@ -229,7 +230,9 @@ namespace WordCraft.View
                     int level = Field.Level(cell);
                     bool flat = Flat(p0, p1, p2, p3);
                     Color colour = flat ? FieldPalette.Grass(level) : FieldPalette.Slope(level);
-                    Surface(solid, p0, p1, p2, p3, FieldPalette.Grained(colour, grain));
+                    Surface(solid, p0, p1, p2, p3,
+                            Ground(colour, cx, cy), Ground(colour, cx + 1, cy),
+                            Ground(colour, cx, cy + 1), Ground(colour, cx + 1, cy + 1));
                     if (!flat) Ruts(solid, cx, cy, p0, p1, p2, p3);
                     break;
             }
@@ -287,25 +290,123 @@ namespace WordCraft.View
         /// allow, so a ramp reads as one surface with a crease and not as a
         /// pyramid.
         /// </summary>
-        private static void Surface(Facets f, Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, Color colour)
+        private static void Surface(Facets f, Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, Color colour) =>
+            Surface(f, p0, p1, p2, p3, colour, colour, colour, colour);
+
+        /// <summary>The same, with a colour per corner, in corner order.</summary>
+        private static void Surface(Facets f, Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3,
+                                    Color c0, Color c1, Color c2, Color c3)
         {
             if (Flat(p0, p1, p2, p3))
             {
-                f.Quad(p0, p1, p3, p2, colour, Vector3.up);
+                f.Quad(p0, p1, p3, p2, c0, c1, c3, c2, Vector3.up);
                 return;
             }
 
             // Field.Height walks the same two triangles, so the rule lives there.
             if (Field.MainDiagonal(p0.y, p1.y, p2.y, p3.y))
             {
-                f.Triangle(p0, p1, p3, colour, Vector3.up);
-                f.Triangle(p0, p3, p2, colour, Vector3.up);
+                f.Triangle(p0, p1, p3, c0, c1, c3, Vector3.up);
+                f.Triangle(p0, p3, p2, c0, c3, c2, Vector3.up);
             }
             else
             {
-                f.Triangle(p0, p1, p2, colour, Vector3.up);
-                f.Triangle(p1, p3, p2, colour, Vector3.up);
+                f.Triangle(p0, p1, p2, c0, c1, c2, Vector3.up);
+                f.Triangle(p1, p3, p2, c1, c3, c2, Vector3.up);
             }
+        }
+
+        // ------------------------------------------------------------------ ground patches
+
+        /// <summary>Cells on a side of the blocks patches are dealt into. One patch at most per block, so they spread over the map instead of clumping.</summary>
+        private const int PatchBlock = 6;
+
+        /// <summary>The chance a block has a patch.</summary>
+        private const float PatchOdds = 0.5f;
+
+        /// <summary>
+        /// How close to a base a patch may reach, in cells, with a few cells more
+        /// to fade out over. The ground round a base is where a player reads
+        /// their own units, and it stays the plain level colour.
+        /// </summary>
+        private const float PatchBaseClear = 9f;
+
+        private struct Patch
+        {
+            public Vector2 Centre;
+            public float Radius;
+            public int Kind;
+            public float Phase;
+        }
+
+        private static readonly List<Patch> patches = new List<Patch>();
+
+        /// <summary>
+        /// Deals the map's ground patches: a block in two gets one, somewhere in
+        /// the block, three to six cells in radius, of one of the three kinds in
+        /// <see cref="FieldPalette.PatchTint"/>. All from the view hash, so every
+        /// peer paints the same patches without spending a World.Random draw.
+        /// </summary>
+        private static void DealPatches()
+        {
+            patches.Clear();
+            int blocks = (Field.Cells + PatchBlock - 1) / PatchBlock;
+            for (int by = 0; by < blocks; by++)
+            {
+                for (int bx = 0; bx < blocks; bx++)
+                {
+                    if (Unit(bx, by, 60) >= PatchOdds) continue;
+                    patches.Add(new Patch
+                    {
+                        Centre = new Vector2((bx + Unit(bx, by, 61)) * PatchBlock, (by + Unit(bx, by, 62)) * PatchBlock),
+                        Radius = 3f + 3f * Unit(bx, by, 63),
+                        Kind = (int)(Unit(bx, by, 64) * FieldPalette.PatchKinds) % FieldPalette.PatchKinds,
+                        Phase = Unit(bx, by, 65) * Mathf.PI * 2f,
+                    });
+                }
+            }
+        }
+
+        /// <summary>
+        /// The ground colour at grid point (gx, gy): the cell's level colour,
+        /// moved toward the strongest patch covering the point, then grained. Per grid
+        /// point and not per cell, so neighbouring cells share their corner colours
+        /// and a patch's edge, and the grain, fade across a cell instead of
+        /// stepping at its border — which is what made the grid read as a
+        /// spreadsheet.
+        /// </summary>
+        private static Color Ground(Color colour, int gx, int gy)
+        {
+            var at = new Vector2(gx, gy);
+            float clear = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(PatchBaseClear, PatchBaseClear + 3f, FieldProps.BaseDistance(at)));
+            if (clear > 0f)
+            {
+                // Only the strongest patch at a point counts. Two overlapping patches
+                // compounding their tints went orange where dry grass met bare earth.
+                int strongest = -1;
+                float most = 0f;
+                for (int i = 0; i < patches.Count; i++)
+                {
+                    Patch patch = patches[i];
+                    Vector2 off = at - patch.Centre;
+                    float d = off.magnitude;
+                    if (d >= patch.Radius * 1.3f) continue;
+
+                    // A wavering edge: the radius swells and shrinks with the
+                    // angle, so a patch is a blot and not a circle.
+                    float angle = Mathf.Atan2(off.y, off.x);
+                    float reach = patch.Radius * (1f + 0.2f * Mathf.Sin(3f * angle + patch.Phase)
+                                                     + 0.1f * Mathf.Sin(5f * angle + 2f * patch.Phase));
+                    // The last third of the radius is the fade, so a patch has a body
+                    // and an edge rather than being all gradient.
+                    float weight = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(reach * 0.65f, reach, d));
+                    if (weight <= most) continue;
+                    most = weight;
+                    strongest = patch.Kind;
+                }
+                if (strongest >= 0) colour = FieldPalette.PatchTint(colour, strongest, most * clear);
+            }
+            return FieldPalette.Grained(colour, Unit(gx, gy, 0));
         }
 
         // ------------------------------------------------------------------ ramps
