@@ -2,7 +2,7 @@
 
 - Date: 2026-10-15
 - GitHub Issue: #165
-- Status: Draft
+- Status: Implemented, awaiting review
 
 ## Goal
 
@@ -57,7 +57,10 @@
 | 유휴 | 반복 | `Walk` 몸통 1.5% 호흡, `Hop` 주기적 눌림, `Float` 부유 + 좌우 기울기, `Fly` 날개 유지 + 부유. 위상과 속도를 시드로 가른다 |
 | 걷기 | 반복 | 다리 진폭과 stride 를 다리 길이에서 계산해 발이 미끄러지지 않게 한다. 방향 전환 때 안쪽으로 기울고, 가속 때 앞으로 숙인다. `Hop` 은 포물선 점프와 착지 squash |
 | 공격 | 0.36초 | `Lunge` 뒤로 당겼다 앞으로 찌름, `Recoil` 뒤로 튕김과 팔 들림, `Pulse` 부풀었다 눌림. 포탑은 목표로 돌고 반동 |
-| 피격 | 0.3초 | 뒤로 밀림, squash, 짧은 밝은 wash |
+| 피격 | 0.3초 | 뒤로 밀림, squash, 첫 0.13초 동안 종이 흰색으로 45% wash |
+
+죽음의 기울기는 hull 이 아니라 root 를 돌린다. 다리는 root 에 매달려 있어서,
+hull 만 돌리면 다리가 선 자리에 남는다 (strip 에서 확인한 문제).
 
 wash 는 `Body.shader` / `BodyGhost.shader` 의 새 property `_Wash` (rgb 목표 색,
 a 비율) 로 한다. 곱하기 tint 로는 잔해 색에 닿지 않는다.
@@ -80,14 +83,14 @@ a 비율) 로 한다. 곱하기 tint 로는 잔해 색에 닿지 않는다.
 
 ## Approach (Checklist)
 
-- [ ] **Step 1** — `ViewClock`, `BodyRig.Animate`
-- [ ] **Step 2** — lineup 샷
-- [ ] **Step 3** — strip 샷
-- [ ] **Step 4** — 죽음
-- [ ] **Step 5** — 투사체와 impact
-- [ ] **Step 6** — 스폰과 성장
-- [ ] **Step 7** — 유휴
-- [ ] **Step 8** — 걷기와 공격 다듬기, strip 으로 세 번 이상 반복
+- [x] **Step 1** — `ViewClock`, `BodyRig.Animate`
+- [x] **Step 2** — lineup 샷
+- [x] **Step 3** — strip 샷
+- [x] **Step 4** — 죽음
+- [x] **Step 5** — 투사체와 impact
+- [x] **Step 6** — 스폰과 성장
+- [x] **Step 7** — 유휴
+- [x] **Step 8** — 걷기와 공격 다듬기, strip 으로 세 번 이상 반복
 
 ## Validation
 
@@ -97,6 +100,21 @@ a 비율) 로 한다. 곱하기 tint 로는 잔해 색에 닿지 않는다.
   - `Unity -batchmode -quit -projectPath Client -executeMethod WordCraft.View.ViewShots.Run -shotsOutput shots -shotsTicks 900`
 - **Expected output:** `OK: all view determinism checks passed`, 기존 5장 + lineup 6장
   + strip.
+
+## 반복 기록
+
+strip 을 다섯 번 렌더하며 고쳤다.
+
+1. 첫 렌더: 카메라가 멀고 몸이 위로 쏠렸다. frame 0 이 동작 시작 전 포즈였다
+   (Begin 뒤에 Animate 를 한 번 더 돌려 고침).
+2. tracer 와 shard 가 64px 에서 보이지 않았다. 길이 0.5, 굵기 0.17, shard 0.24 로
+   키웠다. 스폰이 0.13초 프레임 간격에서 이미 overshoot 라 smoothstep 상승으로 바꿨다.
+3. frame 을 640x360 으로 넓히고 간격 2.6셀로 당겼다. 돌 골렘 잔해 wash 0.9 는 평면
+   색처럼 보여 0.7 로 낮췄다.
+4. Recoil 의 팔 반동 -40도가 포신을 수직으로 세워 -24도로 줄였다. 피격 wash 0.55 는
+   잎 색을 지워 0.45 로 낮췄다.
+5. 다리가 root 에 매달린 몸(차원 유랑종 갑각류)이 죽을 때 다리가 남았다. root 를
+   돌리도록 고쳤다.
 
 ## Risks & Rollback
 
