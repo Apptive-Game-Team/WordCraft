@@ -1250,9 +1250,23 @@ namespace WordCraft.View
             switch (role)
             {
                 case Role.Worker: Droplet(b); break;
-                case Role.Melee: BubbleSpirit(b); break;
-                case Role.Ranged: if (slot == 1) TideHerald(b); else AquaArcher(b); break;
-                case Role.Signature: CloudDragon(b); break;
+                case Role.Melee:
+                    if (slot == 1) WaterScreenSlime(b);
+                    else if (slot == 2) RiptideSlime(b);
+                    else BubbleSpirit(b);
+                    break;
+                case Role.Ranged:
+                    if (slot == 1) TideHerald(b);
+                    else if (slot == 2) SpitSlime(b);
+                    else if (slot == 3) CannonSlime(b);
+                    else AquaArcher(b);
+                    break;
+                case Role.Signature:
+                    if (slot == 1) RainCloud(b);
+                    else if (slot == 2) GeyserMage(b);
+                    else if (slot == 3) SpringCarrier(b);
+                    else CloudDragon(b);
+                    break;
                 default: GenericUnit(b, Faction.WaterSlimes); break;
             }
         }
@@ -1361,6 +1375,170 @@ namespace WordCraft.View
 
             Wing(b.LimbLeft, -1f, Point(0.2f, 0.52f, -0.08f), 0.34f, 0.26f, 0.1f, -0.05f, 20f, sky);
             Wing(b.LimbRight, 1f, Point(0.2f, 0.52f, -0.08f), 0.34f, 0.26f, 0.1f, -0.05f, 20f, sky);
+        }
+
+        /// <summary>물막이 슬라임: a wide, low dome with a wall of water raised on its right shoulder. Slot 1, screens the ranks behind.</summary>
+        private static void WaterScreenSlime(Blueprint b)
+        {
+            b.Gait = Gait.Hop;
+            b.Strike = Strike.Lunge;
+            Solids hull = b.Hull;
+            Color pale = BodyPalette.WaterSlimes.Pale, foam = BodyPalette.WaterSlimes.Foam;
+
+            hull.Dome(Vector3.zero, Extent(0.5f, 0.42f, 0.42f), 10, 3, BodyPalette.WaterSlimes.Sky);
+            hull.Ball(Point(-0.2f, 0.28f, 0.3f), Extent(0.06f, 0.09f, 0.05f), foam);
+            Eyes(hull, Point(-0.06f, 0.24f, 0.37f), 0.17f, 0.06f);
+            Band(b, hull, Point(0f, 0.02f, 0f), 10, 0.51f, 0.06f, 0.84f);
+
+            b.Arm.Origin = Point(0.3f, 0.3f, 0.05f);
+            b.Arm.Taper(Point(0.34f, 0.12f, 0.06f), Pair(0.16f, 0.56f), Pair(0.1f, 0.46f), 0.62f, pale, Turn(0f, 0f, -6f));
+            b.Arm.Taper(Point(0.31f, 0.72f, 0.06f), Pair(0.1f, 0.46f), Pair(0.07f, 0.36f), 0.22f, pale, Turn(0f, 0f, 38f));
+            b.Arm.Ball(Point(0.2f, 0.86f, 0.06f), Extent(0.09f, 0.08f, 0.2f), foam);
+            b.Arm.Ball(Point(0.42f, 0.44f, 0.2f), Extent(0.03f, 0.12f, 0.03f), foam);
+        }
+
+        /// <summary>급류 슬라임: a low, long slime streaming a wave tail behind it, a fin raised on its back. Slot 2, the flanker.</summary>
+        private static void RiptideSlime(Blueprint b)
+        {
+            b.Gait = Gait.Hop;
+            b.Strike = Strike.Lunge;
+            Solids hull = b.Hull;
+            Color pale = BodyPalette.WaterSlimes.Pale, foam = BodyPalette.WaterSlimes.Foam, blue = BodyPalette.WaterSlimes.Blue;
+
+            hull.Ball(Point(0f, 0.22f, 0.06f), Extent(0.26f, 0.21f, 0.36f), blue);
+            hull.Ball(Point(0f, 0.2f, -0.3f), Extent(0.18f, 0.13f, 0.18f), BodyPalette.WaterSlimes.Sky);
+            hull.Ball(Point(0.05f, 0.22f, -0.5f), Extent(0.12f, 0.1f, 0.14f), pale);
+            hull.Prism(Point(0.08f, 0.26f, -0.58f), 5, 0.08f, 0f, 0.26f, pale, Turn(-60f, 0f, -15f));
+            hull.Prism(Point(0f, 0.36f, -0.02f), 4, 0.08f, 0f, 0.3f, pale, Turn(-58f, 0f, 0f));
+            hull.Ball(Point(-0.12f, 0.32f, 0.3f), Extent(0.05f, 0.06f, 0.04f), foam);
+            Eyes(hull, Point(0f, 0.3f, 0.38f), 0.16f, 0.055f);
+            Band(b, hull, Point(0f, 0.08f, 0.06f), 10, 0.24f, 0.05f, 1.4f);
+
+            b.Arm.Origin = Point(0f, 0.12f, 0.36f);
+            b.Arm.Ball(Point(0f, 0.08f, 0.44f), Extent(0.22f, 0.06f, 0.08f), foam);
+        }
+
+        /// <summary>침 뱉는 슬라임: a round slime with an open mouth and a stream of droplets in front of it. Slot 2.</summary>
+        private static void SpitSlime(Blueprint b)
+        {
+            b.Gait = Gait.Hop;
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color foam = BodyPalette.WaterSlimes.Foam, deep = BodyPalette.WaterSlimes.Deep;
+
+            hull.Dome(Vector3.zero, Extent(0.38f, 0.48f, 0.36f), 10, 3, BodyPalette.WaterSlimes.Blue);
+            hull.Ball(Point(0f, 0.22f, 0.32f), Extent(0.13f, 0.1f, 0.06f), deep);
+            hull.Ball(Point(-0.14f, 0.36f, 0.26f), Extent(0.05f, 0.08f, 0.04f), foam);
+            hull.Ball(Point(-0.1f, 0.62f, -0.04f), 0.05f, foam);
+            hull.Ball(Point(0.04f, 0.68f, 0.02f), 0.035f, BodyPalette.WaterSlimes.Pale);
+            Eyes(hull, Point(0f, 0.38f, 0.32f), 0.2f, 0.065f);
+            Band(b, hull, Point(0f, 0.02f, 0f), 10, 0.39f, 0.06f, 0.95f);
+
+            b.Arm.Origin = Point(0f, 0.22f, 0.36f);
+            b.Arm.Ball(Point(0f, 0.24f, 0.46f), Extent(0.07f, 0.06f, 0.06f), BodyPalette.WaterSlimes.Pale);
+            b.Arm.Ball(Point(0.03f, 0.26f, 0.58f), 0.05f, foam);
+            b.Arm.Ball(Point(-0.02f, 0.28f, 0.68f), 0.035f, foam);
+        }
+
+        /// <summary>물대포 슬라임: a big round slime with a thick water column pushed out of its body, no barrel. Slot 3, the siege.</summary>
+        private static void CannonSlime(Blueprint b)
+        {
+            b.Gait = Gait.Hop;
+            b.Strike = Strike.Recoil;
+            Solids hull = b.Hull;
+            Color pale = BodyPalette.WaterSlimes.Pale, foam = BodyPalette.WaterSlimes.Foam;
+
+            hull.Dome(Vector3.zero, Extent(0.46f, 0.6f, 0.44f), 10, 3, BodyPalette.WaterSlimes.Sky);
+            hull.Ball(Point(-0.22f, 0.44f, 0.26f), Extent(0.06f, 0.1f, 0.05f), foam);
+            Eyes(hull, Point(-0.14f, 0.42f, 0.36f), 0.15f, 0.06f);
+            Band(b, hull, Point(0f, 0.02f, 0f), 10, 0.47f, 0.06f, 0.95f);
+
+            b.Arm.Origin = Point(0.12f, 0.3f, 0.2f);
+            b.Arm.Prism(Point(0.12f, 0.28f, 0.18f), 8, 0.15f, 0.18f, 0.4f, pale, Lying);
+            b.Arm.Prism(Point(0.12f, 0.28f, 0.58f), 8, 0.2f, 0.2f, 0.06f, foam, Lying);
+            b.Arm.Ball(Point(0.12f, 0.46f, 0.6f), 0.06f, foam);
+            b.Arm.Ball(Point(0.28f, 0.36f, 0.62f), 0.045f, foam);
+            b.Arm.Ball(Point(-0.04f, 0.38f, 0.62f), 0.045f, BodyPalette.WaterSlimes.Blue);
+        }
+
+        /// <summary>비구름: a blue rain cloud with eyes, drops hanging under it, two puffs beating at its sides. Airborne, weaponless.</summary>
+        private static void RainCloud(Blueprint b)
+        {
+            b.Limbs = LimbMotion.Flap;
+            b.LimbsRideHull = true;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color sky = BodyPalette.WaterSlimes.Sky, blue = BodyPalette.WaterSlimes.Blue, deep = BodyPalette.WaterSlimes.Deep;
+
+            hull.Ball(Point(0f, 0.42f, 0f), Extent(0.42f, 0.18f, 0.3f), blue);
+            hull.Ball(Point(-0.3f, 0.48f, -0.04f), 0.17f, sky);
+            hull.Ball(Point(-0.1f, 0.56f, 0.02f), 0.2f, sky);
+            hull.Ball(Point(0.16f, 0.56f, -0.04f), 0.22f, BodyPalette.WaterSlimes.Pale);
+            hull.Ball(Point(0.36f, 0.48f, 0.02f), 0.15f, sky);
+            hull.Ball(Point(0f, 0.32f, 0f), Extent(0.4f, 0.07f, 0.26f), deep);
+            for (int i = 0; i < 5; i++)
+            {
+                float x = -0.2f + i * 0.1f, z = i % 2 == 0 ? 0.06f : -0.1f;
+                hull.Prism(Point(x, 0.08f + (i % 2) * 0.06f, z), 6, 0.025f, 0f, 0.1f, deep, Turn(180f, 0f, 0f));
+                hull.Ball(Point(x, 0.06f + (i % 2) * 0.06f, z), 0.03f, deep);
+            }
+            Eyes(hull, Point(0f, 0.44f, 0.27f), 0.16f, 0.05f);
+            Band(b, hull, Point(0f, 0.3f, 0f), 10, 0.31f, 0.04f, 0.85f);
+
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Solids puff = side < 0 ? b.LimbLeft : b.LimbRight;
+                Wing(puff, side, Point(0.38f, 0.42f, 0f), 0.2f, 0.24f, 0.14f, -0.04f, 15f, sky);
+            }
+        }
+
+        /// <summary>간헐천 술사: a tall standing slime with a round water spout rising off its head and bending right. Weaponless caster.</summary>
+        private static void GeyserMage(Blueprint b)
+        {
+            b.Gait = Gait.Hop;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color foam = BodyPalette.WaterSlimes.Foam;
+
+            hull.Dome(Vector3.zero, Extent(0.36f, 0.6f, 0.34f), 10, 4, BodyPalette.WaterSlimes.Pale);
+            hull.Prism(Point(0f, 0.02f, 0f), 10, 0.44f, 0.42f, 0.05f, BodyPalette.WaterSlimes.Sky, Quaternion.identity, 0.95f);
+            hull.Ball(Point(-0.14f, 0.36f, 0.24f), Extent(0.05f, 0.09f, 0.04f), foam);
+            Eyes(hull, Point(0f, 0.3f, 0.31f), 0.14f, 0.055f);
+            Band(b, hull, Point(0f, 0.08f, 0f), 10, 0.355f, 0.05f, 0.95f);
+
+            b.Arm.Origin = Point(0f, 0.56f, 0f);
+            Vector3 position = Point(0f, 0.52f, -0.02f);
+            float roll = 0f, radius = 0.1f;
+            for (int i = 0; i < 5; i++)
+            {
+                Quaternion rotation = Turn(0f, 0f, roll);
+                b.Arm.Prism(position, 8, radius, radius * 0.92f, 0.16f, i % 2 == 0 ? BodyPalette.WaterSlimes.Sky : BodyPalette.WaterSlimes.Blue, rotation);
+                position += rotation * Point(0f, 0.15f, 0f);
+                roll -= 24f;
+                radius *= 0.92f;
+            }
+            b.Arm.Ball(position, 0.1f, foam);
+            b.Arm.Ball(position + Point(0.08f, -0.12f, 0f), 0.04f, foam);
+        }
+
+        /// <summary>샘물 운반자: a low, wide slime with a hollow in its back holding a pool of spring water. Weaponless.</summary>
+        private static void SpringCarrier(Blueprint b)
+        {
+            b.Gait = Gait.Hop;
+            b.Strike = Strike.Pulse;
+            Solids hull = b.Hull;
+            Color pale = BodyPalette.WaterSlimes.Pale, foam = BodyPalette.WaterSlimes.Foam;
+
+            hull.Dome(Vector3.zero, Extent(0.5f, 0.32f, 0.44f), 10, 3, BodyPalette.WaterSlimes.Sky);
+            for (int i = 0; i < 10; i++)
+            {
+                float yaw = i * 36f;
+                hull.Ball(Around(yaw) * 0.3f + Point(0f, 0.3f, -0.04f), Extent(0.1f, 0.08f, 0.1f), i % 2 == 0 ? pale : foam);
+            }
+            hull.Prism(Point(0f, 0.3f, -0.04f), 10, 0.25f, 0.25f, 0.04f, BodyPalette.WaterSlimes.Deep);
+            hull.Ball(Point(-0.06f, 0.35f, -0.08f), Extent(0.06f, 0.02f, 0.04f), foam);
+            Eyes(hull, Point(0f, 0.2f, 0.42f), 0.18f, 0.055f);
+            Band(b, hull, Point(0f, 0.02f, 0f), 10, 0.51f, 0.06f, 0.88f);
         }
 
         // ---- 돌 골렘 부족 ----
@@ -1811,6 +1989,7 @@ namespace WordCraft.View
             {
                 case Faction.TreeSpirits: return TreeSpiritExtraBuilding(b, role, slot);
                 case Faction.Hellfire: return HellfireExtraBuilding(b, role, slot);
+                case Faction.WaterSlimes: return WaterSlimeExtraBuilding(b, role, slot);
                 default: return false;
             }
         }
@@ -2439,6 +2618,94 @@ namespace WordCraft.View
                 default:
                     GenericBuilding(b, Faction.WaterSlimes, Cells(role));
                     break;
+            }
+        }
+
+        private static bool WaterSlimeExtraBuilding(Blueprint b, Role role, int slot)
+        {
+            Solids hull = b.Hull;
+            Color foam = BodyPalette.WaterSlimes.Foam, pale = BodyPalette.WaterSlimes.Pale;
+            Color sky = BodyPalette.WaterSlimes.Sky, blue = BodyPalette.WaterSlimes.Blue;
+
+            switch (role)
+            {
+                case Role.Production when slot == 1:
+                    // 구름 둥지: three round water legs holding up a wide shallow basin, cloud puffs resting in it.
+                    hull.Prism(Vector3.zero, 12, 1.35f, 1.3f, 0.12f, pale);
+                    Band(b, hull, Point(0f, 0.02f, 0f), 12, 1.37f, 0.07f);
+                    hull = b.Tier(Vector3.zero);
+                    for (int i = 0; i < 3; i++)
+                        hull.Dome(Around(60f + i * 120f) * 0.72f, Extent(0.4f, 1.0f, 0.4f), 9, 3, sky);
+                    hull = b.Tier(Point(0f, 0.85f, 0f));
+                    hull.Prism(Point(0f, 0.82f, 0f), 12, 1.0f, 1.25f, 0.3f, pale);
+                    hull.Prism(Point(0f, 1.12f, 0f), 12, 1.05f, 1.05f, 0.03f, blue);
+                    hull = b.Tier(Point(0f, 1.15f, 0f));
+                    hull.Ball(Point(0f, 1.38f, 0f), 0.5f, BodyPalette.WaterSlimes.Cloud);
+                    hull.Ball(Point(-0.55f, 1.3f, 0.2f), 0.36f, BodyPalette.WaterSlimes.Cloud);
+                    hull.Ball(Point(0.55f, 1.28f, -0.15f), 0.38f, foam);
+                    hull.Ball(Point(0.15f, 1.72f, 0.1f), 0.3f, foam);
+                    return true;
+
+                case Role.Defense when slot == 1:
+                    // 솟는 샘: two low water rings and a tall round column standing up out of them. Unarmed: no crown.
+                    hull.Prism(Vector3.zero, 12, 1.1f, 1.05f, 0.15f, pale);
+                    hull.Prism(Point(0f, 0.15f, 0f), 12, 0.8f, 0.75f, 0.14f, sky);
+                    hull.Prism(Point(0f, 0.29f, 0f), 12, 0.6f, 0.6f, 0.02f, blue);
+                    Band(b, hull, Point(0f, 0.03f, 0f), 12, 1.11f, 0.08f);
+                    hull = b.Tier(Point(0f, 0.25f, 0f));
+                    hull.Dome(Point(0f, 0.25f, 0f), Extent(0.46f, 2.0f, 0.46f), 10, 4, sky);
+                    hull.Ball(Point(-0.16f, 1.1f, -0.38f), Extent(0.07f, 0.36f, 0.05f), foam);
+                    hull = b.Tier(Point(0f, 2.2f, 0f));
+                    hull.Ball(Point(0f, 2.36f, 0f), 0.17f, foam);
+                    return true;
+
+                case Role.Defense when slot == 2:
+                    // 거품 장벽: a low wide mound of three big bubbles in a row. A wall: no crown.
+                    hull.Prism(Vector3.zero, 10, 1.15f, 1.1f, 0.08f, sky, Quaternion.identity, 0.6f);
+                    Band(b, hull, Point(0f, 0.01f, 0f), 10, 1.17f, 0.06f, 0.6f);
+                    hull = b.Tier(Point(-0.55f, 0f, 0f));
+                    hull.Ball(Point(-0.5f, 0.44f, 0f), Extent(0.6f, 0.5f, 0.55f), pale);
+                    hull.Ball(Point(-0.68f, 0.62f, -0.36f), Extent(0.1f, 0.12f, 0.06f), foam);
+                    hull = b.Tier(Point(0.25f, 0f, 0f));
+                    hull.Ball(Point(0.28f, 0.36f, 0.06f), Extent(0.5f, 0.42f, 0.5f), sky);
+                    hull.Ball(Point(0.14f, 0.5f, -0.36f), Extent(0.08f, 0.1f, 0.05f), foam);
+                    hull = b.Tier(Point(0.85f, 0f, 0f));
+                    hull.Ball(Point(0.86f, 0.24f, -0.02f), Extent(0.34f, 0.28f, 0.34f), pale);
+                    hull.Ball(Point(-1.05f, 0.14f, 0.25f), 0.16f, foam);
+                    return true;
+
+                case Role.Tech when slot == 1:
+                {
+                    // 물결 수련장: a low round pool rimmed with bubbles, a small curling wave turning in the middle.
+                    hull.Prism(Vector3.zero, 12, 0.85f, 0.8f, 0.2f, pale);
+                    hull.Prism(Point(0f, 0.2f, 0f), 12, 0.68f, 0.68f, 0.02f, blue);
+                    Band(b, hull, Point(0f, 0.03f, 0f), 12, 0.86f, 0.08f);
+                    hull = b.Tier(Point(0f, 0.2f, 0f));
+                    for (int i = 0; i < 10; i++)
+                    {
+                        float yaw = i * 36f;
+                        hull.Ball(Around(yaw) * 0.76f + Point(0f, 0.24f, 0f), 0.13f, i % 2 == 0 ? sky : foam);
+                    }
+
+                    Solids crown = b.Crown;
+                    crown.Origin = Point(0f, 0.22f, 0f);
+                    Vector3 position = Point(0f, 0.2f, -0.2f);
+                    float pitch = -10f, radius = 0.2f;
+                    for (int i = 0; i < 5; i++)
+                    {
+                        Quaternion rotation = Turn(pitch, 0f, 0f);
+                        crown.Prism(position, 7, radius, radius * 0.8f, 0.36f, i % 2 == 0 ? sky : blue, rotation);
+                        position += rotation * Point(0f, 0.33f, 0f);
+                        pitch += 36f;
+                        radius *= 0.8f;
+                    }
+                    crown.Ball(position, 0.08f, foam);
+                    b.CrownSpin = 30f;
+                    return true;
+                }
+
+                default:
+                    return false;
             }
         }
 
