@@ -23,6 +23,12 @@ namespace WordCraft.View
     /// read at the zoom a fight is watched from, with a ring on the ground
     /// under it. A 돌 골렘 body that dies breaks into chunks here too
     /// (<see cref="Crumble"/>), pooled the same way.
+    ///
+    /// Issue #206 adds the statuses' marks to the same pools: a burning body's
+    /// embers and a heal's motes are the working building's mote chip, two or
+    /// three at a time and never a scatter; a burn's tick is a smaller burst;
+    /// and a chain's jump is the tracer's spindle laid along a four-leg zigzag
+    /// (<see cref="Jump"/>), thick enough to survive a 64 px downscale.
     /// </summary>
     public sealed class Effects
     {
