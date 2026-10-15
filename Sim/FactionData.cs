@@ -1300,12 +1300,12 @@ namespace WordCraft.Sim
             // 물 슬라임
             "", "SpringheadPool", "WaterSlimeSwarm", "BubbleGenerator", "GeyserColumn", "BubbleSpirit", "AquaArcher", "CloudDragon", "StillPool", "TideAltar",
             // 돌 골렘 부족. RockTurret is human-made stonework and stays out of this faction.
-            // The signature slot is deliberately empty: RockRemnant is a death state, not a unit.
+            // RockRemnant is not here: it is a death state, not a unit. The signature slot is 고대 골렘.
             "", "MossrockSanctum", "MiniRockSwarm", "WakingStone", "RollingHill", "RockGolem", "RockMage", "AncientGolem", "StandingStone", "ElderMossstone",
             // 차원 유랑종. Thinnest permanent roster; the extinct slimes it summons are extras.
             "", "AnchoredWorld", "FireTadpole", "Passage", "RefractingPillar", "LightningTadpole", "RiftMarksman", "DimensionToad", "MooringClaw", "StrataObservatory",
-            // 인간 마법 문명. The only faction whose buildings all exist already; the
-            // worker and the 공방 are the holes. Melee is empty by design.
+            // 인간 마법 문명. Every entry 0 it fields has art, ApprenticeMage and
+            // Workshop included. Melee is empty by design.
             "", "ManaWell", "ApprenticeMage", "Tower", "Cannon", "", "ChickenCommando", "Towerback", "Tower", "Workshop",
         };
 
