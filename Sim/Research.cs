@@ -164,6 +164,31 @@ namespace WordCraft.Sim
         }
 
         /// <summary>
+        /// Stops the research running in this building and pays it back in full.
+        /// Reached only through CancelProduction on a building whose queue is
+        /// empty, which is every 기술 건물 that never queued a unit.
+        ///
+        /// The whole price, for the reason a cancelled unit is refunded whole:
+        /// the price was taken in full when the order was accepted, so a full
+        /// refund leaves the bank exactly where it would have been had the order
+        /// never been given. The level has not moved while the research ran, so
+        /// ResearchCost answers the price that was paid.
+        ///
+        /// A death is not a cancel. Kill drops the clock and pays nothing, which
+        /// is the line the issue draws: losing the building costs the research.
+        /// </summary>
+        private void TryCancelResearch(int peer, int buildingId)
+        {
+            if (!OwnedAndAlive(buildingId, peer)) return;
+            Entity b = entities[buildingId];
+            if (b.Kind != EntityKind.Building || b.ResearchIndex < 0) return;
+
+            resources[peer] += ResearchCost(peer, b.ResearchIndex);
+            ClearResearch(ref b);
+            entities[buildingId] = b;
+        }
+
+        /// <summary>
         /// Puts a building back in the not-researching state. Static and by ref
         /// for the reason ClearGrowth is: it is called from inside loops that hold
         /// an entity by value and write it back once.

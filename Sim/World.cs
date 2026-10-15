@@ -1029,7 +1029,10 @@ namespace WordCraft.Sim
                 }
 
                 case CommandType.CancelProduction:
-                    TryCancelQueuedUnit(c.PeerId, c.EntityId);
+                    // One cancel for both things a building can be busy with. A
+                    // queue goes first, because it is what the command has always
+                    // meant; only an empty queue lets the cancel reach research.
+                    if (!TryCancelQueuedUnit(c.PeerId, c.EntityId)) TryCancelResearch(c.PeerId, c.EntityId);
                     break;
 
                 case CommandType.Research:

@@ -330,11 +330,11 @@ namespace WordCraft.Sim
         // ponytail: takes the tail because the queue is a count, not a list, so
         // there is no slot to name. Give cancel an index the day the queue becomes
         // a list of roles, which is the same day a building can mix unit types.
-        private void TryCancelQueuedUnit(int peer, int buildingId)
+        private bool TryCancelQueuedUnit(int peer, int buildingId)
         {
-            if (!OwnedAndAlive(buildingId, peer)) return;
+            if (!OwnedAndAlive(buildingId, peer)) return false;
             Entity b = entities[buildingId];
-            if (b.Kind != EntityKind.Building || b.QueueCount <= 0) return;
+            if (b.Kind != EntityKind.Building || b.QueueCount <= 0) return false;
 
             b.QueueCount--;
             // The queue holds one roster entry, so the price it was bought at is
@@ -347,6 +347,7 @@ namespace WordCraft.Sim
             // the next order a head start it never paid for.
             if (b.QueueCount == 0) b.ProduceTicksLeft = 0;
             entities[buildingId] = b;
+            return true;
         }
 
         private void ProductionSystem()
