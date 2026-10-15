@@ -58,6 +58,7 @@ namespace WordCraft.View
             try
             {
                 Directory.CreateDirectory(output);
+                Known();
                 int fields = 0;
                 if (Wanted("field"))
                 {
@@ -89,6 +90,26 @@ namespace WordCraft.View
         /// looked at again without rendering all of them. Everything when absent.
         /// </summary>
         private static string only;
+
+        /// <summary>
+        /// Refuses a -shotsOnly kind that names nothing, so a typo fails the run
+        /// rather than writing no shots and printing OK.
+        /// </summary>
+        private static void Known()
+        {
+            if (string.IsNullOrEmpty(only)) return;
+            foreach (string part in only.Split(','))
+            {
+                string kind = part.Trim();
+                bool known = kind == "field" || kind == "lineup" || kind == "match" || kind == "growth" ||
+                             Array.IndexOf(Motions, kind) >= 0 || Array.IndexOf(BuildingMotions, kind) >= 0;
+                if (!known)
+                {
+                    throw new ArgumentException("-shotsOnly names '" + kind + "', which is no kind of shot. Kinds: field, lineup, match, growth, " +
+                                                string.Join(", ", Motions) + ", " + string.Join(", ", BuildingMotions));
+                }
+            }
+        }
 
         private static bool Wanted(string kind)
         {
