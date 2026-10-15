@@ -1,0 +1,47 @@
+# 2026-10-16: 오토캐스트와 격자: AbilitySystem, 광역, 잔해 활용, 물 지대, 잠듦의 고리
+
+- Date: 2026-10-16
+- GitHub Issue: #203
+- Status: In progress (draft PR, #208 위에 쌓음)
+
+## Goal
+
+`docs/TECH-TREE.md` 구현 순서 묶음 7. `Cast` 명령(묶음 8), AI(9), 뷰, HUD는 범위 밖이다.
+
+## 계약: 새 해시 상태 셋
+
+| 상태 | 위치 | 쓰는 곳 | 지우는 곳 |
+|---|---|---|---|
+| `AbilityCooldown` | `Entity` | 잔해 수리(100), 굴러 들이받기(240) | `Kill` |
+| `AbilityTicksLeft` | `Entity` | 질풍(10에서 줄어듦), 굴러 들이받기(12에서 줄어듦), 정조준(0에서 40까지 늘어남) | `Kill` |
+| `waterFieldExpiry[GridCells]` | `World` | 샘물 운반자(3×3, 200틱), 솟는 샘(5×5, 80틱) | 만료 틱이 지나면 효과 없음. 값은 남는다(`remnantExpiry`와 같음) |
+
+- `Hash()`: 엔티티 두 필드는 `ExpireTick` 뒤에, 격자는 `remnantExpiry` 뒤에 값이 0이 아닌 셀만 index와 함께 섞는다.
+- 상태를 가진 능력(질풍, 굴러 들이받기, 잔해 수리, 정조준)은 몸 하나에 하나. type load가 막는다.
+
+## 시스템 배치
+
+- `AbilitySystem`: `ExpirySystem` 뒤, `CombatSystem` 앞. 순서는 몸마다 id 오름차순으로
+  쿨다운 1 감소 → 질풍 시계 감소 → 정조준 세기 → 굴러 들이받기 진행·시작 → 잔해 수리,
+  그다음 `Tick % 10 == 0`이면 수리, 물 지대 방출(샘물 운반자 20틱, 솟는 샘 40틱),
+  `Tick % 20 == 0`이면 잠듦의 고리.
+- `CombatSystem`: 잔해 투척(2칸 안 잔해 셀 중 index 최소 소비, 피해 +8, 반경 1칸 광역),
+  광역(용암 폭발, 폭격: 반경 2칸, `최종 피해 / 2` 내림 최소 1, 지상만), 질풍 시계를 10으로,
+  물 지대 방어(일반 공격만, +1, 물 지대 방어 연구 +2), 물기둥 분수 사거리 +1, 정조준 사거리 +2.
+- `MoveSystem`(`MoveSpeedFor`): 급류(물 지대 위 1/2), 굴러 들이받기(1/2), 질풍(× 2), 감속, 3/4 상한.
+
+## 정적 데이터
+
+- `AbilityKind` 17~27, `AbilityTargets` 6~8, 장치 유닛 표(인간 여섯 항목).
+- 연구 행 여덟: 질풍, 물 지대 방어, 급류, 굴러 들이받기, 잔해 수리, 잔해 투척 강화, 정조준, 수리 강화.
+  세계수 정령과 차원 유랑종이 13행이 되어 `MaxUpgrades` 12 → 13.
+- `ContentVersion` 37 → 38.
+
+## 범위 밖으로 남기는 것
+
+- 물 지대 깔기(물방울 생존자), 지연 폭발, 지점 범위 효과는 `Cast`와 `AbilityPoint`가 필요해 묶음 8.
+  격자 쓰기 함수는 이 묶음이 만들고 묶음 8이 부른다.
+
+## 하네스
+
+`Replay/AbilityChecks.cs`, `Replay/WaterFieldChecks.cs`. 능력 표 행은 `StatusChecks`의 표에 이어 붙인다.
