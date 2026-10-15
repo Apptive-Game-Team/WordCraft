@@ -80,11 +80,6 @@ namespace WordCraft.Sim
             (e.Kind != EntityKind.Building || e.BuildTicksLeft == 0) &&
             e.Kind != EntityKind.ResourceNode;
 
-        private static bool IsAura(AbilityKind kind) =>
-            kind == AbilityKind.ArmorAura || kind == AbilityKind.MarkAura || kind == AbilityKind.RateAura ||
-            kind == AbilityKind.HealAura || kind == AbilityKind.BurnAura || kind == AbilityKind.GrowthAura ||
-            kind == AbilityKind.SlowAura;
-
         /// <summary>
         /// Fills the scratch source list: every body that can use an aura row
         /// right now, by ascending id, and within one body by table order.
@@ -103,7 +98,7 @@ namespace WordCraft.Sim
                 {
                     AbilityRow row = FactionData.AbilityRowAt(r);
                     if (row.Faction != faction || row.Role != e.Role || row.Slot != e.Slot) continue;
-                    if (!IsAura(row.Kind) || !AbilityUnlocked(e.Owner, row)) continue;
+                    if (!FactionData.IsAura(row.Kind) || !AbilityUnlocked(e.Owner, row)) continue;
                     auraIds.Add(i);
                     auraRows.Add(r);
                     auraPositions.Add(e.Position);
