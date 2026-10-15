@@ -41,19 +41,18 @@ namespace WordCraft.View
 
         /// <summary>
         /// 반경, straight off the simulation: the base one, which is the radius of
-        /// a peer that has not researched 도착 반경. The rings MatchView draws are
-        /// this number and nothing else, so a radius retuned in Sim moves the
-        /// drawing with it. Kept as a property because MatchView reads it that
-        /// way; the researched radius is <see cref="RadiusFor"/>, and the rings
-        /// move to it in the follow-up that is allowed to touch that file.
+        /// a peer that has not researched 도착 반경. Nothing in the view draws it
+        /// any more: MatchView's rings read <see cref="RadiusFor"/>. It stays as the
+        /// base radius Replay/ResearchMenuChecks.cs compares the researched one
+        /// against; delete it with that comparison.
         /// </summary>
         public static Fix Radius => World.ArrivalRadius;
 
         /// <summary>
         /// 반경 for this peer, straight off <see cref="World.ArrivalRadiusFor"/>:
         /// the base radius, or the wider one once 도착 반경 is researched. What a
-        /// ring drawn for a peer's anchors should be, because it is what the
-        /// simulation's own check uses (ArrivalValid) for that peer.
+        /// ring drawn for a peer's anchors is (MatchView.Arrival), because it is
+        /// what the simulation's own check uses (ArrivalValid) for that peer.
         /// </summary>
         public static Fix RadiusFor(World world, int peer) => world.ArrivalRadiusFor(peer);
 

@@ -700,9 +700,10 @@ namespace WordCraft.View
             // question, and a map wearing every anchor's circle for a whole match
             // is a map with a pattern on it.
             ArrivalOrder.Anchors(world, peer, anchors);
+            Fix radius = ArrivalOrder.RadiusFor(world, peer);
             for (int i = 0; i < anchors.Count; i++)
             {
-                RangeRing(AnchorRing(i), ArrivalOrder.Radius, runner.DrawPosition(anchors[i]));
+                RangeRing(AnchorRing(i), radius, runner.DrawPosition(anchors[i]));
             }
             for (int i = anchors.Count; i < arrivalRings.Count; i++) arrivalRings[i].Visible = false;
         }
