@@ -50,3 +50,13 @@
 - 기존 검사 고정값 갱신: `RosterChecks`(성장 행 셋 `Grown`, 연구 행 수와 묶음 4 행), `UpgradeChecks`(행 35개),
   `ResearchMenuChecks`(진영 전체가 아니라 연구 건물마다 한 쪽), `ArrivalOrderChecks`(고리 검사 지점을 앵커 옆 칸으로).
 - arena 결과는 `fix/191`과 같다. AI가 새 메커니즘을 쓰지 않는다(묶음 9).
+
+## Review follow-ups
+
+- `docs/TECH-TREE.md` 잔해 규칙, 도착 규칙, 불일치 19의 고대 골렘 줄에 반영됨(#197). 도착 셀 검사는 건물과 자원 노드 셀도 거부한다.
+- 성장 감사 주석: `CanAttack`의 `!IsGrowing`이 성장 중 공격 불가의 근거이고, 유닛 성장에서는 그것 하나가 막는다.
+- 타입 로드 검사 둘: 성장 행은 spawner를 가리키지 않는다. 무료 대기열 건물에서 생산되는 항목은 없다. 그래서 `ReturnSeed`의
+  실행 시점 `ProduceRole` 검사를 지웠다. 쓰지 않던 표 접근자 여섯 개를 지웠다.
+- `GroundCellOpen` 하나를 `CanBuild`와 `ArrivalValid`가 같이 쓴다. `World.ArrivalRadius`·`ArrivalRadiusResearched`는 도착 표의
+  굴절 기둥 행에서 읽는다.
+- 씨앗 요람 검사 추가: 미완공 요람, 다른 피어의 요람, 인구가 상한과 같을 때(사망으로 9가 되어 받음)와 사망 뒤에도 상한일 때(버림).
