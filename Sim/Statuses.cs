@@ -82,6 +82,68 @@ namespace WordCraft.Sim
                 }
                 entities[i] = e;
             }
+
+            // Then the periodic auras, damage before healing, so a body the burn
+            // aura finishes is not healed first, and each on the ticks its row's
+            // period divides.
+            CollectAuraSources();
+            BurnAuras();
+            HealAuras();
+        }
+
+        /// <summary>
+        /// 화상 오라: every source on its own, the one aura that stacks. By
+        /// ascending source id, each burning the hostile ground bodies within
+        /// its radius by ascending id. A source the burn of an earlier source
+        /// killed this tick burns nothing.
+        /// </summary>
+        private void BurnAuras()
+        {
+            for (int k = 0; k < auraIds.Count; k++)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(auraRows[k]);
+                if (row.Kind != AbilityKind.BurnAura || Tick % row.Period != 0) continue;
+                Entity s = entities[auraIds[k]];
+                if (!s.Alive) continue;
+                Fix radius = Fix.FromInt(AbilityRadius(s.Owner, row));
+                int damage = AbilityAmount(s.Owner, row);
+                for (int i = 0; i < entities.Count; i++)
+                {
+                    Entity t = entities[i];
+                    if (!t.Alive || t.Owner < 0 || t.Owner == s.Owner) continue;
+                    if (!AuraTargets(row.Targets, t)) continue;
+                    if (!WithinRange(s.Position, t.Position, radius)) continue;
+                    t.Hp -= damage;
+                    if (t.Hp <= 0) Kill(ref t);
+                    entities[i] = t;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 회복, 회복의 비, 이끼 재생, 생명 기록: on its period, each healing row
+        /// heals every allied body of its targets that some source of the row
+        /// reaches, once however many do. Integer, and never past MaxHp. Rows of
+        /// different names are different auras and each heals.
+        /// </summary>
+        private void HealAuras()
+        {
+            for (int r = 0; r < FactionData.AbilityRowCount; r++)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(r);
+                if (row.Kind != AbilityKind.HealAura || Tick % row.Period != 0) continue;
+                if (!auraRows.Contains(r)) continue;
+                for (int i = 0; i < entities.Count; i++)
+                {
+                    Entity t = entities[i];
+                    if (!t.Alive || t.Owner < 0 || t.Owner >= MaxPeers || t.Hp >= t.MaxHp) continue;
+                    if (factions[t.Owner] != row.Faction) continue;
+                    if (!AlliedAuraReaches(r, t, t.Owner)) continue;
+                    t.Hp += AbilityAmount(t.Owner, row);
+                    if (t.Hp > t.MaxHp) t.Hp = t.MaxHp;
+                    entities[i] = t;
+                }
+            }
         }
 
         /// <summary>
