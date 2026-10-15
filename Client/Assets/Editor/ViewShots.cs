@@ -302,6 +302,7 @@ namespace WordCraft.View
             using (var studio = new Studio(world, FrameWidth * Frames, FrameHeight, FrameWidth, FrameHeight))
             {
                 List<BodyRig> rigs = Dress(world, studio.Root.transform);
+                var effects = new Effects(studio.Root.transform);
                 var speeds = new float[rigs.Count];
                 for (int i = 0; i < rigs.Count; i++)
                 {
@@ -311,13 +312,18 @@ namespace WordCraft.View
                 }
 
                 float now = StartSeconds - PrerollSeconds;
-                Step(rigs, homes, motion, speeds, ref now, StartSeconds);
-                Begin(rigs, motion);
+                var shot = new Shooting { Faction = faction, Cast = cast, Effects = effects };
+                Step(rigs, homes, motion, speeds, shot, ref now, StartSeconds);
+                Begin(rigs, motion, shot);
+                // Once at the start, so frame 0 is the motion's first pose and
+                // not the last idle one.
+                for (int i = 0; i < rigs.Count; i++) rigs[i].Animate();
+                effects.Animate();
 
                 for (int frame = 0; frame < Frames; frame++)
                 {
                     float at = StartSeconds + frame * StripSeconds / (Frames - 1);
-                    Step(rigs, homes, motion, speeds, ref now, at);
+                    Step(rigs, homes, motion, speeds, shot, ref now, at);
                     if (frame == 0) Frame(studio, Framing(homes, motion, speeds, out float width), width, 0f);
                     studio.Render(frame * FrameWidth);
                 }
@@ -327,18 +333,68 @@ namespace WordCraft.View
         }
 
         /// <summary>The one-shot start of a motion, at <see cref="StartSeconds"/>.</summary>
-        private static void Begin(List<BodyRig> rigs, string motion)
+        private static void Begin(List<BodyRig> rigs, string motion, Shooting shot)
         {
+            Color colour = BodyPalette.Shot(shot.Faction);
             for (int i = 0; i < rigs.Count; i++)
             {
                 switch (motion)
                 {
-                    case "attack": rigs[i].Attack(); break;
-                    case "hit": rigs[i].Hit(); break;
-                    case "tower": rigs[i].Attack(); break;
+                    case "attack":
+                    case "tower":
+                        Fire(rigs[i], i, shot);
+                        break;
+                    case "hit":
+                        rigs[i].Hit();
+                        // On the side facing the camera, where a shot from in front would land.
+                        shot.Effects.Impact(rigs[i].Chest + Vector3.back * rigs[i].Footprint * 0.35f, colour);
+                        break;
+                    case "death":
+                        // The rubble rule is MatchView.Rubble's: a 돌 골렘 combat unit.
+                        rigs[i].Die(shot.Faction == Faction.RockGolems && shot.Cast[i].Role != Role.Worker);
+                        break;
+                    case "spawn":
+                        rigs[i].Spawn();
+                        break;
                 }
             }
         }
+
+        /// <summary>What a strip needs to fire a body's weapon the way MatchView.Shoot does.</summary>
+        private sealed class Shooting
+        {
+            public Faction Faction;
+            public List<(Role Role, int Slot)> Cast;
+            public Effects Effects;
+        }
+
+        /// <summary>
+        /// One attack, with what MatchView.Shoot would put in the air for it: a
+        /// tracer to a point ahead for a weapon that reaches past two cells, a
+        /// burst a cell ahead when the lunge lands for one that does not. A tower
+        /// shoots along its aim instead of its body's facing.
+        /// </summary>
+        private static void Fire(BodyRig rig, int i, Shooting shot)
+        {
+            rig.Attack();
+            Color colour = BodyPalette.Shot(shot.Faction);
+            bool tower = FactionData.IsBuilding(shot.Cast[i].Role);
+            Vector3 forward = tower ? Quaternion.Euler(0f, TowerYaw(ViewClock.Now - StartSeconds), 0f) * Vector3.forward : rig.transform.forward;
+            bool ranged = FactionData.Stats(shot.Faction, shot.Cast[i].Role, shot.Cast[i].Slot).Range > Fix.FromInt(2);
+            if (ranged)
+            {
+                Vector3 to = rig.transform.position + forward * (tower ? 4f : 2.4f);
+                to.y = rig.Chest.y - (tower ? rig.ChestLift * 0.6f : 0f);
+                shot.Effects.Shot(rig.Muzzle, to, colour);
+            }
+            else
+            {
+                shot.Effects.Impact(rig.Chest + forward * 1.1f, colour, 0.17f);
+            }
+        }
+
+        /// <summary>Where a tower strip's circling target is, as a yaw from the tower, this long into the strip.</summary>
+        private static float TowerYaw(float since) => 150f + Mathf.Max(since, 0f) * 100f;
 
         /// <summary>
         /// Steps every rig from the clock's current time to <paramref name="until"/>
@@ -346,7 +402,7 @@ namespace WordCraft.View
         /// tower toward its moving target, and animates.
         /// </summary>
         private static void Step(List<BodyRig> rigs, List<Vector2> homes, string motion, float[] speeds,
-                                ref float now, float until)
+                                 Shooting shot, ref float now, float until)
         {
             while (now < until - 1e-4f)
             {
@@ -365,12 +421,12 @@ namespace WordCraft.View
                     {
                         // A target circling the tower, a quarter turn a strip, so
                         // the crown has to keep turning to follow it.
-                        float yaw = 150f + Mathf.Max(since, 0f) * 100f;
-                        rigs[i].Face(yaw);
-                        if (since >= StripSeconds * 0.5f && since - step < StripSeconds * 0.5f) rigs[i].Attack();
+                        rigs[i].Face(TowerYaw(since));
+                        if (since >= StripSeconds * 0.5f && since - step < StripSeconds * 0.5f) Fire(rigs[i], i, shot);
                     }
                     rigs[i].Animate();
                 }
+                shot.Effects.Animate();
             }
         }
 
@@ -408,7 +464,7 @@ namespace WordCraft.View
                 Include(ref min, ref max, homes[i]);
                 if (motion == "walk") Include(ref min, ref max, homes[i] + Walk(WalkSeconds, speeds[i]));
             }
-            float margin = motion == "tower" ? 3f : 1.4f;
+            float margin = motion == "tower" ? 3f : 2.4f;
             width = max.x - min.x + margin * 2f;
             // Pushed away from the camera by about a body's height, so the frame
             // centres on the bodies rather than on the ground at their feet.

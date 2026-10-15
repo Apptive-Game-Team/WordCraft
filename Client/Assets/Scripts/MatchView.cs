@@ -114,6 +114,44 @@ namespace WordCraft.View
         /// <summary>The fading ring a hit itself puts on a body (issue #104), sized like the selection ring and coloured like danger instead of chosen.</summary>
         private readonly List<Decal> hitFlashes = new List<Decal>();
 
+        /// <summary>
+        /// Whether each entity was alive as of the last frame, parallel to bodies.
+        /// Alive going from true to false is the frame a death is drawn from: the
+        /// simulation has no death event, only the flag, and this is the view
+        /// noticing the flag change.
+        /// </summary>
+        private readonly List<bool> alive = new List<bool>();
+
+        /// <summary>
+        /// Bodies that no longer belong to any entity and are playing their way
+        /// out: a growth's old body swelling before the new one comes up. Destroyed
+        /// when they report themselves spent.
+        /// </summary>
+        private readonly List<BodyRig> retiring = new List<BodyRig>();
+
+        /// <summary>Tracers and impact shards, pooled (issue #165).</summary>
+        private Effects effects;
+
+        /// <summary>
+        /// False until the first frame of a world has built its bodies. Everything
+        /// built on that frame was already standing when the match began; only a
+        /// body built after it was produced, and only that one rises out of the ground.
+        /// </summary>
+        private bool primed;
+
+        /// <summary>
+        /// How long after a melee strike begins its impact bursts: about where
+        /// BodyRig's lunge reaches furthest, so the shards fly when the blow lands.
+        /// </summary>
+        private const float MeleeImpactDelay = 0.17f;
+
+        /// <summary>
+        /// The reach above which a weapon fires something visible. FactionData
+        /// gives melee a reach of exactly two cells; the issue draws a tracer for
+        /// anything that reaches further.
+        /// </summary>
+        private static readonly Fix TracerReach = Fix.FromInt(2);
+
         /// <summary>Unscaled time each entity's flash goes dark. -1 means never armed; parallel to bodies.</summary>
         private readonly List<float> hitUntil = new List<float>();
 
@@ -172,6 +210,7 @@ namespace WordCraft.View
             Sky.Build(Cam);
 
             hover = Decal.Make(transform, "Hover", ring: true, UiStyle.HoverRing);
+            effects = new Effects(transform);
         }
 
         private void Start() => runner = MatchRunner.Instance;
@@ -204,6 +243,10 @@ namespace WordCraft.View
                 skins.Clear();      // parallel to bodies, and Create refills it
                 cooldowns.Clear();  // same
                 hitUntil.Clear();   // same: a restart's ids owe nothing to the match before it
+                alive.Clear();      // same
+                DropBodies(retiring);
+                effects.Clear();
+                primed = false;
                 shown = world;
 
                 // Terrain is fixed for the whole match, so the field is shaped and
@@ -212,7 +255,15 @@ namespace WordCraft.View
                 FieldMesh.Build(world, transform);
             }
 
-            for (int i = bodies.Count; i < world.EntityCount; i++) bodies.Add(Create(world, world.GetEntity(i)));
+            for (int i = bodies.Count; i < world.EntityCount; i++)
+            {
+                Entity made = world.GetEntity(i);
+                BodyRig body = Create(world, made);
+                bodies.Add(body);
+                if (primed && made.Kind != EntityKind.Building && made.Kind != EntityKind.ResourceNode) body.Spawn();
+            }
+            primed = true;
+            Retire();
 
             // Stamped once here rather than read again per entity below: this is
             // the same list HitDetection hands the minimap and the alert, so a
@@ -237,12 +288,45 @@ namespace WordCraft.View
                 // already a Towerback the first frame it is seen again.
                 if (skins[i] != SkinOf(e))
                 {
-                    Destroy(bodies[i].gameObject);
+                    // A body that changes what it is in sight — a growth landing,
+                    // a 꼬마돌 taken — swells once and the new body comes up in
+                    // its place. Out of sight it is simply swapped.
+                    BodyRig old = bodies[i];
                     bodies[i] = Create(world, e);
                     skins[i] = SkinOf(e);
+                    if (e.Alive && old.Shown && !old.Remembered)
+                    {
+                        old.Swell();
+                        retiring.Add(old);
+                        bodies[i].Spawn(BodyRig.SwellSeconds);
+                    }
+                    else
+                    {
+                        Destroy(old.gameObject);
+                    }
                 }
 
                 BodyRig body = bodies[i];
+
+                // Before the fog, which hides anything dead: a death seen live
+                // plays out where it fell, then the body switches itself off and
+                // the fog's Hidden below takes over. One that happened in the
+                // fog, or to a remembered building, is not news and plays nothing.
+                bool was = alive[i];
+                alive[i] = e.Alive;
+                if (was && !e.Alive && body.Shown && !body.Remembered)
+                {
+                    body.Die(Rubble(world, e));
+                }
+                if (!e.Alive && body.Dying)
+                {
+                    rings[i].Visible = false;
+                    rangeRings[i].Visible = false;
+                    hitFlashes[i].Visible = false;
+                    shadows[i].Visible = false;
+                    Overlays(i);
+                    continue;
+                }
                 byte show = Fog.Show(i, e);
                 if (show == Fog.Hidden)
                 {
@@ -315,6 +399,7 @@ namespace WordCraft.View
             }
 
             for (int i = markers; i < rallyMarkers.Count; i++) rallyMarkers[i].enabled = false;
+            effects.Animate();
             Remnants(world);
             Hover(world);
             Ghost(world);
@@ -330,7 +415,11 @@ namespace WordCraft.View
         /// </summary>
         private void Pose(World world, int i, Entity e, BodyRig body)
         {
-            if (e.AttackCooldown > cooldowns[i]) body.Attack();
+            if (e.AttackCooldown > cooldowns[i])
+            {
+                body.Attack();
+                Shoot(world, e, body);
+            }
             cooldowns[i] = e.AttackCooldown;
 
             if (e.TargetId >= 0 && e.TargetId < world.EntityCount && e.Target.Equals(e.Position))
@@ -356,6 +445,53 @@ namespace WordCraft.View
             else
             {
                 body.Progress(1f);
+            }
+        }
+
+        /// <summary>
+        /// What the shot that just reset this cooldown looks like in the air. A
+        /// weapon that reaches past <see cref="TracerReach"/> throws a tracer from
+        /// the shooter to the target and bursts where it lands; anything shorter
+        /// is a blow, and bursts on the target when the lunge lands. The target is
+        /// read off the entity on the tick it fired, when TargetId still names
+        /// the body it hit even if that body died of it.
+        ///
+        /// Drawn after the damage, not before: the simulation's hit is instant,
+        /// so the tracer lands up to MaxFlight after the bar has already moved.
+        /// </summary>
+        private void Shoot(World world, Entity e, BodyRig body)
+        {
+            if (e.Owner < 0 || e.TargetId < 0 || e.TargetId >= bodies.Count) return;
+
+            Faction faction = world.FactionOf(e.Owner);
+            Color colour = BodyPalette.Shot(faction);
+            BodyRig victim = bodies[e.TargetId];
+            Vector2 from = runner.DrawPosition(e.Id), to = runner.DrawPosition(e.TargetId);
+
+            // On the near face of the target rather than its middle, so the
+            // shards burst out of the side the shot came from and are not
+            // swallowed by the body they hit.
+            Vector2 toward = from - to;
+            if (toward.sqrMagnitude > 1e-6f) to += toward.normalized * (victim.Footprint * 0.35f);
+            Vector3 hit = Field.At(to, victim.ChestLift + (victim.Flying ? BodyRig.HoverHeight : 0f));
+
+            if (FactionData.Stats(faction, e.Role, e.Slot).Range > TracerReach) effects.Shot(body.Muzzle, hit, colour);
+            else effects.Impact(hit, colour, MeleeImpactDelay);
+        }
+
+        /// <summary>돌 골렘 부족's combat unit leaves rubble where it falls (Sim/World.cs DropRemnant), so it dies into rubble.</summary>
+        private static bool Rubble(World world, Entity e) =>
+            e.Kind == EntityKind.Unit && e.Owner >= 0 && world.FactionOf(e.Owner) == Faction.RockGolems;
+
+        /// <summary>Destroys the retiring bodies that have played out. Swap-removes, so nothing here allocates.</summary>
+        private void Retire()
+        {
+            for (int i = retiring.Count - 1; i >= 0; i--)
+            {
+                if (retiring[i] != null && !retiring[i].Spent) continue;
+                if (retiring[i] != null) Destroy(retiring[i].gameObject);
+                retiring[i] = retiring[retiring.Count - 1];
+                retiring.RemoveAt(retiring.Count - 1);
             }
         }
 
@@ -728,6 +864,7 @@ namespace WordCraft.View
             {
                 skins.Add(SkinOf(e));
                 cooldowns.Add(e.AttackCooldown);
+                alive.Add(e.Alive);
                 hitUntil.Add(-1f);
                 rings.Add(Decal.Make(transform, "Ring", ring: true, UiStyle.Ring));
                 rangeRings.Add(Decal.Make(transform, "Range", ring: true, UiStyle.RangeRing));
