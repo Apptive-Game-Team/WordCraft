@@ -492,15 +492,44 @@ namespace WordCraft.Sim
         /// Dropped from inside the combat system's pass, which is where deaths
         /// happen, so creation and expiry both land at one fixed point in the
         /// system order and two peers repath against the same map on the same tick.
+        ///
+        /// docs/TECH-TREE.md 잔해 규칙, since 묶음 4: the cells come from
+        /// FactionData's remnant shape (고대 골렘 covers its own cell and x−1, x+1),
+        /// only open terrain inside the map is written, and every write is the max
+        /// of the expiry already there and the new one. Overwriting let a short
+        /// expiry cut a longer one short the moment two durations existed (잔해 지속
+        /// 600 against 400); max keeps the longer one, and while there was one
+        /// duration the two rules gave the same answer.
         /// </summary>
         private void DropRemnant(Entity e)
         {
             if (e.Kind != EntityKind.Unit) return; // workers and buildings leave nothing
             if (e.Owner < 0 || e.Owner >= MaxPeers) return;
-            if (factions[e.Owner] != Faction.RockGolems) return;
-            // Overwrites rather than stacks: a second body on one cell resets the
-            // clock, and a count nobody can see is a count nobody can play around.
-            remnantExpiry[CellOf(e.Position)] = Tick + RemnantTicksFor(e.Owner);
+            Faction faction = factions[e.Owner];
+            if (faction != Faction.RockGolems) return;
+
+            int expiry = Tick + RemnantTicksFor(e.Owner);
+            int fell = CellOf(e.Position);
+            int fx = fell % GridSize, fy = fell / GridSize;
+            int count = FactionData.RemnantCellCount(faction, e.Role, e.Slot);
+            for (int i = 0; i < count; i++)
+            {
+                var (dx, dy) = FactionData.RemnantCell(faction, e.Role, e.Slot, i);
+                int x = fx + dx, y = fy + dy;
+                if (x < 0 || y < 0 || x >= GridSize || y >= GridSize) continue;
+                WriteRemnant(y * GridSize + x, expiry);
+            }
+        }
+
+        /// <summary>
+        /// The one write into remnantExpiry: open terrain only, and never shorter
+        /// than what stands there. Debris on water or rock blocks nothing that was
+        /// not blocked already, and it would be hashed state saying so.
+        /// </summary>
+        private void WriteRemnant(int cell, int expiry)
+        {
+            if (terrain[cell] != (byte)TileKind.Open) return;
+            if (remnantExpiry[cell] < expiry) remnantExpiry[cell] = expiry;
         }
 
         /// <summary>

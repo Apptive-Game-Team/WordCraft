@@ -1539,6 +1539,39 @@ namespace WordCraft.Sim
         public static FreeQueueRow FreeQueueAt(int index) => freeQueues[index];
 
         /// <summary>
+        /// The cells a fallen 돌 골렘 unit leaves debris on, as offsets from the cell
+        /// it fell on, for the entries that leave more than that one cell:
+        /// docs/TECH-TREE.md 잔해 규칙. 고대 골렘 blocks its own cell and the cells
+        /// either side of it on x (거대 잔해, 3칸). Every other entry is
+        /// <see cref="OneRemnantCell"/>. Walked in declaration order.
+        /// </summary>
+        private static readonly (Faction Faction, Role Role, int Slot, (int Dx, int Dy)[] Cells)[] remnantShapes =
+        {
+            // 고대 골렘: 자기 셀과 x−1, x+1.
+            (Faction.RockGolems, Role.Signature, 0, new[] { (-1, 0), (0, 0), (1, 0) }),
+        };
+
+        private static readonly (int Dx, int Dy)[] OneRemnantCell = { (0, 0) };
+
+        /// <summary>How many cells this entry's debris covers.</summary>
+        public static int RemnantCellCount(Faction faction, Role role, int slot) =>
+            RemnantShape(faction, role, slot).Length;
+
+        /// <summary>One cell of this entry's debris, as an offset from the cell it fell on.</summary>
+        public static (int Dx, int Dy) RemnantCell(Faction faction, Role role, int slot, int index) =>
+            RemnantShape(faction, role, slot)[index];
+
+        private static (int Dx, int Dy)[] RemnantShape(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < remnantShapes.Length; i++)
+            {
+                var row = remnantShapes[i];
+                if (row.Faction == faction && row.Role == role && row.Slot == slot) return row.Cells;
+            }
+            return OneRemnantCell;
+        }
+
+        /// <summary>
         /// The most rows any faction's upgrade table holds. Sizes the per-peer
         /// level array World hashes, so a faction given a ninth row has to move
         /// this too, and the type load refuses a table that outgrows it. Eight
@@ -2011,6 +2044,12 @@ namespace WordCraft.Sim
             RequireArrivals();
             RequireGrowthSources();
             RequireFreeQueues();
+            for (int i = 0; i < remnantShapes.Length; i++)
+            {
+                var row = remnantShapes[i];
+                RequireFielded(row.Faction, row.Role, row.Slot, "remnantShapes");
+                Require(!IsBuilding(row.Role) && row.Cells.Length > 0, "remnantShapes row " + i + " drops nothing");
+            }
         }
 
         private static void RequireGrowthSources()
