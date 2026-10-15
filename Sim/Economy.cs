@@ -236,7 +236,6 @@ namespace WordCraft.Sim
                 int elapsed = total - e.BuildTicksLeft;
                 int climb = e.MaxHp - 1;
                 e.Hp += (climb * elapsed) / total - (climb * (elapsed - 1)) / total;
-                if (e.Hp > e.MaxHp) e.Hp = e.MaxHp;
                 entities[i] = e;
             }
         }

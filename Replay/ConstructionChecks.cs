@@ -59,16 +59,19 @@ namespace WordCraft.Replay
             World world = Fixture(out int site);
             int max = world.GetEntity(site).MaxHp;
             Check(world.GetEntity(site).Hp == 1, "a new site does not start at 1 hp");
-            int last = 1;
             for (int t = 1; t <= Clock; t++)
             {
                 Idle(world, 1);
                 Entity e = world.GetEntity(site);
-                Check(e.Hp >= last, "an undamaged site lost hp on tick " + t);
-                Check(e.Hp <= max, "a site went past MaxHp on tick " + t);
+                // The closed form of the ramp, every tick: 1 hp plus MaxHp - 1
+                // spread over the clock. A ramp that spreads MaxHp instead lands
+                // one hp high on most ticks and is held to MaxHp only by the clamp,
+                // so the last tick alone could not tell the two apart.
+                int expected = 1 + ((max - 1) * t) / Clock;
+                Check(e.Hp == expected,
+                    "an undamaged site stood at " + e.Hp + " on tick " + t + " of " + Clock + ", not " + expected);
                 Check((e.BuildTicksLeft == 0) == (t == Clock), "the clock ran out on tick " + t + " of " + Clock);
                 Check((e.Hp == max) == (t == Clock), "an undamaged site stood at " + e.Hp + " of " + max + " on tick " + t + " of " + Clock);
-                last = e.Hp;
             }
             Idle(world, 20);
             Check(world.GetEntity(site).Hp == max, "a finished site did not hold MaxHp");
@@ -114,9 +117,9 @@ namespace WordCraft.Replay
         /// shoots for twenty ticks and is then ordered out of range. Arriving late
         /// is what lets the site survive: the ramp adds MaxHp / BuildTicks a tick
         /// and one shooter takes a fraction of that, so it is only a site at its
-        /// first few hp that dies to it. d is read off the site tick by tick as
-        /// what the ramp added minus what the site actually gained, so it is the
-        /// damage that landed and not a number this check computes a second time.
+        /// first few hp that dies to it. d is counted from the weapon, one shot per
+        /// cooldown reset times the roster damage less the site's armor, and not
+        /// read back off the site, so the ramp cannot be what supplies it.
         /// </summary>
         private static void ADamagedSiteFinishesAtMaxHpMinusTheDamage()
         {
@@ -127,7 +130,7 @@ namespace WordCraft.Replay
 
             int shooter = -1;
             int damage = 0;
-            int hp = world.GetEntity(site).Hp;
+            int hits = 0;
             var none = new List<Command>();
             for (int t = 1; t <= total + 10; t++)
             {
@@ -137,17 +140,26 @@ namespace WordCraft.Replay
                     : none;
                 world.Step(order);
                 Entity e = world.GetEntity(site);
+
+                // d is counted from the weapon, not read off the site: a shot sets
+                // the shooter's cooldown to its full attack period, and that is
+                // the one tick it does so. Each shot is what the roster row deals
+                // less the site's armor.
+                if (shooter >= 0 && world.GetEntity(shooter).AttackCooldown == world.AttackTicksFor(world.GetEntity(shooter)))
+                {
+                    hits++;
+                    damage += World.DamageAfterArmor(
+                        FactionData.Stats(Owner, Role.Ranged, 0).Damage, 0, world.ArmorFor(e), 0);
+                }
                 if (t <= total)
                 {
-                    int climb = max - 1;
-                    int step = (climb * t) / total - (climb * (t - 1)) / total;
-                    damage += hp + step - e.Hp;
+                    int expected = 1 + ((max - 1) * t) / total - damage;
+                    Check(e.Hp == expected, "a damaged site stood at " + e.Hp + " on tick " + t + ", not " + expected);
                 }
-                hp = e.Hp;
             }
+            Check(hits > 0, "the shooter never fired, so the check proves nothing");
             Entity done = world.GetEntity(site);
             Check(done.Alive, "the site did not survive a single shooter that arrived at tick " + Arrive);
-            Check(damage > 0, "the shooter never hurt the site, so the check proves nothing");
             Check(damage < max, "the shooter took more than the whole site");
             Check(done.BuildTicksLeft == 0, "the site never finished");
             Check(done.Hp == max - damage,
