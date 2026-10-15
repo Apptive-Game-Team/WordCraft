@@ -934,7 +934,7 @@ namespace WordCraft.View
             // opponent being able to see them spent is the competition this
             // mechanic exists to create.
             float capture = e.Alive && e.Kind == EntityKind.Worker
-                ? CaptureOrder.Progress(e)
+                ? CaptureOrder.Progress(world, e)
                 : -1f;
 
             bool queue = e.Alive && picked && e.Kind == EntityKind.Building && e.QueueCount > 0;
