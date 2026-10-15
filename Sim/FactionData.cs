@@ -400,6 +400,27 @@ namespace WordCraft.Sim
 
         // 차원 유랑종: 화염 분출 12 → 18.
         FireBurstDamage = 53,
+
+        // docs/TECH-TREE.md 연구 행 배치, 묶음 7: autocasts and the water field.
+
+        // 세계수 정령: 폭풍 기수 질풍 해금.
+        Gale = 54,
+
+        // 물 슬라임: 물 지대 방어 +1 → +2, 급류 슬라임 급류 해금.
+        WaterFieldArmor = 55,
+        Rapids = 56,
+
+        // 돌 골렘 부족: 구르는 바위 굴러 들이받기 해금, 바위 술사 잔해 수리 해금,
+        // 잔해 투척 피해 +8 → +12.
+        RollCharge = 57,
+        RemnantRepair = 58,
+        RemnantThrowDamage = 59,
+
+        // 차원 유랑종: 틈새 사수 정조준 해금.
+        SteadyAim = 60,
+
+        // 인간 마법 문명: 수리 4 → 6.
+        RepairAmount = 61,
     }
 
     /// <summary>
@@ -1800,9 +1821,10 @@ namespace WordCraft.Sim
         /// (#200): 지옥불 군단 gains four rows (화염탄, 피 냄새, 화상 오라 강화, 집결
         /// 반경) on top of its eight. Still twelve after 묶음 6 (#202): 세계수 정령
         /// grows to twelve with 과부하 강화 and 차원 유랑종 to twelve with 소환 수명,
-        /// 층위 고정 반경 and 화염 분출 강화.
+        /// 층위 고정 반경 and 화염 분출 강화. Thirteen since 묶음 7 (#203): 질풍 is
+        /// 세계수 정령's thirteenth row and 정조준 차원 유랑종's.
         /// </summary>
-        public const int MaxUpgrades = 12;
+        public const int MaxUpgrades = 13;
 
         /// <summary>
         /// What level 1 of 공격력 and 방어력 costs and how long a level takes. The
@@ -1943,6 +1965,17 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, ResearchRow("소환 수명", 150, 200, 3, UpgradeEffect.SummonLifetime, (Role.Tech, 0), NoBuilding)),
             (Faction.Driftworlds, ResearchRow("층위 고정 반경", 100, 160, 3, UpgradeEffect.StrataHoldRadius, (Role.Tech, 0), NoBuilding)),
             (Faction.Driftworlds, ResearchRow("화염 분출 강화", 75, 120, 2, UpgradeEffect.FireBurstDamage, (Role.Tech, 1), NoBuilding)),
+
+            // docs/TECH-TREE.md 묶음 7 (#203): autocasts and the water field, in
+            // the order 연구 행 배치 lists them.
+            (Faction.TreeSpirits, ResearchRow("질풍", 100, 160, 2, UpgradeEffect.Gale, (Role.Tech, 2), NoBuilding)),
+            (Faction.WaterSlimes, ResearchRow("물 지대 방어", 150, 200, 3, UpgradeEffect.WaterFieldArmor, (Role.Tech, 0), NoBuilding)),
+            (Faction.WaterSlimes, ResearchRow("급류", 100, 160, 2, UpgradeEffect.Rapids, (Role.Tech, 1), NoBuilding)),
+            (Faction.RockGolems, ResearchRow("굴러 들이받기", 125, 200, 3, UpgradeEffect.RollCharge, (Role.Tech, 0), NoBuilding)),
+            (Faction.RockGolems, ResearchRow("잔해 수리", 100, 160, 2, UpgradeEffect.RemnantRepair, (Role.Tech, 1), NoBuilding)),
+            (Faction.RockGolems, ResearchRow("잔해 투척 강화", 100, 160, 2, UpgradeEffect.RemnantThrowDamage, (Role.Tech, 1), NoBuilding)),
+            (Faction.Driftworlds, ResearchRow("정조준", 125, 200, 3, UpgradeEffect.SteadyAim, (Role.Tech, 0), NoBuilding)),
+            (Faction.Humans, ResearchRow("수리 강화", 100, 160, 3, UpgradeEffect.RepairAmount, (Role.Tech, 0), NoBuilding)),
         };
 
         /// <summary>
