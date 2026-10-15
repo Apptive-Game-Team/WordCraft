@@ -289,8 +289,9 @@ namespace WordCraft.Sim
 
         /// <summary>
         /// 차원 유랑종 도착: 통로에서 60틱, per docs/FACTION-MECHANICS.md. A named
-        /// constant rather than a number in the row below, because 도착 가속
-        /// shortens exactly the entries priced at it; see World.ProduceTicksOf.
+        /// constant rather than a number in the 틈새 사수 row below, because
+        /// World.ArrivalTicksFor answers it for a peer without 도착 가속, and the
+        /// two have to be the same number.
         /// </summary>
         public const int PassageArrivalTicks = 60;
 

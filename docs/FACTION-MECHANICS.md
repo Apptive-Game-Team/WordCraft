@@ -504,16 +504,17 @@ AI가 싸움을 멈춘다. 규칙 변경이므로 `ContentVersion`이 27이 됐�
 - 돌 골렘 부족: `RemnantTicksFor(peer)`는 몸이 쓰러지는 틱에 읽는다.
   `RangeOf(entity)`가 근접 유닛 사거리에 1칸을 더한다.
 - 차원 유랑종: `ArrivalRadiusFor(peer)`는 `ArrivalValid`의 두 검사 모두가 읽는다.
-  `ArrivalTicksFor(peer)`는 통로 시계 `FactionData.PassageArrivalTicks`(60)로 값이
-  매겨진 항목에만 적용된다. 오늘은 틈새 사수 하나다. 폭풍편(50틱)과 경계
-  운반자(90틱)는 그대로다.
+  `ArrivalTicksFor(peer)`(기본 `FactionData.PassageArrivalTicks` 60)는 통로에서
+  나오는 틈새 사수(`MarksmanRole` `Role.Ranged`, `MarksmanSlot` 0)에만 적용된다.
+  값이 아니라 역할과 슬롯으로 고른다. 폭풍편(50틱)과 경계 운반자(90틱)는 그대로다.
 - 인간 마법 문명: `CaptureTicksFor(peer)`는 포획 시계가 시작할 때 읽는다.
   `RangeOf(entity)`가 대포(방어 슬롯 0번)에만 1칸을 더하고 전기 타워와 돌 포탑은
   그대로다.
 
 **AI.** `AiThink`가 T2가 서면 기술 건물을 하나 짓고, 생산보다 먼저 연구를 건다.
 완공된, 연구 중이 아닌 기술 건물마다 보유 자원이 연구비보다 **많은** 가장 낮은 index를
-고른다. 한 번 생각할 때 명령은 하나다.
+고른다. 낼 수 없는 행은 기다리지 않고 건너뛴다. 보유 자원이 75면 100짜리 공격력
+2단계 대신 50짜리 방어력 1단계를 산다. 한 번 생각할 때 명령은 하나다.
 
 **해시.** 새로 해시되는 필드는 셋뿐이다. 엔티티별 `ResearchIndex`(-1이 없음)와
 `ResearchTicksLeft`, 피어별 `upgradeLevels[peer, index]`(피어 0..7, index 0..3,
