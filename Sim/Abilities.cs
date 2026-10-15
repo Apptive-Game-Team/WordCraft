@@ -202,7 +202,9 @@ namespace WordCraft.Sim
         /// within the row's radius takes the row's amount once, fixed. A body
         /// not rolling, with its cooldown at 0, starts a roll when its target is
         /// RollMinDistance to RollMaxDistance cells off, and the cooldown starts
-        /// with the roll. A body under Hold does not roll: it would not move.
+        /// with the roll. Only a body CombatSystem would chase with starts one:
+        /// under AttackMove, or with no walk of its own left. A body under Hold
+        /// does not roll: it would not move.
         /// Distances are to the TargetId body as it stands now, which is where
         /// last tick's CombatSystem and MoveSystem left it.
         /// </summary>
@@ -229,6 +231,11 @@ namespace WordCraft.Sim
                 return;
             }
             if (e.AbilityCooldown > 0 || !target || e.Mode == OrderMode.Hold || e.Speed.Raw == 0) return;
+            // Only a body that is closing on its target rolls, which is the
+            // condition CombatSystem chases under. A body walking a Move order
+            // still holds a TargetId CombatSystem acquired on the way, and a roll
+            // there would turn the walk into a sprint and spend the cooldown.
+            if (e.Mode != OrderMode.AttackMove && !PathDone(id)) return;
             Fix d = (entities[e.TargetId].Position - e.Position).SqrMagnitude;
             if (d < RollMinDistance * RollMinDistance || d > RollMaxDistance * RollMaxDistance) return;
             e.AbilityTicksLeft = AbilityTicks(e.Owner, r);

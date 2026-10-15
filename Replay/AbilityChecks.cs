@@ -25,6 +25,7 @@ namespace WordCraft.Replay
             GaleRunsTenTicksFromEveryAttack();
             GaleIsOffBeforeItsResearch();
             ARollStartsThreeToSixCellsOut();
+            AMoveOrderedRollerDoesNotRoll();
             ARollEndsAtTwoCellsOrTwelveTicks();
             ARollEndsWithAFixedHitAroundTheRoller();
             RollChargeIsOffBeforeItsResearch();
@@ -189,6 +190,33 @@ namespace WordCraft.Replay
                 Step(near);
                 Check(near.GetEntity(close).AbilityTicksLeft == 0, "the roller rolled at a worker under 3 cells off");
             }
+        }
+
+        /// <summary>
+        /// A 구르는 바위 under the research walking a Move order past an enemy
+        /// worker: CombatSystem gives it the worker as its target on the way, and
+        /// the worker is 3 to 6 cells off for ticks on end, but a body walking a
+        /// Move order is not chasing, so it never rolls and its cooldown stays 0.
+        /// </summary>
+        private static void AMoveOrderedRollerDoesNotRoll()
+        {
+            World world = Two(Faction.RockGolems, Faction.Hellfire);
+            Research(world, 0, UpgradeEffect.RollCharge);
+            int roller = world.SpawnUnit(0, Role.Melee, 1, At(30, 30));
+            int prey = world.SpawnWorker(1, At(34, 36));
+            Step(world, Order(world, 0, CommandType.Move, roller, At(30, 50)));
+            int inReach = 0;
+            for (int t = 0; t < 40; t++)
+            {
+                Entity e = world.GetEntity(roller);
+                Fix d = Distance(world, roller, prey);
+                if (e.TargetId == prey && d >= Fix.FromInt(3) && d <= Fix.FromInt(6)) inReach++;
+                Step(world);
+                e = world.GetEntity(roller);
+                Check(e.AbilityTicksLeft == 0 && e.AbilityCooldown == 0,
+                    "a roller walking a Move order rolled at a worker " + d + " cells off");
+            }
+            Check(inReach > 0, "the walking roller never held the worker 3 to 6 cells off, so the check proves nothing");
         }
 
         /// <summary>
