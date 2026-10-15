@@ -2,7 +2,7 @@
 
 - Date: 2026-10-15
 - GitHub Issue: #174
-- Status: Draft
+- Status: Implemented, awaiting review
 
 ## Goal
 
@@ -37,22 +37,23 @@
 
 ## Approach (Checklist)
 
-- [ ] **Step 0: Recon** — `Sim/Research.cs`, `FactionData` 연구 표, `CommandCard`,
+- [x] **Step 0: Recon** — `Sim/Research.cs`, `FactionData` 연구 표, `CommandCard`,
       `Orders`, `Hud`, `ProductionMenu` 와 그 harness.
-- [ ] **Step 1: `ResearchMenu` 와 harness** — Unity 를 import 하지 않는 `ResearchMenu`
+- [x] **Step 1: `ResearchMenu` 와 harness** — Unity 를 import 하지 않는 `ResearchMenu`
       (목록, 라벨, 최대 단계, 진행도, 보너스 문자열). `Replay/ResearchMenuChecks.cs` 가
       여섯 진영 목록 길이와 page 상한, 라벨과 단계 변화, 진행도를 검사한다.
-- [ ] **Step 2: 카드 칸과 Research 명령** — `CommandCard.Building` 이 기술 건물이면
+- [x] **Step 2: 카드 칸과 Research 명령** — `CommandCard.Building` 이 기술 건물이면
       연구 칸을 놓는다. 최대 단계는 `Maxed` 칸(`Void` 면). `Orders.Run` 이 대표 하나에
       `Research(EntityId, Arg = index)` 를 보낸다. `More` 의 page 수가 기술 건물이면
       연구 목록 기준이다.
-- [ ] **Step 3: 진행 미터와 보너스** — 정보 패널에 `researching <이름>` 과 `Queue` 색
+- [x] **Step 3: 진행 미터와 보너스** — 정보 패널에 `researching <이름>` 과 `Queue` 색
       미터, 유닛 이름 옆 `+공격/+방어`.
-- [ ] **Step 4: Cancel** — 기술 건물 카드의 1번 칸 `Cancel` 이 연구 중에는 연구 취소임을
-      카드 주석과 harness 에 적는다(시뮬레이션은 이미 처리한다).
-- [ ] **Step 5: 뷰가 연구 수치를 읽음** — `CaptureOrder.Progress(World, Entity)`,
+- [x] **Step 4: Cancel** — 코드 변경 없음. 기술 건물 카드는 0행의 `Cancel` 을 이미
+      갖고 있고 시뮬레이션이 연구 취소로 읽는다. `CommandCard.Building` 주석과
+      `ResearchMenuChecks` 의 취소 검사가 그것을 적고 고정한다(Step 1, 2 의 commit 에 포함).
+- [x] **Step 5: 뷰가 연구 수치를 읽음** — `CaptureOrder.Progress(World, Entity)`,
       `ArrivalOrder.RadiusFor(World, int)`, `Fog` 시야 반경이 `World.RangeOf`.
-- [ ] **Step 6: 문서** — `docs/UI-STYLE.md`.
+- [x] **Step 6: 문서** — `docs/UI-STYLE.md`.
 
 ## Validation
 
@@ -74,4 +75,7 @@
 
 ## Open Questions
 
-- 없음.
+- 이슈는 `ArrivalOrder.Radius` 와 `CaptureOrder` 의 막대가 연구 수치를 읽으라고 하지만,
+  둘 다 `MatchView.cs`(쓰기 범위 밖)가 호출한다. 시그니처를 바꾸면 `MatchView` 가
+  컴파일되지 않으므로 `RadiusFor(World, int)` 와 `Progress(World, Entity)` 를 더하고
+  기존 둘은 남겼다. `MatchView` 를 새 것으로 바꾸는 일은 후속이다.
