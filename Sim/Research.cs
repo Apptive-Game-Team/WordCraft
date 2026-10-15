@@ -85,7 +85,7 @@ namespace WordCraft.Sim
             if (peer < 0 || peer >= MaxPeers) return false;
             if (!OwnedAndAlive(buildingId, peer)) return false;
             Entity b = entities[buildingId];
-            if (b.Kind != EntityKind.Building || b.Role != Role.Tech || b.BuildTicksLeft > 0) return false;
+            if (b.Kind != EntityKind.Building || b.BuildTicksLeft > 0) return false;
             // One row at a time per building. Research has no queue: a second
             // order is refused rather than lined up, so there is never a list
             // of paid-for levels for a death or a cancel to unwind.
@@ -95,11 +95,12 @@ namespace WordCraft.Sim
             // line refuses both a row at its last level and a row that is not there.
             UpgradeRow row = FactionData.Upgrade(factions[peer], index);
             if (UpgradeLevel(peer, index) >= row.MaxLevel) return false;
-            // And only in the building the row names. Every row names entry 0 of
-            // the Tech slot today, so this refuses nothing the role test above
-            // lets through; the day docs/TECH-TREE.md moves a row onto a second
-            // research building, the row's ResearchAt moves and this line is
-            // what keeps the first building from running it.
+            // And only in the building the row names. This is the one test of
+            // which building may research, with no role test in front of it:
+            // every row names entry 0 of the Tech slot today, and the day
+            // docs/TECH-TREE.md moves a row onto a second research building, the
+            // row's ResearchAt moves and this line is what keeps every other
+            // building, the first 기술 건물 included, from running it.
             if (b.Role != row.ResearchAt.Role || b.Slot != row.ResearchAt.Slot) return false;
             // And not a row another of this peer's 기술 건물 is already on. Two
             // buildings researching one row would each finish a level from one
