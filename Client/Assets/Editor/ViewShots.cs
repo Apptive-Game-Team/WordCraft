@@ -73,8 +73,10 @@ namespace WordCraft.View
                 int lineups = Wanted("lineup") ? Lineups(output) : 0;
                 int strips = Strips(output);
                 int matches = Wanted("match") ? MatchStrips(output) : 0;
-                Debug.Log("OK: " + (fields + lineups + strips + matches) + " shots written to " + Path.GetFullPath(output) +
-                          " (" + fields + " field, " + lineups + " lineup, " + strips + " strip, " + matches + " match strip)");
+                int statuses = (Wanted("status") ? StatusStrips(output) : 0) + (Wanted("chain") ? ChainStrips(output) : 0);
+                Debug.Log("OK: " + (fields + lineups + strips + matches + statuses) + " shots written to " + Path.GetFullPath(output) +
+                          " (" + fields + " field, " + lineups + " lineup, " + strips + " strip, " + matches + " match strip, " +
+                          statuses + " status strip)");
                 EditorApplication.Exit(0);
             }
             catch (Exception e)
@@ -106,10 +108,11 @@ namespace WordCraft.View
             {
                 string kind = part.Trim();
                 bool known = kind == "field" || kind == "lineup" || kind == "match" || kind == "growth" ||
+                             kind == "status" || kind == "chain" ||
                              Array.IndexOf(Motions, kind) >= 0 || Array.IndexOf(BuildingMotions, kind) >= 0;
                 if (!known)
                 {
-                    throw new ArgumentException("-shotsOnly names '" + kind + "', which is no kind of shot. Kinds: field, lineup, match, growth, " +
+                    throw new ArgumentException("-shotsOnly names '" + kind + "', which is no kind of shot. Kinds: field, lineup, match, growth, status, chain, " +
                                                 string.Join(", ", Motions) + ", " + string.Join(", ", BuildingMotions));
                 }
             }
@@ -806,7 +809,62 @@ namespace WordCraft.View
             if (spawnTick >= 0) { MatchStrip(output, "spawn", log, spawnTick, spawnAt); written++; }
             if (finishTick >= 0) { MatchStrip(output, "build", log, finishTick, finishAt); written++; }
             if (razeTick >= 0) { MatchStrip(output, "raze", NoLog, razeTick, razeAt, Siege, SiegeCells, SiegeTicksPerFrame); written++; }
+
+            // 상태 이상과 오라 (issue #206), only if the scripted log ever sets one off.
+            int statusTick = StatusMoment(log, out Vector2 statusAt, out string what);
+            Debug.Log(statusTick >= 0
+                ? "match strips: first status effect (" + what + ") at tick " + statusTick
+                : "match strips: the scripted log sets off no slow, burn, heal or chain; no strip-match-status");
+            if (statusTick >= 0) { MatchStrip(output, "status", log, statusTick, statusAt); written++; }
             return written;
+        }
+
+        /// <summary>
+        /// The first tick the scripted log sets off anything issue #206 draws:
+        /// a body slowed or burning, a heal (hp up with MaxHp unchanged, not a
+        /// site), or a shot by a body holding an unlocked chain row. Read as
+        /// MatchView reads them. -1 when there is none.
+        /// </summary>
+        private static int StatusMoment(List<Command>[] log, out Vector2 at, out string what)
+        {
+            at = Vector2.zero;
+            what = null;
+            World world = Scripted();
+            var hp = new List<int>();
+            var top = new List<int>();
+            var cooldowns = new List<int>();
+            for (int t = 0; t < log.Length; t++)
+            {
+                world.Step(log[t]);
+                for (int i = 0; i < world.EntityCount; i++)
+                {
+                    Entity e = world.GetEntity(i);
+                    if (i >= hp.Count)
+                    {
+                        hp.Add(e.Hp);
+                        top.Add(e.MaxHp);
+                        cooldowns.Add(e.AttackCooldown);
+                        continue;
+                    }
+                    if (e.Alive && e.SlowTicksLeft > 0) what = "slow";
+                    else if (e.Alive && e.BurnTicksLeft > 0) what = "burn";
+                    else if (e.Alive && e.Hp > hp[i] && e.MaxHp == top[i] && e.BuildTicksLeft == 0) what = "heal";
+                    else if (e.Owner >= 0 && e.AttackCooldown > cooldowns[i])
+                    {
+                        int row = FactionData.AbilityOf(world.FactionOf(e.Owner), e.Role, e.Slot, AbilityKind.ChainOnHit);
+                        if (row >= 0 && world.AbilityUnlocked(e.Owner, FactionData.AbilityRowAt(row))) what = "chain";
+                    }
+                    hp[i] = e.Hp;
+                    top[i] = e.MaxHp;
+                    cooldowns[i] = e.AttackCooldown;
+                    if (what != null)
+                    {
+                        at = MatchRunner.ToView(e.Position);
+                        return world.Tick;
+                    }
+                }
+            }
+            return -1;
         }
 
         private static readonly List<Command>[] NoLog = new List<Command>[0];
@@ -945,7 +1003,8 @@ namespace WordCraft.View
         }
 
         private static void MatchStrip(string output, string name, List<Command>[] log, int moment, Vector2 focus,
-                                       Func<World> make = null, float cells = MatchStripCells, int ticksPerFrame = TicksPerFrame)
+                                       Func<World> make = null, float cells = MatchStripCells, int ticksPerFrame = TicksPerFrame,
+                                       string file = null, int[] picked = null)
         {
             World world = make != null ? make() : Scripted();
             int first = moment - ticksPerFrame;
@@ -955,6 +1014,7 @@ namespace WordCraft.View
 
             var runnerObject = new GameObject("MatchRunner (shots)");
             MatchRunner runner = runnerObject.AddComponent<MatchRunner>();
+            GameObject selectionObject = picked != null ? Pick(picked) : null;
             MatchView view = null;
             var target = new RenderTexture(FrameWidth, FrameHeight, 24) { antiAliasing = 4 };
             var image = new Texture2D(FrameWidth * Frames, FrameHeight, TextureFormat.RGB24, mipChain: false);
@@ -1000,7 +1060,7 @@ namespace WordCraft.View
                 }
 
                 image.Apply();
-                File.WriteAllBytes(Path.Combine(output, "strip-match-" + name + ".png"), image.EncodeToPNG());
+                File.WriteAllBytes(Path.Combine(output, (file ?? "strip-match-" + name) + ".png"), image.EncodeToPNG());
             }
             finally
             {
@@ -1017,11 +1077,39 @@ namespace WordCraft.View
                 UnityEngine.Object.DestroyImmediate(target);
                 UnityEngine.Object.DestroyImmediate(image);
                 UnityEngine.Object.DestroyImmediate(runnerObject);
+                if (selectionObject != null)
+                {
+                    SelectionInstance.GetSetMethod(true).Invoke(null, new object[] { null });
+                    UnityEngine.Object.DestroyImmediate(selectionObject);
+                }
                 foreach (Light light in UnityEngine.Object.FindObjectsOfType<Light>())
                 {
                     UnityEngine.Object.DestroyImmediate(light.gameObject);
                 }
             }
+        }
+
+        private static PropertyInfo SelectionInstance =>
+            typeof(Selection).GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)
+            ?? throw new MissingMemberException("Selection", "Instance");
+
+        /// <summary>
+        /// A Selection holding <paramref name="ids"/>, installed as the one
+        /// MatchView asks, so a strip shows what a selected body shows. The
+        /// editor calls none of its lifecycle, and Instance and the list are
+        /// private to it, so reflection, as RunnerSeam does for MatchRunner.
+        /// </summary>
+        private static GameObject Pick(int[] ids)
+        {
+            var go = new GameObject("Selection (shots)");
+            Selection selection = go.AddComponent<Selection>();
+            SelectionInstance.GetSetMethod(true).Invoke(null, new object[] { selection });
+            FieldInfo list = typeof(Selection).GetField("selected", BindingFlags.NonPublic | BindingFlags.Instance)
+                             ?? throw new MissingFieldException("Selection", "selected");
+            var selected = (List<int>)list.GetValue(selection);
+            selected.Clear();
+            selected.AddRange(ids);
+            return go;
         }
 
         /// <summary>
@@ -1103,6 +1191,227 @@ namespace WordCraft.View
                                     ?? throw new MissingMemberException("MatchRunner", property);
                 info.GetSetMethod(true).Invoke(runner, new[] { value });
             }
+        }
+
+        // ------------------------------------------------------------------
+        // Status strips: 상태 이상과 오라 through the real MatchView (issue #206)
+        // ------------------------------------------------------------------
+
+        /// <summary>Where a status strip's scene stands, mid map.</summary>
+        private static readonly Vector2 StatusAt = new Vector2(32f, 32f);
+
+        /// <summary>Cells across a status strip's frame: the walkers' lane, the heal group and an aura's ring.</summary>
+        private const float StatusCells = 17f;
+
+        /// <summary>
+        /// Ticks between two frames of a status strip: eight frames cover 1.4 s,
+        /// 28 ticks, which holds two or three burn ticks (every 10) and one heal
+        /// (every 20).
+        /// </summary>
+        private const int StatusTicksPerFrame = 4;
+
+        /// <summary>The tick the walkers are sent: just before the first frame, so the strip opens on them setting off.</summary>
+        private const int StatusWalkTick = 16;
+
+        /// <summary>
+        /// The walker's slow, set at tick 0: runs out at the strip's last frame,
+        /// so the vine ring is seen fading and the walker seen catching up.
+        /// </summary>
+        private const int StatusSlowTicks = MatchPreroll + StatusTicksPerFrame * (Frames - 1);
+
+        /// <summary>The burning body's burn: longer than the strip, so it burns throughout.</summary>
+        private const int StatusBurnTicks = 400;
+
+        /// <summary>
+        /// strip-&lt;faction&gt;-status, one a faction: the real MatchView over a
+        /// scene of its own, peer 0 only. Two of the faction's melee entry 0 set
+        /// off walking right together, the back one slowed (World.SetStatusForScenario);
+        /// a ranged entry 0 burns in front; behind, the faction's healing aura
+        /// source between two allies spawned at two fifths of their hp, and the
+        /// faction's first other aura source. Both sources are selected, so
+        /// their radius rings show. A faction with no healing aura (지옥불 군단,
+        /// 인간) shows the slow, the burn and its aura without the heal.
+        /// </summary>
+        private static int StatusStrips(string output)
+        {
+            int written = 0;
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                World probe = StatusScene(faction, out int[] picked, out List<Command>[] log);
+                // The scene starts where the wounding left it, so the strip counts from there.
+                int start = probe.Tick;
+                MatchStrip(output, "status", log, start + MatchPreroll + StatusTicksPerFrame, StatusAt + new Vector2(0f, 0.5f),
+                           () => StatusScene(faction, out _, out _), StatusCells, StatusTicksPerFrame,
+                           "strip-" + Slug(faction) + "-status", picked);
+                Debug.Log("status strip " + Slug(faction) + ": " + probe.EntityCount + " bodies, " + picked.Length + " selected");
+                written++;
+            }
+            return written;
+        }
+
+        private static World StatusScene(Faction faction, out int[] picked, out List<Command>[] log)
+        {
+            var world = new World(new WordCraft.Net.MatchConfig().Seed);
+            world.SetPeerFaction(0, faction);
+            world.SetPeerFaction(1, faction);
+            var selected = new List<int>();
+
+            // The heal group and the other aura source, behind. The allies go
+            // first and are wounded before anything else stands: a spawned
+            // body's MaxHp is its hp, so an hp override is a weaker body and
+            // not a hurt one, and a scenario burn is the one way to hurt it
+            // (Replay's StatusChecks.Wound). Half their hp, at one a burn tick.
+            int heal = -1, aura = -1;
+            for (int i = 0; i < FactionData.AbilityCount(faction); i++)
+            {
+                AbilityRow row = FactionData.Ability(faction, i);
+                if (row.Kind == AbilityKind.HealAura && heal < 0) heal = i;
+                else if (row.Radius > 0 && aura < 0 && IsAuraKind(row.Kind) && row.Kind != AbilityKind.BurnAura) aura = i;
+            }
+            Vector2 source = StatusAt + new Vector2(-3f, 2.5f);
+            if (heal >= 0)
+            {
+                int wound = FactionData.Stats(faction, Role.Ranged, 0).Hp / 2;
+                for (int k = 0; k < 2; k++)
+                {
+                    Vector2 beside = source + new Vector2(k == 0 ? -2f : 2f, -0.4f);
+                    int ally = world.SpawnUnit(0, Role.Ranged, 0, MatchRunner.ToSim(beside));
+                    world.SetStatusForScenario(ally, 0, wound * World.BurnPeriod);
+                }
+                var idle = new List<Command>();
+                for (int t = 0; t < wound * World.BurnPeriod; t++) world.Step(idle);
+                AbilityRow row = FactionData.Ability(faction, heal);
+                selected.Add(Spawn(world, row.Role, row.Slot, source));
+            }
+            if (aura >= 0)
+            {
+                AbilityRow row = FactionData.Ability(faction, aura);
+                selected.Add(Spawn(world, row.Role, row.Slot, StatusAt + new Vector2(heal >= 0 ? 4f : 0f, 2.5f)));
+            }
+            int start = world.Tick;
+
+            // The walkers' lane, in front.
+            Vector2 lane = StatusAt + new Vector2(-5.5f, -2.2f);
+            int slowed = world.SpawnUnit(0, Role.Melee, 0, MatchRunner.ToSim(lane));
+            int fresh = world.SpawnUnit(0, Role.Melee, 0, MatchRunner.ToSim(lane + new Vector2(0f, -1.8f)));
+            world.SetStatusForScenario(slowed, StatusSlowTicks, 0);
+
+            // The burning body, in front on the right.
+            int burning = world.SpawnUnit(0, Role.Ranged, 0, MatchRunner.ToSim(StatusAt + new Vector2(4.5f, -3f)));
+            world.SetStatusForScenario(burning, 0, StatusBurnTicks);
+
+            // The log is indexed by tick, and the scene starts where the wounding left it.
+            int walk = start + StatusWalkTick;
+            log = new List<Command>[walk + 1];
+            for (int t = 0; t < log.Length; t++) log[t] = new List<Command>();
+            Vector2 goal = lane + new Vector2(9f, 0f);
+            log[walk].Add(new Command(walk, 0, 1, CommandType.Move, slowed, MatchRunner.ToSim(goal)));
+            log[walk].Add(new Command(walk, 0, 2, CommandType.Move, fresh, MatchRunner.ToSim(goal + new Vector2(0f, -1.8f))));
+            picked = selected.ToArray();
+            return world;
+        }
+
+        private static bool IsAuraKind(AbilityKind kind) =>
+            kind == AbilityKind.ArmorAura || kind == AbilityKind.MarkAura || kind == AbilityKind.RateAura ||
+            kind == AbilityKind.HealAura || kind == AbilityKind.BurnAura || kind == AbilityKind.GrowthAura ||
+            kind == AbilityKind.SlowAura;
+
+        /// <summary>Cells across a chain strip's frame: the shooter and its three targets.</summary>
+        private const float ChainCells = 12f;
+
+        /// <summary>
+        /// strip-&lt;faction&gt;-chain, for each faction with a ChainOnHit row
+        /// (세계수 정령's 번개 정령, 인간's 전기 타워): the real MatchView over a
+        /// scene where peer 0 has researched the chain and its holder stands
+        /// before three of peer 1's unarmed buildings two cells apart, so the
+        /// shot jumps. Eight frames from one tick before a shot, two ticks apart.
+        /// </summary>
+        private static int ChainStrips(string output)
+        {
+            int written = 0;
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                int chain = -1;
+                for (int i = 0; i < FactionData.AbilityCount(faction); i++)
+                {
+                    if (FactionData.Ability(faction, i).Kind == AbilityKind.ChainOnHit) chain = i;
+                }
+                if (chain < 0) continue;
+
+                World world = ChainScene(faction, chain, out int shooter, out Vector2 focus);
+                int start = world.Tick;
+                int moment = -1;
+                int cooldown = world.GetEntity(shooter).AttackCooldown;
+                var idle = new List<Command>();
+                while (world.Tick < start + 20 * World.TicksPerSecond)
+                {
+                    world.Step(idle);
+                    int now = world.GetEntity(shooter).AttackCooldown;
+                    bool fired = now > cooldown;
+                    cooldown = now;
+                    if (fired && world.Tick >= start + MatchPreroll + TicksPerFrame)
+                    {
+                        moment = world.Tick;
+                        break;
+                    }
+                }
+                Debug.Log("chain strip " + Slug(faction) + ": shot at tick " + moment);
+                if (moment < 0) continue;
+
+                MatchStrip(output, "chain", NoLog, moment, focus, () => ChainScene(faction, chain, out _, out _),
+                           ChainCells, TicksPerFrame, "strip-" + Slug(faction) + "-chain");
+                written++;
+            }
+            return written;
+        }
+
+        private static World ChainScene(Faction faction, int chain, out int shooter, out Vector2 focus)
+        {
+            AbilityRow row = FactionData.Ability(faction, chain);
+            var world = new World(new WordCraft.Net.MatchConfig().Seed);
+            world.SetPeerFaction(0, faction);
+            world.SetPeerFaction(1, Faction.Hellfire);
+            if (row.Unlock >= 0) Research(world, row.Unlock);
+
+            Vector2 from = StatusAt + new Vector2(-4f, 0f);
+            shooter = Spawn(world, row.Role, row.Slot, from);
+            Vector2 first = from + new Vector2(3f, 0.5f);
+            // Hops under the rows' two cells: 1.87 and 1.79.
+            Vector2[] targets = { first, first + new Vector2(1.8f, 0.5f), first + new Vector2(3.4f, -0.3f) };
+            foreach (Vector2 at in targets) world.SpawnBuilding(1, Role.Supply, MatchRunner.ToSim(at), complete: true);
+            focus = (from + targets[2]) * 0.5f;
+            return world;
+        }
+
+        /// <summary>
+        /// Raises peer 0's upgrade row <paramref name="index"/> to level 1 in a
+        /// corner of the map, as Replay's StatusChecks.Research does: the base,
+        /// production 0, tech 0, the research building and what the row
+        /// requires, finished, then the research run to its end.
+        /// </summary>
+        private static void Research(World world, int index)
+        {
+            Faction faction = world.FactionOf(0);
+            UpgradeRow row = FactionData.Upgrade(faction, index);
+            world.GrantResources(0, 10000);
+            world.SpawnBuilding(0, Role.Base, Corner(3), complete: true);
+            world.SpawnBuilding(0, Role.Production, 0, Corner(7), complete: true);
+            world.SpawnBuilding(0, Role.Tech, 0, Corner(11), complete: true);
+            if (row.Requires.Role != Role.None)
+                world.SpawnBuilding(0, row.Requires.Role, row.Requires.Slot, Corner(19), complete: true);
+            int at = world.SpawnBuilding(0, row.ResearchAt.Role, row.ResearchAt.Slot, Corner(15), complete: true);
+            world.Step(new List<Command> { new Command(0, 0, 1000 + world.Tick, CommandType.Research, at, FixVec2.Zero, index) });
+            var idle = new List<Command>();
+            for (int t = 0; t < row.Ticks + 1 && world.UpgradeLevel(0, index) == 0; t++) world.Step(idle);
+            if (world.UpgradeLevel(0, index) == 0) throw new InvalidOperationException(row.Name + " research never landed");
+        }
+
+        private static FixVec2 Corner(int x)
+        {
+            Fix half = Fix.Ratio(1, 2);
+            return new FixVec2(Fix.FromInt(x) + half, Fix.FromInt(3) + half);
         }
 
         // ------------------------------------------------------------------
