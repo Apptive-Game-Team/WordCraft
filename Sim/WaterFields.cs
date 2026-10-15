@@ -13,6 +13,15 @@ namespace WordCraft.Sim
     /// </summary>
     public sealed partial class World
     {
+        /// <summary>What a 물 슬라임 body on a field cell adds to its armor against a normal attack.</summary>
+        public const int WaterFieldArmor = 1;
+
+        /// <summary>The same, once 물 지대 방어 is researched.</summary>
+        public const int WaterFieldArmorResearched = 2;
+
+        /// <summary>급류: how fast a 급류 슬라임 walks from a field cell, cells per tick.</summary>
+        public static readonly Fix RapidsSpeed = Fix.Ratio(1, 2);
+
         // The tick each cell's field lapses on, or 0 for a cell that never had
         // one. Hashed, sparse, the way remnantExpiry is: a lapsed value is left
         // in place and reads as no field, because HasWaterField compares it
@@ -24,6 +33,9 @@ namespace WordCraft.Sim
 
         /// <summary>True while a field still lies on this cell.</summary>
         public bool HasWaterField(int cell) => waterFieldExpiry[cell] > Tick;
+
+        /// <summary>Whether the cell this body stands on carries a field right now.</summary>
+        private bool OnWaterField(Entity e) => HasWaterField(CellOf(e.Position));
 
         /// <summary>
         /// Lays a field on the square of cells within half cells of this one in
@@ -47,6 +59,58 @@ namespace WordCraft.Sim
                     if (waterFieldExpiry[cell] < expiry) waterFieldExpiry[cell] = expiry;
                 }
             }
+        }
+
+        /// <summary>
+        /// 이동식 물 지대 and 고정 물 지대, the last step of AbilitySystem but
+        /// 잠듦의 고리: on a tick the row's period divides, every holder by
+        /// ascending id lays a field on the square its row's radius spans around
+        /// the cell it stands on, lapsing the row's ticks from now. A 솟는 샘 lays
+        /// nothing until it is finished, and the cells it laid last lapse on
+        /// their own once it falls.
+        /// </summary>
+        private void EmitWaterFields()
+        {
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                int row = ActiveAbility(e, AbilityKind.FieldEmitter);
+                if (row < 0) continue;
+                AbilityRow r = FactionData.AbilityRowAt(row);
+                if (Tick % r.Period != 0) continue;
+                WriteWaterField(CellOf(e.Position), AbilityRadius(e.Owner, r), Tick + AbilityTicks(e.Owner, r));
+            }
+        }
+
+        /// <summary>물 지대 방어: what a field adds to this peer's bodies.</summary>
+        public int WaterFieldArmorFor(int peer) =>
+            UpgradeLevelOf(peer, UpgradeEffect.WaterFieldArmor) > 0 ? WaterFieldArmorResearched : WaterFieldArmor;
+
+        /// <summary>
+        /// The armor a field gives this body against a normal attack: a 물 슬라임
+        /// unit or worker standing on a field cell at the moment it is hit.
+        /// Fixed damage never asks: bursts, burns and fixed ability damage hit
+        /// through it, and so do a chain hop and a splash, which are fixed off
+        /// the shot before them.
+        /// </summary>
+        private int FieldArmor(Entity t)
+        {
+            if (t.Owner < 0 || t.Owner >= MaxPeers) return 0;
+            if (factions[t.Owner] != Faction.WaterSlimes) return 0;
+            if (t.Kind != EntityKind.Unit && t.Kind != EntityKind.Worker) return 0;
+            return OnWaterField(t) ? WaterFieldArmorFor(t.Owner) : 0;
+        }
+
+        /// <summary>급류: RapidsSpeed for a 급류 슬라임 whose step starts on a field cell, or this speed.</summary>
+        private Fix RapidsSpeedFor(Entity e, Fix speed) =>
+            ActiveAbility(e, AbilityKind.FieldSpeed) >= 0 && OnWaterField(e) ? RapidsSpeed : speed;
+
+        /// <summary>물기둥 분수: the cells a field under this body adds to its reach.</summary>
+        private Fix FieldRangeBonus(Entity e)
+        {
+            int row = ActiveAbility(e, AbilityKind.FieldRange);
+            if (row < 0 || !OnWaterField(e)) return Fix.Zero;
+            return Fix.FromInt(AbilityAmount(e.Owner, FactionData.AbilityRowAt(row)));
         }
 
         /// <summary>

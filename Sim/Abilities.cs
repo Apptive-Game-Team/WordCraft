@@ -54,6 +54,7 @@ namespace WordCraft.Sim
                 }
             }
             RepairDevices();
+            EmitWaterFields();
         }
 
         /// <summary>

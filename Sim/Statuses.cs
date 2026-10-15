@@ -44,7 +44,8 @@ namespace WordCraft.Sim
         }
 
         /// <summary>
-        /// How far this body walks this tick: SpeedFor, or RollSpeed while it
+        /// How far this body walks this tick: SpeedFor, or RapidsSpeed for a
+        /// 급류 슬라임 starting its step on a water field, or RollSpeed while it
         /// rolls, doubled while 질풍 runs, halved while it is slowed by 휘감기
         /// or stands in a hostile 덩굴 지대 (the two together still halve it
         /// once), and never past MaxMoveSpeed. Asked by
@@ -52,7 +53,7 @@ namespace WordCraft.Sim
         /// </summary>
         private Fix MoveSpeedFor(Entity e)
         {
-            Fix speed = SpeedFor(e);
+            Fix speed = RapidsSpeedFor(e, SpeedFor(e));
             // 굴러 들이받기 sets the speed outright, and 질풍 multiplies it,
             // both before the slow and the cap. A body holds one of the two at most.
             if (RunningAbility(e, AbilityKind.RollCharge) >= 0) speed = RollSpeed;

@@ -85,9 +85,10 @@ namespace WordCraft.Sim
                         // 공격력 belongs to the shooter's owner and 방어력 to the
                         // target's. A neutral target has no owner, so no level.
                         // 표식 joins the attack side, and 물막이, 거품 벽 and 굳은 몸
-                        // the armor side, per docs/TECH-TREE.md 피해 계산.
+                        // the armor side, per docs/TECH-TREE.md 피해 계산, and
+                        // so does 물 지대 for a 물 슬라임 body standing on one.
                         int dealt = DamageAfterArmor(s.Damage + VolleyBonus(a) + MarkBonus(a, t) + throwBonus, AttackBonus(a.Owner),
-                            ArmorFor(t) + AuraArmor(t), ArmorBonus(t.Owner));
+                            ArmorFor(t) + AuraArmor(t) + FieldArmor(t), ArmorBonus(t.Owner));
                         // Where the hit landed, kept before Kill so a chain
                         // starts from the body even when the body is gone.
                         FixVec2 hitAt = t.Position;
@@ -318,7 +319,8 @@ namespace WordCraft.Sim
                 return range + RangeUpgrade;
             }
             // 정조준, docs/TECH-TREE.md 묶음 7: 40 ticks still and the reach is 2 longer.
-            return range + SteadyAimBonus(e);
+            // 물기둥 분수 on a water field reaches 1 further.
+            return range + SteadyAimBonus(e) + FieldRangeBonus(e);
         }
 
         /// <summary>
