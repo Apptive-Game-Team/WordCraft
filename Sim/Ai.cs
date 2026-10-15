@@ -140,11 +140,12 @@ namespace WordCraft.Sim
 
         /// <summary>
         /// Every finished 기술 건물 of its own that is not already researching
-        /// starts the lowest-index row it can, when the bank holds more than that
-        /// level costs. Index order is the whole of the plan: 공격력, then 방어력,
-        /// then the two rows that are its faction's own, and each row climbs to
-        /// its last level before the ladder looks past it only because a row at
-        /// its last level is one CanResearch refuses.
+        /// starts the lowest-index row it can start and afford, where afford
+        /// means the bank holds more than that level costs. Index order is the
+        /// whole of the plan: 공격력, then 방어력, then the two rows that are its
+        /// faction's own. A row it cannot pay for yet is skipped, not waited on:
+        /// with 75 banked it buys 방어력 level 1 for 50 rather than hold out for
+        /// 공격력 level 2 at 100, so the levels climb unevenly.
         ///
         /// Strictly more than the price, not equal to it, so the order never
         /// empties the bank to the last coin.

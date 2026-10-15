@@ -46,7 +46,7 @@ namespace WordCraft.Sim
         ///
         /// A scan of at most four rows, in index order.
         /// </summary>
-        public int UpgradeLevel(int peer, UpgradeEffect effect)
+        public int UpgradeLevelOf(int peer, UpgradeEffect effect)
         {
             if (peer < 0 || peer >= MaxPeers) return 0;
             Faction faction = factions[peer];
@@ -200,9 +200,9 @@ namespace WordCraft.Sim
         }
 
         /// <summary>What this peer's 공격력 adds to every hit its weapons land.</summary>
-        public int AttackBonus(int peer) => UpgradeLevel(peer, UpgradeEffect.Attack) * AttackPerLevel;
+        public int AttackBonus(int peer) => UpgradeLevelOf(peer, UpgradeEffect.Attack) * AttackPerLevel;
 
         /// <summary>What this peer's 방어력 takes off every hit its bodies receive.</summary>
-        public int ArmorBonus(int peer) => UpgradeLevel(peer, UpgradeEffect.Armor) * ArmorPerLevel;
+        public int ArmorBonus(int peer) => UpgradeLevelOf(peer, UpgradeEffect.Armor) * ArmorPerLevel;
     }
 }

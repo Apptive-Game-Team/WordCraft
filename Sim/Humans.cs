@@ -162,7 +162,7 @@ namespace WordCraft.Sim
         /// it started with.
         /// </summary>
         public int CaptureTicksFor(int peer) =>
-            UpgradeLevel(peer, UpgradeEffect.CaptureTicks) > 0 ? CaptureTicksResearched : CaptureTicks;
+            UpgradeLevelOf(peer, UpgradeEffect.CaptureTicks) > 0 ? CaptureTicksResearched : CaptureTicks;
 
         /// <summary>
         /// The transfer itself, and the only place a body changes hands.

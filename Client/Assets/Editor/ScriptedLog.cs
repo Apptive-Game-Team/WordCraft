@@ -20,7 +20,7 @@ namespace WordCraft.View
         /// on. Update it only when the simulation intentionally changes, and only
         /// after both runtimes agree on the new value.
         /// </summary>
-        public const ulong GoldenHash = 0xC9E3B6CFC16E4BA9UL;
+        public const ulong GoldenHash = 0x20B573A2BAE79B6FUL;
 
         /// <summary>
         /// The factions the golden hash was taken over. Factions are hashed, so
@@ -34,11 +34,11 @@ namespace WordCraft.View
         private const int Base0 = 0, Worker0A = 1, Worker0B = 2, Melee0 = 3, Ranged0 = 4, Node0 = 5;
         private const int Base1 = 6, Worker1A = 7, Worker1B = 8, Melee1 = 9, Ranged1 = 10, Node1 = 11;
 
-        // Peer 0's 기술 건물, placed by the Build at tick 380. Ids are handed out
-        // in order and never reused, so it is 24 on every run of this log;
+        // Peer 0's 기술 건물, placed by the Build at tick 250. Ids are handed out
+        // in order and never reused, so it is 20 on every run of this log;
         // Replay's UpgradeChecks.ScriptedLogResearches asserts the id still
         // names it and that the order lands.
-        private const int Tech0 = 24;
+        private const int Tech0 = 20;
 
         public static List<Command>[] Build()
         {
@@ -68,12 +68,14 @@ namespace WordCraft.View
             Add(log, 150, 0, seq, CommandType.Build, -1, At(20, 20), (int)Role.Production);
             Add(log, 150, 1, seq, CommandType.Build, -1, At(44, 44), (int)Role.Production);
 
+            // On the tick the production building finishes, so tier 2 stands, and
+            // as early as that allows: the 기술 건물 has to stand by 370 for the
+            // research below to land inside the log.
+            Add(log, 250, 0, seq, CommandType.Build, -1, At(20, 22), (int)Role.Tech);
+            Add(log, 250, 1, seq, CommandType.Build, -1, At(44, 42), (int)Role.Tech);
+
             Add(log, 300, 0, seq, CommandType.Build, -1, At(22, 20), (int)Role.Supply);
             Add(log, 300, 1, seq, CommandType.Build, -1, At(42, 44), (int)Role.Supply);
-
-            // After the production building has finished at 250, so tier 2 stands.
-            Add(log, 380, 0, seq, CommandType.Build, -1, At(20, 22), (int)Role.Tech);
-            Add(log, 380, 1, seq, CommandType.Build, -1, At(44, 42), (int)Role.Tech);
 
             Add(log, 480, 0, seq, CommandType.Build, -1, At(22, 22), (int)Role.Defense);
             Add(log, 480, 1, seq, CommandType.Build, -1, At(42, 42), (int)Role.Defense);
@@ -83,11 +85,15 @@ namespace WordCraft.View
             Add(log, 420, 0, seq, CommandType.Produce, Base0, FixVec2.Zero, 0);
             Add(log, 420, 1, seq, CommandType.Produce, Base1, FixVec2.Zero, 0);
 
-            // One research, on the 기술 건물 that finished at 500, so the golden
-            // hash covers the Research command, the price it takes and the
-            // ResearchSystem clock. 공격력 level 1 is 50 and peer 0 has 75 by then;
-            // the level itself lands at 665, past the end of the log.
-            Add(log, 505, 0, seq, CommandType.Research, Tech0, FixVec2.Zero, 0);
+            // One research, on the 기술 건물 that finished at 369, so the golden
+            // hash covers the Research command, the price it takes, the
+            // ResearchSystem clock and the level landing at 529. 공격력 level 1 is
+            // 50 and peer 0 has 155 by then. The attack order after it sends
+            // peer 0's archer at peer 1's melee unit, so the hits at 576 and 594
+            // land with the +1 in them; Replay's ScriptedLogResearches asserts
+            // that a researched hit happens.
+            Add(log, 370, 0, seq, CommandType.Research, Tech0, FixVec2.Zero, 0);
+            Add(log, 530, 0, seq, CommandType.Attack, Ranged0, FixVec2.Zero, Melee1);
 
             for (int t = 60; t < Ticks; t += 37)
             {

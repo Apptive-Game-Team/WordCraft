@@ -91,7 +91,7 @@ namespace WordCraft.Sim
         /// warlord already standing on its next period.
         /// </summary>
         public int WarlordOffspringCap(int peer) =>
-            UpgradeLevel(peer, UpgradeEffect.OffspringCap) > 0 ? WarlordOffspringResearched : WarlordOffspring;
+            UpgradeLevelOf(peer, UpgradeEffect.OffspringCap) > 0 ? WarlordOffspringResearched : WarlordOffspring;
 
         /// <summary>
         /// 산란 가속: the period between offspring for this peer's warlords. Read
@@ -100,7 +100,7 @@ namespace WordCraft.Sim
         /// was set.
         /// </summary>
         public int WarlordSpawnTicksFor(int peer) =>
-            UpgradeLevel(peer, UpgradeEffect.OffspringPeriod) > 0 ? WarlordSpawnTicksResearched : WarlordSpawnTicks;
+            UpgradeLevelOf(peer, UpgradeEffect.OffspringPeriod) > 0 ? WarlordSpawnTicksResearched : WarlordSpawnTicks;
 
         /// <summary>
         /// 자손 comes out free, at a fixed offset from its parent so the spawn point

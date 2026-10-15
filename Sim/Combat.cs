@@ -174,11 +174,11 @@ namespace WordCraft.Sim
 
         /// <summary>밀집 반경: how far an allied archer counts from, for this peer.</summary>
         public Fix VolleyRadiusFor(int peer) =>
-            UpgradeLevel(peer, UpgradeEffect.VolleyRadius) > 0 ? VolleyRadiusResearched : VolleyRadius;
+            UpgradeLevelOf(peer, UpgradeEffect.VolleyRadius) > 0 ? VolleyRadiusResearched : VolleyRadius;
 
         /// <summary>밀집 강화: the most the massed bonus adds, for this peer.</summary>
         public int VolleyMaxBonusFor(int peer) =>
-            UpgradeLevel(peer, UpgradeEffect.VolleyCap) > 0 ? VolleyMaxBonusResearched : VolleyMaxBonus;
+            UpgradeLevelOf(peer, UpgradeEffect.VolleyCap) > 0 ? VolleyMaxBonusResearched : VolleyMaxBonus;
 
         /// <summary>
         /// How far this body's weapon reaches right now: its roster row's Range,
@@ -198,12 +198,12 @@ namespace WordCraft.Sim
             Fix range = RosterStats(e).Range;
             Faction faction = factions[e.Owner];
             if (faction == Faction.RockGolems && e.Kind == EntityKind.Unit && e.Role == Role.Melee &&
-                UpgradeLevel(e.Owner, UpgradeEffect.GolemMeleeRange) > 0)
+                UpgradeLevelOf(e.Owner, UpgradeEffect.GolemMeleeRange) > 0)
             {
                 return range + RangeUpgrade;
             }
             if (faction == Faction.Humans && e.Kind == EntityKind.Building && e.Role == Role.Defense &&
-                e.Slot == 0 && UpgradeLevel(e.Owner, UpgradeEffect.CannonRange) > 0)
+                e.Slot == 0 && UpgradeLevelOf(e.Owner, UpgradeEffect.CannonRange) > 0)
             {
                 return range + RangeUpgrade;
             }

@@ -49,7 +49,7 @@ public int ResearchTicksLeft;
 
 // Sim/Research.cs (World)
 public int UpgradeLevel(int peer, int index);
-public int UpgradeLevel(int peer, UpgradeEffect effect);
+public int UpgradeLevelOf(int peer, UpgradeEffect effect);
 public int ResearchCost(int peer, int index);            // Resources * (현재 단계 + 1)
 public bool CanResearch(int peer, int buildingId, int index);
 public int AttackBonus(int peer);   public int ArmorBonus(int peer);
@@ -92,9 +92,9 @@ public int CaptureTicksFor(int peer);
 고유 연구는 이슈 표를 따른다. 세계수 정령 성장 시간 25% 단축(40→30, 60→45),
 성장 중 체력 상승 폭 2배(절반 시점에 목표 도달), 지옥불 자손 상한 5→7, 방출 주기
 100→70틱, 물 슬라임 밀집 상한 4→6, 반경 3→4칸, 돌 골렘 잔해 400→600틱, 근접
-사거리 +1, 차원 유랑종 도착 반경 6→8칸, 통로 도착 시간 60→40틱(통로 시계
-`PassageArrivalTicks` 로 값이 매겨진 항목, 오늘은 틈새 사수), 인간 포획 60→40틱,
-대포 사거리 +1.
+사거리 +1, 차원 유랑종 도착 반경 6→8칸, 통로 도착 시간 60→40틱(통로에서 나오는
+틈새 사수만, `MarksmanRole` `Role.Ranged` · `MarksmanSlot` 0 으로 지목), 인간 포획
+60→40틱, 대포 사거리 +1.
 
 ## Approach (Checklist)
 
@@ -108,8 +108,14 @@ public int CaptureTicksFor(int peer);
       건다. 생산 뒤에 두면 매 think 마다 보유 자원이 생산에 다 쓰여서 연구비를 넘는
       순간이 없다.
 - [x] **Step 7: 하네스** — `Replay/UpgradeChecks.cs`, Program.cs 한 줄 등록.
-- [x] **Step 8: 골든 해시** — ScriptedLog 에 연구 명령 한 번(tick 505, 엔티티 24,
-      index 0), CoreCLR 와 Mono 모두 `0xC9E3B6CFC16E4BA9`.
+- [x] **Step 8: 골든 해시** — ScriptedLog 의 기술 건물 Build 를 380 에서 250 으로
+      당기고, tick 370 에 피어 0 의 기술 건물(엔티티 20)이 공격력 연구를 시작한다.
+      단계는 529 에 오르고, tick 530 의 Attack 명령으로 피어 0 궁수가 피어 1 근접
+      유닛을 576·594 에 7(6 + 1)씩 친다. 로그 길이는 600 그대로. CoreCLR 와 Mono 모두
+      `0x20B573A2BAE79B6F`.
+- [x] **Step 10: 리뷰 반영** — 효과 조회를 `UpgradeLevelOf` 로 이름 변경, 통로 도착
+      가속을 값 대신 슬롯으로 지목, AI 주석 수정, 다섯 고유 연구의 실전 체크(골렘
+      3칸, 대포 8칸, 잔해 599틱, 기둥 7칸 도착, 밀집 상한·반경 첫 사격 피해).
 - [x] **Step 9: 문서** — `docs/FACTION-MECHANICS.md` 의 `## 업그레이드` 절.
 
 ## Validation
@@ -123,7 +129,9 @@ public int CaptureTicksFor(int peer);
 
 - **Risks:** AI 가 기술 건물과 연구에 자원을 써서 솔로 매치 승리가 늦어질 수 있다.
   클라이언트의 포획 진행 막대는 `World.CaptureTicks` 로 나누므로 포획 연구 뒤에는
-  막대가 40틱 중 60틱 기준으로 그려진다(HUD 후속 이슈).
+  막대가 40틱 중 60틱 기준으로 그려진다(HUD 후속 이슈). `MatchView.cs` 는 잔해를
+  `World.RemnantTicks`(400)로 나눠 흐리게 하므로, 연구한 600틱 잔해는 처음 200틱
+  동안 완전히 불투명하게 그려진다(표시만, #174 소관이고 MatchView 는 #165 뒤).
 - **Rollback steps:** `git revert`. 되돌리면 ContentVersion 과 golden hash 가 이전
   값으로 돌아간다.
 
