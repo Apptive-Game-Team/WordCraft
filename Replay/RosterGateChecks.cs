@@ -556,10 +556,10 @@ namespace WordCraft.Replay
         /// And the ladder climbs the tree: in every mirror but 지옥불's, each peer
         /// builds its 기술 건물, and in every mirror but 지옥불's and 인간's it then
         /// produces a body that needs one standing (번개 정령, 해일 인도자, 고대
-        /// 골렘, a 멸종 슬라임). 지옥불's only such body is 군단장 at 220, which the
-        /// opponent never banks, so it keeps buying 용암 갑각 악마 and that is the
-        /// AI being right. 인간's only such body is the unarmed 마도 정찰기, which the
-        /// ladder skips for 공수 특공대; RosterNumbersChecks pins that.
+        /// 골렘, a 멸종 슬라임). 지옥불's and 인간's only such bodies are unarmed,
+        /// 군단장 and 마도 정찰기, and the ladder never buys an unarmed body, so 지옥불
+        /// keeps buying 용암 갑각 악마 and 인간 공수 특공대. RosterNumbersChecks pins
+        /// the 인간 half.
         /// </summary>
         private static void TheAiOrdersOnlyFromTheListAndBuildsTowardTierThree()
         {
