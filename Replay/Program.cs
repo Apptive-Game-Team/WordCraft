@@ -131,6 +131,7 @@ namespace WordCraft.Replay
                 OpeningArmyChecks.Check();
                 MechanicsChecks.Check();
                 StatusChecks.Check();
+                SummonChecks.Check();
                 SimAssemblyIsClean();
             }
             catch (Exception ex)
