@@ -242,7 +242,7 @@ namespace WordCraft.Replay
             // And that the order commands in the log were not silently refused: a
             // rejected command leaves state untouched, which is exactly what an
             // identical pair of hash runs looks like.
-            Check(world.GetEntity(MatchBase0).HasRallyPoint, "the rally order never reached the base");
+            Check(world.GetEntity(MatchSite0).HasRallyPoint, "the rally order never reached the production building");
             Check(world.GetEntity(MatchWorker0B).GatherNodeId < 0, "the stop order never reached the worker");
             Check(world.GetEntity(MatchFighter0).Mode == OrderMode.AttackMove,
                 "the attack-move order never reached the fighter");
@@ -580,7 +580,10 @@ namespace WordCraft.Replay
             Check(world.GetPopulation(0) == World.PopulationPerBase, "spawned units were not counted");
 
             int banked = world.GetResources(0);
-            world.Step(Produce(0, 0, 0, Role.Melee));
+            // A worker, which is what the base makes: a 세계수 정령 fighter comes
+            // out of the 풀씨 둥지, and a Produce naming one here would be refused
+            // for the building rather than for the cap.
+            world.Step(Produce(0, 0, 0, Role.Worker));
             Check(world.GetResources(0) == banked, "a refused produce still spent resources");
             Check(world.GetEntity(0).QueueCount == 0, "a refused produce still queued a unit");
 
@@ -590,41 +593,46 @@ namespace WordCraft.Replay
             Check(world.PopulationCap(0) == World.PopulationPerBase + World.PopulationPerSupply,
                 "a supply building did not grant its population");
 
-            world.Step(Produce(0, 0, 1, Role.Melee));
+            world.Step(Produce(0, 0, 1, Role.Worker));
             Check(world.GetResources(0) == banked - World.ProduceCost, "produce under the cap spent nothing");
             Check(world.GetEntity(0).QueueCount == 1, "produce under the cap queued nothing");
         }
 
-        private const int TechBase = 0;
-        private const int TechBuilding = 1;
-        private const int TechUnit = 10; // the one T3 unit this world ever finishes
+        private const int TechWorks = 1;    // the 풀씨 둥지 the tier-3 unit comes out of
+        private const int TechBuilding = 2;
+        private const int TechUnit = 11; // the one T3 unit this world ever finishes
 
         /// <summary>
         /// Tier 3 is refused before the tech building, accepted after it, and
         /// refused again once it falls. What it does not do is unbuild the unit it
         /// already opened, which is the half of the rule easy to get wrong.
+        ///
+        /// Ordered at the production building, which is where a 세계수 정령
+        /// signature unit comes out; it opens tier 2 on its own, so the first
+        /// refusal is the tier-3 rule and not the tier-2 one.
         /// </summary>
         private static void TechTiersGateProduction()
         {
             var world = new World(Seed);
-            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0, for the population
+            world.SpawnBuilding(0, Role.Production, At(5, 9), complete: true); // 1
             world.GrantResources(0, 1000);
 
             int banked = world.GetResources(0);
-            world.Step(Produce(TechBase, 0, 0, Role.Signature));
+            world.Step(Produce(TechWorks, 0, 0, Role.Signature));
             Check(world.GetResources(0) == banked, "tier 3 spent resources with no tech building");
-            Check(world.GetEntity(TechBase).QueueCount == 0, "tier 3 queued with no tech building");
+            Check(world.GetEntity(TechWorks).QueueCount == 0, "tier 3 queued with no tech building");
 
             // Far from the base, so the squad that comes for it later reaches
             // nothing else and the assertions stay about the tier rule.
-            world.SpawnBuilding(0, Role.Tech, At(30, 30), complete: true); // 1
-            world.Step(Produce(TechBase, 0, 1, Role.Signature));
+            world.SpawnBuilding(0, Role.Tech, At(30, 30), complete: true); // 2
+            world.Step(Produce(TechWorks, 0, 1, Role.Signature));
             Check(world.GetResources(0) == banked - World.ProduceCost, "the tech building did not open tier 3");
-            Check(world.GetEntity(TechBase).QueueCount == 1, "the tech building did not open tier 3");
+            Check(world.GetEntity(TechWorks).QueueCount == 1, "the tech building did not open tier 3");
 
             // Destroyed by an enemy squad rather than a test hook, so the rule is
             // exercised through the same path a match takes.
-            for (int i = 0; i < 8; i++) world.SpawnUnit(1, Role.Melee, At(31, 29 + i % 3)); // 2..9
+            for (int i = 0; i < 8; i++) world.SpawnUnit(1, Role.Melee, At(31, 29 + i % 3)); // 3..10
 
             var idle = new List<Command>();
             for (int t = 0; t < 400 && world.GetEntity(TechBuilding).Alive; t++) world.Step(idle);
@@ -634,10 +642,10 @@ namespace WordCraft.Replay
             Check(world.GetEntity(TechUnit).Alive, "losing the tech building unbuilt a finished unit");
 
             banked = world.GetResources(0);
-            int queued = world.GetEntity(TechBase).QueueCount;
-            world.Step(Produce(TechBase, 0, 2, Role.Signature));
+            int queued = world.GetEntity(TechWorks).QueueCount;
+            world.Step(Produce(TechWorks, 0, 2, Role.Signature));
             Check(world.GetResources(0) == banked, "tier 3 spent resources after the tech building fell");
-            Check(world.GetEntity(TechBase).QueueCount == queued, "tier 3 queued after the tech building fell");
+            Check(world.GetEntity(TechWorks).QueueCount == queued, "tier 3 queued after the tech building fell");
         }
 
         // Order-command fixtures. Every one of them spawns its own tiny world, so
@@ -906,11 +914,14 @@ namespace WordCraft.Replay
             world.SpawnBuilding(0, Role.Base, At(40, 40), complete: true); // 1
             world.GrantResources(0, 1000);
 
+            // Workers, which is what a base makes. The rule under test is the
+            // building's rally point, and it is the same line for every body a
+            // queue finishes.
             var orders = new List<Command>
             {
                 new Command(0, 0, 0, CommandType.SetRallyPoint, RallyBase, At(20, 20)),
-                new Command(0, 0, 1, CommandType.Produce, RallyBase, FixVec2.Zero, (int)Role.Melee),
-                new Command(0, 0, 2, CommandType.Produce, PlainBase, FixVec2.Zero, (int)Role.Melee)
+                new Command(0, 0, 1, CommandType.Produce, RallyBase, FixVec2.Zero, (int)Role.Worker),
+                new Command(0, 0, 2, CommandType.Produce, PlainBase, FixVec2.Zero, (int)Role.Worker)
             };
             var idle = new List<Command>();
 
@@ -936,10 +947,12 @@ namespace WordCraft.Replay
             world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
             world.GrantResources(0, 1000);
 
+            // Workers, which is what a base makes; the refund rule is the queue's,
+            // whatever it holds.
             var queue = new List<Command>();
             for (int i = 0; i < 3; i++)
             {
-                queue.Add(new Command(0, 0, i, CommandType.Produce, QueueBase, FixVec2.Zero, (int)Role.Melee));
+                queue.Add(new Command(0, 0, i, CommandType.Produce, QueueBase, FixVec2.Zero, (int)Role.Worker));
             }
             int banked = world.GetResources(0);
             world.Step(queue);
@@ -965,7 +978,8 @@ namespace WordCraft.Replay
 
         private const int PricedBase = 0;
         private const int PricedTech = 1;
-        private const int PricedWarlord = 2;
+        private const int PricedWorks = 2;
+        private const int PricedWarlord = 3;
 
         /// <summary>
         /// 지옥불 군단장 costs 220 and 140 ticks, per docs/FACTION-MECHANICS.md,
@@ -988,11 +1002,13 @@ namespace WordCraft.Replay
             world.SetPeerFaction(0, Faction.Hellfire);
             world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
             world.SpawnBuilding(0, Role.Tech, At(9, 5), complete: true); // 1, opens tier 3
+            // 2, the 악마 산란장 the warlord comes out of. The base makes workers.
+            world.SpawnBuilding(0, Role.Production, At(5, 9), complete: true);
             world.GrantResources(0, 1000);
 
             int banked = world.GetResources(0);
             var idle = new List<Command>();
-            world.Step(Produce(PricedBase, 0, 0, Role.Signature));
+            world.Step(Produce(PricedWorks, 0, 0, Role.Signature));
             Check(world.GetResources(0) == banked - 220,
                 "queueing 지옥불 군단장 spent " + (banked - world.GetResources(0)));
 
@@ -1043,20 +1059,24 @@ namespace WordCraft.Replay
             world.SetPeerFaction(0, Faction.Hellfire);
             world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // 0
             world.SpawnBuilding(0, Role.Tech, At(9, 5), complete: true); // 1
+            // 2, the 악마 산란장: both roles below come out of it and neither out
+            // of the base.
+            const int works = 2;
+            world.SpawnBuilding(0, Role.Production, At(5, 9), complete: true);
             world.GrantResources(0, 1000);
 
-            world.Step(Produce(0, 0, 0, Role.Melee));
+            world.Step(Produce(works, 0, 0, Role.Melee));
             int banked = world.GetResources(0);
-            world.Step(Produce(0, 0, 1, Role.Signature));
+            world.Step(Produce(works, 0, 1, Role.Signature));
             Check(world.GetResources(0) == banked, "a second role on a running queue spent resources");
-            Check(world.GetEntity(0).QueueCount == 1, "a second role on a running queue was accepted");
-            Check(world.GetEntity(0).ProduceRole == Role.Melee, "a second role overwrote what the queue was building");
+            Check(world.GetEntity(works).QueueCount == 1, "a second role on a running queue was accepted");
+            Check(world.GetEntity(works).ProduceRole == Role.Melee, "a second role overwrote what the queue was building");
 
             // Emptied, then the other role: the rule is one role at a time, not one
             // role forever.
-            world.Step(Cancel(0, 0, 2));
+            world.Step(Cancel(works, 0, 2));
             banked = world.GetResources(0);
-            world.Step(Produce(0, 0, 3, Role.Signature));
+            world.Step(Produce(works, 0, 3, Role.Signature));
             Check(world.GetResources(0) == banked - 220, "an emptied queue refused the other role");
         }
 
@@ -1251,26 +1271,31 @@ namespace WordCraft.Replay
             var world = new World(Seed);
             world.SetPeerFaction(0, Faction.Hellfire);
             world.SetPeerFaction(1, Faction.TreeSpirits);
-            // Both peers hold a finished production building, so the ranged slot is
-            // open on tier for both and the list is the only thing left to refuse it.
+            // Both peers hold a finished production building and a 기술 건물, so
+            // the ranged slot is open on tier and prerequisite for both — 번개
+            // 정령 is tier 3 behind 뿌리 회당 — and the list is the only thing left
+            // to refuse it. Ordered at the production building, which is where
+            // either faction's ranged entry 0 would come out.
             world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);         // 0
             world.SpawnBuilding(0, Role.Production, At(8, 5), complete: true);   // 1
             world.SpawnBuilding(1, Role.Base, At(50, 50), complete: true);       // 2
             world.SpawnBuilding(1, Role.Production, At(47, 50), complete: true); // 3
+            world.SpawnBuilding(0, Role.Tech, At(5, 8), complete: true);         // 4
+            world.SpawnBuilding(1, Role.Tech, At(50, 47), complete: true);       // 5
             world.GrantResources(0, 1000);
             world.GrantResources(1, 1000);
 
             int banked = world.GetResources(0);
             int standing = world.EntityCount;
             var idle = new List<Command>();
-            world.Step(Produce(0, 0, 0, World.WarlordOffspringRole));
+            world.Step(Produce(1, 0, 0, World.WarlordOffspringRole));
             for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
             Check(world.GetResources(0) == banked, "a produce order for 자손 spent resources");
-            Check(world.GetEntity(0).QueueCount == 0, "a produce order for 자손 queued one");
+            Check(world.GetEntity(1).QueueCount == 0, "a produce order for 자손 queued one");
             Check(world.EntityCount == standing, "a produce order for 자손 made one");
 
             banked = world.GetResources(1);
-            world.Step(Produce(2, 1, 0, World.WarlordOffspringRole));
+            world.Step(Produce(3, 1, 0, World.WarlordOffspringRole));
             Check(world.GetResources(1) < banked, "the ranged slot is closed for every faction, not just 지옥불");
         }
 
@@ -2478,27 +2503,34 @@ namespace WordCraft.Replay
             world.SetPeerFaction(0, Faction.Humans);
             world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);  // 0
             world.SpawnBuilding(0, Role.Tech, At(9, 5), complete: true);  // 1, so tier 3 is open
+            // 2, the 마법 탑 마도 정찰기 comes out of. Both orders go to it, so the
+            // Towerback is refused for being off the list and not for the building.
+            const int works = 2;
+            world.SpawnBuilding(0, Role.Production, At(5, 9), complete: true);
             world.GrantResources(0, 1000);
 
             int banked = world.GetResources(0);
             int standing = world.EntityCount;
             var idle = new List<Command>();
 
-            world.Step(Produce(0, 0, 0, World.TowerbackRole, World.TowerbackSlot));
+            world.Step(Produce(works, 0, 0, World.TowerbackRole, World.TowerbackSlot));
             for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
             Check(world.GetResources(0) == banked, "a produce order for a Towerback spent resources");
-            Check(world.GetEntity(0).QueueCount == 0, "a produce order for a Towerback queued one");
+            Check(world.GetEntity(works).QueueCount == 0, "a produce order for a Towerback queued one");
             Check(world.EntityCount == standing, "a produce order for a Towerback made one");
 
-            world.Step(Produce(0, 0, 1, World.TowerbackRole, World.TowerbackSlot + 1));
+            world.Step(Produce(works, 0, 1, World.TowerbackRole, World.TowerbackSlot + 1));
             Check(world.GetResources(0) < banked,
                 "the signature slot is closed behind the Towerback as well as on it");
         }
 
         // 세계수 정령 성장. One 풀씨 정령 standing on an empty map with mana to
-        // spend, and nothing else: every count below is about the growth rather
-        // than about anything that happened to be standing near it.
+        // spend, and a 풀씨 둥지 far off in a corner, because 고목 수호자 is a
+        // tier-2 body that grows only while one stands. Nothing else: every count
+        // below is about the growth rather than about anything that happened to
+        // be standing near it.
         private const int GrowWorkerId = 0;
+        private const int GrowNestId = 1;
         private const int GrowthBank = 1000;
 
         private static World BuildGrowthWorld()
@@ -2508,6 +2540,7 @@ namespace WordCraft.Replay
             world.SetPeerFaction(1, Faction.Hellfire);
 
             world.SpawnWorker(0, At(30, 30)); // GrowWorkerId
+            world.SpawnBuilding(0, Role.Production, At(5, 5), complete: true); // GrowNestId
             world.GrantResources(0, GrowthBank);
             return world;
         }
@@ -2576,7 +2609,7 @@ namespace WordCraft.Replay
             // body under it is the one that started, and the world holds no second
             // one. A growth implemented as a spawn and a kill would pass every stat
             // assertion below and fail these two.
-            Check(world.EntityCount == 1, name + " arrived as a new body, not as the worker");
+            Check(world.EntityCount == GrowNestId + 1, name + " arrived as a new body, not as the worker");
             Check(grown.Id == GrowWorkerId, name + " came up under entity id " + grown.Id);
             Check(grown.Alive, name + " is not alive");
             Check(grown.Owner == 0, name + " changed hands as well as kind: owner " + grown.Owner);
@@ -2660,8 +2693,8 @@ namespace WordCraft.Replay
         // minute and neither shoot nor walk: it is 비전투, so what it does to this
         // fixture is nothing, and the run finishes long before its first 자손 is
         // due at WarlordSpawnTicks.
-        private const int GrowNodeId = 1;
-        private const int GrowWarlordId = 2;
+        private const int GrowNodeId = 2;
+        private const int GrowWarlordId = 3;
         private const int GrowNodeAmount = 500;
 
         private static World BuildBusyGrowthWorld()
@@ -2782,11 +2815,11 @@ namespace WordCraft.Replay
         private static World BuildDoomedGrowthWorld()
         {
             World world = BuildGrowthWorld();
-            world.SpawnBuilding(1, Role.Defense, At(30, 35), complete: true); // 1
-            world.SpawnBuilding(1, Role.Defense, At(32, 34), complete: true); // 2
-            world.SpawnBuilding(1, Role.Defense, At(28, 34), complete: true); // 3
-            world.SpawnBuilding(1, Role.Defense, At(34, 32), complete: true); // 4
-            world.SpawnBuilding(1, Role.Defense, At(26, 32), complete: true); // 5
+            world.SpawnBuilding(1, Role.Defense, At(30, 35), complete: true); // 2
+            world.SpawnBuilding(1, Role.Defense, At(32, 34), complete: true); // 3
+            world.SpawnBuilding(1, Role.Defense, At(28, 34), complete: true); // 4
+            world.SpawnBuilding(1, Role.Defense, At(34, 32), complete: true); // 5
+            world.SpawnBuilding(1, Role.Defense, At(26, 32), complete: true); // 6
             return world;
         }
 
@@ -2854,7 +2887,7 @@ namespace WordCraft.Replay
             Check(!World.IsGrowing(stranger.GetEntity(GrowWorkerId)), "a 지옥불 worker grew");
 
             World world = BuildGrowthWorld();
-            int fighter = world.SpawnUnit(0, World.GuardianRole, World.GuardianSlot, At(20, 20)); // 1
+            int fighter = world.SpawnUnit(0, World.GuardianRole, World.GuardianSlot, At(20, 20)); // 2
 
             // A fighter, an entry that is produced rather than grown, a bare Grow
             // carrying no entry at all, and an entry past the end of the list.
@@ -2878,6 +2911,8 @@ namespace WordCraft.Replay
             var broke = new World(Seed);
             broke.SetPeerFaction(0, Faction.TreeSpirits);
             broke.SpawnWorker(0, At(30, 30));
+            // The nest, so the bank is the only rule this growth fails.
+            broke.SpawnBuilding(0, Role.Production, At(5, 5), complete: true);
             broke.GrantResources(0,
                 FactionData.Growth(Faction.TreeSpirits, World.GuardianRole, World.GuardianSlot)
                     .Resources - 1);
@@ -2892,6 +2927,7 @@ namespace WordCraft.Replay
         }
 
         private const int GrownOnlyBase = 0;
+        private const int GrownOnlyWorks = 1; // the 풀씨 둥지, where 잎날 정령 and 번개 정령 come out
 
         /// <summary>
         /// 성장으로만 획득한다. A Produce naming either growth target is refused
@@ -2908,7 +2944,7 @@ namespace WordCraft.Replay
             var world = new World(Seed);
             world.SetPeerFaction(0, Faction.TreeSpirits);
             world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);        // GrownOnlyBase
-            world.SpawnBuilding(0, Role.Production, At(9, 5), complete: true);  // opens tier 2
+            world.SpawnBuilding(0, Role.Production, At(9, 5), complete: true);  // GrownOnlyWorks, opens tier 2
             world.SpawnBuilding(0, Role.Tech, At(5, 9), complete: true);        // opens tier 3
             world.GrantResources(0, GrowthBank);
 
@@ -2921,15 +2957,15 @@ namespace WordCraft.Replay
                 int banked = world.GetResources(0);
                 int standing = world.EntityCount;
 
-                world.Step(Produce(GrownOnlyBase, 0, seq++, role, slot));
+                world.Step(Produce(GrownOnlyWorks, 0, seq++, role, slot));
                 for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
                 Check(world.GetResources(0) == banked, "a produce order for " + name + " spent resources");
-                Check(world.GetEntity(GrownOnlyBase).QueueCount == 0,
+                Check(world.GetEntity(GrownOnlyWorks).QueueCount == 0,
                     "a produce order for " + name + " queued one");
                 Check(world.EntityCount == standing, "a produce order for " + name + " made one");
 
                 int before = world.GetResources(0);
-                world.Step(Produce(GrownOnlyBase, 0, seq++, role, 0));
+                world.Step(Produce(GrownOnlyWorks, 0, seq++, role, 0));
                 Check(world.GetResources(0) < before,
                     "세계수 정령's " + role + " slot is shut behind the growth target as well as on it");
                 for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
@@ -3020,9 +3056,11 @@ namespace WordCraft.Replay
             return world.GetEntity(standing);
         }
 
-        // 차원 유랑종 수치. A 정박한 세계 to order from and a 층위 관측대 behind it,
-        // because the 경계 운반자 is a signature body and tier 3 is shut without one.
+        // 차원 유랑종 수치. A 정박한 세계 for the population and a 통로 to order
+        // from, because the 경계 운반자 comes out of the 통로 and opens at tier 2,
+        // which the 통로 is.
         private const int DriftBase = 0;
+        private const int DriftPassage = 1;
         private const int DriftCarrier = 2;
         private const int DriftBank = 1000;
 
@@ -3093,13 +3131,13 @@ namespace WordCraft.Replay
 
             var world = new World(Seed);
             world.SetPeerFaction(0, Faction.Driftworlds);
-            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // DriftBase
-            world.SpawnBuilding(0, Role.Tech, At(9, 5), complete: true); // opens tier 3
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);       // DriftBase
+            world.SpawnBuilding(0, Role.Production, At(9, 5), complete: true); // DriftPassage
             world.GrantResources(0, DriftBank);
 
             int banked = world.GetResources(0);
             var idle = new List<Command>();
-            world.Step(Produce(DriftBase, 0, 0, World.CarrierRole, World.CarrierSlot));
+            world.Step(Produce(DriftPassage, 0, 0, World.CarrierRole, World.CarrierSlot));
             Check(world.GetResources(0) == banked - 130,
                 "queueing 경계 운반자 spent " + (banked - world.GetResources(0)));
 
@@ -3694,21 +3732,22 @@ namespace WordCraft.Replay
 
             var idle = new List<Command>();
 
-            // Entry 0 first, so the refusal is measured against the same building
-            // and the same bank the acceptance is.
+            // At the 악마 산란장, which makes 균열 파수병. Entry 0 first, so the
+            // refusal is measured against the same building and the same bank the
+            // acceptance is.
             int banked = world.GetResources(0);
             int standing = world.EntityCount;
-            world.Step(Produce(WardenBase, 0, 0, Role.Ranged, 0));
+            world.Step(Produce(WardenWorks, 0, 0, Role.Ranged, 0));
             for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
             Check(world.GetResources(0) == banked, "an order for 지옥불 ranged entry 0 spent resources");
             Check(world.EntityCount == standing, "an order for 지옥불 ranged entry 0 made one");
 
             banked = world.GetResources(0);
-            world.Step(Produce(WardenBase, 0, 1, Role.Ranged, 1));
+            world.Step(Produce(WardenWorks, 0, 1, Role.Ranged, 1));
             Check(world.GetResources(0) == banked - World.ProduceCost,
                 "queueing 균열 파수병 spent " + (banked - world.GetResources(0)));
-            Check(world.GetEntity(WardenBase).ProduceSlot == 1,
-                "the queue is building entry " + world.GetEntity(WardenBase).ProduceSlot);
+            Check(world.GetEntity(WardenWorks).ProduceSlot == 1,
+                "the queue is building entry " + world.GetEntity(WardenWorks).ProduceSlot);
 
             // One tick short of the roster time, then the tick itself, like every
             // other production check here: a unit that arrived early would pass a
@@ -3780,17 +3819,17 @@ namespace WordCraft.Replay
             {
                 int banked = world.GetResources(0);
                 int standing = world.EntityCount;
-                world.Step(Produce(ThinBase, 0, seq++, Role.Ranged, slot));
+                world.Step(Produce(ThinWorks, 0, seq++, Role.Ranged, slot));
                 for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
 
                 string where = "돌 골렘 부족 ranged entry " + slot;
                 Check(world.GetResources(0) == banked, "an order for " + where + " spent resources");
-                Check(world.GetEntity(ThinBase).QueueCount == 0, "an order for " + where + " queued one");
+                Check(world.GetEntity(ThinWorks).QueueCount == 0, "an order for " + where + " queued one");
                 Check(world.EntityCount == standing, "an order for " + where + " made one");
             }
 
             int before = world.GetResources(0);
-            world.Step(Produce(ThinBase, 0, seq, Role.Ranged, 0));
+            world.Step(Produce(ThinWorks, 0, seq, Role.Ranged, 0));
             Check(world.GetResources(0) < before,
                 "돌 골렘 부족's ranged slot is shut for every entry, so the refusals prove nothing");
         }
@@ -3837,23 +3876,24 @@ namespace WordCraft.Replay
             int banked = world.GetResources(0);
             int standing = world.EntityCount;
 
-            world.Step(Produce(BlankBase, 0, 0, Role.Melee, 0));
+            world.Step(Produce(BlankWorks, 0, 0, Role.Melee, 0));
             // Stepped past the roster clock as well as read on the spot: a slot that
             // got through the gate would come out a body a while later, and an
             // assertion taken on the tick of the order alone would not have seen it.
             for (int t = 0; t < World.ProduceTicks + 5; t++) world.Step(idle);
             Check(world.GetResources(0) == banked, "an order for 인간's blank melee row spent resources");
-            Check(world.GetEntity(BlankBase).QueueCount == 0, "an order for 인간's blank melee row queued one");
+            Check(world.GetEntity(BlankWorks).QueueCount == 0, "an order for 인간's blank melee row queued one");
             Check(world.EntityCount == standing, "an order for 인간's blank melee row made one");
 
-            // 공수 특공대, which is what the faction fields instead. Tier 2, which
-            // BlankWorks is standing for.
+            // 공수 특공대, which is what the faction fields instead. Tier 2 and out
+            // of the 마법 탑, both of which BlankWorks is standing for; the blank
+            // order above went to the same building, so only the row refused it.
             banked = world.GetResources(0);
-            world.Step(Produce(BlankBase, 0, 1, Role.Ranged, 0));
+            world.Step(Produce(BlankWorks, 0, 1, Role.Ranged, 0));
             Check(world.GetResources(0) < banked,
                 "인간's production is shut for every slot, so the refusal above proves nothing");
-            Check(world.GetEntity(BlankBase).ProduceRole == Role.Ranged,
-                "the control order queued a " + world.GetEntity(BlankBase).ProduceRole);
+            Check(world.GetEntity(BlankWorks).ProduceRole == Role.Ranged,
+                "the control order queued a " + world.GetEntity(BlankWorks).ProduceRole);
         }
 
         // 차원 유랑종's melee list holds three entries: 폭풍편 with its own row, and
@@ -3869,6 +3909,7 @@ namespace WordCraft.Replay
         private const int SlotHashLeft = 1;
         private const int SlotHashRight = 2;
         private const int SlotHashBase = 0;
+        private const int SlotHashPassage = 1; // the 통로 the 멸종 슬라임 come out of
 
         /// <summary>
         /// The entry number is hashed state, on the body and on the queue that
@@ -3924,10 +3965,13 @@ namespace WordCraft.Replay
         {
             var world = new World(Seed);
             world.SetPeerFaction(0, Faction.Driftworlds);
-            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // SlotHashBase
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);       // SlotHashBase
+            world.SpawnBuilding(0, Role.Production, At(9, 5), complete: true); // SlotHashPassage
+            // The 층위 관측대, because both 멸종 슬라임 open at tier 3 behind it.
+            world.SpawnBuilding(0, Role.Tech, At(5, 9), complete: true);
             world.GrantResources(0, 1000);
-            world.Step(Produce(SlotHashBase, 0, 0, Role.Melee, slot));
-            Check(world.GetEntity(SlotHashBase).QueueCount == 1,
+            world.Step(Produce(SlotHashPassage, 0, 0, Role.Melee, slot));
+            Check(world.GetEntity(SlotHashPassage).QueueCount == 1,
                 "차원 유랑종 refused melee entry " + slot + ", so the two worlds differ by more than the entry");
             return world.Hash();
         }
@@ -3935,6 +3979,7 @@ namespace WordCraft.Replay
         // The same three-entry melee list, used for the queue's own rule rather
         // than for the hash.
         private const int OneEntryBase = 0;
+        private const int OneEntryPassage = 1;
 
         /// <summary>
         /// A queue holds one roster entry, not one role. The existing rule refuses
@@ -3947,27 +3992,29 @@ namespace WordCraft.Replay
         {
             var world = new World(Seed);
             world.SetPeerFaction(0, Faction.Driftworlds);
-            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true); // OneEntryBase
+            world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);       // OneEntryBase
+            world.SpawnBuilding(0, Role.Production, At(9, 5), complete: true); // OneEntryPassage
+            world.SpawnBuilding(0, Role.Tech, At(5, 9), complete: true);       // opens tier 3
             world.GrantResources(0, 1000);
 
-            world.Step(Produce(OneEntryBase, 0, 0, Role.Melee, 1));
+            world.Step(Produce(OneEntryPassage, 0, 0, Role.Melee, 1));
             int banked = world.GetResources(0);
-            world.Step(Produce(OneEntryBase, 0, 1, Role.Melee, 2));
+            world.Step(Produce(OneEntryPassage, 0, 1, Role.Melee, 2));
             Check(world.GetResources(0) == banked, "a second roster entry on a running queue spent resources");
-            Check(world.GetEntity(OneEntryBase).QueueCount == 1,
+            Check(world.GetEntity(OneEntryPassage).QueueCount == 1,
                 "a second roster entry on a running queue was accepted");
-            Check(world.GetEntity(OneEntryBase).ProduceSlot == 1,
+            Check(world.GetEntity(OneEntryPassage).ProduceSlot == 1,
                 "a second roster entry overwrote what the queue was building");
 
             // Emptied, then the other entry: the rule is one at a time, not one
             // forever.
-            world.Step(Cancel(OneEntryBase, 0, 2));
+            world.Step(Cancel(OneEntryPassage, 0, 2));
             banked = world.GetResources(0);
-            world.Step(Produce(OneEntryBase, 0, 3, Role.Melee, 2));
+            world.Step(Produce(OneEntryPassage, 0, 3, Role.Melee, 2));
             Check(world.GetResources(0) == banked - World.ProduceCost,
                 "an emptied queue refused the other roster entry");
-            Check(world.GetEntity(OneEntryBase).ProduceSlot == 2,
-                "an emptied queue took the order as entry " + world.GetEntity(OneEntryBase).ProduceSlot);
+            Check(world.GetEntity(OneEntryPassage).ProduceSlot == 2,
+                "an emptied queue took the order as entry " + world.GetEntity(OneEntryPassage).ProduceSlot);
         }
 
         /// <summary>
@@ -5443,19 +5490,23 @@ namespace WordCraft.Replay
             // replace rather than an order still running.
             log[250].Add(new Command(250, 0, seq[0]++, CommandType.HoldPosition, MatchFighter0, FixVec2.Zero));
 
-            log[260].Add(new Command(260, 0, seq[0]++, CommandType.SetRallyPoint, MatchBase0, At(10, 10)));
-            log[260].Add(new Command(260, 1, seq[1]++, CommandType.SetRallyPoint, MatchBase1, At(46, 46)));
+            // On the production buildings, which finished at 250: a bare Produce
+            // means the default fighter, and a 세계수 정령 fighter comes out of the
+            // 풀씨 둥지 and not out of the base. The rally point goes where the
+            // units come out, so the walk to it stays in this hash.
+            log[260].Add(new Command(260, 0, seq[0]++, CommandType.SetRallyPoint, MatchSite0, At(10, 10)));
+            log[260].Add(new Command(260, 1, seq[1]++, CommandType.SetRallyPoint, MatchSite1, At(46, 46)));
 
             foreach (int t in new[] { 300, 400 })
             {
-                log[t].Add(new Command(t, 0, seq[0]++, CommandType.Produce, MatchBase0, FixVec2.Zero));
-                log[t].Add(new Command(t, 1, seq[1]++, CommandType.Produce, MatchBase1, FixVec2.Zero));
+                log[t].Add(new Command(t, 0, seq[0]++, CommandType.Produce, MatchSite0, FixVec2.Zero));
+                log[t].Add(new Command(t, 1, seq[1]++, CommandType.Produce, MatchSite1, FixVec2.Zero));
             }
 
             // Queued, then cancelled ten ticks in, so the refund lands while the
             // unit is genuinely half built rather than on an idle building.
-            log[450].Add(new Command(450, 0, seq[0]++, CommandType.Produce, MatchBase0, FixVec2.Zero));
-            log[460].Add(new Command(460, 0, seq[0]++, CommandType.CancelProduction, MatchBase0, FixVec2.Zero));
+            log[450].Add(new Command(450, 0, seq[0]++, CommandType.Produce, MatchSite0, FixVec2.Zero));
+            log[460].Add(new Command(460, 0, seq[0]++, CommandType.CancelProduction, MatchSite0, FixVec2.Zero));
 
             // Last, so the fighter ends the run under an order that is still live.
             log[500].Add(new Command(500, 0, seq[0]++, CommandType.AttackMove, MatchFighter0, At(40, 40)));
