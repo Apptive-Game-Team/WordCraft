@@ -746,13 +746,19 @@ namespace WordCraft.Sim
         /// two shared rows every faction starts its table with, priced alike on
         /// purpose: neither is a faction's identity, so neither is where one
         /// faction should find a discount.
+        ///
+        /// Fifty, two and a half shared units. The solo match's AI never banks
+        /// more than about ninety once its 기술 건물 stands, because its ladder
+        /// spends on bodies every think; at a hundred the first level was a row
+        /// the opponent could never reach, which is a mechanic nobody playing
+        /// against it would ever see.
         /// </summary>
-        public const int StatUpgradeCost = 100;
+        public const int StatUpgradeCost = 50;
         public const int StatUpgradeTicks = 160;
         public const int StatUpgradeLevels = 3;
 
         /// <summary>What a faction-unique row costs and takes. One level each.</summary>
-        public const int UniqueUpgradeCost = 150;
+        public const int UniqueUpgradeCost = 100;
         public const int UniqueUpgradeTicks = 200;
 
         /// <summary>
