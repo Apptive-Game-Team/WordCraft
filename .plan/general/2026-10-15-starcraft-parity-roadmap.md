@@ -1,7 +1,7 @@
 # 2026-10-15 — StarCraft 수준 로드맵
 
 - Date: 2026-10-15
-- GitHub Issue: None (트랙별 이슈는 아래 표)
+- GitHub Issue: #167 (트랙별 이슈는 아래 표)
 - Owning repository: WordCraft
 - Status: Active
 - Supersedes: `.plan/general/2026-08-11-parallel-milestones.md`의 M4 이후 순서. 트랙 정의(A 시뮬레이션 직렬, B 뷰, C 하네스, D 콘텐츠)는 그대로 쓴다.
