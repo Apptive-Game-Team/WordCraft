@@ -223,19 +223,16 @@ namespace WordCraft.View
         /// </summary>
         public static readonly Color Foam = Rgb(0xA6C4D0);
 
-        // ---------------------------------------------------------------- map rim
+        // ---------------------------------------------------------------- map edge
 
-        /// <summary>The plinth the board stands on. Dark earth, so the cut edge of the diorama reads as a side and not as more ground.</summary>
-        public static readonly Color Plinth = Rgb(0x51463A);
-
-        /// <summary>The plinth's foot, darker again, so the board seems to stand on something rather than hang.</summary>
-        public static readonly Color PlinthFoot = Rgb(0x342D26);
-
-        /// <summary>The thin base slab's lip. A shade off the plinth so the step between them is a step and not a line.</summary>
-        public static readonly Color SlabTop = Rgb(0x463D33);
-
-        /// <summary>The slab's sides.</summary>
-        public static readonly Color SlabSide = Rgb(0x2C2620);
+        /// <summary>
+        /// How far the ground turns toward the cliff face's colour as it rolls over
+        /// the map's edge. The edge cliff below it has no colour of its own to
+        /// speak of: it is the cliff palette, faded toward Backdrop with depth by
+        /// Paper.cginc's WcEdgeFade, so the map ends in the haze rather than at a
+        /// coloured side.
+        /// </summary>
+        public const float ShoulderShift = 0.3f;
 
         // ---------------------------------------------------------------- props
 

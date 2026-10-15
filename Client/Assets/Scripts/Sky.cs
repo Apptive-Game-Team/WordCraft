@@ -90,6 +90,7 @@ namespace WordCraft.View
         private static readonly int RimId = Shader.PropertyToID("_WcRim");
         private static readonly int HazeId = Shader.PropertyToID("_WcHaze");
         private static readonly int HazeRangeId = Shader.PropertyToID("_WcHazeRange");
+        private static readonly int FieldId = Shader.PropertyToID("_WcField");
 
         private static Light sun;
 
@@ -172,6 +173,8 @@ namespace WordCraft.View
             Shader.SetGlobalColor(HazeId, Haze);
             float span = Mathf.Max(1f, HazeEnd - HazeStart);
             Shader.SetGlobalVector(HazeRangeId, new Vector4(HazeStart, 1f / span, 0f, 0f));
+            // The map's size, so Paper.cginc's WcEdgeFade knows where the map ends.
+            Shader.SetGlobalVector(FieldId, new Vector4(Field.Cells, 0f, 0f, 0f));
         }
     }
 }

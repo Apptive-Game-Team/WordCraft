@@ -71,6 +71,10 @@ float4 _WcHaze;
 // y: 1 / (end - start).
 float4 _WcHazeRange;
 
+// x: cells on a side of the map, so a world x or z past it is off the map.
+// Zero until Sky.cs first pushes it, and WcEdgeFade does nothing until then.
+float4 _WcField;
+
 // ---------------------------------------------------------------------------
 // The lighting model.
 // ---------------------------------------------------------------------------
@@ -135,6 +139,29 @@ inline void WcAtmosphere(float3 worldPos, inout fixed4 colour)
     float distance = length(worldPos - _WorldSpaceCameraPos);
     half haze = saturate((distance - _WcHazeRange.x) * _WcHazeRange.y) * _WcHaze.a;
     colour.rgb = lerp(colour.rgb, _WcHaze.rgb, haze);
+}
+
+// ---------------------------------------------------------------------------
+// The map's edge. Run after WcAtmosphere, by the terrain only, since nothing
+// else is ever outside the map.
+// ---------------------------------------------------------------------------
+
+/// Fades whatever lies outside the map toward the haze colour (the backdrop),
+/// more the further below the ground it is. Inside the map it is nothing, so a
+/// lake bed under zero is untouched; outside it, the cliff FieldMesh builds
+/// round the edge keeps its top and sinks into the sky colour by 3.1 under
+/// zero, which is above the cliff's own foot, so the geometry never shows an
+/// end. Eased, so the first strata under the edge still read as rock before
+/// the haze takes them. Applied after the fog of war on purpose: unseen ground goes dark, but
+/// the haze below the edge stays the colour of the sky behind it.
+inline void WcEdgeFade(float3 worldPos, inout fixed4 colour)
+{
+    float size = _WcField.x;
+    float2 beyond = max(-worldPos.xz, worldPos.xz - size);
+    float outside = max(max(beyond.x, beyond.y), 0.0);
+    half fade = saturate(outside * 4.0) * smoothstep(0.2, 3.1, -worldPos.y);
+    fade *= step(0.5, size);
+    colour.rgb = lerp(colour.rgb, _WcHaze.rgb, fade);
 }
 
 #endif

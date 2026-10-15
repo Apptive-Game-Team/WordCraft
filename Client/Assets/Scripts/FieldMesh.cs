@@ -8,8 +8,8 @@ namespace WordCraft.View
     /// <summary>
     /// The map as solid ground: grass that climbs in ramps, cliff faces where
     /// the simulation put a wall, a ridge of rock down the spine, lakes sunk into
-    /// hollows with water over a bed, and the whole board standing on a plinth
-    /// like a diorama on a table.
+    /// hollows with water over a bed, and round the whole of it the ground rolling
+    /// over the map's edge into a cliff that sinks into the haze.
     ///
     /// Built once a match from <see cref="Field"/> and never touched again, for the
     /// same reason the 2D bake was: terrain and height are fixed when the map is
@@ -41,17 +41,16 @@ namespace WordCraft.View
         public const int ChunkCells = 8;
 
         /// <summary>
-        /// Where the plinth stops, in world units. About two levels under the
-        /// lowest ground, deep enough that the board reads as a block standing in
-        /// space and not as a sheet of paper cut off by nothing.
+        /// Where the cliff round the map's edge stops, in world units. Deep enough
+        /// that its foot is lost in the haze before the geometry ends:
+        /// Paper.cginc's WcEdgeFade has the colour all the way to the backdrop by
+        /// 3.1 under zero, so nothing at this depth is drawn in any colour but the
+        /// sky's.
         /// </summary>
-        public const float Base = -1.5f;
+        private const float SkirtFoot = -3.6f;
 
-        /// <summary>How far the base slab reaches past the plinth, in cells. A lip, so the plinth stands on something.</summary>
-        private const float SlabOverhang = 0.4f;
-
-        /// <summary>How thick the base slab is.</summary>
-        private const float SlabThickness = 0.3f;
+        /// <summary>How far outward the edge cliff leans per unit of drop, so it reads as a slope of scree and not as a sawn board.</summary>
+        private const float SkirtTalus = 0.12f;
 
         /// <summary>
         /// The smallest height step that gets a wall. Below this the two sides of
@@ -178,9 +177,6 @@ namespace WordCraft.View
                 }
             }
 
-            solid.Clear();
-            Slab(solid);
-            Emit("Base", solid, groundMaterial, shadows: true);
         }
 
         /// <summary>Destroys everything <see cref="Build"/> made. Safe to call when nothing is built.</summary>
@@ -249,11 +245,17 @@ namespace WordCraft.View
                      new Vector2(cx, cy + 1), new Vector2(cx + 1, cy + 1), Vector3.forward);
             }
 
-            // The plinth, on whichever map edges this cell is on.
-            if (cx == 0) Rim(solid, cell, 0, 2, new Vector2(cx, cy), new Vector2(cx, cy + 1), Vector3.left);
-            if (cx == Field.Cells - 1) Rim(solid, cell, 1, 3, new Vector2(cx + 1, cy), new Vector2(cx + 1, cy + 1), Vector3.right);
-            if (cy == 0) Rim(solid, cell, 0, 1, new Vector2(cx, cy), new Vector2(cx + 1, cy), Vector3.back);
-            if (cy == Field.Cells - 1) Rim(solid, cell, 2, 3, new Vector2(cx, cy + 1), new Vector2(cx + 1, cy + 1), Vector3.forward);
+            // The edge of the map, on whichever map edges this cell is on, and the
+            // map's corners where two of those meet.
+            int last = Field.Cells - 1;
+            if (cx == 0) Skirt(solid, cell, new Vector2Int(cx, cy), new Vector2Int(cx, cy + 1), Vector3.left);
+            if (cx == last) Skirt(solid, cell, new Vector2Int(cx + 1, cy), new Vector2Int(cx + 1, cy + 1), Vector3.right);
+            if (cy == 0) Skirt(solid, cell, new Vector2Int(cx, cy), new Vector2Int(cx + 1, cy), Vector3.back);
+            if (cy == last) Skirt(solid, cell, new Vector2Int(cx, cy + 1), new Vector2Int(cx + 1, cy + 1), Vector3.forward);
+            if (cx == 0 && cy == 0) SkirtCorner(solid, cell, new Vector2Int(0, 0), Vector3.left, Vector3.back);
+            if (cx == last && cy == 0) SkirtCorner(solid, cell, new Vector2Int(cx + 1, 0), Vector3.right, Vector3.back);
+            if (cx == 0 && cy == last) SkirtCorner(solid, cell, new Vector2Int(0, cy + 1), Vector3.left, Vector3.forward);
+            if (cx == last && cy == last) SkirtCorner(solid, cell, new Vector2Int(cx + 1, cy + 1), Vector3.right, Vector3.forward);
         }
 
         /// <summary>
@@ -785,15 +787,146 @@ namespace WordCraft.View
             return new Color(colour.r * scale, colour.g * scale, colour.b * scale, colour.a);
         }
 
+        // ------------------------------------------------------------------ map edge
+
         /// <summary>
-        /// The plinth under one map-edge cell: from the cell's solid top straight
-        /// down to <see cref="Base"/>. Rock keeps its own colour at the lip, so the
-        /// ridge reads as running into the cut edge rather than sitting on it.
+        /// The map's edge along one side of an edge cell: the ground rolls over
+        /// the edge in a short shoulder, then drops as a strata cliff, leaning out
+        /// as it goes, to <see cref="SkirtFoot"/>. Paper.cginc's WcEdgeFade turns
+        /// everything outside the map toward the backdrop with depth, so the cliff
+        /// sinks into the haze instead of ending at a cut edge; that, and not a
+        /// plinth, is what tells the player the map stops here.
+        ///
+        /// Every row below the top is a function of the grid point alone, so two
+        /// edge cells side by side build the same column where they meet. Where
+        /// their tops differ — the ridge running into the edge beside open
+        /// ground — one triangle closes the gap between the two tops.
         /// </summary>
-        private static void Rim(Facets f, int cell, int first, int second, Vector2 e0, Vector2 e1, Vector3 outward)
+        private static void Skirt(Facets f, int cell, Vector2Int g0, Vector2Int g1, Vector3 outward)
         {
-            Color lip = Field.Kind(cell) == TileKind.Rock ? FieldPalette.RockFace : FieldPalette.Plinth;
-            Wall(f, e0, e1, Top(cell, first), Top(cell, second), Base, Base, outward, lip, FieldPalette.PlinthFoot);
+            bool rock = Field.Kind(cell) == TileKind.Rock;
+            Color shoulder = Shoulder(cell);
+            Color lip = rock ? FieldPalette.RockFace : FieldPalette.CliffTop;
+            Color foot = rock ? FieldPalette.RockFoot : FieldPalette.CliffFoot;
+
+            float top0 = Top(cell, CornerAt(cell, g0));
+            float top1 = Top(cell, CornerAt(cell, g1));
+            Vector2 mid = ((Vector2)g0 + (Vector2)g1) * 0.5f;
+            Drop(columnA, g0, top0, outward);
+            Drop(columnB, mid, (top0 + top1) * 0.5f, outward);
+            Drop(columnC, g1, top1, outward);
+
+            float crest = Mathf.Max(top0, top1);
+            Zip(f, columnA, columnB, outward, crest, lip, foot, shoulder);
+            Zip(f, columnB, columnC, outward, crest, lip, foot, shoulder);
+
+            // Where this cell's top and the previous edge cell's top meet at g0 at
+            // different heights, close the gap down to the shared shoulder. The
+            // previous cell is the one before this along the side: a row down on
+            // the left and right edges, a column back on the near and far ones.
+            int cx = cell % Field.Cells;
+            int cy = cell / Field.Cells;
+            bool sideways = outward.x != 0f;
+            if (sideways ? cy == 0 : cx == 0) return;
+            int previous = sideways ? cell - Field.Cells : cell - 1;
+            float other = Top(previous, CornerAt(previous, g0));
+            if (Mathf.Abs(other - top0) <= Epsilon) return;
+            f.Triangle(new Vector3(g0.x, top0, g0.y), new Vector3(g0.x, other, g0.y), columnA[columnA.Count - 2],
+                       other > top0 ? Shoulder(previous) : shoulder, outward);
+        }
+
+        /// <summary>
+        /// A map corner: the two sides' columns at the corner point lean out two
+        /// different ways, and this zips them together so the corner is a bevel
+        /// and not a slot.
+        /// </summary>
+        private static void SkirtCorner(Facets f, int cell, Vector2Int g, Vector3 outA, Vector3 outB)
+        {
+            bool rock = Field.Kind(cell) == TileKind.Rock;
+            Color lip = rock ? FieldPalette.RockFace : FieldPalette.CliffTop;
+            Color foot = rock ? FieldPalette.RockFoot : FieldPalette.CliffFoot;
+            float top = Top(cell, CornerAt(cell, g));
+            Drop(columnA, g, top, outA);
+            Drop(columnB, g, top, outB);
+            Zip(f, columnA, columnB, (outA + outB).normalized, top, lip, foot, Shoulder(cell));
+        }
+
+        /// <summary>
+        /// One column of the map's edge, foot first: the cliff's foot, every
+        /// stratum line on the way up, the shoulder, the top. The shoulder's
+        /// height and reach, the lean and the jitter all come from the grid point,
+        /// and the shoulder sits under the lowest edge cell touching the point, so
+        /// every column at one point is the same column below its top.
+        /// </summary>
+        private static void Drop(List<Vector3> into, Vector2 at, float top, Vector3 outward)
+        {
+            int gx = Mathf.RoundToInt(at.x * 2f);
+            int gz = Mathf.RoundToInt(at.y * 2f);
+            float reach = 0.40f + 0.20f * Unit(gx, gz, 81);
+            float shoulder = EdgeTop(at) - (0.28f + 0.14f * Unit(gx, gz, 82));
+            var origin = new Vector3(at.x, 0f, at.y);
+
+            into.Clear();
+            into.Add(origin + outward * (reach + (shoulder - SkirtFoot) * SkirtTalus) + Vector3.up * SkirtFoot);
+            int first = Mathf.FloorToInt((SkirtFoot + StrataMargin) / Stratum) + 1;
+            for (int k = first; k * Stratum < shoulder - StrataMargin; k++)
+            {
+                float y = k * Stratum;
+                float push = (Unit(gx, gz, 80 + k * 3) * 1.3f - 0.3f) * FaceJitter * 1.5f;
+                float lift = (Unit(gx, gz, 81 + k * 3) - 0.5f) * 0.1f;
+                into.Add(origin + outward * (reach + (shoulder - y) * SkirtTalus + push) + Vector3.up * (y + lift));
+            }
+            into.Add(origin + outward * reach + Vector3.up * shoulder);
+            into.Add(origin + Vector3.up * top);
+        }
+
+        /// <summary>The lowest top among the edge cells touching boundary grid point at, so the shoulder there sits under all of them.</summary>
+        private static float EdgeTop(Vector2 at)
+        {
+            int gx = Mathf.RoundToInt(at.x);
+            int gz = Mathf.RoundToInt(at.y);
+            if (Mathf.Abs(at.x - gx) > 0.01f || Mathf.Abs(at.y - gz) > 0.01f)
+            {
+                // A mid edge point: the one cell it lies on.
+                int cx = Mathf.Clamp(Mathf.FloorToInt(at.x), 0, Field.Cells - 1);
+                int cy = Mathf.Clamp(Mathf.FloorToInt(at.y), 0, Field.Cells - 1);
+                int c = cy * Field.Cells + cx;
+                float a = Top(c, CornerAt(c, new Vector2Int(Mathf.FloorToInt(at.x), Mathf.FloorToInt(at.y))));
+                float b = Top(c, CornerAt(c, new Vector2Int(Mathf.CeilToInt(at.x), Mathf.CeilToInt(at.y))));
+                return Mathf.Min(a, b);
+            }
+
+            float lowest = float.MaxValue;
+            for (int dy = -1; dy <= 0; dy++)
+            {
+                for (int dx = -1; dx <= 0; dx++)
+                {
+                    int cx = gx + dx;
+                    int cy = gz + dy;
+                    if (cx < 0 || cy < 0 || cx >= Field.Cells || cy >= Field.Cells) continue;
+                    int c = cy * Field.Cells + cx;
+                    lowest = Mathf.Min(lowest, Top(c, CornerAt(c, new Vector2Int(gx, gz))));
+                }
+            }
+            return lowest;
+        }
+
+        /// <summary>Which of a cell's four corners grid point g is, clamped onto the cell.</summary>
+        private static int CornerAt(int cell, Vector2Int g)
+        {
+            int cx = cell % Field.Cells;
+            int cy = cell / Field.Cells;
+            int ox = Mathf.Clamp(g.x - cx, 0, 1);
+            int oy = Mathf.Clamp(g.y - cy, 0, 1);
+            return ox + 2 * oy;
+        }
+
+        /// <summary>The shoulder's colour: the cell's own ground turning toward the cliff's earth as it rolls over the edge. Toward the face and not the lip, because the shoulder on the sun's side already lands in the highlight band.</summary>
+        private static Color Shoulder(int cell)
+        {
+            bool rock = Field.Kind(cell) == TileKind.Rock;
+            Color ground = rock ? FieldPalette.RockTop : FieldPalette.Grass(Field.Level(cell));
+            return Color.Lerp(ground, rock ? FieldPalette.RockFace : FieldPalette.CliffTop, FieldPalette.ShoulderShift);
         }
 
         /// <summary>
@@ -822,34 +955,6 @@ namespace WordCraft.View
             if (open0 && open1) f.Quad(b0, b1, t1, t0, foot, foot, lip, lip, outward);
             else if (open0) f.Triangle(b0, b1, t0, foot, foot, lip, outward);
             else f.Triangle(b0, b1, t1, foot, foot, lip, outward);
-        }
-
-        /// <summary>
-        /// The slab the plinth stands on: a thin block a little wider than the map,
-        /// seen only as a lip round the foot of the plinth. No underside, because
-        /// nothing the camera does looks up at it.
-        /// </summary>
-        private static void Slab(Facets f)
-        {
-            float lo = -SlabOverhang;
-            float hi = Field.Cells + SlabOverhang;
-            float top = Base;
-            float bottom = Base - SlabThickness;
-
-            var n0 = new Vector3(lo, top, lo);
-            var n1 = new Vector3(hi, top, lo);
-            var n2 = new Vector3(lo, top, hi);
-            var n3 = new Vector3(hi, top, hi);
-            var m0 = new Vector3(lo, bottom, lo);
-            var m1 = new Vector3(hi, bottom, lo);
-            var m2 = new Vector3(lo, bottom, hi);
-            var m3 = new Vector3(hi, bottom, hi);
-
-            f.Quad(n0, n1, n3, n2, FieldPalette.SlabTop, Vector3.up);
-            f.Quad(m0, m1, n1, n0, FieldPalette.SlabSide, Vector3.back);
-            f.Quad(m1, m3, n3, n1, FieldPalette.SlabSide, Vector3.right);
-            f.Quad(m3, m2, n2, n3, FieldPalette.SlabSide, Vector3.forward);
-            f.Quad(m2, m0, n0, n2, FieldPalette.SlabSide, Vector3.left);
         }
 
         // ------------------------------------------------------------------ water
