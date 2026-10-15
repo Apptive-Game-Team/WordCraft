@@ -275,6 +275,16 @@ namespace WordCraft.View
         /// <summary>Cells between two buildings' footprints in a building strip.</summary>
         private const float BuildingGap = 1.6f;
 
+        /// <summary>
+        /// When a work strip's base and production building deliver a unit:
+        /// just before frame 3, so frames 4 and 5 hold the swell, the lean and
+        /// the unit coming up.
+        /// </summary>
+        private const float DeliverAt = 0.36f;
+
+        /// <summary>Where a delivered unit stands up: toward the camera and to the right of its building, at its door.</summary>
+        private const float DoorYaw = 135f;
+
         private static int Strips(string output)
         {
             int written = 0;
@@ -433,15 +443,22 @@ namespace WordCraft.View
                 var speeds = new float[rigs.Count];
                 for (int i = 0; i < rigs.Count; i++)
                 {
+                    rigs[i].Use(effects);
                     if (!towers && !buildings) Turn(rigs[i], FacingYaw);
                     if (growth && i % 2 == 1) rigs[i].Spawn(1e6f); // not there until the worker has swelled
                     if (motion == "build") rigs[i].Progress(0f); // a bare site through the preroll
+                    if (motion == "work") rigs[i].Work(true);   // at work through the preroll, so motes are already up
                     // Fix is cells a tick; a strip walks at the roster's own pace.
                     speeds[i] = FactionData.Stats(faction, cast[i].Role, cast[i].Slot).Speed.Raw / (float)Fix.One * World.TicksPerSecond;
                 }
 
                 float now = StartSeconds - PrerollSeconds;
                 var shot = new Shooting { World = world, Faction = faction, Cast = cast, Effects = effects };
+                if (motion == "work")
+                {
+                    Deliveries(studio.Root.transform, faction, cast, rigs, homes, shot);
+                    Array.Resize(ref speeds, rigs.Count);
+                }
                 // An attack starts a moment before frame 0, so frame 0 holds its
                 // wind-up rather than the rest pose the wind-up starts from.
                 float lead = motion == "attack" ? AttackLead : 0f;
@@ -511,6 +528,42 @@ namespace WordCraft.View
             public Faction Faction;
             public List<(Role Role, int Slot)> Cast;
             public Effects Effects;
+            /// <summary>Per rig in a work strip: the rig of the unit it delivers, or -1.</summary>
+            public readonly List<int> Delivers = new List<int>();
+        }
+
+        /// <summary>
+        /// The units a work strip's base and production building put out: a
+        /// worker from the base, the first melee entry (or a worker) from the
+        /// production building, standing at the door and not yet there. Added
+        /// after the buildings, so rig i is still entity i for every building.
+        /// </summary>
+        private static void Deliveries(Transform parent, Faction faction, List<(Role Role, int Slot)> cast,
+                                       List<BodyRig> rigs, List<Vector2> homes, Shooting shot)
+        {
+            int buildings = rigs.Count;
+            for (int i = 0; i < buildings; i++) shot.Delivers.Add(-1);
+            for (int i = 0; i < buildings; i++)
+            {
+                Role made = cast[i].Role == Role.Production && FactionData.Has(faction, Role.Melee, 0) ? Role.Melee
+                          : cast[i].Role == Role.Base || cast[i].Role == Role.Production ? Role.Worker
+                          : Role.None;
+                if (made == Role.None) continue;
+
+                EntityKind kind = made == Role.Worker ? EntityKind.Worker : EntityKind.Unit;
+                BodyRig unit = Models.Build(parent, faction, made, 0, kind, 0, neutral: false);
+                float radians = DoorYaw * Mathf.Deg2Rad;
+                float reach = MatchView.Cells(cast[i].Role) * 0.5f + 0.7f;
+                Vector2 door = homes[i] + new Vector2(Mathf.Sin(radians), Mathf.Cos(radians)) * reach;
+                unit.Show(true);
+                unit.Place(Field.At(door));
+                Turn(unit, DoorYaw);
+                unit.Spawn(1e6f); // not there until it is delivered
+                shot.Delivers[i] = rigs.Count;
+                shot.Delivers.Add(-1);
+                rigs.Add(unit);
+                homes.Add(door);
+            }
         }
 
         /// <summary>
@@ -562,6 +615,11 @@ namespace WordCraft.View
                     if (motion == "walk" && since > 0f) at += Walk(since, speeds[i]);
                     rigs[i].Place(Field.At(at));
                     if (motion == "build") rigs[i].Progress(BuildAt(since));
+                    if (motion == "work" && since >= DeliverAt && since - step < DeliverAt && shot.Delivers[i] >= 0)
+                    {
+                        rigs[i].Deliver(DoorYaw);
+                        rigs[shot.Delivers[i]].Spawn();
+                    }
 
                     if (motion == "tower")
                     {
@@ -611,11 +669,11 @@ namespace WordCraft.View
                 if (motion == "walk") Include(ref min, ref max, homes[i] + Walk(WalkSeconds, speeds[i]));
             }
             bool buildings = IsBuildingMotion(motion);
-            float margin = motion == "tower" ? 3f : buildings ? 3.4f : 2.2f;
+            float margin = motion == "tower" ? 3f : buildings ? 3.0f : 2.2f;
             width = max.x - min.x + margin * 2f;
             // Pushed away from the camera by about a body's height, so the frame
             // centres on the bodies rather than on the ground at their feet.
-            return new Vector2((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f + (buildings ? 2.4f : 1.8f));
+            return new Vector2((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f + (buildings ? 1.4f : 1.8f));
         }
 
         private static void Include(ref Vector2 min, ref Vector2 max, Vector2 p)

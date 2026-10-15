@@ -143,6 +143,17 @@ namespace WordCraft.View
         private readonly List<int> fallen = new List<int>();
 
         /// <summary>
+        /// Each entity's production queue as of the last frame, parallel to
+        /// bodies. A queue that went down on the frame a unit of the same owner
+        /// appeared is a unit delivered; one that went down with nothing new
+        /// beside it was cancelled, and the building does nothing (issue #186).
+        /// </summary>
+        private readonly List<int> queues = new List<int>();
+
+        /// <summary>The units and workers that appeared this frame: what a building that just delivered looks for.</summary>
+        private readonly List<int> born = new List<int>();
+
+        /// <summary>
         /// Per entity: a hit flash is owed when the tracer now flying at it lands.
         /// Parallel to bodies. HitDetection decides who gets a flash (the local
         /// peer's own bodies); the landing only decides when.
@@ -292,6 +303,7 @@ namespace WordCraft.View
                 cooldowns.Clear();  // same
                 hitUntil.Clear();   // same: a restart's ids owe nothing to the match before it
                 alive.Clear();      // same
+                queues.Clear();     // same
                 flashOnLanding.Clear(); // same
                 DropBodies(retiring);
                 effects.Clear();
@@ -304,12 +316,17 @@ namespace WordCraft.View
                 FieldMesh.Build(world, transform);
             }
 
+            born.Clear();
             for (int i = bodies.Count; i < world.EntityCount; i++)
             {
                 Entity made = world.GetEntity(i);
                 BodyRig body = Create(world, made);
                 bodies.Add(body);
-                if (primed && made.Kind != EntityKind.Building && made.Kind != EntityKind.ResourceNode) body.Spawn();
+                if (primed && made.Kind != EntityKind.Building && made.Kind != EntityKind.ResourceNode)
+                {
+                    body.Spawn();
+                    born.Add(i);
+                }
             }
             primed = true;
             Retire();
@@ -374,6 +391,11 @@ namespace WordCraft.View
                 bool fired = e.AttackCooldown > cooldowns[i];
                 cooldowns[i] = e.AttackCooldown;
 
+                // The same for a queue: read for every entity, so one that ran
+                // down out of sight is not taken for a delivery later.
+                bool delivered = e.QueueCount < queues[i];
+                queues[i] = e.QueueCount;
+
                 // A dead body that is not playing its death has nothing left to
                 // move; switched off, so a long match's dead cost no Update.
                 if (!e.Alive && !falls && !body.Dying && body.enabled) body.enabled = false;
@@ -420,6 +442,7 @@ namespace WordCraft.View
                 Vector2 p = runner.DrawPosition(i);
                 body.Place(Field.At(p));
                 Pose(world, i, e, body, fired);
+                if (delivered) Deliver(world, e, p, body);
 
                 shadows[i].Visible = body.Flying;
                 if (body.Flying) shadows[i].Set(p, body.Footprint * ShadowRatio, 0f);
@@ -496,18 +519,45 @@ namespace WordCraft.View
 
             if (e.Kind != EntityKind.Building) return;
 
-            // A site under construction rises out of the ground as it is built, and
-            // reads as a ghost until it finishes — the same SiteAlpha idiom the
-            // sprite had, now carried by the model.
+            // A site under construction is put together part by part as it is
+            // built, and reads as a ghost until it finishes — the same SiteAlpha
+            // idiom the sprite had, now carried by the model.
             if (e.BuildTicksLeft > 0 && e.Owner >= 0)
             {
                 int ticks = FactionData.BuildTicks(world.FactionOf(e.Owner), e.Role, e.Slot);
                 body.Progress(ticks > 0 ? 1f - e.BuildTicksLeft / (float)ticks : 1f);
+                body.Work(false);
             }
             else
             {
                 body.Progress(1f);
+                // At work: a queue holds something or a level is being researched.
+                body.Work(e.QueueCount > 0 || e.ResearchIndex >= 0);
             }
+        }
+
+        /// <summary>
+        /// A building's queue went down this frame. If a unit of the same owner
+        /// appeared, it came out of here: the building leans toward the nearest
+        /// such unit (issue #186). Two buildings delivering on one frame each
+        /// lean toward their own, since each one's unit stands at its door.
+        /// </summary>
+        private void Deliver(World world, Entity e, Vector2 p, BodyRig body)
+        {
+            if (e.Kind != EntityKind.Building) return;
+            float nearest = float.MaxValue;
+            Vector2 toward = Vector2.zero;
+            for (int b = 0; b < born.Count; b++)
+            {
+                int id = born[b];
+                if (world.GetEntity(id).Owner != e.Owner) continue;
+                Vector2 to = runner.DrawPosition(id) - p;
+                if (to.sqrMagnitude >= nearest) continue;
+                nearest = to.sqrMagnitude;
+                toward = to;
+            }
+            if (nearest == float.MaxValue || toward.sqrMagnitude < 1e-6f) return;
+            body.Deliver(Mathf.Atan2(toward.x, toward.y) * Mathf.Rad2Deg);
         }
 
         /// <summary>
@@ -1006,11 +1056,13 @@ namespace WordCraft.View
         private BodyRig Create(World world, Entity e)
         {
             BodyRig body = Dress(world, e);
+            body.Use(effects);
 
             if (skins.Count <= e.Id)
             {
                 skins.Add(SkinOf(e));
                 cooldowns.Add(e.AttackCooldown);
+                queues.Add(e.QueueCount);
                 alive.Add(e.Alive);
                 flashOnLanding.Add(false);
                 hitUntil.Add(-1f);
