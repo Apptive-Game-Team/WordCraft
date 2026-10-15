@@ -109,6 +109,20 @@ namespace WordCraft.View
         /// <summary>A cliff's foot. Darker, so the eye reads depth down the face without any line drawn at the bottom.</summary>
         public static readonly Color CliffFoot = Rgb(0x5A4D40);
 
+        /// <summary>
+        /// The thin lip along a cliff's top edge. Paler and warmer than the face
+        /// under it, the cut edge of the paper catching the sun, so the top of a
+        /// cliff reads as an edge from across the map.
+        /// </summary>
+        public static readonly Color CliffRim = Rgb(0xB09C76);
+
+        /// <summary>
+        /// How far alternate strata move in value, either way. Enough that the
+        /// bands read as layers of rock, little enough that the wall stays one
+        /// shape in one of Paper.cginc's three bands.
+        /// </summary>
+        public const float StrataShift = 0.07f;
+
         /// <summary>The foot of a shore wall, at the lake bed. Wet earth: darker and cooler than a dry cliff foot.</summary>
         public static readonly Color ShoreFoot = Rgb(0x433D34);
 
@@ -123,6 +137,9 @@ namespace WordCraft.View
 
         /// <summary>The ridge's walls, a step down from its top so the top catches the light first.</summary>
         public static readonly Color RockFace = Rgb(0x777281);
+
+        /// <summary>The ridge's lip, a step above its top, for the same reason a cliff has one.</summary>
+        public static readonly Color RockRim = Rgb(0xA6A1AE);
 
         /// <summary>The ridge's foot, where it meets the ground.</summary>
         public static readonly Color RockFoot = Rgb(0x55515E);

@@ -75,6 +75,45 @@ namespace WordCraft.View
         /// </summary>
         private const float FootDepth = 2f * Field.LevelHeight;
 
+        /// <summary>
+        /// The smallest rise that gets strata. Past one level a step is a cliff
+        /// (Sim/World.cs StepPassable), and where a plateau corner leans toward its
+        /// ramp a cliff can come out a little under a level tall, so the cut is at
+        /// 0.9 rather than at 0.85: the seams where a ramp meets a flat stay one
+        /// plain face, and every face the simulation calls a wall gets the bands.
+        /// </summary>
+        private const float StrataMin = 0.9f;
+
+        /// <summary>
+        /// Height of one stratum, in world units, measured from world zero and not
+        /// from each wall's foot. Absolute so that the bands of two walls side by
+        /// side are the same bands: the layers run round a plateau as one rock
+        /// rather than restarting at every cell. Two thirds of a level gives a
+        /// two level cliff three bands and the ridge five or six.
+        /// </summary>
+        private const float Stratum = 0.55f;
+
+        /// <summary>How close a stratum line may come to a wall's foot or rim before it is dropped. Keeps every band a band and not a sliver.</summary>
+        private const float StrataMargin = 0.12f;
+
+        /// <summary>
+        /// How tall the light lip along a cliff's top edge is. A thin strip, so it
+        /// reads as the cut edge of the paper catching the sun and not as a band
+        /// of its own.
+        /// </summary>
+        private const float RimDepth = 0.09f;
+
+        /// <summary>How far the lip's lower edge leans out from the wall, mid edge. Tilts the strip toward the sky so it lands in the highlight band.</summary>
+        private const float RimLean = 0.05f;
+
+        /// <summary>
+        /// How far an inner stratum vertex may move off the wall's plane. Enough
+        /// that each band of each cell catches the light at its own angle and the
+        /// wall stops reading as the side of a box, small enough that it never
+        /// reaches a body standing at its foot.
+        /// </summary>
+        private const float FaceJitter = 0.11f;
+
         /// <summary>The world this was built from. A new one means a new map.</summary>
         private static World built;
 
@@ -323,8 +362,152 @@ namespace WordCraft.View
                        : highKind == TileKind.Rock ? FieldPalette.RockFoot
                        : FieldPalette.CliffFoot;
 
-            if (aHigher) Wall(f, e0, e1, a0, a1, b0, b1, towardB, lip, foot);
-            else Wall(f, e0, e1, b0, b1, a0, a1, -towardB, lip, foot);
+            if (!aHigher)
+            {
+                (a0, b0) = (b0, a0);
+                (a1, b1) = (b1, a1);
+                towardB = -towardB;
+            }
+
+            float rise = Mathf.Max(a0 - b0, a1 - b1);
+            if (rise >= StrataMin && highKind != TileKind.Water && lowKind != TileKind.Water)
+            {
+                Color rim = highKind == TileKind.Rock ? FieldPalette.RockRim : FieldPalette.CliffRim;
+                Strata(f, e0, e1, a0, a1, b0, b1, towardB, lip, foot, rim);
+                return;
+            }
+
+            Wall(f, e0, e1, a0, a1, b0, b1, towardB, lip, foot);
+        }
+
+        // ------------------------------------------------------------------ strata
+
+        private static readonly List<Vector3> columnA = new List<Vector3>(16);
+        private static readonly List<Vector3> columnB = new List<Vector3>(16);
+        private static readonly List<Vector3> columnC = new List<Vector3>(16);
+
+        /// <summary>
+        /// A cliff face built as rock rather than as a board: cut into horizontal
+        /// strata at <see cref="Stratum"/>, every band a step lighter or darker
+        /// than the one under it, a thin light lip along the top, and every inner
+        /// vertex nudged off the plane so the bands break into facets that each
+        /// take the light at their own angle.
+        ///
+        /// Three columns per cell edge: the two corners and the middle. The top and
+        /// foot rows never move, because they are where the wall meets the ground
+        /// above and below and that ground is Field's. Corner columns move by a
+        /// vector hashed from the grid point and the stratum alone, so the two
+        /// walls that share a corner — straight on, or turning round a plateau's
+        /// corner — compute the same vertex and meet without a crack.
+        /// </summary>
+        private static void Strata(Facets f, Vector2 e0, Vector2 e1, float top0, float top1, float foot0, float foot1,
+                                   Vector3 outward, Color lip, Color footColour, Color rim)
+        {
+            Vector2 mid = (e0 + e1) * 0.5f;
+            Column(columnA, e0, top0, foot0, outward, true);
+            Column(columnB, mid, (top0 + top1) * 0.5f, (foot0 + foot1) * 0.5f, outward, false);
+            Column(columnC, e1, top1, foot1, outward, true);
+
+            float crest = Mathf.Max(top0, top1);
+            Zip(f, columnA, columnB, outward, crest, lip, footColour, rim);
+            Zip(f, columnB, columnC, outward, crest, lip, footColour, rim);
+        }
+
+        /// <summary>
+        /// One column of a strata wall, foot first: the foot, every stratum line
+        /// that clears both ends by <see cref="StrataMargin"/>, the lip's lower
+        /// edge, the top. A column too short for a lip is just its two ends.
+        /// </summary>
+        private static void Column(List<Vector3> into, Vector2 at, float top, float foot, Vector3 outward, bool corner)
+        {
+            into.Clear();
+            into.Add(new Vector3(at.x, foot, at.y));
+            if (top - foot <= Epsilon) return;
+
+            float rimFoot = top - RimDepth;
+            if (rimFoot - foot > StrataMargin)
+            {
+                int first = Mathf.FloorToInt((foot + StrataMargin) / Stratum) + 1;
+                for (int k = first; k * Stratum < rimFoot - StrataMargin; k++)
+                {
+                    into.Add(new Vector3(at.x, k * Stratum, at.y) + Jitter(at, k, outward, corner));
+                }
+                Vector3 lean = corner ? Vector3.zero : outward * RimLean;
+                into.Add(new Vector3(at.x, rimFoot, at.y) + lean);
+            }
+            into.Add(new Vector3(at.x, top, at.y));
+        }
+
+        /// <summary>
+        /// Where one stratum vertex moves. Keyed by the point doubled, so a mid
+        /// edge point and a corner both land on whole numbers, and by the stratum
+        /// index, so every band moves on its own. Mid edge vertices bulge mostly
+        /// out from the wall; corner vertices move in any direction on the ground
+        /// plane, since a corner may be shared by a wall facing another way.
+        /// </summary>
+        private static Vector3 Jitter(Vector2 at, int stratum, Vector3 outward, bool corner)
+        {
+            int gx = Mathf.RoundToInt(at.x * 2f);
+            int gz = Mathf.RoundToInt(at.y * 2f);
+            int salt = 20 + stratum * 3;
+            float lift = (Unit(gx, gz, salt + 1) - 0.5f) * 0.1f;
+            if (corner)
+            {
+                return new Vector3((Unit(gx, gz, salt) * 2f - 1f) * FaceJitter, lift,
+                                   (Unit(gx, gz, salt + 2) * 2f - 1f) * FaceJitter);
+            }
+            float push = (Unit(gx, gz, salt) * 1.3f - 0.3f) * FaceJitter;
+            return outward * push + Vector3.up * lift;
+        }
+
+        /// <summary>
+        /// Stitches two columns into triangles, foot to top, always stepping up
+        /// whichever column's next vertex is lower as a fraction of its own
+        /// height. That is what lets two columns with different numbers of strata
+        /// — one end of a wall taller than the other — still close without a gap.
+        /// </summary>
+        private static void Zip(Facets f, List<Vector3> l, List<Vector3> r, Vector3 outward, float crest,
+                                Color lip, Color footColour, Color rim)
+        {
+            int i = 0;
+            int j = 0;
+            int lastL = l.Count - 1;
+            int lastR = r.Count - 1;
+            while (i < lastL || j < lastR)
+            {
+                bool stepLeft = i < lastL && (j == lastR || Fraction(l, i + 1) <= Fraction(r, j + 1));
+                Vector3 next = stepLeft ? l[i + 1] : r[j + 1];
+                bool lipBand = stepLeft ? i + 1 == lastL : j + 1 == lastR;
+
+                Vector3 a = l[i];
+                Vector3 b = r[j];
+                Color colour = lipBand ? rim : Band((a.y + b.y + next.y) / 3f, crest, lip, footColour);
+                f.Triangle(a, b, next, colour, outward);
+
+                if (stepLeft) i++;
+                else j++;
+            }
+        }
+
+        private static float Fraction(List<Vector3> column, int index)
+        {
+            float span = column[column.Count - 1].y - column[0].y;
+            return span <= Epsilon ? 1f : (column[index].y - column[0].y) / span;
+        }
+
+        /// <summary>
+        /// A stratum's colour at height y: the wall's lip-to-foot ramp, as the
+        /// plain wall has it, then lifted or dropped by
+        /// <see cref="FieldPalette.StrataShift"/> on alternate strata. Alternate
+        /// by the absolute stratum index, so the light and dark bands line up
+        /// from one wall to the next.
+        /// </summary>
+        private static Color Band(float y, float crest, Color lip, Color footColour)
+        {
+            Color colour = Color.Lerp(lip, footColour, Mathf.Clamp01((crest - y) / FootDepth));
+            int stratum = Mathf.FloorToInt(y / Stratum);
+            float scale = (stratum & 1) == 0 ? 1f + FieldPalette.StrataShift : 1f - FieldPalette.StrataShift;
+            return new Color(colour.r * scale, colour.g * scale, colour.b * scale, colour.a);
         }
 
         /// <summary>
