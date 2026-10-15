@@ -164,7 +164,14 @@ namespace WordCraft.View
         public static readonly Fix TracerReach = Fix.FromInt(2);
 
         /// <summary>Whether a weapon with these stats throws a tracer rather than landing a blow. The one test, shared with ViewShots.</summary>
-        public static bool Throws(UnitStats stats) => stats.Range > TracerReach;
+        public static bool Throws(UnitStats stats) => Throws(stats.Range);
+
+        /// <summary>
+        /// The same test on a reach alone, for a caller holding a live body: World.RangeOf
+        /// is the researched reach, and 골렘 사거리 lifts a golem's 2 cells to 3, so a
+        /// swing that has become a throw gets a tracer.
+        /// </summary>
+        public static bool Throws(Fix range) => range > TracerReach;
 
         /// <summary>
         /// 돌 골렘 부족's combat unit leaves rubble where it falls (Sim/World.cs
@@ -542,7 +549,7 @@ namespace WordCraft.View
             target.Alive = true;
             bool seen = Fog.Show(e.TargetId, target) == Fog.Seen;
 
-            if (Throws(FactionData.Stats(faction, e.Role, e.Slot)))
+            if (Throws(world.RangeOf(e)))
             {
                 // A tower kicks the instant it fires and has no wind-up to wait for.
                 float leave = e.Kind == EntityKind.Building ? 0f : BodyRig.StrikeDelay;
