@@ -176,7 +176,6 @@ namespace WordCraft.View
                     Emit("Water " + at, surface, waterMaterial, shadows: false);
                 }
             }
-
         }
 
         /// <summary>Destroys everything <see cref="Build"/> made. Safe to call when nothing is built.</summary>
@@ -431,7 +430,7 @@ namespace WordCraft.View
 
         // ------------------------------------------------------------------ ramps
 
-        /// <summary>The least rise across a cell, in world units, that gets ruts. Half a level: a ramp cell and the cells it leans into, not the slight tilt at a ramp's side.</summary>
+        /// <summary>The least rise across a cell, in world units, that gets ruts. About a third of a level: a ramp cell and the cells it leans into, not the slight tilt at a ramp's side.</summary>
         private const float RutMinRise = 0.3f;
 
         /// <summary>Distance between two ruts, across the climb. Gives a cell two, or three when it climbs diagonally.</summary>
