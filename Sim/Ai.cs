@@ -86,25 +86,26 @@ namespace WordCraft.Sim
                 if (node >= 0) AiIssue(peer, CommandType.Gather, i, FixVec2.Zero, node);
             }
 
-            // 2. Research, ahead of production. The ladder spends every coin it
+            // 2. Supply before the cap, not after it. A cap reached is production
+            //    stopped, and a supply building takes 50 ticks to stand up. Ahead
+            //    of research and production, and while one is due and none stands
+            //    under construction the ladder spends on nothing else: since
+            //    docs/TECH-TREE.md 묶음 3 the base makes fighters as well as
+            //    workers for five factions out of six, research and production
+            //    spent the bank every think, and the 75 a supply building costs
+            //    was never there. Saving is decided afresh every think, so nothing
+            //    here is state.
+            bool saving = population[peer] + AiSupplyLead >= PopulationCap(peer) &&
+                          PopulationCap(peer) < PopulationHardCap &&
+                          !AiHolds(peer, Role.Supply, unfinishedOnly: true);
+            if (saving) AiBuild(peer, Role.Supply);
+
+            // 3. Research, ahead of production. The ladder spends every coin it
             //    has on bodies every think, so research asked after production
             //    would only ever see an empty bank. Its orders are applied in the
             //    order they were issued, so the price is taken first and the
             //    production orders behind it are refused for what is left.
-            AiResearch(peer);
-
-            // 3. Supply before the cap, not after it. A cap reached is production
-            //    stopped, and a supply building takes 50 ticks to stand up. Ahead
-            //    of production for the reason research is: since docs/TECH-TREE.md
-            //    묶음 3 the base makes fighters as well as workers for five
-            //    factions out of six, production spends the whole bank every
-            //    think, and a supply order asked after it never saw the 75 it costs.
-            if (population[peer] + AiSupplyLead >= PopulationCap(peer) &&
-                PopulationCap(peer) < PopulationHardCap &&
-                !AiHolds(peer, Role.Supply, unfinishedOnly: true))
-            {
-                AiBuild(peer, Role.Supply);
-            }
+            if (!saving) AiResearch(peer);
 
             // 4. Production. Every finished building of its own with an empty queue
             //    gets an order, so nothing that can build anything sits still.
@@ -113,7 +114,7 @@ namespace WordCraft.Sim
             //    building that makes workers and fighters out of the ones that
             //    make fighters.
             int workers = AiCountWorkers(peer);
-            for (int i = 0; i < entities.Count; i++)
+            for (int i = 0; i < entities.Count && !saving; i++)
             {
                 Entity b = entities[i];
                 if (!b.Alive || b.Owner != peer || b.Kind != EntityKind.Building) continue;

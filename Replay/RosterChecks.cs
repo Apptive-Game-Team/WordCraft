@@ -37,6 +37,7 @@ namespace WordCraft.Replay
             EachResearchMovesOnlyItsEntry();
             FleeSpeedIsReadOnlyWhileFleeing();
             TheAiPutsANewRowOnTheField();
+            NoSoloAiSitsAtThePopulationCap();
         }
 
         // ---------------------------------------------------------------------
@@ -734,6 +735,42 @@ namespace WordCraft.Replay
                     }
                 }
                 Check(found != null, faction + "'s AI never fielded a new row in the solo match");
+            }
+        }
+
+        /// <summary>
+        /// The longest run of ticks a solo AI may stand at its population cap.
+        /// A supply building takes 50 ticks to stand up, so one late order costs
+        /// about that; twice it is a ladder that is not building supply at all.
+        /// </summary>
+        private const int MostTicksAtCap = 100;
+
+        /// <summary>
+        /// Every faction's AI, in a solo match against an idle opponent, never
+        /// stands at its population cap for more than MostTicksAtCap ticks in a
+        /// row within 1500 ticks. This pins the ladder's order: supply is decided
+        /// before research and production, and while one is due nothing else is
+        /// bought. Before that order, with 묶음 3's bases making fighters, 차원
+        /// 유랑종's AI stood at 18/18 for 192 ticks and 돌 골렘's for 115.
+        /// </summary>
+        private static void NoSoloAiSitsAtThePopulationCap()
+        {
+            const int ai = 1;
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                var idle = faction == Faction.TreeSpirits ? Faction.Hellfire : Faction.TreeSpirits;
+                World world = MatchScenario.Build(Seed, idle, faction);
+                world.SetPeerAi(ai, true);
+                int run = 0, longest = 0;
+                for (int t = 0; t < 1500 && !world.MatchOver; t++)
+                {
+                    world.Step(Idle);
+                    run = world.GetPopulation(ai) >= world.PopulationCap(ai) ? run + 1 : 0;
+                    if (run > longest) longest = run;
+                }
+                Check(longest <= MostTicksAtCap,
+                    faction + "'s solo AI stood at its population cap for " + longest + " ticks in a row");
             }
         }
 
