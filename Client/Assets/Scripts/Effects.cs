@@ -98,8 +98,15 @@ namespace WordCraft.View
         private const int TracerWarm = 24;
         private const int BurstWarm = 16;
         private const int CrumbleWarm = 4;
-        private const int MoteWarm = 12;
-        private const int BoltWarm = 4;
+        /// <summary>
+        /// Working buildings' motes, burning bodies' embers and heals' motes
+        /// share this pool: three a building, three a burning body, two a heal,
+        /// so a fight with a handful of each stays inside it.
+        /// </summary>
+        private const int MoteWarm = 32;
+
+        /// <summary>Chain jumps up at once: 연쇄 번개 hops twice, so four shooters firing together.</summary>
+        private const int BoltWarm = 8;
 
         // A building's dust ring (issue #186): out from just inside its
         // footprint to past it, a thicker band than a shot's, slower.
@@ -124,7 +131,7 @@ namespace WordCraft.View
 
         // A heal's motes (issue #206): one size whatever the body, slower than
         // an ember and up further, so a heal reads as lifting, not burning.
-        private const float MendSize = 0.34f;
+        private const float MendSize = 0.42f;
         private const float MendSeconds = 1.1f;
         private const float MendRise = 1.2f;
 
@@ -175,6 +182,8 @@ namespace WordCraft.View
             public float From, To, Band, Seconds;
             /// <summary>The shards' size and reach as a share of a weapon's burst: 1 for a hit, less for a burn's tick.</summary>
             public float Scale;
+            /// <summary>The ring's alpha at the start, fading to nothing.</summary>
+            public float Alpha;
         }
 
         private struct Floater
@@ -193,6 +202,10 @@ namespace WordCraft.View
             public float Started;
             /// <summary>Which way the zigzag bends first, so two bolts side by side are not one shape twice.</summary>
             public float Side;
+            /// <summary>The entity id it jumps to, reported in <see cref="Landed"/> when it appears; -1 for none.</summary>
+            public int Target;
+            /// <summary>Whether the landing has been reported.</summary>
+            public bool Reported;
         }
 
         private readonly Transform parent;
@@ -310,7 +323,7 @@ namespace WordCraft.View
             {
                 Live = true, At = at, Started = ViewClock.Now + delay, Spin = burstCounter * 47f,
                 Shards = true, From = RingFrom * scale, To = RingTo * scale, Band = RingBand, Seconds = BurstSeconds,
-                Scale = scale,
+                Scale = scale, Alpha = RingAlpha,
             };
 
             Color light = Color.Lerp(colour, BodyPalette.HitFlash, ShardLight);
@@ -332,14 +345,14 @@ namespace WordCraft.View
         /// building raises as it settles, and a razed one as it lands (issue
         /// #186). The impact ring, without the shards.
         /// </summary>
-        public void Dust(Vector3 foot, float radius, Color colour, float delay = 0f)
+        public void Dust(Vector3 foot, float radius, Color colour, float delay = 0f, float alpha = RingAlpha)
         {
             int i = FreeBurst();
             bursts[i] = new Burst
             {
                 Live = true, At = foot, Started = ViewClock.Now + delay, Shards = false,
                 From = radius * DustFrom, To = radius * DustTo, Band = Mathf.Max(RingBand, radius * DustBand),
-                Seconds = DustSeconds, Scale = 1f,
+                Seconds = DustSeconds, Scale = 1f, Alpha = alpha,
             };
             ringColours[i] = colour;
             rings[i].Visible = false;
@@ -351,18 +364,9 @@ namespace WordCraft.View
         /// away over a second (issue #186). Sized to the building's
         /// <paramref name="footprint"/>.
         /// </summary>
-        public void Mote(Vector3 at, Color colour, float footprint)
-        {
-            int i = FreeMote();
-            motes[i] = new Floater
-            {
-                Live = true, From = at, Started = ViewClock.Now,
-                Size = Mathf.Clamp(footprint * MoteShare, MoteMin, MoteMax), Spin = (i * 83f) % 360f,
-                Seconds = MoteSeconds, Rise = MoteRise,
-            };
-            Colour(moteRenderers[i], Color.Lerp(colour, BodyPalette.HitFlash, 0.3f));
-            moteRenderers[i].enabled = false;
-        }
+        public void Mote(Vector3 at, Color colour, float footprint) =>
+            Rise(at, Color.Lerp(colour, BodyPalette.HitFlash, 0.3f), Mathf.Clamp(footprint * MoteShare, MoteMin, MoteMax),
+                 MoteSeconds, MoteRise);
 
         /// <summary>
         /// One ember rising off a burning body from <paramref name="at"/>: the
@@ -393,14 +397,20 @@ namespace WordCraft.View
         /// all of it there at once, as a jump is, then thinning away. Thick legs
         /// and few bends, because .art/STYLE.md rejects a thin scattered bolt.
         /// </summary>
-        public void Jump(Vector3 from, Vector3 to, Color colour, float delay = 0f)
+        /// <remarks>
+        /// <paramref name="target"/> is reported in <see cref="Landed"/> the
+        /// moment the bolt appears, and <see cref="Incoming"/> counts it until
+        /// then, so a body the chain jumped to flinches, flashes and falls when
+        /// it is seen to be struck, as a tracer's target does.
+        /// </remarks>
+        public void Jump(Vector3 from, Vector3 to, Color colour, float delay = 0f, int target = -1)
         {
             int i = FreeBolt();
             boltCounter++;
             bolts[i] = new Bolt
             {
                 Live = true, From = from, To = to, Started = ViewClock.Now + delay,
-                Side = boltCounter % 2 == 0 ? 1f : -1f,
+                Side = boltCounter % 2 == 0 ? 1f : -1f, Target = target,
             };
             for (int k = 0; k < BoltLegs; k++)
             {
@@ -473,7 +483,7 @@ namespace WordCraft.View
                 {
                     ring.Set(new Vector2(b.At.x, b.At.z), Mathf.Lerp(b.From, b.To, spread), b.Band);
                     Color c = ringColours[i];
-                    c.a = RingAlpha * (1f - p);
+                    c.a = b.Alpha * (1f - p);
                     ring.Colour = c;
                 }
                 for (int s = 0; s < ShardsPerBurst; s++)
@@ -528,7 +538,6 @@ namespace WordCraft.View
 
                 float p = (now - m.Started) / m.Seconds;
                 MeshRenderer r = moteRenderers[i];
-                if (p < 0f) continue;
                 if (p >= 1f)
                 {
                     m.Live = false;
@@ -554,12 +563,14 @@ namespace WordCraft.View
 
                 float p = (now - b.Started) / BoltSeconds;
                 if (p < 0f) continue;
-                bool over = p >= 1f;
-                if (over)
+                if (!b.Reported)
                 {
-                    b.Live = false;
-                    bolts[i] = b;
+                    b.Reported = true;
+                    if (b.Target >= 0) landed.Add(b.Target);
                 }
+                bool over = p >= 1f;
+                if (over) b.Live = false;
+                bolts[i] = b;
                 // Whole for the first half, then thinning to nothing; the bends
                 // flip once at the middle, the one flicker a jump gets.
                 float width = BoltWidth * (p < 0.5f ? 1f : 1f - (p - 0.5f) / 0.5f);
@@ -606,7 +617,8 @@ namespace WordCraft.View
 
         /// <summary>
         /// Seconds until the last tracer flying at <paramref name="target"/>
-        /// lands, counting one that has not left yet; zero when none is. What a
+        /// lands, counting one that has not left yet, or the last chain bolt
+        /// jumping to it appears; zero when none is. What a
         /// death waits for, and what tells a hit flash to wait for the landing.
         /// </summary>
         public float Incoming(int target)
@@ -617,6 +629,12 @@ namespace WordCraft.View
                 Tracer t = tracers[i];
                 if (!t.Live || t.Target != target) continue;
                 latest = Mathf.Max(latest, t.Started + t.Flight - now);
+            }
+            for (int i = 0; i < bolts.Count; i++)
+            {
+                Bolt b = bolts[i];
+                if (!b.Live || b.Reported || b.Target != target) continue;
+                latest = Mathf.Max(latest, b.Started - now);
             }
             return latest;
         }
