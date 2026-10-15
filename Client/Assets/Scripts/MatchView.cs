@@ -77,6 +77,43 @@ namespace WordCraft.View
         /// </summary>
         private const float ShadowRatio = 0.55f;
 
+        // 상태 이상과 오라 (issue #206).
+
+        /// <summary>A slowed body's vine ring: its radius as a share of the footprint, and its band, in cells.</summary>
+        private const float SlowRingRatio = 0.42f;
+        private const float SlowRingBand = 0.16f;
+
+        /// <summary>The vine ring's alpha with the whole slow ahead of it and with none left: it fades as the slow runs out.</summary>
+        private const float SlowAlphaFull = 0.95f;
+        private const float SlowAlphaLast = 0.3f;
+
+        /// <summary>An aura's radius ring, as a share of its radius: thinner than a weapon's, it is a reach, not a threat.</summary>
+        private const float AuraBandRatio = 0.05f;
+
+        /// <summary>The burn aura's standing ring: a fixed band in cells, and faint, since it is on whether or not anyone asked.</summary>
+        private const float BurnAuraBand = 0.12f;
+
+        /// <summary>A burn's tick, as a share of a weapon's burst.</summary>
+        private const float BurnTickScale = 0.55f;
+
+        /// <summary>
+        /// Slack on a chain's hop radius, in cells, when the view guesses which
+        /// bodies a chain reached: the guess measures between whole-tick
+        /// positions as the simulation does, but a frame can span two ticks.
+        /// </summary>
+        private const float ChainSlack = 0.5f;
+
+        /// <summary>Seconds between one hop of a chain and the next, so the jump is seen to travel.</summary>
+        private const float ChainHopDelay = 0.07f;
+
+        private static readonly Color SlowColour = BodyPalette.TreeSpirits.LeafLight;
+        private static readonly Color HealRing = WithAlpha(UiStyle.Good, 0.8f);
+
+        /// <summary>A heal's motes: the Good green lifted toward white, so they read on grass, which is green too.</summary>
+        private static readonly Color HealMote = BodyPalette.Lighter(UiStyle.Good, 0.45f);
+        private static readonly Color AuraRing = WithAlpha(UiStyle.Accent, 0.7f);
+        private static readonly Color BurnAuraRing = WithAlpha(BodyPalette.Hellfire.Ember, 0.35f);
+
         /// <summary>Where the imported WordOnline sprites live, relative to a Resources folder. The HUD's icons.</summary>
         public const string SpriteFolder = "Art/Sprites/";
 
@@ -191,6 +228,42 @@ namespace WordCraft.View
         public static bool Rubble(Faction faction, EntityKind kind) =>
             kind == EntityKind.Unit && faction == Faction.RockGolems;
 
+        /// <summary>
+        /// What the view saw of each entity's hp and status clocks last frame,
+        /// parallel to bodies (issue #206). The simulation keeps no event for a
+        /// heal or a burn's tick, only the numbers; this is the view comparing
+        /// them, as it compares cooldowns for a shot.
+        /// </summary>
+        private struct Vital
+        {
+            public int Hp, MaxHp, Site, Burn, Slow;
+            /// <summary>The slow clock when it was last set: what the vine ring's fade is measured against.</summary>
+            public int SlowPeak;
+        }
+
+        private readonly List<Vital> vitals = new List<Vital>();
+
+        /// <summary>Whether each entity's hp fell this frame, parallel to bodies: what a chain's guess looks for.</summary>
+        private readonly List<bool> dropped = new List<bool>();
+
+        /// <summary>The vine ring under a slowed body, parallel to bodies.</summary>
+        private readonly List<Decal> slowRings = new List<Decal>();
+
+        /// <summary>An aura source's radius ring, parallel to bodies: the burn aura's always, the others' while selected.</summary>
+        private readonly List<Decal> auraRings = new List<Decal>();
+
+        /// <summary>The aura row of the ability table each entity's roster entry holds, or -1; parallel to bodies.</summary>
+        private readonly List<int> auraRows = new List<int>();
+
+        // The chain shooters that fired this frame and when their tracer lands,
+        // in pairs. Refilled every frame, so nothing allocates once they are big
+        // enough.
+        private readonly List<int> chained = new List<int>();
+        private readonly List<float> chainLands = new List<float>();
+
+        /// <summary>The ids one chain's guess has already used, first target first.</summary>
+        private readonly int[] hops = new int[FactionData.MaxChainHops + 1];
+
         /// <summary>Unscaled time each entity's flash goes dark. -1 means never armed; parallel to bodies.</summary>
         private readonly List<float> hitUntil = new List<float>();
 
@@ -296,6 +369,8 @@ namespace WordCraft.View
                 Drop(rangeRings);
                 Drop(hitFlashes);
                 Drop(shadows);
+                Drop(slowRings);
+                Drop(auraRings);
                 Drop(barBacks);
                 Drop(barFills);
                 Drop(queueFills);
@@ -305,6 +380,9 @@ namespace WordCraft.View
                 alive.Clear();      // same
                 queues.Clear();     // same
                 flashOnLanding.Clear(); // same
+                vitals.Clear();     // same
+                dropped.Clear();    // same
+                auraRows.Clear();   // same
                 DropBodies(retiring);
                 effects.Clear();
                 primed = false;
@@ -339,6 +417,8 @@ namespace WordCraft.View
             struck.Clear();
             for (int h = 0; h < hits.Count; h++) struck.Add(hits[h]);
             fallen.Clear();
+            chained.Clear();
+            chainLands.Clear();
 
             Fog.Update(runner);
 
@@ -358,6 +438,10 @@ namespace WordCraft.View
                     BodyRig old = bodies[i];
                     bodies[i] = Create(world, e);
                     skins[i] = SkinOf(e);
+                    auraRows[i] = AuraRow(world, e);
+                    // A new body is a new reading: what the old one had is no
+                    // heal and no burn of this one.
+                    vitals[i] = VitalOf(e, default);
                     if (e.Alive && old.Shown && !old.Remembered)
                     {
                         old.Swell();
@@ -396,6 +480,17 @@ namespace WordCraft.View
                 bool delivered = e.QueueCount < queues[i];
                 queues[i] = e.QueueCount;
 
+                // And hp and the two status clocks (issue #206). Hp that rose
+                // with MaxHp where it was is a heal: a growth raises both, and
+                // a site's hp climbs with its construction, so neither counts.
+                // A burn clock that ran past a multiple of World.BurnPeriod is
+                // a burn's tick, StatusSystem's own test.
+                Vital last = vitals[i];
+                vitals[i] = VitalOf(e, last);
+                dropped[i] = e.Hp < last.Hp;
+                bool healed = e.Alive && e.Hp > last.Hp && e.MaxHp == last.MaxHp && last.Site == 0 && e.BuildTicksLeft == 0;
+                bool scorched = e.Alive && e.BurnTicksLeft < last.Burn && BurnPeriods(last.Burn) > BurnPeriods(e.BurnTicksLeft);
+
                 // A dead body that is not playing its death has nothing left to
                 // move; switched off, so a long match's dead cost no Update.
                 if (!e.Alive && !falls && !body.Dying && body.enabled) body.enabled = false;
@@ -405,6 +500,8 @@ namespace WordCraft.View
                     rangeRings[i].Visible = false;
                     hitFlashes[i].Visible = false;
                     shadows[i].Visible = false;
+                    slowRings[i].Visible = false;
+                    auraRings[i].Visible = false;
                     Overlays(i);
                     continue;
                 }
@@ -416,6 +513,8 @@ namespace WordCraft.View
                     rangeRings[i].Visible = false;
                     hitFlashes[i].Visible = false;
                     shadows[i].Visible = false;
+                    slowRings[i].Visible = false;
+                    auraRings[i].Visible = false;
                     Overlays(i);
                     continue;
                 }
@@ -431,6 +530,8 @@ namespace WordCraft.View
                     rings[i].Visible = false;
                     rangeRings[i].Visible = false;
                     hitFlashes[i].Visible = false;
+                    slowRings[i].Visible = false;
+                    auraRings[i].Visible = false;
                     Overlays(i);
                     continue;
                 }
@@ -443,6 +544,7 @@ namespace WordCraft.View
                 body.Place(Field.At(p));
                 Pose(world, i, e, body, fired);
                 if (delivered) Deliver(world, e, p, body);
+                Statuses(world, i, e, p, body, picked, healed, scorched);
 
                 shadows[i].Visible = body.Flying;
                 if (body.Flying) shadows[i].Set(p, body.Footprint * ShadowRatio, 0f);
@@ -485,6 +587,7 @@ namespace WordCraft.View
             }
 
             for (int i = markers; i < rallyMarkers.Count; i++) rallyMarkers[i].enabled = false;
+            Chains(world);
             Consequences(world);
             Remnants(world);
             Hover(world);
@@ -504,7 +607,12 @@ namespace WordCraft.View
             if (fired)
             {
                 body.Attack();
-                Shoot(world, e, body);
+                float lands = Shoot(world, e, body);
+                if (lands >= 0f && ChainRow(world, e) >= 0)
+                {
+                    chained.Add(i);
+                    chainLands.Add(lands);
+                }
             }
 
             if (e.TargetId >= 0 && e.TargetId < world.EntityCount && e.Target.Equals(e.Position))
@@ -585,10 +693,13 @@ namespace WordCraft.View
         /// moved. That is the view's delay only; nothing here touches the world.
         /// The delayed flinch replaces the one HitDetection gave the target
         /// earlier in this frame, because Hit keeps only the latest start.
+        ///
+        /// Returns the seconds until the shot lands where the player can see it,
+        /// or -1 when nothing lands in sight: what a chain's jump waits for.
         /// </summary>
-        private void Shoot(World world, Entity e, BodyRig body)
+        private float Shoot(World world, Entity e, BodyRig body)
         {
-            if (e.Owner < 0 || e.TargetId < 0 || e.TargetId >= bodies.Count) return;
+            if (e.Owner < 0 || e.TargetId < 0 || e.TargetId >= bodies.Count) return -1f;
 
             Faction faction = world.FactionOf(e.Owner);
             Color colour = BodyPalette.Shot(faction);
@@ -613,28 +724,225 @@ namespace WordCraft.View
             {
                 // A tower kicks the instant it fires and has no wind-up to wait for.
                 float leave = e.Kind == EntityKind.Building ? 0f : BodyRig.StrikeDelay;
-                if (seen)
-                {
-                    effects.Shot(body.Muzzle, hit, colour, leave, e.TargetId);
-                }
-                else
-                {
-                    // Into the fog: the tracer leaves, and is gone before it
-                    // could say where the hidden body stands. No burst, no
-                    // ring, no landing.
-                    Vector3 muzzle = body.Muzzle;
-                    effects.Shot(muzzle, Vector3.Lerp(muzzle, hit, HiddenShotReach), colour, leave, -1, bursts: false);
-                }
+                if (seen) return effects.Shot(body.Muzzle, hit, colour, leave, e.TargetId);
+
+                // Into the fog: the tracer leaves, and is gone before it
+                // could say where the hidden body stands. No burst, no
+                // ring, no landing.
+                Vector3 muzzle = body.Muzzle;
+                effects.Shot(muzzle, Vector3.Lerp(muzzle, hit, HiddenShotReach), colour, leave, -1, bursts: false);
+                return -1f;
             }
-            else
-            {
-                victim.Hit();
-                if (seen) effects.Impact(hit, colour, BodyRig.LungeLandDelay);
-            }
+
+            victim.Hit();
+            if (!seen) return -1f;
+            effects.Impact(hit, colour, BodyRig.LungeLandDelay);
+            return BodyRig.LungeLandDelay;
         }
 
         /// <summary>How far toward a target hidden in the fog its tracer is drawn before it vanishes.</summary>
         private const float HiddenShotReach = 0.6f;
+
+        /// <summary>
+        /// 상태 이상과 오라 on one seen body (issue #206): the vine ring and the
+        /// smaller hull of a slow, the embers of a burn and a small burst on each
+        /// burn tick, the motes and ring of a heal, and the radius ring of an
+        /// aura source. All read off the entity and the ability table this
+        /// frame; nothing is kept but the last frame's numbers.
+        /// </summary>
+        private void Statuses(World world, int i, Entity e, Vector2 p, BodyRig body, bool picked, bool healed, bool scorched)
+        {
+            body.Burning(e.BurnTicksLeft > 0);
+            body.Slowed(e.SlowTicksLeft > 0);
+
+            Decal vine = slowRings[i];
+            vine.Visible = e.SlowTicksLeft > 0;
+            if (vine.Visible)
+            {
+                vine.Set(p, body.Footprint * SlowRingRatio, SlowRingBand);
+                float left = Mathf.Clamp01(e.SlowTicksLeft / (float)Mathf.Max(vitals[i].SlowPeak, 1));
+                vine.Colour = WithAlpha(SlowColour, Mathf.Lerp(SlowAlphaLast, SlowAlphaFull, left));
+            }
+
+            if (scorched)
+            {
+                // On the side facing the camera, so the burst is not swallowed by the body.
+                Vector3 at = body.Chest - Cam.transform.forward * (body.Footprint * 0.35f);
+                effects.Impact(at, BodyPalette.Hellfire.Ember, 0f, BurnTickScale);
+            }
+
+            if (healed)
+            {
+                Vector3 side = Cam.transform.right * (body.Footprint * 0.25f);
+                Vector3 chest = body.Chest;
+                effects.Mend(chest + side, HealMote);
+                effects.Mend(chest - side + Vector3.up * 0.2f, HealMote);
+                effects.Dust(Field.At(p), body.Footprint * 0.5f, BodyPalette.Lighter(UiStyle.Good, 0.25f));
+            }
+
+            Decal reach = auraRings[i];
+            int aura = auraRows[i];
+            bool ringed = false;
+            if (aura >= 0)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(aura);
+                bool burns = row.Kind == AbilityKind.BurnAura;
+                if ((picked || burns) && AuraWorks(world, e, row))
+                {
+                    float radius = world.AbilityRadius(e.Owner, row);
+                    reach.Set(p, radius, burns ? BurnAuraBand : radius * AuraBandRatio);
+                    reach.Colour = burns ? BurnAuraRing : row.Kind == AbilityKind.HealAura ? HealRing : AuraRing;
+                    ringed = true;
+                }
+            }
+            reach.Visible = ringed;
+        }
+
+        /// <summary>
+        /// 연쇄 번개 and 연쇄 방전, guessed. The simulation keeps no record of where
+        /// a chain jumped (Sim/Combat.cs ChainFrom keeps its hit list on the stack
+        /// for one shot), so the view approximates it from what it can read: for
+        /// each body that fired this frame holding an unlocked ChainOnHit row, it
+        /// starts from the target the shot was at and, up to the row's hop count,
+        /// jumps to the nearest hostile body whose hp fell this frame within the
+        /// row's radius (plus <see cref="ChainSlack"/>) of the last one, as
+        /// ChainFrom picks nearest. A body hurt by something else on the same
+        /// frame can be taken for a hop, and a hop to a body that was already at
+        /// zero is missed; both are rare and both only move a bolt.
+        ///
+        /// The bolts wait for the shot's tracer to land, and each hop a moment
+        /// more. Only between two seen bodies.
+        /// </summary>
+        private void Chains(World world)
+        {
+            for (int c = 0; c < chained.Count; c++)
+            {
+                Entity a = world.GetEntity(chained[c]);
+                int ability = ChainRow(world, a);
+                if (ability < 0 || a.TargetId < 0) continue;
+                AbilityRow row = FactionData.AbilityRowAt(ability);
+                float reach = world.AbilityRadius(a.Owner, row) + ChainSlack;
+                int limit = Mathf.Min(row.Limit, FactionData.MaxChainHops);
+
+                int count = 0;
+                hops[count++] = a.TargetId;
+                int from = a.TargetId;
+                for (int hop = 0; hop < limit; hop++)
+                {
+                    Vector2 at = MatchRunner.ToView(world.GetEntity(from).Position);
+                    int best = -1;
+                    float bestDistance = reach * reach;
+                    for (int j = 0; j < world.EntityCount; j++)
+                    {
+                        if (!dropped[j] || Used(j, count)) continue;
+                        Entity v = world.GetEntity(j);
+                        if (v.Owner < 0 || v.Owner == a.Owner || v.Kind == EntityKind.ResourceNode) continue;
+                        float d = (MatchRunner.ToView(v.Position) - at).sqrMagnitude;
+                        if (d > bestDistance) continue;
+                        best = j;
+                        bestDistance = d;
+                    }
+                    if (best < 0) break;
+
+                    if (Seen(world, from) && Seen(world, best))
+                    {
+                        effects.Jump(Chest(from), Chest(best), BodyPalette.TreeSpirits.Bolt,
+                                     chainLands[c] + hop * ChainHopDelay);
+                    }
+                    hops[count++] = best;
+                    from = best;
+                }
+            }
+        }
+
+        private bool Used(int id, int count)
+        {
+            for (int h = 0; h < count; h++)
+            {
+                if (hops[h] == id) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Whether the fog shows this body, asked of a copy marked alive, as Shoot asks: a chain that killed it still jumped where the player could see.</summary>
+        private static bool Seen(World world, int id)
+        {
+            Entity e = world.GetEntity(id);
+            e.Alive = true;
+            return Fog.Show(id, e) == Fog.Seen;
+        }
+
+        /// <summary>The middle of a body where it is drawn: where a shot aims, and where a chain jumps from and to.</summary>
+        private Vector3 Chest(int id)
+        {
+            BodyRig body = bodies[id];
+            return Field.At(runner.DrawPosition(id), body.ChestLift + (body.Flying ? BodyRig.HoverHeight : 0f));
+        }
+
+        /// <summary>The ChainOnHit row this body can use right now, or -1: its roster entry holds one and its owner has unlocked it.</summary>
+        private static int ChainRow(World world, Entity e)
+        {
+            if (e.Owner < 0) return -1;
+            int row = FactionData.AbilityOf(world.FactionOf(e.Owner), e.Role, e.Slot, AbilityKind.ChainOnHit);
+            return row >= 0 && world.AbilityUnlocked(e.Owner, FactionData.AbilityRowAt(row)) ? row : -1;
+        }
+
+        /// <summary>
+        /// The aura row of the ability table this body's roster entry holds, or
+        /// -1. Every entry holds at most one: the type load refuses an entry with
+        /// two rows of one kind, and no entry today holds two aura kinds. The
+        /// first in table order wins if one ever does.
+        /// </summary>
+        private static int AuraRow(World world, Entity e)
+        {
+            if (e.Owner < 0) return -1;
+            Faction faction = world.FactionOf(e.Owner);
+            for (int r = 0; r < FactionData.AbilityRowCount; r++)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(r);
+                if (row.Faction == faction && row.Role == e.Role && row.Slot == e.Slot && Aura(row.Kind)) return r;
+            }
+            return -1;
+        }
+
+        /// <summary>The kinds that reach other bodies across a radius: what gets a radius ring. Sim/Auras.cs IsAura's list.</summary>
+        private static bool Aura(AbilityKind kind) =>
+            kind == AbilityKind.ArmorAura || kind == AbilityKind.MarkAura || kind == AbilityKind.RateAura ||
+            kind == AbilityKind.HealAura || kind == AbilityKind.BurnAura || kind == AbilityKind.GrowthAura ||
+            kind == AbilityKind.SlowAura;
+
+        /// <summary>
+        /// Whether this source's aura is on right now, the rule Sim/Auras.cs
+        /// CollectAuraSources applies: unlocked for its owner, not growing, and
+        /// a building finished.
+        /// </summary>
+        private static bool AuraWorks(World world, Entity e, AbilityRow row) =>
+            e.Alive && e.Owner >= 0 && world.AbilityUnlocked(e.Owner, row) && !World.IsGrowing(e) &&
+            (e.Kind != EntityKind.Building || e.BuildTicksLeft == 0);
+
+        /// <summary>This frame's reading of an entity, carrying the slow's peak over from <paramref name="was"/> unless the slow was set again.</summary>
+        private static Vital VitalOf(Entity e, Vital was) => new Vital
+        {
+            Hp = e.Hp,
+            MaxHp = e.MaxHp,
+            Site = e.BuildTicksLeft,
+            Burn = e.BurnTicksLeft,
+            Slow = e.SlowTicksLeft,
+            SlowPeak = e.SlowTicksLeft > was.Slow ? e.SlowTicksLeft : e.SlowTicksLeft == 0 ? 0 : was.SlowPeak,
+        };
+
+        /// <summary>
+        /// How many multiples of World.BurnPeriod lie below this burn clock,
+        /// zero included: a clock that ran from a to b passed a burn tick when
+        /// this differs between them. -1 for a clock at zero.
+        /// </summary>
+        private static int BurnPeriods(int ticks) => ticks <= 0 ? -1 : (ticks - 1) / World.BurnPeriod;
+
+        private static Color WithAlpha(Color colour, float alpha)
+        {
+            colour.a = alpha;
+            return colour;
+        }
 
         /// <summary>
         /// What follows from this frame's shots, after all of them are fired:
@@ -1076,6 +1384,11 @@ namespace WordCraft.View
                 alive.Add(e.Alive);
                 flashOnLanding.Add(false);
                 hitUntil.Add(-1f);
+                vitals.Add(VitalOf(e, default));
+                dropped.Add(false);
+                auraRows.Add(AuraRow(world, e));
+                slowRings.Add(Decal.Make(transform, "Slow", ring: true, SlowColour));
+                auraRings.Add(Decal.Make(transform, "Aura", ring: true, AuraRing));
                 rings.Add(Decal.Make(transform, "Ring", ring: true, UiStyle.Ring));
                 rangeRings.Add(Decal.Make(transform, "Range", ring: true, UiStyle.RangeRing));
                 hitFlashes.Add(Decal.Make(transform, "HitFlash", ring: true, UiStyle.Danger));
