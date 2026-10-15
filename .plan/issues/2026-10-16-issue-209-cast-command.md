@@ -2,7 +2,7 @@
 
 - Date: 2026-10-16
 - GitHub Issue: #209
-- Status: In progress (draft PR, #213 위에 쌓음)
+- Status: Implemented (draft PR, #213 위에 쌓음)
 
 ## Goal
 
@@ -46,3 +46,10 @@
 ## 하네스
 
 `Replay/CastChecks.cs`(등록 한 줄). 스크립트 로그에 `Cast` 한 번, `Host -- selfcheck` 손실 링크 매치에 `Cast` 한 번.
+
+## 결과
+
+- 골든 해시 `0x41023E12FEFCD38D` → `0x89303B33ED3EA28D`. CoreCLR과 Unity Mono가 같은 값을 냈다.
+- 스크립트 로그의 `Cast`는 행 규칙에서 거부된다. 600틱 안에 액티브를 가진 세계수 정령·지옥불 몸을 해금까지 갖출 수 없다(바람 토템, 연구, 바람 정령이 빨라야 670틱 뒤). 수락되는 `Cast`는 `Host -- selfcheck` 손실 링크 매치(물 지대 깔기)가 덮는다.
+- 문서에 없는 판단: 같은 셀 안의 걸음은 늘 받는다(굳기 잔해 위 몸이 나가도록), 모래폭풍 감속은 휘감기·덩굴 지대와 합쳐 한 번, 전개 `Cast`는 명령과 길을 지운다, 해일 부름은 `AbilityPoint`를 쓰지 않는다.
+- `CastChecks` 검사 22개를 하나씩 일부러 깨서 모두 실패하는 것을 확인했다.
