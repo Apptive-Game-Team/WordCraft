@@ -439,8 +439,13 @@ namespace WordCraft.View
         /// <summary>A rut's width. Thin enough to be a worn line and not a second ground colour.</summary>
         private const float RutWidth = 0.075f;
 
-        /// <summary>How far a rut floats over the ground, so it never fights the facet under it for depth.</summary>
-        private const float RutLift = 0.012f;
+        /// <summary>
+        /// How far a rut floats over the ground, so it never fights the facet under
+        /// it for depth. Each rut is broken at the cell's fold so its pieces lie on
+        /// the facets; this covers the rut's half width, which can still straddle
+        /// the fold by a few hundredths.
+        /// </summary>
+        private const float RutLift = 0.02f;
 
         /// <summary>
         /// Worn earth lines running up a slope cell, so a ramp reads as the way up
@@ -486,17 +491,51 @@ namespace WordCraft.View
                 if (!Clip(cx, cy, across * offset, along, out float t0, out float t1)) continue;
                 if (t1 - t0 < 0.2f) continue;
 
-                Vector2 start = across * offset + along * t0;
+                Vector2 origin = across * offset;
                 Vector2 side = across * (RutWidth * 0.5f);
-                const int steps = 3;
-                for (int i = 0; i < steps; i++)
+
+                // Break the rut where its middle crosses the cell's fold, so each
+                // piece lies on one facet and none cuts under the crease.
+                float fold = Fold(cx, cy, p0.y, p1.y, p2.y, p3.y, origin, along, t0, t1);
+                for (int piece = 0; piece < 2; piece++)
                 {
-                    Vector2 a = start + along * ((t1 - t0) * i / steps);
-                    Vector2 b = start + along * ((t1 - t0) * (i + 1) / steps);
-                    f.Quad(OnCell(cx, cy, a - side), OnCell(cx, cy, b - side),
-                           OnCell(cx, cy, b + side), OnCell(cx, cy, a + side), colour, Vector3.up);
+                    float from = piece == 0 ? t0 : fold;
+                    float to = piece == 0 ? fold : t1;
+                    if (to - from < 1e-3f) continue;
+                    int steps = Mathf.Max(1, Mathf.CeilToInt((to - from) / 0.34f));
+                    for (int i = 0; i < steps; i++)
+                    {
+                        Vector2 a = origin + along * Mathf.Lerp(from, to, i / (float)steps);
+                        Vector2 b = origin + along * Mathf.Lerp(from, to, (i + 1) / (float)steps);
+                        f.Quad(OnCell(cx, cy, a - side), OnCell(cx, cy, b - side),
+                               OnCell(cx, cy, b + side), OnCell(cx, cy, a + side), colour, Vector3.up);
+                    }
                 }
             }
+        }
+
+        /// <summary>
+        /// Where along origin + t·along, between t0 and t1, the line crosses the
+        /// diagonal the cell is folded on (<see cref="Field.MainDiagonal"/>), or
+        /// t1 when it does not cross it.
+        /// </summary>
+        private static float Fold(int cx, int cy, float h0, float h1, float h2, float h3,
+                                  Vector2 origin, Vector2 along, float t0, float t1)
+        {
+            // The fold as a line g(p) = 0 in the cell's own 0..1 frame:
+            // fx - fz on the 0-3 diagonal, fx + fz - 1 on the 1-2 diagonal.
+            bool main = Field.MainDiagonal(h0, h1, h2, h3);
+            float Side(float t)
+            {
+                Vector2 p = origin + along * t;
+                float fx = p.x - cx;
+                float fz = p.y - cy;
+                return main ? fx - fz : fx + fz - 1f;
+            }
+            float g0 = Side(t0);
+            float g1 = Side(t1);
+            if (g0 * g1 >= 0f) return t1;
+            return Mathf.Lerp(t0, t1, g0 / (g0 - g1));
         }
 
         /// <summary>
@@ -540,15 +579,14 @@ namespace WordCraft.View
         /// </summary>
         private static bool Clip(int cx, int cy, Vector2 origin, Vector2 direction, out float t0, out float t1)
         {
-            const float inset = 0f;
             t0 = float.MinValue;
             t1 = float.MaxValue;
             for (int axis = 0; axis < 2; axis++)
             {
                 float o = axis == 0 ? origin.x : origin.y;
                 float d = axis == 0 ? direction.x : direction.y;
-                float min = (axis == 0 ? cx : cy) + inset;
-                float max = (axis == 0 ? cx : cy) + 1 - inset;
+                float min = axis == 0 ? cx : cy;
+                float max = min + 1f;
                 if (Mathf.Abs(d) < 1e-5f)
                 {
                     if (o < min || o > max) return false;
