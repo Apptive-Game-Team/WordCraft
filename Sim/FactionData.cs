@@ -958,6 +958,27 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, Role.Defense, 1, Structure(80)),
             // 틈새 포대
             (Faction.Driftworlds, Role.Defense, 2, Turret(260, 12, 7, 20, true, true)),
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            // Fighter: 이동, 체력, 방어, 속도, 피해, 사거리, 주기, 대공, 대지. Support: 이동, 체력, 방어, 속도.
+            // 석궁 사수
+            (Faction.Humans, Role.Ranged, 1, Fighter(Walks, 70, 0, Fix.Ratio(1, 4), 6, 5, 18, false, true)),
+            // 마도사
+            (Faction.Humans, Role.Ranged, 2, Fighter(Walks, 80, 0, Fix.Ratio(1, 4), 8, 6, 22, false, true)),
+            // 석조 보행 포대
+            (Faction.Humans, Role.Ranged, 3, Fighter(Walks, 260, 3, Fix.Ratio(1, 6), 11, 6, 22, false, true)),
+            // 견인 대포
+            (Faction.Humans, Role.Ranged, 4, Fighter(Walks, 180, 1, Fix.Ratio(1, 6), 15, 7, 40, false, true)),
+            // 마도 폭격선
+            (Faction.Humans, Role.Ranged, 5, Fighter(Flies, 200, 1, Fix.Ratio(1, 4), 14, 4, 40, false, true)),
+            // 마도 기수
+            (Faction.Humans, Role.Ranged, 6, Fighter(Walks, 110, 1, Fix.Ratio(3, 8), 6, 4, 14, false, true)),
+            // 공방 기술자
+            (Faction.Humans, Role.Signature, 2, Support(Walks, 80, 0, Fix.Ratio(1, 4))),
+            // 마나 증폭기
+            (Faction.Humans, Role.Signature, 3, Support(Walks, 150, 1, Fix.Ratio(1, 5))),
+            // 마도 공창
+            (Faction.Humans, Role.Production, 2, Structure(450)),
         };
 
         /// <summary>
@@ -1162,6 +1183,16 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, Role.Signature, 1, Produce(200, 140)), // 떠도는 섬
             (Faction.Driftworlds, Role.Signature, 2, Produce(120, 100)), // 층위 관측자
             (Faction.Driftworlds, Role.Signature, 3, Produce(40, 30)), // 멸종한 자연 슬라임
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            (Faction.Humans, Role.Ranged, 1, Produce(40, 35)), // 석궁 사수
+            (Faction.Humans, Role.Ranged, 2, Produce(90, 70)), // 마도사
+            (Faction.Humans, Role.Ranged, 3, Produce(120, 90)), // 석조 보행 포대
+            (Faction.Humans, Role.Ranged, 4, Produce(150, 120)), // 견인 대포
+            (Faction.Humans, Role.Ranged, 5, Produce(160, 120)), // 마도 폭격선
+            (Faction.Humans, Role.Ranged, 6, Produce(70, 55)), // 마도 기수
+            (Faction.Humans, Role.Signature, 2, Produce(60, 50)), // 공방 기술자
+            (Faction.Humans, Role.Signature, 3, Produce(110, 90)), // 마나 증폭기
         };
 
         private static ProductionCost Produce(int resources, int ticks) =>
@@ -1337,6 +1368,12 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, ResearchRow("덩쿨편 사거리", 75, 120, 2, UpgradeEffect.VineShardRange, (Role.Tech, 1), NoBuilding)),
             (Faction.Driftworlds, ResearchRow("틈새 포대 사거리", 100, 160, 2, UpgradeEffect.RiftBatteryRange, (Role.Tech, 1), NoBuilding)),
             (Faction.Driftworlds, ResearchRow("도주 가속", 100, 160, 2, UpgradeEffect.FleeSpeed, (Role.Tech, 1), NoBuilding)),
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            (Faction.Humans, ResearchRow("석궁 사거리", 75, 120, 3, UpgradeEffect.CrossbowRange, (Role.Tech, 0), NoBuilding)),
+            (Faction.Humans, ResearchRow("마도 기수 속도", 100, 160, 3, UpgradeEffect.ArcaneRiderSpeed, (Role.Tech, 0), NoBuilding)),
+            (Faction.Humans, ResearchRow("결속 강화", 125, 200, 2, UpgradeEffect.BindingRange, (Role.Tech, 2), NoBuilding)),
+            (Faction.Humans, ResearchRow("결속 갑주", 125, 200, 2, UpgradeEffect.BindingArmor, (Role.Tech, 2), NoBuilding)),
         };
 
         /// <summary>
@@ -1461,6 +1498,16 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, Role.Defense, 2, UpgradeEffect.RiftBatteryRange, UpgradedStat.Range, Fix.FromInt(8)),
             // 경계 운반자 도주 중 속도 3/8 → 1/2.
             (Faction.Driftworlds, Role.Signature, 0, UpgradeEffect.FleeSpeed, UpgradedStat.FleeSpeed, Fix.Ratio(1, 2)),
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            // 석궁 사수 사거리 5 → 6.
+            (Faction.Humans, Role.Ranged, 1, UpgradeEffect.CrossbowRange, UpgradedStat.Range, Fix.FromInt(6)),
+            // 마도 기수 속도 3/8 → 1/2.
+            (Faction.Humans, Role.Ranged, 6, UpgradeEffect.ArcaneRiderSpeed, UpgradedStat.Speed, Fix.Ratio(1, 2)),
+            // Towerback 사거리 6 → 8.
+            (Faction.Humans, Role.Signature, 0, UpgradeEffect.BindingRange, UpgradedStat.Range, Fix.FromInt(8)),
+            // Towerback 방어 +2.
+            (Faction.Humans, Role.Signature, 0, UpgradeEffect.BindingArmor, UpgradedStat.Armor, Fix.FromInt(2)),
         };
 
         /// <summary>How many rows the entry upgrade table holds, for the harness.</summary>
@@ -1733,10 +1780,10 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, Role.Melee, "멸종한 바위 슬라임", "ExtinctRockSlime"),
             (Faction.Driftworlds, Role.Ranged, "멸종한 번개 슬라임", "ExtinctLightningSlime"),
             // 인간 마법 문명. Three defensive structures, the only faction with more
-            // than one. 마도 정찰기 is the last slot in the roster still short of art.
+            // than one. 마도 정찰기's art is ArcaneScout in .art/TECH-TREE-ART.md.
             (Faction.Humans, Role.Defense, "전기 타워", "ElectricTower"),
             (Faction.Humans, Role.Defense, "돌 포탑", "RockTurret"),
-            (Faction.Humans, Role.Signature, "마도 정찰기", ""),
+            (Faction.Humans, Role.Signature, "마도 정찰기", "ArcaneScout"),
 
             // 세계수 정령, docs/TECH-TREE.md 묶음 3.
             (Faction.TreeSpirits, Role.Production, "씨앗 요람", "SeedCradle"),
@@ -1800,6 +1847,20 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, Role.Signature, "층위 관측자", "StrataObserver"),
             (Faction.Driftworlds, Role.Signature, "멸종한 자연 슬라임", "ExtinctNatureSlime"),
             (Faction.Driftworlds, Role.Tech, "외피 연마장", "ShellPolishingYard"),
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            (Faction.Humans, Role.Production, "석조 병영", "StoneBarracks"),
+            (Faction.Humans, Role.Production, "마도 공창", "ArcaneFoundry"),
+            (Faction.Humans, Role.Ranged, "석궁 사수", "CrossbowMarksman"),
+            (Faction.Humans, Role.Ranged, "마도사", "ArcaneMage"),
+            (Faction.Humans, Role.Ranged, "석조 보행 포대", "StoneWalkerBattery"),
+            (Faction.Humans, Role.Ranged, "견인 대포", "TowedCannon"),
+            (Faction.Humans, Role.Ranged, "마도 폭격선", "ArcaneBomber"),
+            (Faction.Humans, Role.Ranged, "마도 기수", "ArcaneRider"),
+            (Faction.Humans, Role.Signature, "공방 기술자", "WorkshopEngineer"),
+            (Faction.Humans, Role.Signature, "마나 증폭기", "ManaAmplifier"),
+            (Faction.Humans, Role.Tech, "마도 학당", "ArcaneAcademy"),
+            (Faction.Humans, Role.Tech, "결속대", "BindingPlatform"),
         };
 
         /// <summary>
@@ -1928,6 +1989,13 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, Role.Defense, 1, 2), // 위상 닻
             (Faction.Driftworlds, Role.Defense, 2, 2), // 틈새 포대
             (Faction.Driftworlds, Role.Ranged, 3, 3), // 멸종한 바람 슬라임
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            (Faction.Humans, Role.Production, 2, 2), // 마도 공창
+            (Faction.Humans, Role.Ranged, 1, 1), // 석궁 사수
+            (Faction.Humans, Role.Ranged, 4, 3), // 견인 대포
+            (Faction.Humans, Role.Ranged, 5, 3), // 마도 폭격선
+            (Faction.Humans, Role.Signature, 2, 2), // 공방 기술자
         };
 
         /// <summary>
@@ -1948,10 +2016,6 @@ namespace WordCraft.Sim
         /// Keyed by Faction, Role and Slot, and walked in declaration order, never
         /// through a keyed collection, for the reason <see cref="growthTargets"/> is.
         /// </summary>
-        // ponytail: one row below stands in for a building 묶음 3 adds. 마도
-        // 정찰기 comes out of the 마도 공창 (Production 2), which is not in the
-        // roster yet, so it names Tech 0 until then; drop it when the building
-        // arrives.
         private static readonly (Faction Faction, Role Role, int Slot, (Role Role, int Slot) Needs)[] prerequisites =
         {
             // Every faction's 기술 건물 needs its production building: T2, and
@@ -1985,11 +2049,6 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, Role.Melee, 2, (Role.Tech, 0)),
             (Faction.Driftworlds, Role.Ranged, 0, (Role.Tech, 0)),
             (Faction.Driftworlds, Role.Ranged, 1, (Role.Tech, 0)),
-
-            // 인간 마도 정찰기: 공방 for now. It comes out of the 마법 탑 until the
-            // 마도 공창 it is listed under exists, and this keeps it behind tier 3's
-            // building in the meantime.
-            (Faction.Humans, Role.Signature, 1, (Role.Tech, 0)),
 
             // 세계수 정령, docs/TECH-TREE.md 묶음 3.
             (Faction.TreeSpirits, Role.Production, 1, (Role.Tech, 0)), // 씨앗 요람
@@ -2031,6 +2090,12 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, Role.Ranged, 3, (Role.Tech, 0)), // 멸종한 바람 슬라임
             (Faction.Driftworlds, Role.Signature, 3, (Role.Tech, 0)), // 멸종한 자연 슬라임
             (Faction.Driftworlds, Role.Tech, 1, (Role.Production, 0)), // 외피 연마장
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            (Faction.Humans, Role.Production, 2, (Role.Production, 0)), // 마도 공창
+            (Faction.Humans, Role.Ranged, 2, (Role.Tech, 1)), // 마도사
+            (Faction.Humans, Role.Tech, 1, (Role.Production, 0)), // 마도 학당
+            (Faction.Humans, Role.Tech, 2, (Role.Production, 0)), // 결속대
         };
 
         /// <summary>
@@ -2047,17 +2112,13 @@ namespace WordCraft.Sim
         /// for every entry not listed here, so writing it out sixty times would be
         /// sixty rows that are meant to stay identical.
         ///
-        /// The four rows below are the four existing entries the document puts on
-        /// the base as well as on the production building. Second is NoBuilding
-        /// where an entry has only one.
+        /// The first four rows are the existing entries the document puts on the
+        /// base as well as on the production building. The 묶음 3 rows after them
+        /// name the second production buildings that batch added: 지옥불 군단장,
+        /// 구름 용 and 고대 골렘 also come out of the 큰 균열, the 구름 둥지 and
+        /// the 각성의 원, 공수 특공대 out of the 석조 병영, and 마도 정찰기 out of
+        /// the 마도 공창 alone. Second is NoBuilding where an entry has only one.
         /// </summary>
-        // ponytail: docs/TECH-TREE.md also lists 지옥불 군단장, 구름 용 and 고대 골렘
-        // under a second production building (큰 균열, 구름 둥지, 각성의 원), 공수
-        // 특공대 under 석조 병영, and 마도 정찰기 under 마도 공창 alone. None of those
-        // buildings is in the roster yet, so each of these entries stays on its
-        // production building 0 until 묶음 3 adds the building; add the producer
-        // with it. 마도 정찰기 on the 마법 탑 is a placeholder of that kind: move it
-        // to the 마도 공창 alone then, and its prerequisite with it.
         private static readonly (Faction Faction, Role Role, int Slot, (Role Role, int Slot) First, (Role Role, int Slot) Second)[] producerOverrides =
         {
             // 세계수 정령 풀씨 정령: 생명의 나무 and 풀씨 둥지.
@@ -2091,6 +2152,16 @@ namespace WordCraft.Sim
             // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
             (Faction.Driftworlds, Role.Signature, 1, (Role.Production, 1), NoBuilding), // 떠도는 섬
             (Faction.Driftworlds, Role.Signature, 2, (Role.Production, 1), NoBuilding), // 층위 관측자
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            (Faction.Humans, Role.Ranged, 0, (Role.Production, 0), (Role.Production, 1)), // 공수 특공대
+            (Faction.Humans, Role.Signature, 1, (Role.Production, 2), NoBuilding), // 마도 정찰기
+            (Faction.Humans, Role.Ranged, 1, (Role.Base, 0), (Role.Production, 1)), // 석궁 사수
+            (Faction.Humans, Role.Ranged, 3, (Role.Production, 2), NoBuilding), // 석조 보행 포대
+            (Faction.Humans, Role.Ranged, 4, (Role.Production, 2), NoBuilding), // 견인 대포
+            (Faction.Humans, Role.Ranged, 5, (Role.Production, 2), NoBuilding), // 마도 폭격선
+            (Faction.Humans, Role.Ranged, 6, (Role.Production, 1), NoBuilding), // 마도 기수
+            (Faction.Humans, Role.Signature, 3, (Role.Production, 2), NoBuilding), // 마나 증폭기
         };
 
         /// <summary>
@@ -2216,6 +2287,12 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, Role.Defense, 1, 40, 30), // 위상 닻
             (Faction.Driftworlds, Role.Defense, 2, 120, 70), // 틈새 포대
             (Faction.Driftworlds, Role.Tech, 1, 150, 100), // 외피 연마장
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            (Faction.Humans, Role.Production, 1, 120, 80), // 석조 병영
+            (Faction.Humans, Role.Production, 2, 180, 120), // 마도 공창
+            (Faction.Humans, Role.Tech, 1, 150, 100), // 마도 학당
+            (Faction.Humans, Role.Tech, 2, 100, 80), // 결속대
         };
 
         /// <summary>
