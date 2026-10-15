@@ -33,8 +33,10 @@ namespace WordCraft.View
 
         /// <summary>
         /// Which entry of <see cref="Produce"/>'s roster list this cell orders.
-        /// Only Produce reads it; Build still names entry 0 only (#111 opens that).
-        /// Zero on every cell that is not a Produce button, which packs to the same
+        /// Produce reads it; Build still names entry 0 only (#111 opens that).
+        /// Research reads it as something else entirely: the row of the faction's
+        /// upgrade table, which is the whole Arg of that command and has no role
+        /// beside it. Zero on every cell that is neither, which packs to the same
         /// argument a role-only command always sent.
         /// </summary>
         public int Slot;
@@ -52,6 +54,24 @@ namespace WordCraft.View
         /// so it says so in a field of its own.
         /// </summary>
         public bool Aim;
+
+        /// <summary>
+        /// True on the cell that turns the production list to its next page. Like
+        /// <see cref="Aim"/> it puts nothing on the wire and has no command to
+        /// borrow, so it says so in a field of its own; the page it turns is view
+        /// state (Orders.Page).
+        /// </summary>
+        public bool More;
+
+        /// <summary>
+        /// True on a Research cell whose row the peer has bought to its last
+        /// level. The cell stays on the card, drawn on a Void face like any other
+        /// command that exists and cannot be used (Hud.Card), and Orders.Run
+        /// refuses it so the key means what the button does. Only that: a row
+        /// short of tier or resources is left live and the simulation refuses it,
+        /// the rule the build menu follows.
+        /// </summary>
+        public bool Maxed;
     }
 
     /// <summary>
@@ -64,49 +84,57 @@ namespace WordCraft.View
     /// </summary>
     public static class CommandCard
     {
-        public const int Cols = 3;
+        public const int Cols = 4;
         public const int Rows = 3;
         public const int Cells = Cols * Rows;
 
         /// <summary>
         /// Cell to key. Not QWE/ASD/ZXC, which would be the obvious block, because
         /// the camera keeps WASD (roadmap 3-5) and a pan key that also fires a
-        /// command is worse than an unfamiliar block. RTY/FGH/VBN is the nearest
-        /// contiguous 3x3 that leaves WASD alone.
+        /// command is worse than an unfamiliar block. RTYU/FGHJ/VBNM is the
+        /// nearest contiguous 3x4 that leaves WASD alone.
+        ///
+        /// The fourth column was added on the right, so the three columns that
+        /// were here before keep their keys: R T Y / F G H / V B N still sit
+        /// where the hand learned them, and U J M are new. Every card below is
+        /// written in rows of four to match.
         /// </summary>
         public static readonly KeyCode[] Keys =
         {
-            KeyCode.R, KeyCode.T, KeyCode.Y,
-            KeyCode.F, KeyCode.G, KeyCode.H,
-            KeyCode.V, KeyCode.B, KeyCode.N,
+            KeyCode.R, KeyCode.T, KeyCode.Y, KeyCode.U,
+            KeyCode.F, KeyCode.G, KeyCode.H, KeyCode.J,
+            KeyCode.V, KeyCode.B, KeyCode.N, KeyCode.M,
         };
 
         // The column convention every card below obeys, so a cell means the same
-        // thing whatever is selected:
-        //   cell 0  point at the ground   Move, or where produced units walk to
-        //   cell 1  cancel                Stop, or take one off the queue
-        //   cell 2  stand and shoot       Hold; on a building, the rest of row 0
-        //   cell 3  name a victim
-        //   cell 4  walk and shoot
-        //   cells 6-8 (bottom row)        what this thing makes
+        // thing whatever is selected. Columns 0-2 are the old 3x3 and keep their
+        // meaning; column 3 (cells 3, 7, 11) is new and stays empty on every card
+        // except where a card says otherwise.
+        //   cell 0  (R)  point at the ground   Move, or where produced units walk to
+        //   cell 1  (T)  cancel                Stop, or take one off the queue
+        //   cell 2  (Y)  stand and shoot       Hold; on a building, the rest of row 0
+        //   cell 4  (F)  name a victim
+        //   cell 5  (G)  walk and shoot
+        //   cells 8-10 (V B N), and on a building all of rows 1 and 2
+        //                what this thing makes
 
         /// <summary>Declared before the tables: static initializers run in textual order.</summary>
         private static readonly CardSlot Empty = new CardSlot();
 
         private static readonly CardSlot[] fighter =
         {
-            Cmd("Move", CommandType.Move), Cmd("Stop", CommandType.Stop), Cmd("Hold", CommandType.HoldPosition),
-            Cmd("Attack", CommandType.Attack), Cmd("A-Move", CommandType.AttackMove), Empty,
-            Empty, Empty, Empty,
+            Cmd("Move", CommandType.Move), Cmd("Stop", CommandType.Stop), Cmd("Hold", CommandType.HoldPosition), Empty,
+            Cmd("Attack", CommandType.Attack), Cmd("A-Move", CommandType.AttackMove), Empty, Empty,
+            Empty, Empty, Empty, Empty,
         };
 
         /// <summary>
-        /// 징발 goes in cell 3 because cell 3 is where naming a body lives — it is
+        /// 징발 goes in cell 4 because cell 4 is where naming a body lives — it is
         /// Attack on the fighter card, and a Capture is the same gesture at the
         /// same key on the one card that has no Attack. The worker card had six
         /// free cells before this and has five after, so nothing was displaced and
-        /// nothing had to be paged; the 3x3 is only tight on the produce card,
-        /// where 차원 유랑종 already fills all six of ProductionMenu.Cells.
+        /// nothing had to be paged; the card is only tight on the produce card,
+        /// where 차원 유랑종 already fills six of ProductionMenu.Cells.
         ///
         /// The cell is here for every faction and drawn dead for five of them
         /// (Hud.Card asks CaptureOrder.Available). One layout per selection kind is
@@ -116,9 +144,9 @@ namespace WordCraft.View
         /// </summary>
         private static readonly CardSlot[] worker =
         {
-            Cmd("Move", CommandType.Move), Cmd("Stop", CommandType.Stop), Empty,
-            Cmd("Capture", CommandType.Capture), Empty, Empty,
-            Cmd("Build", CommandType.Build), Empty, Empty,
+            Cmd("Move", CommandType.Move), Cmd("Stop", CommandType.Stop), Empty, Empty,
+            Cmd("Capture", CommandType.Capture), Empty, Empty, Empty,
+            Cmd("Build", CommandType.Build), Empty, Empty, Empty,
         };
 
         /// <summary>
@@ -149,33 +177,63 @@ namespace WordCraft.View
 
         /// <summary>
         /// The card for this selection kind, laid out for this faction. Always
-        /// Cells long. The HUD and the keys both call this, so what a key fires is
-        /// always what the button under it says.
+        /// Cells long. The HUD and the keys both get it through Orders.Card, so
+        /// what a key fires is always what the button under it says. Page is the
+        /// production or research list's page and means nothing to any other card.
+        /// Lead and leadSlot are the role and entry of the entity the card speaks
+        /// for, which only the building card reads: a Tech building lists research
+        /// where every other building lists production, and each building entry
+        /// lists only what it makes or researches.
+        ///
+        /// The world and the peer are here because a research cell says the level
+        /// the peer has reached and the price of the next one, and those are
+        /// simulation state. Both are unread by every other card, so a caller with
+        /// no match yet may pass null for the world with CardKind.None.
         /// </summary>
-        public static CardSlot[] Of(CardKind kind, Faction faction)
+        public static CardSlot[] Of(CardKind kind, World world, int peer, Role lead, int leadSlot, int page)
         {
             switch (kind)
             {
                 case CardKind.Fighter: return fighter;
                 case CardKind.Worker: return worker;
-                case CardKind.Building: return Building(faction);
+                case CardKind.Building: return Building(world, peer, lead, leadSlot, page);
                 case CardKind.BuildMenu: return buildMenu;
                 default: return none;
             }
         }
 
         /// <summary>
-        /// What the selected building can produce, named and priced, one cell
-        /// per roster entry rather than per role. Which entries that is comes
-        /// from <see cref="ProductionMenu"/>, kept Unity-free so its one
-        /// interesting question — does every building's list still fit the card
-        /// — runs headless in Replay/ProductionMenuChecks.cs. This method only
-        /// turns that list into CardSlots and keys.
+        /// What this building lists in rows 1 and 2, one cell per entry: for most
+        /// buildings what this building entry produces, named and priced, and for
+        /// a Tech building (<paramref name="lead"/>) the upgrades researched in
+        /// that entry, with the level reached and the price of the next. Per
+        /// building entry since docs/TECH-TREE.md 묶음 3 (#180) spread each
+        /// faction's ten or more producible entries and up to eight research rows
+        /// over two or three buildings. Which entries those are comes
+        /// from <see cref="ProductionMenu"/> and <see cref="ResearchMenu"/>, kept
+        /// Unity-free so their one interesting question — does every faction's
+        /// list still fit the card — runs headless in Replay. This method only
+        /// turns a list into CardSlots and keys.
         ///
-        /// Rows 1 and 2 (<see cref="ProductionMenu.Cells"/>, six) are the whole
-        /// budget, not the bottom row alone. Since docs/TECH-TREE.md 묶음 3 three
-        /// buildings make more than six entries; see the ponytail on the overload
-        /// below.
+        /// Row 0 is the building's own settings and is the same on every building.
+        /// Cancel is in it for a Tech building too, and there it takes back the
+        /// research that is running: the simulation reads CancelProduction on a
+        /// building with an empty queue and a running research as that
+        /// (Sim/Research.cs TryCancelResearch), so the cell needs no label or
+        /// command of its own and keeps its key.
+        ///
+        /// Rows 1 and 2 (<see cref="ProductionMenu.Cells"/>, eight) are the whole
+        /// budget, column 3 included: the card was widened to four columns so a
+        /// roster past six entries still has a button each. Since 묶음 3 three
+        /// buildings list more than eight entries or come close: 물 슬라임 거품
+        /// 생성기 10, 차원 유랑종 통로 9, 돌 골렘 각성 바위 7.
+        ///
+        /// A list longer than eight is paged, and the research list pages the same
+        /// way the production list does. Each page lists seven entries and cell 11
+        /// (key M) becomes More, which turns to the next page and, on the last,
+        /// back to the first. The page is the caller's: it is view state
+        /// (Orders.Page), and turning it sends nothing to the simulation. Every
+        /// entry is on exactly one page, in list order.
         ///
         /// 도착 goes in cell 2 because it is the last free cell of row 0, and row 0
         /// is where a building's own settings live rather than what it makes. It
@@ -189,24 +247,7 @@ namespace WordCraft.View
         /// appeared only for 차원 유랑종 would move nothing today and everything the
         /// day row 0 grows a fourth entry.
         /// </summary>
-        public static CardSlot[] Building(Faction faction)
-        {
-            (Role Role, int Slot) selected = SelectedBuilding();
-            return Building(faction, selected.Role, selected.Slot);
-        }
-
-        /// <summary>
-        /// The produce card for one building entry: only what that building
-        /// makes (<see cref="ProductionMenu.For(Faction, Role, int)"/>).
-        /// docs/TECH-TREE.md 묶음 3 spreads each faction's ten or more producible
-        /// entries over two or three buildings, and a faction-wide list ran past
-        /// the six cells before it reached 지옥불 군단장 or 경계 운반자.
-        /// </summary>
-        // ponytail: 물 슬라임's 거품 생성기 makes ten entries, 차원 유랑종's 통로
-        // nine and 돌 골렘's 각성 바위 seven, so those three still run past the
-        // six cells and the tail has no button. The paged card of #169 is what
-        // shows the rest; see Replay/ProductionMenuChecks.cs.
-        public static CardSlot[] Building(Faction faction, Role buildingRole, int buildingSlot)
+        public static CardSlot[] Building(World world, int peer, Role lead, int leadSlot, int page)
         {
             for (int i = 0; i < Cells; i++) building[i] = Empty;
             building[0] = Cmd("Rally", CommandType.SetRallyPoint);
@@ -214,48 +255,82 @@ namespace WordCraft.View
             // Type stays None: nothing leaves the client when this cell is pressed.
             building[2] = new CardSlot { Label = "Arrive", Aim = true };
 
-            List<ProductionMenu.Entry> entries = ProductionMenu.For(faction, buildingRole, buildingSlot);
-            int cell = Cols; // rows 1-2: one cell per producible roster entry
-            for (int i = 0; i < entries.Count && cell < Cells; i++)
+            Faction faction = world.FactionOf(peer);
+            int count, pages;
+            int first, length;
+            List<ProductionMenu.Entry> produced = null;
+            List<ResearchMenu.Entry> researched = null;
+            if (lead == Role.Tech)
             {
-                ProductionMenu.Entry entry = entries[i];
+                researched = ResearchMenu.For(faction, lead, leadSlot);
+                count = researched.Count;
+            }
+            else
+            {
+                produced = ProductionMenu.For(faction, lead, leadSlot);
+                count = produced.Count;
+            }
+            pages = ProductionMenu.Pages(count);
+            page = ProductionMenu.PageRange(count, page, out first, out length);
+
+            int cell = Cols; // rows 1-2: one cell per entry
+            for (int i = first; i < first + length; i++)
+            {
+                if (researched != null)
+                {
+                    ResearchMenu.Entry entry = researched[i];
+                    building[cell++] = new CardSlot
+                    {
+                        Label = ResearchMenu.Label(world, peer, entry),
+                        Type = CommandType.Research,
+                        Slot = entry.Index,
+                        Maxed = ResearchMenu.Maxed(world, peer, entry),
+                    };
+                    continue;
+                }
+
+                ProductionMenu.Entry made = produced[i];
                 building[cell++] = new CardSlot
                 {
-                    Label = entry.Name + "\n" + entry.Resources,
+                    Label = made.Name + "\n" + made.Resources,
                     Type = CommandType.Produce,
-                    Produce = entry.Role,
-                    Slot = entry.Slot,
+                    Produce = made.Role,
+                    Slot = made.Slot,
                 };
+            }
+
+            // The last cell of the card, whatever the page holds, so the key that
+            // turns the page never moves. The label says where the list stands.
+            if (pages > 1)
+            {
+                building[Cells - 1] = new CardSlot { Label = "More\n" + (page + 1) + "/" + pages, More = true };
             }
             return building;
         }
 
         /// <summary>
-        /// The building the produce card speaks for: the selection's
-        /// representative, read the way Orders and the HUD read it, or Role.None
-        /// when there is no match running. Read here rather than passed in so the
-        /// two callers of <see cref="Of"/> cannot show a card for different
-        /// buildings.
+        /// How many pages the list this building shows takes: the faction's
+        /// research for a Tech building, its production for any other. Orders reads
+        /// it to know where More wraps; the card itself only needs the count to
+        /// decide whether it has a More at all.
         /// </summary>
-        private static (Role Role, int Slot) SelectedBuilding()
-        {
-            MatchRunner runner = MatchRunner.Instance;
-            Selection selection = Selection.Instance;
-            if (runner == null || runner.World == null || selection == null) return (Role.None, 0);
-            int id = Representative(runner.World, selection.Selected, runner.LocalPeer);
-            if (id < 0) return (Role.None, 0);
-            Entity e = runner.World.GetEntity(id);
-            return e.Kind == EntityKind.Building ? (e.Role, e.Slot) : (Role.None, 0);
-        }
+        public static int PageCount(Faction faction, Role lead, int leadSlot) =>
+            ProductionMenu.Pages(lead == Role.Tech
+                ? ResearchMenu.For(faction, lead, leadSlot).Count
+                : ProductionMenu.For(faction, lead, leadSlot).Count);
 
-        /// <summary>What the card is for, drawn over it so the player is never guessing.</summary>
-        public static string Title(CardKind kind)
+        /// <summary>
+        /// What the card is for, drawn over it so the player is never guessing. A
+        /// Tech building reads "research" because that is the one thing its rows 1
+        /// and 2 are for; every other building produces.
+        /// </summary>
+        public static string Title(CardKind kind, Role lead)
         {
             switch (kind)
             {
                 case CardKind.Fighter: return "orders";
                 case CardKind.Worker: return "worker";
-                case CardKind.Building: return "produce";
+                case CardKind.Building: return lead == Role.Tech ? "research" : "produce";
                 case CardKind.BuildMenu: return "build  ·  esc to cancel";
                 default: return "";
             }
@@ -265,6 +340,10 @@ namespace WordCraft.View
         /// Lays the submenu out for this faction and returns it. Bottom two rows,
         /// keeping the top row where the worker card's own commands live, so the
         /// submenu reads as an extension of the card rather than a new screen.
+        ///
+        /// Four to a row, so the five building roles take cells 4-8: four on row 1
+        /// and the fifth at the start of row 2. Eight cells are free and five are
+        /// used, which is why this menu has no page.
         /// </summary>
         // ponytail: every building the faction lists is shown live, whether or not
         // the peer can afford it or has the tier for it; the simulation refuses the
