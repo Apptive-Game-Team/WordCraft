@@ -2,7 +2,7 @@
 // debris. One material for all of them (Models.Opaque), so the field batches and
 // a palette is vertex colour rather than a material per faction.
 //
-// _Tint and _Desaturate are declared as properties so a MaterialPropertyBlock
+// _Tint, _Desaturate and _Wash are declared as properties so a MaterialPropertyBlock
 // can override them per renderer. A value the shader reads but Properties does
 // not name is a global, and a property block cannot reach it.
 Shader "WordCraft/Body"
@@ -11,6 +11,7 @@ Shader "WordCraft/Body"
     {
         _Tint ("Tint", Color) = (1, 1, 1, 1)
         _Desaturate ("Desaturate", Range(0, 1)) = 0
+        _Wash ("Wash", Color) = (1, 1, 1, 0)
     }
 
     SubShader
@@ -25,6 +26,7 @@ Shader "WordCraft/Body"
 
         fixed4 _Tint;
         fixed _Desaturate;
+        fixed4 _Wash;
 
         struct Input
         {
@@ -35,6 +37,11 @@ Shader "WordCraft/Body"
         void surf (Input IN, inout SurfaceOutput o)
         {
             fixed3 albedo = IN.color.rgb * _Tint.rgb;
+
+            // A wash moves the whole body toward one colour by _Wash.a: the
+            // light of a hit, the rubble a falling golem becomes. A multiply
+            // cannot do either, because it can only darken toward a hue.
+            albedo = lerp(albedo, _Wash.rgb, _Wash.a);
 
             // The fog's "last known state" reads as a memory by losing colour
             // before it loses value. A multiply alone can only darken, and a
