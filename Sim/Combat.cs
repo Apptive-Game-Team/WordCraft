@@ -149,7 +149,7 @@ namespace WordCraft.Sim
         // grid bucket broad phase on the same day.
         private int VolleyBonus(Entity archer)
         {
-            if (archer.Kind != EntityKind.Unit || archer.Role != Role.Ranged) return 0;
+            if (!IsArcher(archer)) return 0;
             if (archer.Owner < 0 || archer.Owner >= MaxPeers) return 0;
             if (factions[archer.Owner] != Faction.WaterSlimes) return 0;
 
@@ -165,12 +165,30 @@ namespace WordCraft.Sim
                 Entity o = entities[i];
                 if (!o.Alive || o.Id == archer.Id) continue;
                 if (o.Owner != archer.Owner) continue;
-                if (o.Kind != EntityKind.Unit || o.Role != Role.Ranged) continue;
+                if (!IsArcher(o)) continue;
                 if (!WithinRange(o.Position, archer.Position, radius)) continue;
                 if (++allies == cap) break;
             }
             return allies;
         }
+
+        /// <summary>The slot 물결 궁수 occupies, and which entry of it.</summary>
+        public const Role ArcherRole = Role.Ranged;
+
+        /// <summary>
+        /// Entry 0. 해일 인도자 is entry 1 of the same slot and is no archer, and
+        /// docs/TECH-TREE.md puts 침 뱉는 슬라임 and 물대포 슬라임 behind it too:
+        /// 일제 사격 is 물결 궁수's, counted among and given to 물결 궁수 alone.
+        /// </summary>
+        public const int ArcherSlot = 0;
+
+        /// <summary>
+        /// A 물결 궁수: the one entry 일제 사격 counts and the one it is given to.
+        /// Faction is the caller's to check, and VolleyBonus checks it once for
+        /// the archer, which is the same owner every counted ally has.
+        /// </summary>
+        private static bool IsArcher(Entity e) =>
+            e.Kind == EntityKind.Unit && e.Role == ArcherRole && e.Slot == ArcherSlot;
 
         /// <summary>밀집 반경: how far an allied archer counts from, for this peer.</summary>
         public Fix VolleyRadiusFor(int peer) =>
