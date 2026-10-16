@@ -375,7 +375,7 @@ namespace WordCraft.Replay
 
         /// <summary>
         /// 해일 부름 at once: on the cast tick an enemy ground body at the point
-        /// and one 1.5 cells off lose 20, an enemy flier and building nothing,
+        /// and one 1.5 cells off and an enemy building lose 20, an enemy flier nothing,
         /// and the 3×3 cells round the point carry a field to the cast tick
         /// plus 300; the cells two off carry none.
         /// </summary>
@@ -390,7 +390,7 @@ namespace WordCraft.Replay
                 w.SpawnBuilding(1, Role.Supply, 0, p + V(1, 1, 1), complete: true),
                 w.SpawnWorker(1, p + V(5, 0, 2)),
             };
-            int[] want = { 20, 20, 0, 0, 0 };
+            int[] want = { 20, 20, 0, 20, 0 };
             int[] hp = Hps(w, ids);
             int tick = w.Tick;
             Step(w, Cast(w, caster, p, "해일 부름"));
