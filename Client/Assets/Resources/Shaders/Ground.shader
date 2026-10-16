@@ -1,11 +1,12 @@
 // Ground.shader — every opaque surface of the terrain: grass, cliff faces, the
-// rock ridge, lake beds, the plinth and the small props baked into the same
-// chunks (FieldMesh.cs, FieldProps.cs).
+// rock ridge, lake beds, the cliff round the map's edge and the small props
+// baked into the same chunks (FieldMesh.cs, FieldProps.cs).
 //
 // All colour comes from the vertex colour, so one material serves the whole
 // field and a repaint is a change to FieldPalette.cs, never to a material. The
 // light is Paper.cginc's: three value bands, hemisphere ambient, a paper rim,
-// and the fog of war and distance haze applied last.
+// the fog of war and distance haze, and last the fade that sinks everything
+// outside the map into the backdrop.
 Shader "WordCraft/Ground"
 {
     SubShader
@@ -34,6 +35,7 @@ Shader "WordCraft/Ground"
         void wcfinal(Input IN, SurfaceOutput o, inout fixed4 color)
         {
             WcAtmosphere(IN.worldPos, color);
+            WcEdgeFade(IN.worldPos, color);
         }
         ENDCG
     }
