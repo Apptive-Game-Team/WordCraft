@@ -39,8 +39,13 @@ synced deliberately to the standalone repository.
 - With a local server running, `dotnet run --project Host -- onlinecheck
   http://127.0.0.1:5080`: pairs two game peers, sends player commands, compares
   their hashes after 400 ticks, and checks disconnect propagation.
+- `dotnet run --project Host -- selfcheck` also checks all 36 faction pairs:
+  mismatched lobby previews are rebuilt after negotiation, their starting
+  worlds match the agreed scenario, and their next 40 ticks remain identical.
 - A built player accepts `-server http://127.0.0.1:5080 -faction Humans` for
   quick matching; add `-room CODE` to join a private room.
 
 Guest tokens remain in memory, never in URLs or saved preferences. The endpoint
 URL is saved for convenience. Queue polling is every two seconds.
+Cancellation must finish before another search. If the server cannot acknowledge
+it, the next search first retries that cancellation to avoid matching an old seat.
