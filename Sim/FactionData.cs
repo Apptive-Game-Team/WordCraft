@@ -2398,8 +2398,9 @@ namespace WordCraft.Sim
             Cast("물 지대 깔기", Faction.WaterSlimes, Role.Worker, 0, AbilityKind.LayField, AbilityTargets.None,
                 UpgradeEffect.None, CastTarget.NoTarget, cooldown: 400, radius: 1, ticks: 300,
                 boost: UpgradeEffect.WaterFieldDuration, boostedTicks: 450),
-            // 해일 부름: 해일 인도자, 7칸 안 지점, 반경 2칸 적 지상 몸에 고정 20, 지점 3×3 셀 물 지대 300틱. 쿨다운 500. 묶음 8.
-            Cast("해일 부름", Faction.WaterSlimes, Role.Ranged, 1, AbilityKind.TideStrike, AbilityTargets.GroundBodies,
+            // 해일 부름: 해일 인도자, 7칸 안 지점, 반경 2칸 적 지상(몸과 건물)에 고정 20, 지점 3×3 셀 물 지대 300틱. 쿨다운 500. 묶음 8.
+            // "적 지상" read as 낙뢰's is: everything on the ground, buildings included.
+            Cast("해일 부름", Faction.WaterSlimes, Role.Ranged, 1, AbilityKind.TideStrike, AbilityTargets.Ground,
                 UpgradeEffect.TideCall, CastTarget.Point, range: 7, cooldown: 500, radius: 2, amount: 20, ticks: 300),
             // 간헐천: 간헐천 술사, 8칸 안 물 지대 셀, 20틱 뒤 반경 2칸 적 지상·공중 몸에 고정 25. 쿨다운 300. 묶음 8.
             Cast("간헐천", Faction.WaterSlimes, Role.Signature, 2, AbilityKind.DelayedStrike, AbilityTargets.Bodies,

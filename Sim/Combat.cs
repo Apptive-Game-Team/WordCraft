@@ -320,11 +320,17 @@ namespace WordCraft.Sim
         private Fix UnstormedRangeFor(Entity e)
         {
             if (e.Owner < 0 || e.Owner >= MaxPeers) return Fix.Zero;
-            // 전개, docs/TECH-TREE.md 묶음 8: deployed, the 견인 대포 reaches the row's amount.
+            // 전개, docs/TECH-TREE.md 묶음 8: deployed, the 견인 대포 reaches the row's
+            // amount, and a cell more once 대포 사거리 lands. The research is named
+            // after the 대포 building, but a deployed cannon is the same gun.
             if (e.Deployed)
             {
                 int deploy = DeployRow(e);
-                if (deploy >= 0) return Fix.FromInt(AbilityAmount(e.Owner, FactionData.AbilityRowAt(deploy)));
+                if (deploy >= 0)
+                {
+                    Fix deployed = Fix.FromInt(AbilityAmount(e.Owner, FactionData.AbilityRowAt(deploy)));
+                    return UpgradeLevelOf(e.Owner, UpgradeEffect.CannonRange) > 0 ? deployed + RangeUpgrade : deployed;
+                }
             }
             Fix range = EntryUpgraded(e, UpgradedStat.Range, out Fix researched) ? researched : RosterStats(e).Range;
             Faction faction = factions[e.Owner];

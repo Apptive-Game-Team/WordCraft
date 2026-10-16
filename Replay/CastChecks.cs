@@ -33,6 +33,7 @@ namespace WordCraft.Replay
             GeyserBurstsTwentyTicksLaterOnAFieldCell();
             LightningDropFallsThirtyTicksLaterOnTheGround();
             ADeadCasterDropsNothing();
+            ACasterDyingOnTheLandingTickStillDropsIt();
             TideCallHitsAndLaysAFieldAtOnce();
             LayingAFieldLeavesTheGatherAlone();
             HardenKillsTheCasterAndWallsFiveCells();
@@ -203,6 +204,18 @@ namespace WordCraft.Replay
                         return w;
                     }, w => CastBy(w, 0, Caster(w), far, index));
                     refusals++;
+                    // A point 65536 cells east: its squared distance overflows
+                    // a long and wraps to 0, and its cell clamps onto the edge
+                    // column, which is prepared here so the cell rows have what
+                    // they ask for there.
+                    FixVec2 wrapped = Origin + new FixVec2(Fix.FromInt(65536), Fix.Zero);
+                    Refused(aim.Name + " 65536 cells off the map", () =>
+                    {
+                        World w = ready();
+                        Prepare(w, row, wrapped);
+                        return w;
+                    }, w => CastBy(w, 0, Caster(w), wrapped, index));
+                    refusals++;
                     if (row.CastTarget != CastTarget.Point)
                     {
                         FixVec2 bare = Beside(Origin, 3) + new FixVec2(Fix.Zero, Fix.FromInt(2));
@@ -230,8 +243,9 @@ namespace WordCraft.Replay
                 }
             }
             // 10 actives × 7 always, 5 unlocks, 6 running clocks, 7 point
-            // ranges and 2 cells, 2 for 깨우기's cost and population.
-            Check(refusals == 70 + 5 + 6 + 7 + 2 + 2, "checked " + refusals + " refusals, not 92");
+            // ranges, 7 points off the map and 2 cells, 2 for 깨우기's cost
+            // and population.
+            Check(refusals == 70 + 5 + 6 + 7 + 7 + 2 + 2, "checked " + refusals + " refusals, not 99");
         }
 
         /// <summary>A point exactly CastRange cells off is in range: the test is WithinRange, a square compare.</summary>
@@ -361,8 +375,32 @@ namespace WordCraft.Replay
         }
 
         /// <summary>
+        /// The other side of the rule above, and the order of the systems: a
+        /// 운석 술사 that dies on the tick its meteor lands (here in
+        /// StatusSystem, after AbilitySystem queued the burst and before
+        /// BurstSystem landed it) still drops it. The burst is already in the
+        /// queue when the caster falls, and the queue does not ask who is alive.
+        /// </summary>
+        private static void ACasterDyingOnTheLandingTickStillDropsIt()
+        {
+            World w = Ready(Faction.Hellfire, "유성우", true, out int caster);
+            FixVec2 p = Point(Faction.Hellfire, "유성우");
+            int target = w.SpawnWorker(1, p);
+            int hp = w.GetEntity(target).Hp;
+            Step(w, Cast(w, caster, p, "유성우"));
+            Run(w, 39);
+            Check(w.GetEntity(target).Hp == hp, "the meteor fell before its 40th tick");
+            w.SetHpForScenario(caster, 1);
+            w.SetStatusForScenario(caster, 0, 1);
+            Step(w);
+            Check(!w.GetEntity(caster).Alive, "the burn did not kill the 운석 술사 on the landing tick, so the check proves nothing");
+            Check(hp - w.GetEntity(target).Hp == 30,
+                "a meteor whose caster died on its landing tick took " + (hp - w.GetEntity(target).Hp) + ", not 30");
+        }
+
+        /// <summary>
         /// 해일 부름 at once: on the cast tick an enemy ground body at the point
-        /// and one 1.5 cells off lose 20, an enemy flier and building nothing,
+        /// and one 1.5 cells off and an enemy building lose 20, an enemy flier nothing,
         /// and the 3×3 cells round the point carry a field to the cast tick
         /// plus 300; the cells two off carry none.
         /// </summary>
@@ -377,7 +415,7 @@ namespace WordCraft.Replay
                 w.SpawnBuilding(1, Role.Supply, 0, p + V(1, 1, 1), complete: true),
                 w.SpawnWorker(1, p + V(5, 0, 2)),
             };
-            int[] want = { 20, 20, 0, 0, 0 };
+            int[] want = { 20, 20, 0, 20, 0 };
             int[] hp = Hps(w, ids);
             int tick = w.Tick;
             Step(w, Cast(w, caster, p, "해일 부름"));
@@ -504,7 +542,8 @@ namespace WordCraft.Replay
         /// <summary>
         /// 모래폭풍 6.5 cells off: for the hundred ticks the clock runs, an
         /// enemy 덩쿨 정령 (reach 5) inside reaches 3, an enemy melee body still
-        /// reaches 2, an enemy walker inside walks at half speed, and an enemy
+        /// reaches 2 and walks at full speed, an enemy worker inside walks at
+        /// half speed, and an enemy
         /// 3.5 cells from the point and an ally inside are untouched. On the
         /// hundred-and-first the reach is 5 again. 모래폭풍 반경 takes the
         /// zone to 4 cells. A caster that dies ends the zone.
@@ -541,20 +580,31 @@ namespace WordCraft.Replay
             World s = Ready(Faction.RockGolems, "모래폭풍", true, out int shaper);
             int walker = s.SpawnWorker(1, p);
             int free = s.SpawnWorker(1, p + V(0, 10, 0));
+            // And an enemy melee body (reach 2), which 사거리 2 근접은 영향 없음
+            // leaves alone: it walks inside the zone as fast as outside it.
+            int blade = s.SpawnUnit(1, Role.Melee, 0, p + V(3, 0, 2));
+            int bladeFree = s.SpawnUnit(1, Role.Melee, 0, p + V(3, 20, 2));
             Step(s, Cast(s, shaper, p, "모래폭풍"));
             var move = new List<Command>
             {
                 new Command(s.Tick, 1, seq++, CommandType.Move, walker, p + V(0, 2, 0)),
                 new Command(s.Tick, 1, seq++, CommandType.Move, free, p + V(0, 12, 0)),
+                new Command(s.Tick, 1, seq++, CommandType.Move, blade, p + V(3, 4, 2)),
+                new Command(s.Tick, 1, seq++, CommandType.Move, bladeFree, p + V(3, 24, 2)),
             };
             Step(s, move);
             Step(s);
             FixVec2 a0 = s.GetEntity(walker).Position, b0 = s.GetEntity(free).Position;
+            FixVec2 c0 = s.GetEntity(blade).Position, d0 = s.GetEntity(bladeFree).Position;
             Step(s);
             long slow = (s.GetEntity(walker).Position - a0).Magnitude.Raw;
             long fast = (s.GetEntity(free).Position - b0).Magnitude.Raw;
             Check(fast > 0 && Math.Abs(slow * 2 - fast) <= 16,
                 "a walker in 모래폭풍 stepped " + slow + " raw against " + fast + " outside, not half");
+            long bladeIn = (s.GetEntity(blade).Position - c0).Magnitude.Raw;
+            long bladeOut = (s.GetEntity(bladeFree).Position - d0).Magnitude.Raw;
+            Check(bladeOut > 0 && Math.Abs(bladeIn - bladeOut) <= 16,
+                "a melee body in 모래폭풍 stepped " + bladeIn + " raw against " + bladeOut + " outside, not the same");
 
             // The research reaches 4 cells.
             World r = Ready(Faction.RockGolems, "모래폭풍", true, out int boosted);
@@ -628,7 +678,7 @@ namespace WordCraft.Replay
         /// Deployed, the 견인 대포 reaches 10 rather than 7 and its hit (15,
         /// armor 0) splashes 7 on a ground body 0.8 cells from the one it hits;
         /// an enemy flier there takes nothing. Undeployed it never touches a
-        /// body 9 cells off.
+        /// body 9 cells off. Under 대포 사거리 the deployed reach is 11.
         /// </summary>
         private static void ADeployedCannonReachesTenAndSplashes()
         {
@@ -650,6 +700,15 @@ namespace WordCraft.Replay
             Check(hpT - w.GetEntity(target).Hp == 15, "the deployed shot took " + (hpT - w.GetEntity(target).Hp) + ", not 15");
             Check(hpB - w.GetEntity(beside).Hp == 7, "the deployed splash took " + (hpB - w.GetEntity(beside).Hp) + ", not 7");
             Check(w.GetEntity(flier).Hp == hpF, "the deployed splash reached a flier");
+
+            // 대포 사거리 adds its cell to the deployed reach: 11.
+            World r = Ready(Faction.Humans, "전개", true, out int researched);
+            Research(r, 0, UpgradeEffect.CannonRange);
+            Step(r, Cast(r, researched, Origin, "전개"));
+            Run(r, 40);
+            Check(r.GetEntity(researched).Deployed, "the researched cannon never deployed");
+            Check(r.RangeFor(r.GetEntity(researched)) == Fix.FromInt(11),
+                "a deployed cannon under 대포 사거리 reaches " + r.RangeFor(r.GetEntity(researched)) + ", not 11");
         }
 
         /// <summary>
