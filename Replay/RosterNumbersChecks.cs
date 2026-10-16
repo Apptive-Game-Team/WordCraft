@@ -73,16 +73,19 @@ namespace WordCraft.Replay
         {
             //                                                               자원 틱  체력 피해 사거리 주기 속도
             Unit(Faction.TreeSpirits, Role.Worker, 0, "풀씨 정령",           40, 30, 60, 0, 0, 0, 1, 4),
+            Unit(Faction.TreeSpirits, Role.Melee, 0, "잎날 정령",           20, 40, 120, 7, 2, 15, 1, 4),
+            Unit(Faction.TreeSpirits, Role.Ranged, 0, "번개 정령",          60, 40, 70, 6, 6, 18, 1, 4),
             Unit(Faction.TreeSpirits, Role.Signature, 0, "바람 정령",        20, 40, 130, 10, 3, 22, 3, 8),
             Unit(Faction.Hellfire, Role.Melee, 0, "용암 갑각 악마",          90, 80, 260, 14, 2, 15, 1, 6),
             Unit(Faction.WaterSlimes, Role.Melee, 0, "거품 정령",            35, 30, 130, 6, 2, 15, 1, 4),
-            Unit(Faction.WaterSlimes, Role.Ranged, 0, "물결 궁수",           55, 45, 70, 4, 6, 18, 1, 4),
+            Unit(Faction.WaterSlimes, Role.Ranged, 0, "물결 궁수",           65, 45, 70, 4, 6, 18, 1, 4),
+            Unit(Faction.WaterSlimes, Role.Ranged, 1, "해일 인도자",        100, 80, 70, 6, 6, 18, 1, 4),
             Unit(Faction.WaterSlimes, Role.Signature, 0, "구름 용",          20, 40, 130, 10, 3, 22, 3, 8),
             Unit(Faction.RockGolems, Role.Worker, 0, "꼬마돌",               40, 35, 80, 0, 0, 0, 1, 4),
-            Unit(Faction.RockGolems, Role.Melee, 0, "이끼바위 골렘",         80, 70, 300, 9, 2, 15, 1, 6),
+            Unit(Faction.RockGolems, Role.Melee, 0, "이끼바위 골렘",         50, 70, 300, 9, 2, 15, 1, 6),
             Unit(Faction.RockGolems, Role.Ranged, 0, "바위 술사",            70, 60, 120, 7, 5, 18, 1, 4),
             Unit(Faction.Humans, Role.Worker, 0, "수습 마법생",              45, 35, 55, 0, 0, 0, 1, 4),
-            Unit(Faction.Humans, Role.Ranged, 0, "공수 특공대",              65, 55, 90, 7, 5, 18, 1, 4),
+            Unit(Faction.Humans, Role.Ranged, 0, "공수 특공대",              60, 55, 150, 9, 5, 18, 1, 4),
             Unit(Faction.Humans, Role.Signature, 1, "마도 정찰기",           20, 40, 130, 0, 0, 0, 3, 8),
         };
 

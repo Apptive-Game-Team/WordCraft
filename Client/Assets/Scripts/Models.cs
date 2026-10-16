@@ -34,7 +34,7 @@ namespace WordCraft.View
     /// A design is built once per (kind, faction, role, slot, owner) and shared:
     /// meshes are never per body.
     /// </summary>
-    public static class Models
+    public static partial class Models
     {
         /// <summary>World units between the top of a body and the health bar over it.</summary>
         private const float TopMargin = 0.25f;
@@ -525,6 +525,8 @@ namespace WordCraft.View
         /// <summary>True when a builder written for this very entry drew it into <paramref name="b"/>; false, and nothing drawn, otherwise.</summary>
         private static bool FactionUnit(Blueprint b, Faction faction, Role role, int slot)
         {
+            if (CatalogWaterRock(b, faction, role, slot)) return true;
+            if (CatalogHellfire(b, faction, role, slot)) return true;
             switch (faction)
             {
                 case Faction.TreeSpirits: return TreeSpiritUnit(b, role, slot);
@@ -590,7 +592,7 @@ namespace WordCraft.View
             }
         }
 
-        /// <summary>풀씨 정령: a hopping green seed with a two-leaf sprout, carrying a seed of its own.</summary>
+        /// <summary>풀씨 정령: a hopping green seed with two leaves and tiny flowers; no carried tools.</summary>
         private static void SeedSpirit(Blueprint b)
         {
             b.Gait = Gait.Hop;
@@ -605,62 +607,111 @@ namespace WordCraft.View
                            i % 2 == 0 ? BodyPalette.TreeSpirits.Leaf : BodyPalette.TreeSpirits.LeafShade, Outward(yaw, 35f));
             }
             hull.Prism(Point(0f, 0.66f, 0f), 5, 0.025f, 0.02f, 0.15f, BodyPalette.TreeSpirits.LeafShade);
-            hull.Ball(Point(-0.11f, 0.82f, 0f), Extent(0.13f, 0.035f, 0.07f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 0f, -28f), 1);
-            hull.Ball(Point(0.11f, 0.82f, 0f), Extent(0.13f, 0.035f, 0.07f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 0f, 28f), 1);
+            TreePointedLeaf(hull, Point(-0.22f, 0.85f, 0f), 0.19f, 0.58f, BodyPalette.TreeSpirits.Leaf, Turn(0f, 0f, 65f));
+            TreePointedLeaf(hull, Point(0.22f, 0.85f, 0f), 0.19f, 0.58f, BodyPalette.TreeSpirits.Leaf, Turn(0f, 0f, -65f));
+            for (int i = 0; i < 5; i++)
+            {
+                float yaw = i * 72f;
+                TreePointedLeaf(hull, Around(yaw) * 0.3f + Point(0f, 0.14f, 0f), 0.13f, 0.33f,
+                    BodyPalette.TreeSpirits.LeafShade, Outward(yaw, 65f));
+            }
             Eyes(hull, Point(0f, 0.4f, 0.31f), 0.2f, 0.075f);
-            Band(b, hull, Point(0f, 0.15f, 0f), 10, 0.335f, 0.06f);
-
+            // The seed has foliage and flowers, never a carried tool.
             b.Arm.Origin = Point(0.3f, 0.32f, 0.05f);
-            b.Arm.Ball(Point(0.36f, 0.24f, 0.15f), 0.09f, BodyPalette.TreeSpirits.Bark);
-            b.Arm.Prism(Point(0.36f, 0.32f, 0.15f), 4, 0.02f, 0f, 0.08f, BodyPalette.TreeSpirits.LeafLight);
+            for (int i = 0; i < 3; i++)
+            {
+                float yaw = 30f + i * 120f;
+                hull.Ball(Around(yaw) * 0.28f + Point(0f, 0.16f, 0f),
+                          Extent(0.055f, 0.025f, 0.055f), BodyPalette.TreeSpirits.WindLight, Quaternion.identity, 1);
+            }
         }
 
-        /// <summary>잎날 정령: a spindle of leaves that drifts and cuts with a leaf blade. Fast raider, slot 0.</summary>
+        /// <summary>잎날 정령: a faceless layered leaf whorl with a long trailing tip. Fast raider, slot 0.</summary>
         private static void LeafBlade(Blueprint b)
         {
             b.Gait = Gait.Float;
             b.Strike = Strike.Lunge;
             Solids hull = b.Hull;
 
-            hull.Prism(Point(0f, 0.1f, 0f), 6, 0f, 0.27f, 0.32f, BodyPalette.TreeSpirits.LeafShade);
-            hull.Prism(Point(0f, 0.42f, 0f), 6, 0.27f, 0f, 0.56f, BodyPalette.TreeSpirits.Leaf);
-            for (int i = 0; i < 4; i++)
+            // Leafair is a faceless whorl of overlapping leaves, not a swordsman.
+            hull.Prism(Point(0f, 0.12f, 0f), 6, 0.04f, 0.2f, 0.65f, BodyPalette.TreeSpirits.LeafShade);
+            for (int i = 0; i < 12; i++)
             {
-                float yaw = 45f + i * 90f;
-                hull.Ball(Around(yaw) * 0.22f + Point(0f, 0.58f, 0f), Extent(0.06f, 0.2f, 0.12f),
-                          BodyPalette.TreeSpirits.LeafLight, Outward(yaw, 28f), 1);
+                float yaw = i * 137.5f;
+                float y = 0.21f + i * 0.065f;
+                TreePointedLeaf(hull, Around(yaw) * (0.11f + i * 0.006f) + Point(0f, y, 0f),
+                    0.14f, 0.57f - i * 0.012f, i % 3 == 0 ? BodyPalette.TreeSpirits.LeafLight : BodyPalette.TreeSpirits.Leaf,
+                    Outward(yaw, -40f));
             }
-            Eyes(hull, Point(0f, 0.52f, 0.2f), 0.13f, 0.055f);
-            Band(b, hull, Point(0f, 0.39f, 0f), 6, 0.29f, 0.06f);
-
             b.Arm.Origin = Point(0.27f, 0.5f, 0f);
-            b.Arm.Ball(Point(0.38f, 0.42f, 0.14f), Extent(0.05f, 0.22f, 0.1f), BodyPalette.TreeSpirits.LeafDeep, Turn(35f, 0f, 0f), 1);
+            TreePointedLeaf(hull, Point(0.04f, 0.97f, -0.09f), 0.055f, 0.6f,
+                BodyPalette.TreeSpirits.LeafLight, Turn(-24f, 0f, -12f));
         }
 
-        /// <summary>고목 수호자: a blocky wooden guardian with a leafy crown and a log club. What a 풀씨 정령 grows into.</summary>
+        // A thin folded leaf with two pointed ends; broad facets survive the game camera.
+        private static void TreePointedLeaf(Solids part, Vector3 center, float width, float length, Color color, Quaternion rotation)
+        {
+            Vector3 root = center + rotation * Point(0f, -length * 0.5f, 0f);
+            part.Prism(root, 4, 0f, width, length * 0.38f, color, rotation, 0.27f);
+            part.Prism(root + rotation * Point(0f, length * 0.38f, 0f), 4, width, 0f,
+                length * 0.62f, color, rotation, 0.27f);
+        }
+
+        private static void TreeFlowingStem(Solids part, Vector3[] path, float radius, Color color)
+        {
+            for (int i = 1; i < path.Length; i++)
+            {
+                Vector3 segment = path[i] - path[i - 1];
+                float from = radius * (1f - (i - 1f) / (path.Length - 1) * 0.94f);
+                float to = radius * (1f - i / (float)(path.Length - 1) * 0.94f);
+                part.Prism(path[i - 1], 7, from, to, segment.magnitude + 0.018f, color,
+                    Quaternion.FromToRotation(Vector3.up, segment));
+            }
+        }
+
+        /// <summary>고목 수호자: a living trunk guardian with branch sprouts and heavy wooden fists.</summary>
         private static void TreeGuardian(Blueprint b)
         {
             Color bark = BodyPalette.TreeSpirits.Bark, barkShade = BodyPalette.TreeSpirits.BarkShade;
             Solids hull = b.Hull;
 
-            Legs(b, 0.3f, 0.15f, 0.15f, barkShade, bark);
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Solids leg = side < 0 ? b.LimbLeft : b.LimbRight;
+                leg.Origin = Point(side * 0.15f, 0.3f, 0f);
+                leg.Prism(Point(side * 0.15f, 0.06f, 0f), 6, 0.09f, 0.075f, 0.27f, bark, Turn(0f, 0f, -side * 7f));
+                leg.Ball(Point(side * 0.15f, 0.19f, 0.01f), 0.095f, barkShade);
+                leg.Lump(Point(side * 0.15f, 0.06f, 0.06f), Extent(0.11f, 0.065f, 0.15f), bark, Turn(0f, side * 15f, 0f));
+            }
             hull.Taper(Point(0f, 0.28f, 0f), Pair(0.46f, 0.32f), Pair(0.6f, 0.38f), 0.4f, bark);
-            hull.Box(Point(0f, 0.79f, 0.03f), Extent(0.26f, 0.2f, 0.24f), bark);
-            hull.Lump(Point(0f, 0.95f, 0f), Extent(0.22f, 0.12f, 0.19f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 20f, 0f));
+            for (int i = -1; i <= 1; i++)
+                hull.Prism(Point(i * 0.13f, 0.34f, 0.18f), 5, 0.019f, 0.012f, 0.29f,
+                    barkShade, Turn(0f, 0f, i * -9f));
+            hull.Prism(Point(0f, 0.7f, 0.03f), 9, 0.2f, 0.18f, 0.36f, bark);
+            hull.Prism(Point(0f, 1.058f, 0.03f), 9, 0.145f, 0.145f, 0.008f, Color.Lerp(bark, BodyPalette.TreeSpirits.LeafLight, 0.25f));
+            hull.Prism(Point(-0.07f, 1.01f, 0.02f), 5, 0.025f, 0.015f, 0.16f, barkShade, Turn(0f, 0f, 22f));
+            hull.Ball(Point(-0.1f, 1.14f, 0.02f), Extent(0.07f, 0.025f, 0.04f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 0f, -25f), 1);
             hull.Lump(Point(-0.27f, 0.72f, -0.02f), Extent(0.13f, 0.1f, 0.13f), BodyPalette.TreeSpirits.LeafLight, Turn(10f, 0f, 0f));
             hull.Lump(Point(0.25f, 0.73f, -0.05f), Extent(0.11f, 0.09f, 0.11f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 40f, 10f));
-            Eyes(hull, Point(0f, 0.81f, 0.155f), 0.1f, 0.035f);
+            Eyes(hull, Point(0f, 0.86f, 0.218f), 0.16f, 0.045f);
+            for (int side = -1; side <= 1; side += 2)
+            {
+                hull.Prism(Point(side * 0.24f, 0.67f, -0.02f), 6, 0.085f, 0.035f, 0.32f, barkShade, Turn(0f, 0f, -side * 65f));
+                TreePointedLeaf(hull, Point(side * 0.34f, 0.82f, 0.02f), 0.13f, 0.36f,
+                    BodyPalette.TreeSpirits.Leaf, Turn(0f, side * 20f, -side * 55f));
+            }
             hull.Prism(Point(-0.37f, 0.3f, 0.02f), 6, 0.08f, 0.075f, 0.38f, bark, Turn(0f, 0f, -6f));
-            hull.Box(Point(-0.38f, 0.26f, 0.03f), Extent(0.17f, 0.15f, 0.17f), barkShade);
-            Strap(b, hull, Point(0f, 0.6f, 0f), Extent(0.62f, 0.06f, 0.4f));
+            hull.Ball(Point(-0.37f, 0.48f, 0.02f), 0.095f, barkShade);
+            hull.Lump(Point(-0.38f, 0.26f, 0.03f), Extent(0.11f, 0.12f, 0.11f), bark, Turn(0f, 15f, -8f));
 
             b.Arm.Origin = Point(0.36f, 0.66f, 0.02f);
             b.Arm.Prism(Point(0.37f, 0.32f, 0.02f), 6, 0.08f, 0.09f, 0.36f, bark);
-            b.Arm.Box(Point(0.38f, 0.27f, 0.04f), Extent(0.19f, 0.17f, 0.19f), barkShade);
+            b.Arm.Ball(Point(0.37f, 0.49f, 0.02f), 0.1f, barkShade);
+            b.Arm.Lump(Point(0.38f, 0.27f, 0.04f), Extent(0.12f, 0.13f, 0.12f), bark, Turn(0f, -15f, 8f));
             b.Arm.Lump(Point(0.4f, 0.62f, 0f), Extent(0.09f, 0.06f, 0.09f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 30f, 0f));
         }
 
-        /// <summary>번개 정령: a round yellow spirit with a swept spiky tuft, throwing a zigzag bolt. Slot 0.</summary>
+        /// <summary>번개 정령: a round yellow spirit with a natural lightning mane, never a held weapon. Slot 0.</summary>
         private static void ThunderSpirit(Blueprint b)
         {
             b.Gait = Gait.Float;
@@ -673,13 +724,15 @@ namespace WordCraft.View
             hull.Prism(Point(0.1f, 0.72f, -0.02f), 4, 0.07f, 0f, 0.2f, BodyPalette.TreeSpirits.BoltDeep, Turn(-20f, 0f, -25f));
             hull.Prism(Point(0f, 0.1f, -0.02f), 5, 0f, 0.14f, 0.24f, BodyPalette.TreeSpirits.BoltDeep);
             Eyes(hull, Point(0f, 0.53f, 0.285f), 0.2f, 0.07f);
-            Band(b, hull, Point(0f, 0.32f, 0f), 10, 0.3f, 0.05f);
-
             Color bolt = BodyPalette.TreeSpirits.BoltLight;
             b.Arm.Origin = Point(0.3f, 0.5f, 0f);
-            b.Arm.Box(Point(0.4f, 0.62f, 0.06f), Extent(0.05f, 0.15f, 0.05f), bolt, Turn(0f, 0f, -30f));
-            b.Arm.Box(Point(0.43f, 0.5f, 0.08f), Extent(0.05f, 0.15f, 0.05f), bolt, Turn(0f, 0f, 30f));
-            b.Arm.Box(Point(0.46f, 0.38f, 0.1f), Extent(0.05f, 0.15f, 0.05f), bolt, Turn(0f, 0f, -30f));
+            for (int side = -1; side <= 1; side += 2)
+            {
+                hull.Prism(Point(side * 0.22f, 0.6f, -0.06f), 4, 0.075f, 0f, 0.3f, bolt, Turn(-55f, 0f, -side * 58f));
+                hull.Prism(Point(side * 0.23f, 0.4f, -0.08f), 4, 0.055f, 0f, 0.24f, bolt, Turn(-100f, 0f, -side * 65f));
+                TreePointedLeaf(hull, Point(side * 0.2f, 0.78f, -0.15f), 0.11f, 0.5f,
+                    side < 0 ? bolt : BodyPalette.TreeSpirits.Bolt, Turn(-48f, side * 24f, -side * 40f));
+            }
         }
 
         /// <summary>덩쿨 정령: a leaf-headed spirit trailing a vine tail, lashing with a vine. Slot 1, grown not bought.</summary>
@@ -690,17 +743,30 @@ namespace WordCraft.View
             Solids hull = b.Hull;
 
             hull.Ball(Point(0f, 0.66f, 0f), Extent(0.25f, 0.23f, 0.23f), BodyPalette.TreeSpirits.LeafLight);
-            hull.Ball(Point(0f, 0.4f, -0.04f), 0.15f, BodyPalette.TreeSpirits.Leaf);
-            hull.Ball(Point(0.06f, 0.23f, -0.11f), 0.1f, BodyPalette.TreeSpirits.Leaf);
-            hull.Ball(Point(0.02f, 0.11f, -0.19f), 0.06f, BodyPalette.TreeSpirits.LeafShade);
-            hull.Prism(Point(0f, 0.87f, 0f), 5, 0.02f, 0.015f, 0.1f, BodyPalette.TreeSpirits.LeafShade);
-            hull.Ball(Point(0.09f, 0.97f, 0f), Extent(0.13f, 0.03f, 0.07f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 0f, 22f), 1);
+            // Continuous tapered S-shaped vine, with a broad leaf framing the face.
+            Vector3 vine = Point(0f, 0.49f, -0.02f);
+            float vineRadius = 0.095f;
+            for (int i = 0; i < 9; i++)
+            {
+                float t = (i + 1) / 9f;
+                Vector3 next = Point(Mathf.Sin(t * Mathf.PI * 2f) * 0.22f, 0.49f - t * 0.46f, -0.02f - t * 0.13f);
+                Vector3 segment = next - vine;
+                float nextRadius = 0.095f * (1f - t * 0.82f);
+                hull.Prism(vine, 6, vineRadius, nextRadius, segment.magnitude + 0.025f,
+                           BodyPalette.TreeSpirits.Leaf, Quaternion.FromToRotation(Vector3.up, segment));
+                vine = next;
+                vineRadius = nextRadius;
+            }
+            TreePointedLeaf(hull, Point(-0.16f, 0.82f, -0.04f), 0.19f, 0.57f, BodyPalette.TreeSpirits.LeafShade, Turn(0f, 0f, -36f));
+            TreePointedLeaf(hull, Point(0.16f, 0.87f, -0.04f), 0.22f, 0.62f, BodyPalette.TreeSpirits.Leaf, Turn(0f, 0f, 48f));
             Eyes(hull, Point(0f, 0.68f, 0.215f), 0.15f, 0.06f);
-            Band(b, hull, Point(0f, 0.42f, -0.04f), 8, 0.16f, 0.05f);
 
             b.Arm.Origin = Point(0.18f, 0.55f, 0f);
-            b.Arm.Prism(Point(0.2f, 0.55f, 0.02f), 5, 0.035f, 0.018f, 0.4f, BodyPalette.TreeSpirits.Leaf, Turn(70f, 0f, 0f));
-            b.Arm.Ball(Point(0.2f, 0.69f, 0.4f), Extent(0.07f, 0.03f, 0.05f), BodyPalette.TreeSpirits.LeafLight);
+            TreeFlowingStem(b.Arm, new[] { Point(0.18f, 0.55f, 0f), Point(0.32f, 0.53f, 0.15f),
+                Point(0.4f, 0.6f, 0.3f), Point(0.35f, 0.72f, 0.37f), Point(0.24f, 0.75f, 0.32f) },
+                0.065f, BodyPalette.TreeSpirits.Leaf);
+            TreePointedLeaf(b.Arm, Point(0.35f, 0.69f, 0.31f), 0.08f, 0.25f,
+                BodyPalette.TreeSpirits.LeafLight, Turn(0f, 20f, -60f));
         }
 
         /// <summary>바람 정령: a large pale teardrop with a curling tail and swept wisps. The faction's signature.</summary>
@@ -711,14 +777,17 @@ namespace WordCraft.View
             Solids hull = b.Hull;
 
             hull.Ball(Point(0f, 0.62f, 0.04f), Extent(0.3f, 0.3f, 0.28f), BodyPalette.TreeSpirits.WindLight);
-            hull.Ball(Point(0f, 0.4f, -0.14f), Extent(0.22f, 0.2f, 0.24f), BodyPalette.TreeSpirits.Wind);
-            hull.Ball(Point(0.07f, 0.25f, -0.33f), Extent(0.14f, 0.12f, 0.16f), BodyPalette.TreeSpirits.Wind);
-            hull.Ball(Point(0.12f, 0.2f, -0.48f), 0.08f, BodyPalette.TreeSpirits.WindDeep);
+            TreeFlowingStem(hull, new[] { Point(0f, 0.48f, -0.06f), Point(0f, 0.3f, -0.19f),
+                Point(0.04f, 0.18f, -0.4f), Point(0.1f, 0.16f, -0.62f), Point(0.14f, 0.25f, -0.82f),
+                Point(0.12f, 0.41f, -0.91f), Point(0.06f, 0.48f, -0.84f) }, 0.23f, BodyPalette.TreeSpirits.Wind);
             hull.Ball(Point(0f, 0.9f, -0.1f), Extent(0.1f, 0.05f, 0.2f), BodyPalette.TreeSpirits.WindLight, Turn(25f, 0f, 0f), 1);
             hull.Ball(Point(-0.17f, 0.84f, -0.08f), Extent(0.07f, 0.04f, 0.16f), BodyPalette.TreeSpirits.Wind, Turn(25f, -25f, 0f), 1);
             hull.Ball(Point(0.17f, 0.84f, -0.08f), Extent(0.07f, 0.04f, 0.16f), BodyPalette.TreeSpirits.Wind, Turn(25f, 25f, 0f), 1);
             Eyes(hull, Point(0f, 0.65f, 0.3f), 0.18f, 0.06f);
-            Band(b, hull, Point(0f, 0.42f, -0.12f), 10, 0.245f, 0.06f);
+            for (int side = -1; side <= 1; side += 2)
+                TreeFlowingStem(hull, new[] { Point(side * 0.2f, 0.75f, 0f), Point(side * 0.32f, 0.78f, -0.22f),
+                    Point(side * 0.38f, 0.85f, -0.48f), Point(side * 0.34f, 0.99f, -0.62f),
+                    Point(side * 0.25f, 1.02f, -0.56f) }, 0.1f, BodyPalette.TreeSpirits.WindLight);
 
             b.Arm.Origin = Point(0.27f, 0.58f, 0f);
             b.Arm.Ball(Point(0.36f, 0.52f, 0.1f), Extent(0.07f, 0.05f, 0.18f), BodyPalette.TreeSpirits.WindDeep, Turn(-20f, 20f, 0f), 1);
@@ -738,13 +807,15 @@ namespace WordCraft.View
             hull.Ball(Point(0f, 0.32f, 0.46f), 0.03f, BodyPalette.Eye);
             for (int k = 0; k < 5; k++)
                 hull.Prism(Point(0f, 0.44f, -0.32f + k * 0.12f), 4, 0.07f, 0f, 0.15f, k % 2 == 0 ? deep : bolt, Turn(-45f, 0f, 0f));
-            hull.Ball(Point(-0.15f, 0.54f, 0.2f), Extent(0.08f, 0.09f, 0.035f), deep, Turn(0f, 0f, 22f), 1);
-            hull.Ball(Point(0.15f, 0.54f, 0.2f), Extent(0.08f, 0.09f, 0.035f), deep, Turn(0f, 0f, -22f), 1);
+            for (int side = -1; side <= 1; side += 2)
+            {
+                hull.Ball(Point(side * 0.17f, 0.57f, 0.2f), Extent(0.13f, 0.19f, 0.055f), bolt, Turn(0f, 0f, -side * 20f), 1);
+                hull.Ball(Point(side * 0.17f, 0.59f, 0.25f), Extent(0.075f, 0.12f, 0.018f), deep, Turn(0f, 0f, -side * 20f), 1);
+            }
             Eyes(hull, Point(0f, 0.4f, 0.41f), 0.17f, 0.05f);
             hull.Box(Point(0f, 0.36f, -0.44f), Extent(0.05f, 0.16f, 0.05f), deep, Turn(-35f, 0f, 0f));
             hull.Box(Point(0f, 0.48f, -0.5f), Extent(0.05f, 0.16f, 0.05f), deep, Turn(35f, 0f, 0f));
             hull.Box(Point(0f, 0.6f, -0.56f), Extent(0.07f, 0.16f, 0.07f), light, Turn(-35f, 0f, 0f));
-            Strap(b, hull, Point(0f, 0.3f, 0.1f), Extent(0.42f, 0.34f, 0.05f));
 
             FourLegs(b, 0.15f, 0.16f, -0.24f, (part, x, z) => part.Ball(Point(x, 0.06f, z), Extent(0.07f, 0.06f, 0.09f), deep));
 
@@ -767,6 +838,10 @@ namespace WordCraft.View
             hull.Ball(Point(0f, 0.24f, -0.42f), 0.14f, wind);
             hull.Ball(Point(0.05f, 0.32f, -0.56f), 0.08f, deep);
             hull.Ball(Point(0f, 0.44f, 0.38f), Extent(0.17f, 0.15f, 0.17f), light);
+            // A raised neck and flowing mane separate the mount from a flat cloud platform.
+            hull.Ball(Point(0f, 0.45f, 0.26f), Extent(0.16f, 0.26f, 0.15f), wind, Turn(25f, 0f, 0f), 1);
+            TreeFlowingStem(hull, new[] { Point(0f, 0.6f, 0.3f), Point(0f, 0.65f, 0.1f),
+                Point(0f, 0.6f, -0.12f), Point(0f, 0.51f, -0.3f) }, 0.12f, deep);
             hull.Prism(Point(0f, 0.56f, 0.4f), 4, 0.04f, 0f, 0.15f, deep, Turn(-30f, 0f, 0f));
             Eyes(hull, Point(0f, 0.47f, 0.53f), 0.14f, 0.045f);
             Band(b, hull, Point(0f, 0.3f, 0f), 10, 0.31f, 0.05f, 1.3f);
@@ -799,13 +874,16 @@ namespace WordCraft.View
                 hull.Taper(small + Point(-0.06f, 0f, 0f), Pair(0.02f, 0.13f), Pair(0.02f, 0.05f), 0.2f, bolt, Turn(0f, 0f, 70f));
                 hull.Taper(small + Point(0.06f, 0f, 0f), Pair(0.02f, 0.13f), Pair(0.02f, 0.05f), 0.2f, deep, Turn(0f, 0f, -70f));
             }
-            Band(b, hull, Point(0f, 0.42f, 0.06f), 8, 0.18f, 0.05f, 1.3f);
 
             for (int side = -1; side <= 1; side += 2)
             {
                 Solids wing = side < 0 ? b.LimbLeft : b.LimbRight;
                 Wing(wing, side, Point(0.12f, 0.5f, 0.04f), 0.42f, 0.24f, 0.08f, -0.12f, 18f, bolt);
                 wing.Box(Point(side * 0.44f, 0.6f, -0.04f), Extent(0.14f, 0.03f, 0.08f), BodyPalette.TreeSpirits.WindDeep, Turn(0f, 0f, -side * 18f));
+                for (int feather = 0; feather < 3; feather++)
+                    TreePointedLeaf(wing, Point(side * (0.3f + feather * 0.095f), 0.54f + feather * 0.025f, -0.14f - feather * 0.04f),
+                        0.075f, 0.38f - feather * 0.04f, feather == 1 ? bolt : BodyPalette.TreeSpirits.WindDeep,
+                        Turn(-72f, side * 25f, -side * 38f));
             }
         }
 
@@ -852,6 +930,9 @@ namespace WordCraft.View
                               Quaternion.Euler(0f, yaw, 0f) * Turn(0f, 0f, 22f), 1);
             }
             hull.Ball(position + Point(0f, 0.08f, 0f), Extent(0.16f, 0.15f, 0.16f), light);
+            for (int side = -1; side <= 1; side += 2)
+                TreePointedLeaf(hull, position + Point(side * 0.18f, 0.13f, -0.03f), 0.18f, 0.55f,
+                    side < 0 ? shade : leaf, Turn(0f, side * 25f, -side * 50f));
             Eyes(hull, position + Point(0f, 0.1f, 0.14f), 0.11f, 0.045f);
 
             b.Arm.Origin = position + Point(0f, 0.12f, 0f);
@@ -873,6 +954,8 @@ namespace WordCraft.View
             hull.Prism(Point(-0.08f, 0.4f, -0.06f), 5, 0.1f, 0f, 0.32f, deep, Turn(-58f, 0f, 32f));
             hull.Prism(Point(0.08f, 0.4f, -0.06f), 5, 0.1f, 0f, 0.32f, deep, Turn(-58f, 0f, -32f));
             hull.Prism(Point(0f, 0.3f, -0.12f), 5, 0.08f, 0f, 0.3f, deep, Turn(-100f, 0f, 0f));
+            TreeFlowingStem(hull, new[] { Point(0f, 0.39f, -0.05f), Point(0.06f, 0.56f, -0.25f),
+                Point(0.08f, 0.71f, -0.42f), Point(0.04f, 0.76f, -0.6f), Point(-0.04f, 0.7f, -0.69f) }, 0.13f, light);
             Eyes(hull, Point(0f, 0.37f, 0.2f), 0.13f, 0.05f);
             Band(b, hull, Point(0f, 0.22f, 0f), 10, 0.17f, 0.04f);
 
@@ -892,9 +975,18 @@ namespace WordCraft.View
             Color leaf = BodyPalette.TreeSpirits.Leaf, shade = BodyPalette.TreeSpirits.LeafShade, deep = BodyPalette.TreeSpirits.LeafDeep;
 
             hull.Ball(Point(0f, 0.42f, 0f), Extent(0.42f, 0.38f, 0.4f), shade);
-            for (int i = 0; i < 5; i++)
-                hull.Ball(Point(0f, 0.42f, 0f), Extent(0.45f, 0.07f, 0.43f), i % 2 == 0 ? leaf : deep,
-                          Turn(30f + i * 31f, i * 47f, i * 19f), 1);
+            // Thick crossing vines, not solid disk bands that obscure the living core.
+            for (int i = 0; i < 4; i++)
+            {
+                Quaternion turn = Turn(28f + i * 33f, i * 47f, i * 19f);
+                var path = new Vector3[10];
+                for (int j = 0; j < path.Length; j++)
+                {
+                    float angle = j * 36f * Mathf.Deg2Rad;
+                    path[j] = Point(0f, 0.42f, 0f) + turn * Point(Mathf.Cos(angle) * 0.44f, 0f, Mathf.Sin(angle) * 0.42f);
+                }
+                TreeFlowingStem(hull, path, 0.085f, i % 2 == 0 ? leaf : deep);
+            }
             hull.Lump(Point(0.02f, 0.8f, 0.02f), Extent(0.12f, 0.08f, 0.12f), leaf, Turn(0f, 30f, 0f));
             hull.Ball(Point(-0.12f, 0.88f, 0f), Extent(0.15f, 0.035f, 0.08f), BodyPalette.TreeSpirits.LeafLight, Turn(0f, 0f, -30f), 1);
             hull.Ball(Point(0.13f, 0.86f, -0.04f), Extent(0.13f, 0.035f, 0.07f), BodyPalette.TreeSpirits.LeafLight, Turn(0f, 0f, 28f), 1);
@@ -2291,11 +2383,21 @@ namespace WordCraft.View
             Color tan = BodyPalette.RockGolems.Tan, stone = BodyPalette.Humans.Stone, bronze = BodyPalette.Humans.Bronze;
 
             BlockLegs(b, 0.16f, 0.15f, Extent(0.14f, 0.16f, 0.16f), BodyPalette.RockGolems.Stone);
-            hull.Taper(Point(0f, 0.12f, 0.04f), Pair(0.62f, 0.5f), Pair(0.66f, 0.54f), 0.38f, tan);
-            Eyes(hull, Point(0f, 0.32f, 0.31f), 0.16f, 0.05f);
+            hull.Lump(Point(0f, 0.34f, 0.04f), Extent(0.38f, 0.25f, 0.3f), tan, Turn(0f, 12f, 0f));
+            hull.Lump(Point(-0.35f, 0.25f, 0.04f), Extent(0.12f, 0.2f, 0.16f), BodyPalette.RockGolems.Stone, Turn(0f, 0f, -15f));
+            hull.Lump(Point(0.35f, 0.25f, 0.04f), Extent(0.12f, 0.2f, 0.16f), BodyPalette.RockGolems.Stone, Turn(0f, 0f, 15f));
+            Eyes(hull, Point(0f, 0.36f, 0.35f), 0.16f, 0.05f);
             hull.Dome(Point(0.18f, 0.5f, 0.18f), Extent(0.12f, 0.04f, 0.1f), 6, 1, BodyPalette.RockGolems.Moss);
             hull.Box(Point(0f, 0.3f, 0.04f), Extent(0.68f, 0.05f, 0.56f), bronze);
             hull.Box(Point(0f, 0.65f, -0.06f), Extent(0.44f, 0.3f, 0.4f), stone);
+            hull.Box(Point(0f, 0.66f, 0.145f), Extent(0.45f, 0.025f, 0.025f), BodyPalette.Humans.StoneMid);
+            hull.Box(Point(0f, 0.73f, 0.165f), Extent(0.13f, 0.2f, 0.03f), BodyPalette.Humans.Steel);
+            hull.Box(Point(0f, 0.73f, 0.185f), Extent(0.055f, 0.075f, 0.018f), bronze, Turn(0f, 0f, 45f));
+            for (int side = -1; side <= 1; side += 2)
+            {
+                hull.Box(Point(side * 0.26f, 0.5f, 0.01f), Extent(0.045f, 0.4f, 0.1f), bronze, Turn(0f, 0f, side * 12f));
+                hull.Box(Point(side * 0.24f, 0.72f, -0.06f), Extent(0.08f, 0.24f, 0.42f), BodyPalette.Humans.StoneMid);
+            }
             hull.Box(Point(0f, 0.505f, -0.06f), Extent(0.48f, 0.03f, 0.44f), BodyPalette.Humans.Steel);
             for (int i = 0; i < 4; i++)
             {
@@ -2305,8 +2407,24 @@ namespace WordCraft.View
             Pennant(b, hull, Point(-0.18f, 0.8f, -0.22f), 0.32f, BodyPalette.Humans.Wood);
 
             b.Arm.Origin = Point(0f, 0.82f, -0.05f);
-            b.Arm.Prism(Point(0f, 0.82f, -0.05f), 8, 0.09f, 0.075f, 0.46f, BodyPalette.Humans.StoneDark, Turn(80f, 0f, 0f));
-            b.Arm.Prism(Point(0f, 0.9f, 0.36f), 8, 0.09f, 0.09f, 0.05f, bronze, Turn(80f, 0f, 0f));
+            HumanCatalogBarrel(b.Arm, Point(0f, 0.86f, -0.09f), 0.105f, 0.56f, Turn(72f, 0f, 0f));
+        }
+
+        // Stepped steel barrel, bronze trunnions and a recessed dark bore.
+        // All rings share the barrel axis so recoil never separates the muzzle.
+        private static void HumanCatalogBarrel(Solids part, Vector3 start, float radius, float length, Quaternion angle)
+        {
+            Vector3 axis = angle * Vector3.up;
+            Color dark = BodyPalette.Humans.StoneDark, steel = BodyPalette.Humans.Steel;
+            Color bronze = BodyPalette.Humans.Bronze;
+            part.Prism(start, 12, radius * 1.14f, radius * 0.92f, length, dark, angle);
+            for (int ring = 0; ring < 3; ring++)
+                part.Prism(start + axis * (length * (0.12f + ring * 0.27f)), 12,
+                    radius * 1.18f, radius * 1.18f, length * 0.12f, steel, angle);
+            Vector3 mouth = start + axis * length;
+            part.Prism(mouth, 12, radius * 1.24f, radius * 1.24f, radius * 0.35f, bronze, angle);
+            part.Prism(mouth + axis * (radius * 0.355f), 12, radius * 0.88f, radius * 0.88f,
+                radius * 0.025f, BodyPalette.Humans.Hood, angle);
         }
 
         /// <summary>
@@ -3804,7 +3922,14 @@ namespace WordCraft.View
                     // 돌 포탑 are entries 1 and 2, in HumanExtraBuilding: three
                     // silhouettes, so a glance tells which.
                     Solids crown = b.Crown;
-                    hull.Box(Point(0f, 0.4f, 0f), Extent(1.5f, 0.8f, 1.5f), stone);
+                    hull.Taper(Vector3.zero, Pair(1.7f, 1.6f), Pair(1.35f, 1.3f), 0.8f, stone);
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        hull.Taper(Point(side * 0.71f, 0f, 0f), Pair(0.38f, 1.7f), Pair(0.26f, 1.4f), 0.62f, steel);
+                        hull.Box(Point(side * 0.55f, 0.42f, 0.71f), Extent(0.1f, 0.18f, 0.05f), bronze, Turn(0f, 0f, 45f));
+                    }
+                    hull.Box(Point(0f, 0.36f, 0.72f), Extent(0.25f, 0.5f, 0.04f), steel);
+                    hull.Box(Point(0f, 0.4f, 0.75f), Extent(0.12f, 0.16f, 0.04f), bronze, Turn(0f, 0f, 45f));
                     Strap(b, hull, Point(0f, 0.72f, 0f), Extent(1.54f, 0.1f, 1.54f));
                     hull = b.Tier(Point(0f, 0.8f, 0f));
                     hull.Box(Point(0f, 0.9f, 0f), Extent(1.2f, 0.2f, 1.2f), stoneMid);
@@ -3816,8 +3941,12 @@ namespace WordCraft.View
 
                     crown.Origin = Point(0f, 1.0f, 0f);
                     crown.Box(Point(0f, 1.2f, -0.05f), Extent(0.7f, 0.4f, 0.6f), stoneDark);
-                    crown.Prism(Point(0f, 1.3f, -0.25f), 10, 0.3f, 0.25f, 1.15f, stoneMid, Turn(78f, 0f, 0f));
-                    crown.Prism(Point(0f, 1.52f, 0.85f), 10, 0.3f, 0.3f, 0.1f, bronze, Turn(78f, 0f, 0f));
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        crown.Taper(Point(side * 0.43f, 0.94f, -0.1f), Pair(0.22f, 0.65f), Pair(0.18f, 0.32f), 0.6f, steel);
+                        crown.Prism(Point(side * 0.41f, 1.35f, -0.08f), 10, 0.16f, 0.16f, 0.14f, bronze, Turn(0f, 0f, side * -90f));
+                    }
+                    HumanCatalogBarrel(crown, Point(0f, 1.35f, -0.35f), 0.3f, 1.25f, Turn(68f, 0f, 0f));
                     b.CrownAims = true;
                     b.CrownKick = -12f;
                     break;

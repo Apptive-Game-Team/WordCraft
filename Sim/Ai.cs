@@ -2,6 +2,7 @@ using System.Collections.Generic;
 
 namespace WordCraft.Sim
 {
+    public enum AiDifficulty { Easy, Normal, Hard }
     /// <summary>
     /// The simulated opponent. It runs inside Step like every other system, reads
     /// the same world every peer holds, and issues the same Commands a player
@@ -59,6 +60,30 @@ namespace WordCraft.Sim
 
         /// <summary>Which peers the simulation plays for. Hashed: it decides who issues commands.</summary>
         private readonly bool[] aiPeers = new bool[MaxPeers];
+        private readonly AiDifficulty[] aiDifficulties = DefaultAiDifficulties();
+        private readonly int[] aiNextAttackTick = new int[MaxPeers];
+
+        private static AiDifficulty[] DefaultAiDifficulties()
+        {
+            var values = new AiDifficulty[MaxPeers];
+            for (int i = 0; i < values.Length; i++) values[i] = AiDifficulty.Hard;
+            return values;
+        }
+
+        /// <summary>Scenario configuration; never changed by AI decisions.</summary>
+        public void SetPeerAiDifficulty(int peer, AiDifficulty difficulty)
+        {
+            if (peer < 0 || peer >= MaxPeers) throw new System.ArgumentOutOfRangeException(nameof(peer));
+            if ((int)difficulty < (int)AiDifficulty.Easy || (int)difficulty > (int)AiDifficulty.Hard)
+                throw new System.ArgumentOutOfRangeException(nameof(difficulty));
+            aiDifficulties[peer] = difficulty;
+        }
+
+        public AiDifficulty GetPeerAiDifficulty(int peer) => aiDifficulties[peer];
+        private int AiWorkersFor(int peer) => aiDifficulties[peer] == AiDifficulty.Easy ? 4 :
+            aiDifficulties[peer] == AiDifficulty.Normal ? 5 : AiWorkerTarget;
+        private int AiThinkTicksFor(int peer) => aiDifficulties[peer] == AiDifficulty.Easy ? 40 :
+            aiDifficulties[peer] == AiDifficulty.Normal ? 20 : AiThinkTicks;
 
         /// <summary>
         /// Per-peer command sequence. Hashed, because canonical order inside a tick
@@ -92,7 +117,7 @@ namespace WordCraft.Sim
             if (Tick % AiThinkTicks != 0) return;
             for (int peer = 0; peer < MaxPeers; peer++)
             {
-                if (aiPeers[peer]) AiThink(peer);
+                if (aiPeers[peer] && Tick % AiThinkTicksFor(peer) == 0) AiThink(peer);
             }
         }
 
@@ -199,7 +224,8 @@ namespace WordCraft.Sim
             // Once a wave is fighting, start the first research before reserving the
             // next replacement. Otherwise a costly desired unit can starve all
             // research for the entire match.
-            bool holdUnit = !army.WaveOut || AiResearchStarted(peer);
+            bool holdUnit = AiWantsAntiAir(FactionData.AiCompositionOf(factions[peer]), army) ||
+                (!AiNeedsActiveResearch(peer) && (!army.WaveOut || AiResearchStarted(peer)));
             if (holdUnit) spend -= unitPrice;
 
             // 6. Research with what is spare, docs/TECH-TREE.md 묶음 9 연구.
@@ -372,6 +398,9 @@ namespace WordCraft.Sim
             int percent = c.Percent(role);
             if (percent <= 0) return int.MinValue;
             if (role == AiRole.Support && army.Support >= c.SupportCap) return int.MinValue;
+            // Once an armed body exists, unlock the first support
+            // before spending every delivery replacing the same two roles.
+            if (role == AiRole.Support && army.Support == 0 && army.Total > 0) return 100000;
             return percent * (army.Total + 1) - army.Count(role) * 100;
         }
 
@@ -471,15 +500,15 @@ namespace WordCraft.Sim
                     if (!b.Alive || b.Owner != peer || b.Kind != EntityKind.Building) continue;
                     if (b.BuildTicksLeft > 0 || b.QueueCount > 0) continue;
 
-                    bool seed = grows && b.Role == Role.Base && workers < AiWorkerTarget + AiSeedWorkers;
-                    if (workers < AiWorkerTarget || seed)
+                    bool seed = grows && b.Role == Role.Base && workers < AiWorkersFor(peer) + AiSeedWorkers;
+                    if (workers < AiWorkersFor(peer) || seed)
                     {
                         // Until the target is met a building that cannot make a
                         // worker waits rather than spending the bank the next worker
                         // needs. Past it, only a growing faction's base goes on.
                         if (!CanProduce(peer, i, Role.Worker, 0))
                         {
-                            if (workers < AiWorkerTarget) continue;
+                            if (workers < AiWorkersFor(peer)) continue;
                         }
                         else
                         {
@@ -487,7 +516,7 @@ namespace WordCraft.Sim
                             // being saved for: the economy is what pays for that
                             // building. A seed worker past it may not.
                             int price = FactionData.Production(faction, Role.Worker, 0).Resources;
-                            if (price > (workers < AiWorkerTarget ? bank + reserved : bank)) continue;
+                            if (price > (workers < AiWorkersFor(peer) ? bank + reserved : bank)) continue;
                             AiIssue(peer, CommandType.Produce, i, FixVec2.Zero, Command.RosterArg(Role.Worker, 0));
                             bank -= price;
                             // Counted as made the moment it is queued, or two buildings
@@ -507,8 +536,8 @@ namespace WordCraft.Sim
         /// of those this building makes; otherwise the best entry of the role the
         /// army is shortest of, then the next role, and so on. With hold set this
         /// is the building the short role waits on: it asks only for that role,
-        /// and when the bank cannot pay yet it keeps the price back rather than
-        /// buying something cheaper.
+        /// and when the bank cannot pay yet it keeps the price back. An absent
+        /// combat role can use a cheaper tier to restore its basic coverage.
         /// </summary>
         private void AiOrderFighter(int peer, int buildingId, bool hold, ref AiArmy army, ref int bank)
         {
@@ -517,9 +546,11 @@ namespace WordCraft.Sim
             Role role = Role.None;
             int slot = 0;
             AiRole picked = AiRole.None;
-            if (AiWantsAntiAir(c, army) && AiEntryAt(peer, buildingId, AiRole.None, true, army, bank, out role, out slot))
+            if (AiWantsAntiAir(c, army) && AiEntryAt(peer, buildingId, AiRole.None, true, army, hold ? int.MaxValue : bank, out role, out slot))
             {
                 picked = AiRoleOf(faction, role, slot);
+                int airPrice = FactionData.Production(faction, role, slot).Resources;
+                if (airPrice > bank) { bank -= airPrice; return; }
             }
             else if (hold)
             {
@@ -528,8 +559,15 @@ namespace WordCraft.Sim
                 int price = FactionData.Production(faction, role, slot).Resources;
                 if (price > bank)
                 {
-                    bank -= price;
-                    return;
+                    // Replace a lost combat role with an affordable body before
+                    // saving for its best tier. Otherwise a depleted frontline
+                    // can stay empty while a legal cheaper replacement exists.
+                    if (picked == AiRole.Support || army.Count(picked) > 0 ||
+                        !AiEntryAt(peer, buildingId, picked, false, army, bank, out role, out slot))
+                    {
+                        bank -= price;
+                        return;
+                    }
                 }
             }
             else
@@ -565,9 +603,9 @@ namespace WordCraft.Sim
             price = 0;
             Faction faction = factions[peer];
             AiComposition c = FactionData.AiCompositionOf(faction);
-            if (AiWantsAntiAir(c, army)) return -1;
-            AiRole want = AiShortRole(c, army, 0);
-            if (want == AiRole.None) return -1;
+            bool antiAir = AiWantsAntiAir(c, army);
+            AiRole want = antiAir ? AiRole.None : AiShortRole(c, army, 0);
+            if (!antiAir && want == AiRole.None) return -1;
             int bestBuilding = -1;
             Role bestRole = Role.None;
             int bestSlot = 0;
@@ -576,7 +614,7 @@ namespace WordCraft.Sim
                 Entity b = entities[i];
                 if (!b.Alive || b.Owner != peer || b.Kind != EntityKind.Building) continue;
                 if (b.BuildTicksLeft > 0 || b.QueueCount > 0) continue;
-                if (!AiEntryAt(peer, i, want, false, army, int.MaxValue, out Role role, out int slot)) continue;
+                if (!AiEntryAt(peer, i, want, antiAir, army, int.MaxValue, out Role role, out int slot)) continue;
                 if (!AiBetter(faction, want, role, slot, bestRole, bestSlot)) continue;
                 bestBuilding = i;
                 bestRole = role;
@@ -694,7 +732,7 @@ namespace WordCraft.Sim
             if (!AiGrowsWorkers(faction)) return;
             AiComposition c = FactionData.AiCompositionOf(faction);
 
-            int spare = workers - AiWorkerTarget;
+            int spare = workers - AiWorkersFor(peer);
             for (int i = entities.Count - 1; i >= 0 && spare > 0; i--)
             {
                 Entity w = entities[i];
@@ -799,11 +837,11 @@ namespace WordCraft.Sim
             // Establish a fighting wave before sinking the opening income into
             // advanced infrastructure. In particular Driftworlds otherwise buys
             // a tech building, pillar and carrier while its two fighters wait.
-            else if (army.Total < AiSquadSize) return 0;
+            else if (faction == Faction.Driftworlds && army.Total < AiSquadSize) return 0;
             else if (!AiHolds(peer, Role.Tech, unfinishedOnly: false)) goal = (Role.Tech, 0);
             else if (FactionData.Arrival(faction, Role.Defense, 0).Radius > 0 &&
                      !AiHolds(peer, Role.Defense, unfinishedOnly: false)) goal = (Role.Defense, 0);
-            else if (!AiResearchStarted(peer)) return 0;
+            else if (army.Support == 0 && AiCanMakeAimedCaster(peer)) return 0;
             else goal = AiActiveBuilding(peer);
             if (goal.Role == Role.None)
             {
@@ -830,6 +868,18 @@ namespace WordCraft.Sim
         {
             for (int row = 0; row < FactionData.UpgradeCount(factions[peer]); row++)
                 if (UpgradeLevel(peer, row) > 0 || Researching(peer, row)) return true;
+            return false;
+        }
+
+        private bool AiCanMakeAimedCaster(int peer)
+        {
+            Faction faction = factions[peer];
+            for (int i = 0; i < FactionData.AbilityCount(faction); i++)
+            {
+                AbilityRow row = FactionData.Ability(faction, i);
+                if (FactionData.IsCast(row.Kind) && row.CastTarget != CastTarget.NoTarget &&
+                    AiCanMake(peer, row.Role, row.Slot)) return true;
+            }
             return false;
         }
 
@@ -978,40 +1028,63 @@ namespace WordCraft.Sim
         // ponytail: index order behind the unlocks. It researches 방어력 against
         // an opponent with no weapons. Give it a reason to pick a row the day the
         // ladder is meant to be a plan.
-        private void AiResearch(int peer, ref int bank)
+        private bool AiActiveUnlock(int peer, int upgrade)
         {
-            int rows = FactionData.UpgradeCount(factions[peer]);
+            Faction faction = factions[peer];
+            for (int a = 0; a < FactionData.AbilityCount(faction); a++)
+            {
+                AbilityRow row = FactionData.Ability(faction, a);
+                if (row.Unlock == upgrade && FactionData.IsCast(row.Kind) &&
+                    AiCanMake(peer, row.Role, row.Slot)) return true;
+            }
+            return false;
+        }
+
+        private bool AiNeedsActiveResearch(int peer)
+        {
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity b = entities[i];
-                if (!b.Alive || b.Owner != peer || b.Kind != EntityKind.Building) continue;
-                if (b.Role != Role.Tech || b.BuildTicksLeft > 0 || b.ResearchIndex >= 0) continue;
+                if (!b.Alive || b.Owner != peer || b.Kind != EntityKind.Building || b.BuildTicksLeft > 0 || b.ResearchIndex >= 0) continue;
+                for (int row = 0; row < FactionData.UpgradeCount(factions[peer]); row++)
+                    if (AiActiveUnlock(peer, row) && AiCanPlanResearch(peer, i, row)) return true;
+            }
+            return false;
+        }
 
-                for (int pass = 0; pass < 2; pass++)
+        private void AiResearch(int peer, ref int bank)
+        {
+            // Choose across every research building before falling back to a
+            // generic upgrade: an early Tech 0 must not starve Tech 1's caster.
+            for (int pass = 0; pass < 3; pass++)
+            {
+                for (int i = 0; i < entities.Count; i++)
                 {
-                    for (int row = 0; row < rows; row++)
+                    Entity b = entities[i];
+                    if (!b.Alive || b.Owner != peer || b.Kind != EntityKind.Building ||
+                        b.BuildTicksLeft > 0 || b.ResearchIndex >= 0) continue;
+                    for (int row = 0; row < FactionData.UpgradeCount(factions[peer]); row++)
                     {
-                        if (pass == 0 && !AiUnlocksHeld(peer, row)) continue;
+                        if (pass == 0 && !AiActiveUnlock(peer, row)) continue;
+                        if (pass == 1 && !AiUnlocksHeld(peer, row)) continue;
                         if (!AiCanPlanResearch(peer, i, row)) continue;
-                        if (bank <= ResearchCost(peer, row))
+                        int cost = ResearchCost(peer, row);
+                        if (bank <= cost)
                         {
-                            // Hold income toward the selected level once a wave
-                            // is away; cheap replacements must not consume every
-                            // delivery forever.
-                            if (!AiResearchStarted(peer) && AiCountArmy(peer).WaveOut) bank -= ResearchCost(peer, row);
-                            return;
+                            if (pass == 0 || (!AiResearchStarted(peer) && AiCountArmy(peer).WaveOut))
+                            {
+                                bank -= cost;
+                                return;
+                            }
+                            continue;
                         }
                         AiIssue(peer, CommandType.Research, i, FixVec2.Zero, row);
-                        bank -= ResearchCost(peer, row);
-                        // One building, one order per think. A second research
-                        // building asked in the same think could pick the same
-                        // free row, and Apply would refuse whichever came second.
+                        bank -= cost;
                         return;
                     }
                 }
             }
         }
-
         // CanResearch includes today's bank. Planning must also recognize a
         // legal level it is saving for; the actual order still uses CanResearch.
         private bool AiCanPlanResearch(int peer, int buildingId, int index)
@@ -1064,6 +1137,10 @@ namespace WordCraft.Sim
         /// </summary>
         private void AiCast(int peer, bool saving, ref int bank)
         {
+            // Easy reacts more slowly and never coordinates several abilities
+            // on the same decision, while retaining useful defensive casts.
+            bool easy = aiDifficulties[peer] == AiDifficulty.Easy;
+            if (easy && Tick % 80 != 0) return;
             Faction faction = factions[peer];
             int rows = FactionData.AbilityCount(faction);
             for (int a = 0; a < rows; a++)
@@ -1081,6 +1158,7 @@ namespace WordCraft.Sim
                     if (!CanCast(peer, i, a, point)) continue;
                     AiIssue(peer, CommandType.Cast, i, point, a);
                     bank -= cost;
+                    if (easy) return;
                     if (cost > 0 && cost > bank) break;
                 }
             }
@@ -1228,23 +1306,37 @@ namespace WordCraft.Sim
         // the whole plan.
         private void AiAttack(int peer)
         {
+            if (aiDifficulties[peer] != AiDifficulty.Hard)
+            {
+                AiPacedAttack(peer);
+                return;
+            }
             int target = AiEnemyTarget(peer);
             if (target < 0) return;
             FixVec2 where = entities[target].Position;
+
+            // A support arriving after its wave must join that wave immediately.
+            // Waiting for four NEW fighters strands expensive casters at home
+            // while the original army fights without the ability it paid for.
+            int escort = -1;
+            Fix escortDistance = Fix.Zero;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity fighter = entities[i];
+                if (!fighter.Alive || fighter.Owner != peer || fighter.Kind != EntityKind.Unit || !Armed(fighter)) continue;
+                if (fighter.Mode != OrderMode.AttackMove && fighter.Mode != OrderMode.Attack) continue;
+                Fix distance = (fighter.Position - where).SqrMagnitude;
+                if (escort < 0 || distance < escortDistance) { escort = i; escortDistance = distance; }
+            }
+            if (escort >= 0)
+                for (int i = 0; i < entities.Count; i++)
+                    if (AiIsFreeSupport(peer, i)) AiIssue(peer, CommandType.Move, i, entities[escort].Position);
 
             // An attack-move that has broken off for a building walks at it in a
             // straight line, and a cliff between the two stops it for good. An
             // Attack order on the same building walks a path to it instead, and
             // ends when the building does.
-            for (int i = 0; i < entities.Count; i++)
-            {
-                Entity e = entities[i];
-                if (!e.Alive || e.Owner != peer || e.Kind != EntityKind.Unit || e.Mode != OrderMode.AttackMove) continue;
-                if (e.TargetId < 0 || e.TargetId >= entities.Count) continue;
-                Entity t = entities[e.TargetId];
-                if (!t.Alive || t.Kind != EntityKind.Building || WithinRange(e.Position, t.Position, RangeFor(e))) continue;
-                AiIssue(peer, CommandType.Attack, i, FixVec2.Zero, e.TargetId);
-            }
+            AiRepairBuildingApproaches(peer);
 
             int ready = 0;
             for (int i = 0; i < entities.Count; i++)
@@ -1256,7 +1348,7 @@ namespace WordCraft.Sim
             // With nothing left in the ground the army it has is the army it
             // will ever have, so waiting for a full squad would wait forever:
             // two peers each holding three fighters at home is a draw.
-            if (ready < AiSquadSize && (ready == 0 || FindNearestNode(entities[target].Position) >= 0)) return;
+            if (ready == 0 || (ready < AiSquadSize && escort < 0 && FindNearestNode(entities[target].Position) >= 0)) return;
 
             for (int i = 0; i < entities.Count; i++)
             {
@@ -1267,6 +1359,65 @@ namespace WordCraft.Sim
         }
 
         private bool AiLapses(Entity e) => RosterStats(e).Lifetime > 0;
+
+        private void AiPacedAttack(int peer)
+        {
+            AiRepairBuildingApproaches(peer);
+            // Defenders can answer an invasion during the opening grace period.
+            // Automatic combat also keeps running between these slower decisions.
+            int home = -1;
+            for (int i = 0; i < entities.Count; i++)
+                if (entities[i].Alive && entities[i].Owner == peer && entities[i].Role == Role.Base)
+                { home = i; break; }
+            if (home >= 0)
+                for (int i = 0; i < entities.Count; i++)
+                {
+                    Entity threat = entities[i];
+                    if (!threat.Alive || threat.Owner < 0 || threat.Owner == peer || threat.Kind != EntityKind.Unit ||
+                        !WithinRange(threat.Position, entities[home].Position, Fix.FromInt(10))) continue;
+                    for (int fighter = 0; fighter < entities.Count; fighter++)
+                        if (AiIsFreeFighter(peer, entities[fighter]))
+                            AiIssue(peer, CommandType.AttackMove, fighter, threat.Position);
+                    return;
+                }
+            bool easy = aiDifficulties[peer] == AiDifficulty.Easy;
+            if (Tick < (easy ? 120 : 60) * TicksPerSecond || Tick < aiNextAttackTick[peer]) return;
+            int target = AiEnemyTarget(peer);
+            if (target < 0) return;
+            int limit = easy ? 3 : 5;
+            int support = -1;
+            for (int i = 0; i < entities.Count; i++)
+                if (AiIsFreeSupport(peer, i)) { support = i; break; }
+            int fighters = support >= 0 ? limit - 1 : limit;
+            int sent = 0;
+            for (int i = 0; i < entities.Count && sent < fighters; i++)
+                if (AiIsFreeFighter(peer, entities[i]))
+                {
+                    AiIssue(peer, CommandType.AttackMove, i, entities[target].Position);
+                    sent++;
+                }
+            if (sent == 0) return;
+            for (int i = 0; i < entities.Count && sent < limit; i++)
+                if (AiIsFreeSupport(peer, i))
+                {
+                    AiIssue(peer, CommandType.Move, i, entities[target].Position);
+                    sent++;
+                }
+            aiNextAttackTick[peer] = Tick + (easy ? 60 : 30) * TicksPerSecond;
+        }
+
+        private void AiRepairBuildingApproaches(int peer)
+        {
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (!e.Alive || e.Owner != peer || e.Kind != EntityKind.Unit || e.Mode != OrderMode.AttackMove) continue;
+                if (e.TargetId < 0 || e.TargetId >= entities.Count) continue;
+                Entity t = entities[e.TargetId];
+                if (!t.Alive || t.Kind != EntityKind.Building || WithinRange(e.Position, t.Position, RangeFor(e))) continue;
+                AiIssue(peer, CommandType.Attack, i, FixVec2.Zero, e.TargetId);
+            }
+        }
 
         /// <summary>
         /// Alive, armed, this peer's, able to walk now, and under no order of its
@@ -1384,7 +1535,8 @@ namespace WordCraft.Sim
                     {
                         if (Abs(dx) != r && Abs(dy) != r) continue; // the ring, not the disc
 
-                        var at = new FixVec2(from.X + Fix.FromInt(dx), from.Y + Fix.FromInt(dy));
+                        int facing = peer == 0 ? 1 : -1;
+                        var at = new FixVec2(from.X + Fix.FromInt(dx * facing), from.Y + Fix.FromInt(dy * facing));
                         if (!CanBuild(peer, role, slot, at)) continue;
                         AiIssue(peer, CommandType.Build, -1, at, Command.RosterArg(role, slot));
                         return true;

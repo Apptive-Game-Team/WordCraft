@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
@@ -103,7 +104,7 @@ namespace WordCraft.View
                 if (!Directory.Exists(source)) continue;
 
                 DateTime built = File.GetLastWriteTimeUtc(dll);
-                foreach (string cs in Directory.GetFiles(source, "*.cs", SearchOption.AllDirectories))
+                foreach (string cs in SourceFiles(source))
                 {
                     if (File.GetLastWriteTimeUtc(cs) <= built) continue;
                     Fail(assembly + ".dll is older than " + Path.GetFileName(cs) +
@@ -113,6 +114,20 @@ namespace WordCraft.View
             }
 
             return true;
+        }
+
+        // Generated sources from a different build configuration are not input
+        // to the vendored DLL. Keep checking real source files in every other folder.
+        private static IEnumerable<string> SourceFiles(string directory)
+        {
+            foreach (string file in Directory.GetFiles(directory, "*.cs")) yield return file;
+            foreach (string child in Directory.GetDirectories(directory))
+            {
+                string name = Path.GetFileName(child);
+                if (string.Equals(name, "bin", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(name, "obj", StringComparison.OrdinalIgnoreCase)) continue;
+                foreach (string file in SourceFiles(child)) yield return file;
+            }
         }
 
         /// <summary>

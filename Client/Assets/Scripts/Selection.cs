@@ -60,6 +60,10 @@ namespace WordCraft.View
 
         public IReadOnlyList<int> Selected => selected;
 
+        // A new match can update before Selection.Update clears the previous ids.
+        public IReadOnlyList<int> SelectedIn(World world) =>
+            ReferenceEquals(held, world) ? selected : System.Array.Empty<int>();
+
         // Linear scan, but a selection is a handful of ids and this runs once per
         // rendered entity per frame.
         public bool Contains(int id) => selected.Contains(id);
@@ -124,6 +128,7 @@ namespace WordCraft.View
             }
 
             Prune();
+            if (CodexPanel.IsOpen) { dragging = false; return; }
             // Group keys work while the left button belongs to something else: an
             // armed command is aimed at whatever the groups just recalled.
             GroupKeys();
@@ -177,13 +182,18 @@ namespace WordCraft.View
             int hit = Field.Pointer(cam, screen, out Vector2 under)
                 ? runner.EntityAt(under, PickRadius, mineOnly: true)
                 : -1;
+            ApplyClick(hit, doubleClick, shift);
+        }
+
+        private void ApplyClick(int hit, bool doubleClick, bool shift)
+        {
             if (hit < 0)
             {
                 if (!shift) selected.Clear();
                 return;
             }
 
-            if (doubleClick)
+            if (doubleClick && runner.World.GetEntity(hit).Kind != EntityKind.Building)
             {
                 SelectVisibleKind(runner.World.GetEntity(hit), shift);
                 return;

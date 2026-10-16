@@ -45,6 +45,8 @@ namespace WordCraft.View
         private string address = "";
         private string portText = MatchRunner.DefaultPort.ToString();
         private Faction faction = MatchConfig.DefaultFaction(0);
+        private AiDifficulty difficulty = AiDifficulty.Easy;
+        private Vector2 startScroll;
         private string formError;
         private bool onlineMenu;
         private string serverUrl = "http://localhost:5080";
@@ -56,11 +58,17 @@ namespace WordCraft.View
         /// box-select the army underneath it.
         /// </summary>
         private static bool mixerOpen;
+        public static bool MixerOpen => mixerOpen;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot() => new GameObject("WordCraft HUD").AddComponent<Hud>();
 
         private void Awake() => DontDestroyOnLoad(gameObject);
+
+        private void Update()
+        {
+            if (Input.GetKeyDown(KeyCode.F1)) CodexPanel.Toggle();
+        }
 
         private void Start()
         {
@@ -84,8 +92,10 @@ namespace WordCraft.View
         /// </summary>
         public static bool OverUi(Vector2 screenPosition)
         {
+            if (CodexPanel.IsOpen) return true;
             MatchRunner runner = MatchRunner.Instance;
             if (runner != null && runner.Phase != Phase.Match) return true;
+            if (TutorialPanel.Covers(screenPosition)) return true;
             if (screenPosition.y <= UiStyle.BottomPanel ||
                 screenPosition.y >= Screen.height - UiStyle.TopBar)
             {
@@ -102,6 +112,7 @@ namespace WordCraft.View
         private void OnGUI()
         {
             if (runner == null) return;
+            if (CodexPanel.IsOpen) return;
 
             switch (runner.Phase)
             {
@@ -143,10 +154,12 @@ namespace WordCraft.View
         /// </summary>
         private void StartScreen()
         {
-            Rect panel = UiStyle.Middle(UiStyle.MenuWidth, onlineMenu ? 570f : UiStyle.MenuHeight + 48f);
+            Rect panel = UiStyle.Middle(UiStyle.MenuWidth,
+                Mathf.Min(Screen.height - 24f, onlineMenu ? 570f : UiStyle.MenuHeight + 180f));
             UiStyle.PanelBox(panel, UiStyle.Panel);
 
             GUILayout.BeginArea(UiStyle.Inside(panel));
+            startScroll = GUILayout.BeginScrollView(startScroll);
             GUILayout.Label("WORDCRAFT", UiStyle.DisplayStyle);
             GUILayout.Space(UiStyle.S2);
             GUILayout.BeginHorizontal();
@@ -157,7 +170,19 @@ namespace WordCraft.View
             if (online && !onlineMenu) { runner.ShowStart(); onlineMenu = true; }
             GUILayout.Space(UiStyle.S2);
 
+            if (!onlineMenu && !runner.Connecting)
+            {
+                bool tutorial = MenuButton("처음이라면 · 튜토리얼", UiStyle.ControlTall);
+                GUILayout.Space(UiStyle.S2);
+                if (tutorial)
+                {
+                    formError = null;
+                    runner.StartTutorial();
+                }
+            }
+
             GUILayout.Label("faction", UiStyle.MicroStyle);
+            if (MenuButton("유닛·건물 도감 · F1", UiStyle.Control)) CodexPanel.Toggle();
             GUILayout.Space(UiStyle.S1);
             FactionPicker();
             GUILayout.Space(UiStyle.S4);
@@ -165,6 +190,7 @@ namespace WordCraft.View
             if (onlineMenu)
             {
                 OnlineMenu();
+                GUILayout.EndScrollView();
                 GUILayout.EndArea();
                 return;
             }
@@ -185,6 +211,7 @@ namespace WordCraft.View
             if (runner.Connecting) ConnectionState();
             else HostOrJoin();
 
+            GUILayout.EndScrollView();
             GUILayout.EndArea();
         }
 
@@ -260,6 +287,15 @@ namespace WordCraft.View
 
             // No address, no port, no handshake: nothing here can be malformed, so
             // this one takes no error path and starts the match outright.
+            GUILayout.Label("솔로 난이도", UiStyle.Toned(UiStyle.Ink));
+            GUILayout.BeginHorizontal();
+            foreach (AiDifficulty level in new[] { AiDifficulty.Easy, AiDifficulty.Normal, AiDifficulty.Hard })
+                if (MenuButton(MatchRunner.DifficultyName(level), UiStyle.Control, difficulty == level)) difficulty = level;
+            GUILayout.EndHorizontal();
+            string timing = difficulty == AiDifficulty.Easy ? "선제공격 120초 이후" :
+                difficulty == AiDifficulty.Normal ? "선제공격 60초 이후" : "선제공격 유예 없음";
+            GUILayout.Label(timing + " · 기지 방어는 즉시", UiStyle.Toned(UiStyle.InkMute));
+            GUILayout.Space(UiStyle.S2);
             bool solo = MenuButton("SOLO", UiStyle.ControlTall);
             GUILayout.Space(UiStyle.S3);
 
@@ -281,7 +317,7 @@ namespace WordCraft.View
             else if (solo)
             {
                 formError = null;
-                runner.StartSolo(faction);
+                runner.StartSolo(faction, difficulty);
             }
         }
 
@@ -402,12 +438,17 @@ namespace WordCraft.View
             float width = Mathf.Max(0f, right - x);
 
             UiStyle.Note(new Rect(x, y, width, UiStyle.Micro + UiStyle.S1),
-                StateText(runner.Session), stopped ? UiStyle.Danger : UiStyle.InkMute);
+                runner.Tutorial != null && runner.Tutorial.Completed ? "Tutorial complete" :
+                runner.Paused ? "Paused · P to resume" : StateText(runner.Session), stopped ? UiStyle.Danger : UiStyle.InkMute);
             UiStyle.Note(new Rect(x, y + UiStyle.Micro + UiStyle.S1, width, UiStyle.Line),
                 "peer " + peer + "  ·  tick " + world.Tick + "  ·  " + runner.Link, UiStyle.InkMute);
 
             float controls = Screen.width - UiStyle.TopRightWidth;
             float row = (UiStyle.TopBar - UiStyle.Control) * 0.5f;
+
+            if (UiStyle.Button(new Rect(controls, row, UiStyle.CodexButton, UiStyle.Control), "도감 · F1"))
+                CodexPanel.Toggle();
+            controls += UiStyle.CodexButton + UiStyle.S2;
 
             // Armed, because the accent inverting is how every other control on this
             // HUD says "this is the one you are in the middle of". The press itself
@@ -756,12 +797,20 @@ namespace WordCraft.View
 
             float top = area.y + UiStyle.Micro + UiStyle.S1;
             float step = UiStyle.CardCellSize + UiStyle.S1;
+            string hover = null;
+            Texture hoverPortrait = null;
 
             for (int i = 0; i < CommandCard.Cells; i++)
             {
                 var cell = new Rect(area.x + i % CommandCard.Cols * step,
                     top + i / CommandCard.Cols * step,
                     UiStyle.CardCellSize, UiStyle.CardCellSize);
+                Texture portrait = CardPortrait.For(faction, card[i]);
+                if (cell.Contains(Event.current.mousePosition))
+                {
+                    hover = CardDetails.Text(runner.World, runner.LocalPeer, card[i]);
+                    hoverPortrait = portrait;
+                }
 
                 if (card[i].Type == CommandType.None && !card[i].Aim && !card[i].More)
                 {
@@ -807,7 +856,8 @@ namespace WordCraft.View
                         ? orders.Pending == CommandType.Cast && orders.CastIndex == card[i].Slot
                         : !card[i].More && orders.Pending == card[i].Type;
 
-                if (UiStyle.CardCell(cell, CommandCard.Keys[i].ToString(), card[i].Label, armed, live))
+                if (UiStyle.CardCell(cell, CommandCard.Shortcut(card[i], i).ToString(),
+                    portrait != null ? CardPortrait.CostLabel(card[i]) : card[i].Label, armed, live, portrait))
                 {
                     orders.Run(card[i]);
                 }
@@ -820,6 +870,10 @@ namespace WordCraft.View
                     UiStyle.Meter(new Rect(cell.x + UiStyle.S1, cell.yMax - UiStyle.S1,
                         cell.width - UiStyle.S2, UiStyle.S1 - 1f), card[i].Cooldown, UiStyle.Queue);
                 }
+            }
+            if (!string.IsNullOrEmpty(hover))
+            {
+                UiStyle.CardTooltip(area, hover, hoverPortrait);
             }
         }
 

@@ -113,6 +113,9 @@ namespace WordCraft.Sim
         /// </summary>
         public bool HasRallyPoint;
 
+        /// <summary>Resource entity id plus one; zero is an ordinary movement rally.</summary>
+        public int RallyResourceIdPlusOne;
+
         // Combat. All timing in whole ticks.
         public int AttackCooldown;
         public int TargetId;
@@ -1043,6 +1046,18 @@ namespace WordCraft.Sim
                     // units it makes are later given.
                     b.RallyPoint = c.Target;
                     b.HasRallyPoint = true;
+                    b.RallyResourceIdPlusOne = 0;
+                    // Zero retains the original ground-rally command contract.
+                    // Invalid or depleted resource targets fall back to the point.
+                    if (c.Arg > 0 && c.Arg <= entities.Count)
+                    {
+                        Entity node = entities[c.Arg - 1];
+                        if (node.Alive && node.Kind == EntityKind.ResourceNode && node.Resource > 0)
+                        {
+                            b.RallyResourceIdPlusOne = c.Arg;
+                            b.RallyPoint = node.Position;
+                        }
+                    }
                     entities[c.EntityId] = b;
                     break;
                 }
@@ -1415,6 +1430,11 @@ namespace WordCraft.Sim
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)population[p]);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, aiPeers[p] ? 1UL : 0UL);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)aiSeq[p]);
+            for (int p = 0; p < MaxPeers; p++)
+            {
+                Mix(ref h, (ulong)aiDifficulties[p]);
+                Mix(ref h, (ulong)aiNextAttackTick[p]);
+            }
             // Upgrade levels, peer major and row minor, every slot whether the
             // faction fields that row or not: a fixed walk of a fixed array, so
             // two peers cannot disagree about which numbers were mixed.
@@ -1497,6 +1517,7 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.RallyPoint.X.Raw);
                 Mix(ref h, (ulong)e.RallyPoint.Y.Raw);
                 Mix(ref h, e.HasRallyPoint ? 1UL : 0UL);
+                Mix(ref h, (ulong)e.RallyResourceIdPlusOne);
                 Mix(ref h, (ulong)e.AttackCooldown);
                 Mix(ref h, (ulong)e.TargetId);
                 Mix(ref h, (ulong)e.Mode);

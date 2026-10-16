@@ -30,6 +30,7 @@ namespace WordCraft.Host
             public int Draws;
             public int Peer0Wins;
             public int Peer1Wins;
+            public int Finished;
             public long Ticks;
             public long PeakA;
             public long PeakB;
@@ -48,9 +49,15 @@ namespace WordCraft.Host
             int games = DefaultGames, ticks = DefaultTicks;
             ulong seed = DefaultSeed;
             Faction? a = null, b = null;
+            bool verify = false;
 
             for (int i = 1; i < args.Length; i += 2)
             {
+                if (i + 1 < args.Length && args[i] == "-verify" && args[i + 1] == "1")
+                {
+                    verify = true;
+                    continue;
+                }
                 if (i + 1 == args.Length || !TryOption(args[i], args[i + 1],
                     ref games, ref ticks, ref seed, ref a, ref b))
                 {
@@ -73,7 +80,7 @@ namespace WordCraft.Host
             var totals = new FactionResult[factions.Length];
             for (int i = 0; i < totals.Length; i++) totals[i] = new FactionResult();
             var pairs = new List<PairResult>();
-            long peer0Wins = 0, peer1Wins = 0, draws = 0;
+            long peer0Wins = 0, peer1Wins = 0, draws = 0, finished = 0, played = 0;
 
             Console.WriteLine("arena: " + (a.HasValue ? "1 pair" : factions.Length * factions.Length + " pairs") +
                               ", " + games + " game(s) each, at most " + ticks +
@@ -93,6 +100,8 @@ namespace WordCraft.Host
                         peer0Wins += pair.Peer0Wins;
                         peer1Wins += pair.Peer1Wins;
                         draws += pair.Draws;
+                        finished += pair.Finished;
+                        played += pair.Games;
                         AddTotals(totals[(int)first], pair.Games, pair.AWins, pair.BWins, pair.Draws);
                         AddTotals(totals[(int)second], pair.Games, pair.BWins, pair.AWins, pair.Draws);
                         Console.WriteLine(FormatPair(pair));
@@ -117,6 +126,10 @@ namespace WordCraft.Host
             }
 
             Console.WriteLine("peer 0 wins " + peer0Wins + ", peer 1 wins " + peer1Wins + ", draws " + draws);
+            double sideGap = 100.0 * Math.Abs(peer0Wins - peer1Wins) / played;
+            Console.WriteLine(string.Format(CultureInfo.InvariantCulture,
+                "finished {0}/{1} ({2:F2}%), draw rate {3:F2}%, peer win-rate gap {4:F2}pp",
+                finished, played, 100.0 * finished / played, 100.0 * draws / played, sideGap));
 
             pairs.Sort((left, right) =>
             {
@@ -138,6 +151,17 @@ namespace WordCraft.Host
                     100.0 * Math.Abs(pair.AWins - pair.BWins) / pair.Games,
                     pair.AWins, pair.BWins));
             }
+            if (verify)
+            {
+                bool passed = !a.HasValue && ticks == DefaultTicks && games >= 4 &&
+                    finished * 100 >= played * 95 && draws * 100 <= played * 5 &&
+                    Math.Abs(peer0Wins - peer1Wins) * 100 <= played * 10;
+                foreach (FactionResult result in totals)
+                    passed &= result.Games > 0 && result.Wins * 100 >= result.Games * 40 &&
+                        result.Wins * 100 <= result.Games * 60;
+                Console.WriteLine(passed ? "OK: full balance gates passed" : "FAIL: full balance gates not met");
+                return passed ? 0 : 1;
+            }
             return 0;
         }
 
@@ -147,7 +171,7 @@ namespace WordCraft.Host
 
         private static void PrintUsage()
         {
-            Console.WriteLine("usage: arena [-games N] [-ticks T] [-seed S] [-a <faction>] [-b <faction>]");
+            Console.WriteLine("usage: arena [-games N] [-ticks T] [-seed S] [-a <faction>] [-b <faction>] [-verify 1]");
             Console.WriteLine("a is peer 0 on even games and peer 1 on odd games (game indexes start at 0)");
         }
 
@@ -198,6 +222,7 @@ namespace WordCraft.Host
                     peakB = Math.Max(peakB, first.GetPopulation(peerB));
                 }
 
+                if (first.MatchOver) result.Finished++;
                 if (first.MatchOver && (first.Winner == 0 || first.Winner == 1))
                 {
                     if (first.Winner == peerA) result.AWins++;

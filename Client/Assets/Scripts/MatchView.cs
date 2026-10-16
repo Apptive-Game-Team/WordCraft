@@ -365,6 +365,7 @@ namespace WordCraft.View
         /// <summary>The building under the cursor during placement. Rebuilt when the role changes.</summary>
         private BodyRig ghost;
         private Role ghostRole = Role.None;
+        private int ghostSlot;
         private Faction ghostFaction;
 
         // 차원 유랑종 통로 조준 (#139). Three marks, all of them the local peer's own:
@@ -1867,18 +1868,18 @@ namespace WordCraft.View
             }
 
             Role role = orders.Placing;
+            int slot = orders.PlacingSlot;
             Faction faction = world.FactionOf(runner.LocalPeer);
             FixVec2 aimed = MatchRunner.ToSim(under);
-            bool legal = world.CanBuild(runner.LocalPeer, role, aimed);
+            bool legal = world.CanBuild(runner.LocalPeer, role, slot, aimed);
 
-            if (ghost == null || ghostRole != role || ghostFaction != faction)
+            if (ghost == null || ghostRole != role || ghostSlot != slot || ghostFaction != faction)
             {
                 if (ghost != null) Destroy(ghost.gameObject);
                 ghostRole = role;
+                ghostSlot = slot;
                 ghostFaction = faction;
-                // Entry 0 only: Build still names a plain role (Sim/World.cs
-                // Apply), so nothing it places can be anything else yet (#111).
-                ghost = Models.Build(transform, faction, role, 0, EntityKind.Building, runner.LocalPeer, neutral: false);
+                ghost = Models.Build(transform, faction, role, slot, EntityKind.Building, runner.LocalPeer, neutral: false);
                 ghost.name = "BuildGhost";
                 ghost.Alpha(GhostAlpha);
             }

@@ -846,27 +846,23 @@ namespace WordCraft.Replay
         // The AI
 
         /// <summary>
-        /// A solo match per faction, the AI on peer 1 against an idle 세계수 정령:
-        /// somewhere before it is decided the AI has put at least one new row on
-        /// the field. Four factions do: 지옥불 화염 악마, 물 슬라임 침 뱉는
-        /// 슬라임, 돌 골렘 돌팔매 꼬마돌 and 인간 석궁 사수, each the cheap tier-1
-        /// body its base now makes. Two are left out on purpose. 세계수 정령's new
-        /// bodies are all grown, and the ladder grows nothing. 차원 유랑종's ladder
-        /// takes the first entry at its highest tier, which at tier 3 is 멸종한
-        /// 화염 슬라임 ahead of every new row. Teaching the ladder either is
-        /// docs/TECH-TREE.md 묶음 9.
+        /// The complete composition AI fields an expanded roster entry within
+        /// 2000 ticks against a defender using normal gathering and production.
+        /// An idle opponent can lose before support infrastructure completes;
+        /// the shared live-acceptance defender exercises that investment without
+        /// granting either side resources, units or technologies.
         /// </summary>
         private static void TheAiPutsANewRowOnTheField()
         {
             foreach (Faction faction in new[] { Faction.Hellfire, Faction.WaterSlimes, Faction.RockGolems, Faction.Humans })
             {
                 const int ai = 1;
-                World world = MatchScenario.Build(Seed, Faction.TreeSpirits, faction);
+                World world = MatchScenario.Build(Seed, Faction.WaterSlimes, faction);
                 world.SetPeerAi(ai, true);
                 string found = null;
-                for (int t = 0; t < 6000 && !world.MatchOver && found == null; t++)
+                for (int t = 0; t < 2000 && !world.MatchOver && found == null; t++)
                 {
-                    world.Step(Idle);
+                    world.Step(AiChecks.DefensiveOrders(world));
                     for (int i = 0; i < world.EntityCount && found == null; i++)
                     {
                         Entity e = world.GetEntity(i);

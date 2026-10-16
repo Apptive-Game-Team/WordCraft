@@ -40,9 +40,12 @@ namespace WordCraft.View
 
         /// <summary>Which building an armed Build will place. None when nothing is armed.</summary>
         public Role Placing { get; private set; }
+        public int PlacingSlot { get; private set; }
 
         /// <summary>True while the worker's build submenu is showing instead of its card.</summary>
         public bool BuildMenuOpen { get; private set; }
+        public bool GrowMenuOpen { get; private set; }
+        private World menuWorld;
 
         /// <summary>
         /// True while the 도착 지점 cell is armed and the next left click on the map
@@ -117,7 +120,7 @@ namespace WordCraft.View
         }
 
         /// <summary>The card the current selection shows. The HUD draws it, the keys fire it.</summary>
-        public CardKind Kind() => BuildMenuOpen ? CardKind.BuildMenu : SelectionKind();
+        public CardKind Kind() => BuildMenuOpen ? CardKind.BuildMenu : GrowMenuOpen ? CardKind.GrowMenu : SelectionKind();
 
         /// <summary>
         /// The card the keys fire and the HUD draws, built from one place so the
@@ -179,11 +182,19 @@ namespace WordCraft.View
         /// </summary>
         private void SyncPage()
         {
+            if (!ReferenceEquals(menuWorld, runner.World))
+            {
+                menuWorld = runner.World;
+                pageSelection.Clear();
+                Page = 0;
+                Cancel();
+            }
             IReadOnlyList<int> now = selection.Selected;
             bool same = now.Count == pageSelection.Count;
             for (int i = 0; same && i < now.Count; i++) same = now[i] == pageSelection[i];
             if (same) return;
 
+            Cancel();
             pageSelection.Clear();
             for (int i = 0; i < now.Count; i++) pageSelection.Add(now[i]);
             Page = 0;
@@ -199,6 +210,7 @@ namespace WordCraft.View
         private void Update()
         {
             if (runner == null || selection == null) return;
+            if (CodexPanel.IsOpen) { Cancel(); selection.Blocked = false; return; }
             if (cam == null)
             {
                 cam = Camera.main;
@@ -220,6 +232,8 @@ namespace WordCraft.View
             // the selection mid-menu must not leave the player looking at buildings
             // no selected worker could place.
             if (BuildMenuOpen && SelectionKind() != CardKind.Worker) BuildMenuOpen = false;
+            if (GrowMenuOpen && CommandCard.GrowthEntries(runner.World.FactionOf(runner.LocalPeer), LeadRole(), LeadSlot()).Count == 0)
+                GrowMenuOpen = false;
 
             // The armed aim belongs to the 통로's card for the same reason, and it
             // is the 통로 dying rather than the selection changing that matters
@@ -235,7 +249,7 @@ namespace WordCraft.View
             CardSlot[] card = Card();
             for (int i = 0; i < CommandCard.Cells; i++)
             {
-                if (Input.GetKeyDown(CommandCard.Keys[i])) Run(card[i]);
+                if (Input.GetKeyDown(CommandCard.Shortcut(card[i], i))) Run(card[i]);
             }
 
             if (Input.GetKeyDown(KeyCode.Escape)) Cancel();
@@ -261,7 +275,7 @@ namespace WordCraft.View
             }
 
             if (!Input.GetMouseButtonDown(1) || Hud.OverUi(Input.mousePosition)) return;
-            if (Pending != CommandType.None || BuildMenuOpen || Aiming) Cancel();
+            if (Pending != CommandType.None || BuildMenuOpen || GrowMenuOpen || Aiming) Cancel();
             else RightClick(MouseWorld());
         }
 
@@ -270,7 +284,9 @@ namespace WordCraft.View
         {
             Pending = CommandType.None;
             Placing = Role.None;
+            PlacingSlot = 0;
             BuildMenuOpen = false;
+            GrowMenuOpen = false;
             // The arm, not the point. Esc out of an aim and the point named before
             // it still stands, the way Esc out of a Move leaves the last one walked.
             Aiming = false;
@@ -321,6 +337,27 @@ namespace WordCraft.View
         /// </summary>
         public void Run(CardSlot slot)
         {
+            if (runner == null || runner.Session.State != SessionState.Running) return;
+            if (slot.Locked || slot.Maxed) return;
+            if (slot.Type == CommandType.Grow)
+            {
+                Cancel();
+                Page = 0;
+                if (slot.Produce == Role.None)
+                {
+                    GrowMenuOpen = true;
+                    return;
+                }
+                GrowthCost growth = FactionData.Growth(runner.World.FactionOf(runner.LocalPeer), slot.Produce, slot.Slot);
+                foreach (int id in selection.Selected)
+                {
+                    Entity e = runner.World.GetEntity(id);
+                    if (growth.Grown && e.Alive && e.Owner == runner.LocalPeer &&
+                        e.Role == growth.FromRole && e.Slot == growth.FromSlot && !World.IsGrowing(e))
+                        Issue(CommandType.Grow, id, FixVec2.Zero, Command.RosterArg(slot.Produce, slot.Slot));
+                }
+                return;
+            }
             if (runner == null) return;
             if (runner.Session.State != SessionState.Running) return;
 
@@ -378,12 +415,14 @@ namespace WordCraft.View
                 // The cell that names no building is the one that opens the menu.
                 if (slot.Produce == Role.None)
                 {
-                    CommandCard.BuildMenu(runner.World.FactionOf(runner.LocalPeer));
+                    Cancel();
+                    Page = 0;
                     BuildMenuOpen = true;
                     return;
                 }
                 BuildMenuOpen = false;
                 Placing = slot.Produce;
+                PlacingSlot = slot.Slot;
                 Pending = CommandType.Build;
                 return;
             }
@@ -526,13 +565,15 @@ namespace WordCraft.View
             if (type == CommandType.Build)
             {
                 Role role = Placing;
+                int slot = PlacingSlot;
                 Placing = Role.None;
+                PlacingSlot = 0;
                 // Build names a peer, a building, and a cell, not an entity, so it
                 // goes out once however many workers are selected. One per worker
                 // would spend the first one's cost and have the simulation refuse
                 // the rest. Sent whatever the ghost's tint says: the tint is a
                 // guess made a tick late, and the simulation is what decides.
-                Issue(CommandType.Build, -1, MatchRunner.ToSim(point), (int)role);
+                Issue(CommandType.Build, -1, MatchRunner.ToSim(point), Command.RosterArg(role, slot));
                 return;
             }
 
@@ -558,14 +599,21 @@ namespace WordCraft.View
             if (type == CommandType.Attack)
             {
                 int hit = runner.EntityAt(point, PickRadius, mineOnly: false);
-                // The simulation refuses an Attack that names nothing hostile, so a
-                // click on empty ground drops the order rather than inventing a
-                // substitute target each peer would pick for itself.
-                if (hit < 0 || runner.World.GetEntity(hit).Owner == runner.LocalPeer) return;
-                ToSelection(CommandType.Attack, FixVec2.Zero, hit);
+                Entity aimed = hit >= 0 ? runner.World.GetEntity(hit) : default;
+                if (hit >= 0 && aimed.Alive && aimed.Kind != EntityKind.ResourceNode && aimed.Owner != runner.LocalPeer)
+                    ToSelection(CommandType.Attack, FixVec2.Zero, hit);
+                else
+                    ToSelection(CommandType.AttackMove, MatchRunner.ToSim(point), 0);
                 return;
             }
 
+            if (type == CommandType.SetRallyPoint)
+            {
+                int hit = runner.EntityAt(point, PickRadius, mineOnly: false);
+                bool node = hit >= 0 && runner.World.GetEntity(hit).Kind == EntityKind.ResourceNode;
+                ToSelection(type, node ? runner.World.GetEntity(hit).Position : MatchRunner.ToSim(point), node ? hit + 1 : 0);
+                return;
+            }
             ToSelection(type, MatchRunner.ToSim(point), 0);
         }
 
@@ -665,7 +713,11 @@ namespace WordCraft.View
                 Entity e = world.GetEntity(id);
                 if (!e.Alive || e.Owner != runner.LocalPeer) continue;
 
-                if (node && e.Kind == EntityKind.Worker)
+                if (IsProducer(e, world.FactionOf(runner.LocalPeer)))
+                {
+                    Issue(CommandType.SetRallyPoint, id, target, node ? hit + 1 : 0);
+                }
+                else if (node && e.Kind == EntityKind.Worker)
                 {
                     Issue(CommandType.Gather, id, FixVec2.Zero, hit);
                 }
@@ -690,6 +742,16 @@ namespace WordCraft.View
                     Issue(CommandType.SetRallyPoint, id, target);
                 }
             }
+        }
+
+        /// <summary>Uses the roster rather than current tech or queue availability.</summary>
+        private static bool IsProducer(Entity entity, Faction faction)
+        {
+            if (entity.Kind != EntityKind.Building) return false;
+            for (int role = 0; role < FactionData.RoleCount; role++)
+                for (int slot = 0; slot < FactionData.SlotCount(faction, (Role)role); slot++)
+                    if (FactionData.IsProducedAt(faction, (Role)role, slot, entity.Role, entity.Slot)) return true;
+            return false;
         }
 
         /// <summary>

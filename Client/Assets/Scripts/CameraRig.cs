@@ -1,4 +1,5 @@
 using UnityEngine;
+using WordCraft.Sim;
 
 namespace WordCraft.View
 {
@@ -96,6 +97,8 @@ namespace WordCraft.View
         private bool hasBookmark;
 
         private bool adopted;
+        private World homedWorld;
+        private int homedPeer = -1;
 
         /// <summary>The point on the ground the player is looking at, on the simulation's plane.</summary>
         public Vector2 Frame => shownFrame;
@@ -175,7 +178,9 @@ namespace WordCraft.View
             // gets typed into the start screen, and a map sliding under the menu is
             // nobody's idea of a text field. The ease below keeps running, so a
             // camera sent back to the middle for the menu actually gets there.
-            if (MatchRunner.Instance == null || MatchRunner.Instance.Phase == Phase.Match) Controls();
+            bool homed = SyncMatchHome(MatchRunner.Instance);
+            if (CodexPanel.IsOpen) dragging = false;
+            if (!homed && !CodexPanel.IsOpen && (MatchRunner.Instance == null || MatchRunner.Instance.Phase == Phase.Match)) Controls();
 
             Clamp();
 
@@ -189,13 +194,37 @@ namespace WordCraft.View
             Apply();
         }
 
+        /// <summary>
+        /// A new match starts at the local base, after the online handshake has
+        /// chosen the actual world and seat. Remembering that world preserves
+        /// every subsequent pan, bookmark jump and spectator position.
+        /// </summary>
+        private bool SyncMatchHome(MatchRunner runner)
+        {
+            if (runner == null || runner.Phase != Phase.Match || runner.World == null) return false;
+            if (ReferenceEquals(homedWorld, runner.World) && homedPeer == runner.LocalPeer) return false;
+            for (int i = 0; i < runner.World.EntityCount; i++)
+            {
+                Entity e = runner.World.GetEntity(i);
+                if (!e.Alive || e.Owner != runner.LocalPeer || e.Kind != EntityKind.Building || e.Role != Role.Base) continue;
+                frame = shownFrame = MatchRunner.ToView(e.Position);
+                dragging = false;
+                hasBookmark = false;
+                homedWorld = runner.World;
+                homedPeer = runner.LocalPeer;
+                return true;
+            }
+            return false;
+        }
+
         /// <summary>Pan, zoom, turn and bookmark: everything the camera does that a key asked for.</summary>
         private void Controls()
         {
             float scroll = Input.GetAxis("Mouse ScrollWheel");
-            if (!Mathf.Approximately(scroll, 0f)) Zoom(scroll);
+            bool overUi = Hud.OverUi(Input.mousePosition);
+            if (!overUi && !Mathf.Approximately(scroll, 0f)) Zoom(scroll);
 
-            if (Input.GetMouseButtonDown(2) && Field.Pointer(cam, Input.mousePosition, out dragGrabbed))
+            if (!overUi && Input.GetMouseButtonDown(2) && Field.Pointer(cam, Input.mousePosition, out dragGrabbed))
             {
                 dragging = true;
                 dragHeight = Field.Height(dragGrabbed);
@@ -261,7 +290,7 @@ namespace WordCraft.View
 
         /// <summary>
         /// One saved viewpoint. Z and X because the command card owns RTY/FGH/VBN,
-        /// the camera owns WASD and QE, the control groups own the digits, and the
+        /// the camera owns arrows, WSD and QE; A is attack. Control groups own digits, and the
         /// bottom-left pair is what a left hand resting on WASD can still reach.
         /// </summary>
         private void Bookmarks()
@@ -280,9 +309,9 @@ namespace WordCraft.View
         /// <summary>
         /// Which way the pointer sitting at a screen edge pushes the map. A pointer
         /// outside the window, or a window that is not focused at all, pushes
-        /// nowhere: alt-tabbing away must not leave the map sliding. The HUD is
-        /// deliberately not excluded: the bottom edge scrolls through the panel,
-        /// which is what every RTS does.
+        /// nowhere: alt-tabbing away must not leave the map sliding. HUD controls
+        /// also suppress edge scrolling, so using the idle-worker button or a
+        /// command card cannot immediately pan away from the selected unit.
         /// </summary>
         private static Vector2 EdgePush()
         {
@@ -290,6 +319,7 @@ namespace WordCraft.View
 
             Vector3 m = Input.mousePosition;
             if (m.x < 0f || m.y < 0f || m.x > Screen.width || m.y > Screen.height) return Vector2.zero;
+            if (Hud.OverUi(m)) return Vector2.zero;
 
             var push = Vector2.zero;
             if (m.x <= EdgePixels) push.x = -1f;

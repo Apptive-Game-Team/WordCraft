@@ -464,7 +464,24 @@ namespace WordCraft.Sim
                         : SpawnUnit(b.Owner, b.ProduceRole, b.ProduceSlot, arrival);
                     // Walked, not teleported: a rally point costs what crossing the
                     // ground costs, and the unit is catchable on the way.
-                    if (b.HasRallyPoint) SetDestination(spawned, b.RallyPoint);
+                    if (b.HasRallyPoint)
+                    {
+                        FixVec2 destination = b.RallyPoint;
+                        int resource = b.RallyResourceIdPlusOne - 1;
+                        if (b.ProduceRole == Role.Worker && resource >= 0 && resource < entities.Count)
+                        {
+                            Entity node = entities[resource];
+                            if (node.Alive && node.Kind == EntityKind.ResourceNode && node.Resource > 0)
+                            {
+                                Entity worker = entities[spawned];
+                                worker.GatherNodeId = resource;
+                                worker.GatherTicksLeft = 0;
+                                entities[spawned] = worker;
+                                destination = node.Position;
+                            }
+                        }
+                        SetDestination(spawned, destination);
+                    }
                     // 도착 방전: where the body stands, an invalid arrival
                     // at the 통로 included, and landed by BurstSystem.
                     QueueArrivalBurst(spawned);
