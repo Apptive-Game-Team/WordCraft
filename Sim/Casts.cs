@@ -268,6 +268,18 @@ namespace WordCraft.Sim
             return -1;
         }
 
+        /// <summary>
+        /// Whether a hostile 모래폭풍 slows this body. docs/TECH-TREE.md 모래폭풍:
+        /// 사거리 2 근접은 영향 없음, read whole: an armed body whose reach is 2
+        /// or less is neither capped nor slowed. An unarmed body (a worker, a
+        /// support unit) has no reach to speak of and is slowed.
+        /// </summary>
+        private bool SandStormSlows(Entity e) =>
+            SandStormReach(e) >= 0 && !(Armed(e) && UnstormedRangeFor(e) <= MeleeReach);
+
+        /// <summary>The reach docs/TECH-TREE.md calls 근접 for 모래폭풍: 2 cells.</summary>
+        private static readonly Fix MeleeReach = Fix.FromInt(2);
+
         // The 모래폭풍 casters whose zone stands at the start of the pass that
         // reads them, by ascending id, and the row each runs. Scratch, not
         // state, the way the aura source list is: rebuilt by every pass that

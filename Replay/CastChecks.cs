@@ -517,7 +517,8 @@ namespace WordCraft.Replay
         /// <summary>
         /// 모래폭풍 6.5 cells off: for the hundred ticks the clock runs, an
         /// enemy 덩쿨 정령 (reach 5) inside reaches 3, an enemy melee body still
-        /// reaches 2, an enemy walker inside walks at half speed, and an enemy
+        /// reaches 2 and walks at full speed, an enemy worker inside walks at
+        /// half speed, and an enemy
         /// 3.5 cells from the point and an ally inside are untouched. On the
         /// hundred-and-first the reach is 5 again. 모래폭풍 반경 takes the
         /// zone to 4 cells. A caster that dies ends the zone.
@@ -554,20 +555,31 @@ namespace WordCraft.Replay
             World s = Ready(Faction.RockGolems, "모래폭풍", true, out int shaper);
             int walker = s.SpawnWorker(1, p);
             int free = s.SpawnWorker(1, p + V(0, 10, 0));
+            // And an enemy melee body (reach 2), which 사거리 2 근접은 영향 없음
+            // leaves alone: it walks inside the zone as fast as outside it.
+            int blade = s.SpawnUnit(1, Role.Melee, 0, p + V(3, 0, 2));
+            int bladeFree = s.SpawnUnit(1, Role.Melee, 0, p + V(3, 20, 2));
             Step(s, Cast(s, shaper, p, "모래폭풍"));
             var move = new List<Command>
             {
                 new Command(s.Tick, 1, seq++, CommandType.Move, walker, p + V(0, 2, 0)),
                 new Command(s.Tick, 1, seq++, CommandType.Move, free, p + V(0, 12, 0)),
+                new Command(s.Tick, 1, seq++, CommandType.Move, blade, p + V(3, 4, 2)),
+                new Command(s.Tick, 1, seq++, CommandType.Move, bladeFree, p + V(3, 24, 2)),
             };
             Step(s, move);
             Step(s);
             FixVec2 a0 = s.GetEntity(walker).Position, b0 = s.GetEntity(free).Position;
+            FixVec2 c0 = s.GetEntity(blade).Position, d0 = s.GetEntity(bladeFree).Position;
             Step(s);
             long slow = (s.GetEntity(walker).Position - a0).Magnitude.Raw;
             long fast = (s.GetEntity(free).Position - b0).Magnitude.Raw;
             Check(fast > 0 && Math.Abs(slow * 2 - fast) <= 16,
                 "a walker in 모래폭풍 stepped " + slow + " raw against " + fast + " outside, not half");
+            long bladeIn = (s.GetEntity(blade).Position - c0).Magnitude.Raw;
+            long bladeOut = (s.GetEntity(bladeFree).Position - d0).Magnitude.Raw;
+            Check(bladeOut > 0 && Math.Abs(bladeIn - bladeOut) <= 16,
+                "a melee body in 모래폭풍 stepped " + bladeIn + " raw against " + bladeOut + " outside, not the same");
 
             // The research reaches 4 cells.
             World r = Ready(Faction.RockGolems, "모래폭풍", true, out int boosted);
