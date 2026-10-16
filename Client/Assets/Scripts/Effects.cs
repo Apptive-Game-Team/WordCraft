@@ -29,6 +29,13 @@ namespace WordCraft.View
     /// three at a time and never a scatter; a burn's tick is a smaller burst;
     /// and a chain's jump is the tracer's spindle laid along a four-leg zigzag
     /// (<see cref="Jump"/>), thick enough to survive a 64 px downscale.
+    ///
+    /// Issue #212 adds the area abilities: a tracer can come down on an arc
+    /// (<see cref="Lob"/>) or straight from the sky (<see cref="Fall"/>), can
+    /// be a lump of debris instead of a spindle, and can land with a ring the
+    /// size of what it hit (<see cref="Blast"/>); and a zone that stands on a
+    /// point is a ring of chips circling it (<see cref="Orbit"/>), drawn afresh
+    /// every frame from a pool of its own.
     /// </summary>
     public sealed class Effects
     {
@@ -108,6 +115,34 @@ namespace WordCraft.View
         /// <summary>Chain jumps up at once: 연쇄 번개 hops twice, so four shooters firing together.</summary>
         private const int BoltWarm = 8;
 
+        /// <summary>Zone chips up at once: one 모래폭풍 and one 칼바람 회오리 (issue #212).</summary>
+        private const int OrbitWarm = 32;
+
+        // A blast's ring (issue #212): out from a third of the radius to the
+        // whole of it, the band a tenth of the radius, slower than a hit's.
+        private const float BlastFrom = 0.3f;
+        private const float BlastBand = 0.1f;
+        private const float BlastBandFloor = 0.14f;
+        private const float BlastSeconds = 0.5f;
+        private const float BlastAlpha = 0.85f;
+
+        /// <summary>A lobbed tracer's flight: slower than a shot, it goes up first (issue #212).</summary>
+        private const float LobFlight = 0.42f;
+
+        /// <summary>How high a lob climbs over its flight, as a share of the ground it covers, floored in cells.</summary>
+        private const float LobArc = 0.35f;
+        private const float LobArcFloor = 1.2f;
+
+        /// <summary>A hurled lump of debris, in cells across: the rubble pile's own chunk, a little smaller.</summary>
+        private const float HurlSize = 0.38f;
+
+        // A zone's chips (issue #212): the chip size, how far in from the
+        // radius the innermost ring of them runs, and how high they ride.
+        private const float OrbitChip = 0.32f;
+        private const float OrbitInner = 0.55f;
+        private const float OrbitLift = 0.35f;
+        private const float OrbitBob = 0.45f;
+
         // A building's dust ring (issue #186): out from just inside its
         // footprint to past it, a thicker band than a shot's, slower.
         private const float DustFrom = 0.55f;
@@ -160,6 +195,14 @@ namespace WordCraft.View
             public int Target;
             /// <summary>Whether it bursts where it lands. Not into the fog: a burst there would show where a hidden body stands.</summary>
             public bool Bursts;
+            /// <summary>The landing burst's size, as a share of a weapon's (issue #212). 1 for a shot.</summary>
+            public float Scale;
+            /// <summary>How high it climbs over its flight, in cells: 0 flies straight (issue #212).</summary>
+            public float Arc;
+            /// <summary>A lump of debris rather than a spindle (issue #212).</summary>
+            public bool Chunk;
+            /// <summary>The radius of the ring it lands with, in cells; 0 for none (issue #212).</summary>
+            public float Ring;
         }
 
         private struct Chunk
@@ -228,6 +271,13 @@ namespace WordCraft.View
         private readonly List<MeshRenderer> legRenderers = new List<MeshRenderer>(BoltWarm * BoltLegs);
         private int boltCounter;
 
+        /// <summary>A tracer slot's lump of debris, parallel to tracers: drawn instead of the spindle for a hurl.</summary>
+        private readonly List<MeshRenderer> hurlRenderers = new List<MeshRenderer>(TracerWarm);
+
+        /// <summary>Zone chips, handed out afresh every frame between <see cref="BeginOrbits"/> and <see cref="EndOrbits"/>.</summary>
+        private readonly List<MeshRenderer> orbitRenderers = new List<MeshRenderer>(OrbitWarm);
+        private int orbitsUsed;
+
         private int burstCounter;
 
         private readonly List<int> landed = new List<int>(TracerWarm);
@@ -247,6 +297,7 @@ namespace WordCraft.View
             for (int i = 0; i < CrumbleWarm * ChunksPerCrumble; i++) AddChunk();
             for (int i = 0; i < MoteWarm; i++) AddMote();
             for (int i = 0; i < BoltWarm; i++) AddBolt();
+            for (int i = 0; i < OrbitWarm; i++) orbitRenderers.Add(Renderer("OrbitChip", ShardMesh));
         }
 
         /// <summary>
@@ -257,21 +308,130 @@ namespace WordCraft.View
         /// </summary>
         public float Shot(Vector3 from, Vector3 to, Color colour, float delay = 0f, int target = -1, bool bursts = true)
         {
-            int i = FreeTracer();
             float flight = Mathf.Clamp(Vector3.Distance(from, to) / TracerSpeed, MinFlight, MaxFlight);
-            tracers[i] = new Tracer
+            return Launch(new Tracer
             {
-                Live = true, From = from, To = to, Started = ViewClock.Now + delay, Flight = flight, Colour = colour,
-                Target = target, Bursts = bursts,
-            };
+                From = from, To = to, Started = ViewClock.Now + delay, Flight = flight, Colour = colour,
+                Target = target, Bursts = bursts, Scale = 1f,
+            });
+        }
 
-            Colour(tracerRenderers[i], colour);
-            Color streak = BodyPalette.Lighter(colour, 0.3f);
+        /// <summary>
+        /// A tracer that climbs and comes down on <paramref name="to"/> from
+        /// above (issue #212): 용암 폭발's stone and 폭격's bomb, and, as a lump
+        /// of debris when <paramref name="chunk"/>, 잔해 투척's throw. Lands with
+        /// a ring of <paramref name="ring"/> cells round the ground under it when
+        /// that is above zero. Returns the seconds until it lands.
+        /// </summary>
+        public float Lob(Vector3 from, Vector3 to, Color colour, float delay, int target, float ring, bool chunk = false,
+                         bool bursts = true)
+        {
+            Vector3 across = to - from;
+            across.y = 0f;
+            return Launch(new Tracer
+            {
+                From = from, To = to, Started = ViewClock.Now + delay, Flight = LobFlight, Colour = colour,
+                Target = target, Bursts = bursts, Scale = 1f, Arc = Mathf.Max(LobArcFloor, across.magnitude * LobArc),
+                Chunk = chunk, Ring = ring,
+            });
+        }
+
+        /// <summary>
+        /// A tracer dropping straight onto <paramref name="to"/> from
+        /// <paramref name="height"/> cells above it over <paramref name="flight"/>
+        /// seconds (issue #212): a 유성우 stone. Bursts at <paramref name="scale"/>
+        /// of a weapon's size, with a ring of <paramref name="ring"/> cells when
+        /// that is above zero. A negative height rises instead: 간헐천's spout.
+        /// </summary>
+        public float Fall(Vector3 to, float height, Color colour, float delay, float flight, float scale, float ring,
+                          bool bursts = true)
+        {
+            Vector3 from = to + Vector3.up * height;
+            if (height < 0f)
+            {
+                from = to;
+                to -= Vector3.up * height;
+            }
+            return Launch(new Tracer
+            {
+                From = from, To = to, Started = ViewClock.Now + delay, Flight = flight, Colour = colour,
+                Target = -1, Bursts = bursts, Scale = scale, Ring = ring,
+            });
+        }
+
+        private float Launch(Tracer t)
+        {
+            int i = FreeTracer();
+            t.Live = true;
+            tracers[i] = t;
+            MeshRenderer body = t.Chunk ? hurlRenderers[i] : tracerRenderers[i];
+            Colour(body, t.Colour);
+            Color streak = BodyPalette.Lighter(t.Colour, 0.3f);
             streak.a = TrailAlpha;
             TrailColour(trailRenderers[i], streak);
             tracerRenderers[i].enabled = false; // until it leaves
+            hurlRenderers[i].enabled = false;
             trailRenderers[i].enabled = false;
-            return delay + flight;
+            return t.Started - ViewClock.Now + t.Flight;
+        }
+
+        /// <summary>
+        /// A ring running out from a third of <paramref name="radius"/> to the
+        /// whole of it over the ground round <paramref name="foot"/> (issue #212):
+        /// the reach of a burst, a blast or a strike, said once as it lands. The
+        /// impact ring of a weapon is under a body; this one is the area.
+        /// </summary>
+        public void Blast(Vector3 foot, float radius, Color colour, float delay = 0f, float alpha = BlastAlpha)
+        {
+            int i = FreeBurst();
+            bursts[i] = new Burst
+            {
+                Live = true, At = foot, Started = ViewClock.Now + delay, Shards = false,
+                From = radius * BlastFrom, To = radius, Band = Mathf.Max(BlastBandFloor, radius * BlastBand),
+                Seconds = BlastSeconds, Scale = 1f, Alpha = alpha,
+            };
+            ringColours[i] = colour;
+            rings[i].Visible = false;
+        }
+
+        /// <summary>Starts a frame's zones: every chip handed out last frame is free again.</summary>
+        public void BeginOrbits() => orbitsUsed = 0;
+
+        /// <summary>
+        /// <paramref name="count"/> chips circling <paramref name="centre"/> on
+        /// the ground at <paramref name="radius"/> cells and inside it, turning
+        /// <paramref name="turn"/> degrees a second, this frame only (issue
+        /// #212): a zone that stands on a point for as long as its clock runs.
+        /// Every other chip is darker, so the ring reads as turning in a still.
+        /// </summary>
+        public void Orbit(Vector2 centre, float radius, Color colour, int count, float turn, float seed)
+        {
+            float now = ViewClock.Now;
+            Color shade = BodyPalette.Darker(colour, 0.75f);
+            for (int k = 0; k < count; k++)
+            {
+                if (orbitsUsed >= orbitRenderers.Count) orbitRenderers.Add(Renderer("OrbitChip", ShardMesh));
+                MeshRenderer r = orbitRenderers[orbitsUsed++];
+                // Three bands from OrbitInner of the radius out to all of it,
+                // each turning at its own share of the rate, so the ring churns.
+                int band = k % 3;
+                float reach = radius * Mathf.Lerp(OrbitInner, 1f, band / 2f);
+                float angle = (seed + now * turn * (1f - 0.18f * band) + k * (360f / count)) * Mathf.Deg2Rad;
+                var dir = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+                float lift = OrbitLift + OrbitBob * (0.5f + 0.5f * Mathf.Sin(now * 3f + k * 1.7f));
+                Transform chip = r.transform;
+                chip.position = Field.At(centre + dir * reach, lift);
+                chip.rotation = Quaternion.Euler(now * 220f + k * 40f, -angle * Mathf.Rad2Deg, now * 160f);
+                chip.localScale = Vector3.one * OrbitChip * (band == 2 ? 1.2f : 1f);
+                Colour(r, k % 2 == 0 ? colour : shade);
+                r.enabled = true;
+            }
+        }
+
+        /// <summary>Ends a frame's zones: every chip not handed out this frame goes dark.</summary>
+        public void EndOrbits()
+        {
+            for (int i = orbitsUsed; i < orbitRenderers.Count; i++) orbitRenderers[i].enabled = false;
         }
 
         /// <summary>
@@ -432,7 +592,7 @@ namespace WordCraft.View
                 if (!t.Live) continue;
 
                 float p = (now - t.Started) / t.Flight;
-                MeshRenderer r = tracerRenderers[i];
+                MeshRenderer r = t.Chunk ? hurlRenderers[i] : tracerRenderers[i];
                 MeshRenderer trail = trailRenderers[i];
                 if (p < 0f) continue;
                 if (p >= 1f)
@@ -441,11 +601,20 @@ namespace WordCraft.View
                     tracers[i] = t;
                     r.enabled = false;
                     trail.enabled = false;
-                    if (t.Bursts) Impact(t.To, t.Colour);
+                    if (t.Bursts) Impact(t.To, t.Colour, 0f, t.Scale);
+                    if (t.Ring > 0f) Blast(Field.At(new Vector2(t.To.x, t.To.z)), t.Ring, BodyPalette.Lighter(t.Colour, 0.2f));
                     if (t.Target >= 0) landed.Add(t.Target);
                     continue;
                 }
-                Fly(r.transform, t.From, t.To, p);
+                Fly(r.transform, t, p);
+                if (t.Chunk)
+                {
+                    // A lump tumbles; it has no nose to lead with and no streak.
+                    r.transform.rotation = Quaternion.Euler(p * 540f, p * 200f, p * 320f);
+                    r.transform.localScale = Vector3.one * HurlSize;
+                    r.enabled = true;
+                    continue;
+                }
                 r.enabled = true;
 
                 // The streak hangs off the tracer's tail, never longer than the
@@ -683,7 +852,10 @@ namespace WordCraft.View
             {
                 tracers[i] = default;
                 tracerRenderers[i].enabled = false;
+                hurlRenderers[i].enabled = false;
             }
+            orbitsUsed = 0;
+            EndOrbits();
             for (int i = 0; i < bursts.Count; i++) bursts[i] = default;
             for (int i = 0; i < shardRenderers.Count; i++) shardRenderers[i].enabled = false;
             for (int i = 0; i < trailRenderers.Count; i++) trailRenderers[i].enabled = false;
@@ -775,6 +947,7 @@ namespace WordCraft.View
             MeshRenderer r = Renderer("Tracer", TracerMesh);
             r.transform.localScale = new Vector3(TracerWidth, TracerWidth, TracerLength);
             tracerRenderers.Add(r);
+            hurlRenderers.Add(Renderer("Hurl", ChunkMesh));
 
             // Unlit and see-through, like a mark: a streak is the line of fire,
             // not a thing standing in the light.
@@ -834,12 +1007,17 @@ namespace WordCraft.View
             r.SetPropertyBlock(block);
         }
 
-        /// <summary>A tracer <paramref name="p"/> of the way along its flight, nose first.</summary>
-        private static void Fly(Transform t, Vector3 from, Vector3 to, float p)
+        /// <summary>
+        /// A tracer <paramref name="p"/> of the way along its flight, nose first:
+        /// on a straight line, or up and over on a parabola <see cref="Tracer.Arc"/>
+        /// cells high at the middle, the nose along the way it is moving.
+        /// </summary>
+        private static void Fly(Transform transform, Tracer t, float p)
         {
-            Vector3 along = to - from;
-            t.position = from + along * p;
-            if (along.sqrMagnitude > 1e-6f) t.rotation = Quaternion.LookRotation(along);
+            Vector3 along = t.To - t.From;
+            transform.position = t.From + along * p + Vector3.up * (4f * t.Arc * p * (1f - p));
+            Vector3 heading = along + Vector3.up * (4f * t.Arc * (1f - 2f * p));
+            if (heading.sqrMagnitude > 1e-6f) transform.rotation = Quaternion.LookRotation(heading);
         }
 
         // ------------------------------------------------------------------

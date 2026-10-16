@@ -75,9 +75,11 @@ namespace WordCraft.View
                 int matches = Wanted("match") ? MatchStrips(output) : 0;
                 int statuses = Wanted("status") ? StatusStrips(output) : 0;
                 int chains = Wanted("chain") ? ChainStrips(output) : 0;
-                Debug.Log("OK: " + (fields + lineups + strips + matches + statuses + chains) + " shots written to " + Path.GetFullPath(output) +
+                int casts = Wanted("cast") ? CastStrips(output) : 0;
+                if (Wanted("field")) casts += FieldStrips(output);
+                Debug.Log("OK: " + (fields + lineups + strips + matches + statuses + chains + casts) + " shots written to " + Path.GetFullPath(output) +
                           " (" + fields + " field, " + lineups + " lineup, " + strips + " strip, " + matches + " match strip, " +
-                          statuses + " status strip, " + chains + " chain strip)");
+                          statuses + " status strip, " + chains + " chain strip, " + casts + " cast strip)");
                 EditorApplication.Exit(0);
             }
             catch (Exception e)
@@ -109,11 +111,11 @@ namespace WordCraft.View
             {
                 string kind = part.Trim();
                 bool known = kind == "field" || kind == "lineup" || kind == "match" || kind == "growth" ||
-                             kind == "status" || kind == "chain" ||
+                             kind == "status" || kind == "chain" || kind == "cast" ||
                              Array.IndexOf(Motions, kind) >= 0 || Array.IndexOf(BuildingMotions, kind) >= 0;
                 if (!known)
                 {
-                    throw new ArgumentException("-shotsOnly names '" + kind + "', which is no kind of shot. Kinds: field, lineup, match, growth, status, chain, " +
+                    throw new ArgumentException("-shotsOnly names '" + kind + "', which is no kind of shot. Kinds: field, lineup, match, growth, status, chain, cast, " +
                                                 string.Join(", ", Motions) + ", " + string.Join(", ", BuildingMotions));
                 }
             }
@@ -1396,27 +1398,334 @@ namespace WordCraft.View
         /// production 0, tech 0, the research building and what the row
         /// requires, finished, then the research run to its end.
         /// </summary>
-        private static void Research(World world, int index)
+        private static void Research(World world, int index, int y = 3)
         {
             Faction faction = world.FactionOf(0);
             UpgradeRow row = FactionData.Upgrade(faction, index);
             world.GrantResources(0, 10000);
-            world.SpawnBuilding(0, Role.Base, Corner(3), complete: true);
-            world.SpawnBuilding(0, Role.Production, 0, Corner(7), complete: true);
-            world.SpawnBuilding(0, Role.Tech, 0, Corner(11), complete: true);
+            world.SpawnBuilding(0, Role.Base, Corner(3, y), complete: true);
+            world.SpawnBuilding(0, Role.Production, 0, Corner(7, y), complete: true);
+            world.SpawnBuilding(0, Role.Tech, 0, Corner(11, y), complete: true);
             if (row.Requires.Role != Role.None)
-                world.SpawnBuilding(0, row.Requires.Role, row.Requires.Slot, Corner(19), complete: true);
-            int at = world.SpawnBuilding(0, row.ResearchAt.Role, row.ResearchAt.Slot, Corner(15), complete: true);
+                world.SpawnBuilding(0, row.Requires.Role, row.Requires.Slot, Corner(19, y), complete: true);
+            int at = world.SpawnBuilding(0, row.ResearchAt.Role, row.ResearchAt.Slot, Corner(15, y), complete: true);
             world.Step(new List<Command> { new Command(0, 0, 1000 + world.Tick, CommandType.Research, at, FixVec2.Zero, index) });
             var idle = new List<Command>();
             for (int t = 0; t < row.Ticks + 1 && world.UpgradeLevel(0, index) == 0; t++) world.Step(idle);
             if (world.UpgradeLevel(0, index) == 0) throw new InvalidOperationException(row.Name + " research never landed");
         }
 
-        private static FixVec2 Corner(int x)
+        private static FixVec2 Corner(int x, int y = 3)
         {
             Fix half = Fix.Ratio(1, 2);
-            return new FixVec2(Fix.FromInt(x) + half, Fix.FromInt(3) + half);
+            return new FixVec2(Fix.FromInt(x) + half, Fix.FromInt(y) + half);
+        }
+
+        // ------------------------------------------------------------------
+        // Cast strips: 묶음 6·7·8 through the real MatchView (issue #212)
+        // ------------------------------------------------------------------
+
+        /// <summary>One cast strip's scene: the world, its log, and how the strip is taken.</summary>
+        private sealed class CastScene
+        {
+            public World World;
+            public List<Command>[] Log;
+            public Vector2 Focus;
+            public int[] Picked;
+            /// <summary>The tick the strip's second frame lands on, as MatchStrip counts it.</summary>
+            public int Moment;
+            public int TicksPerFrame;
+            public float Cells = CastCells;
+        }
+
+        /// <summary>Cells across a cast strip's frame: a caster and a point up to eight cells off, and the radius round it.</summary>
+        private const float CastCells = 17f;
+
+        /// <summary>Ticks after a cast scene is built before its first order, so the view's preroll sees the field before it changes.</summary>
+        private const int CastLead = 30;
+
+        /// <summary>
+        /// strip-&lt;faction&gt;-cast, one a faction (issue #212): the real
+        /// MatchView over a scene where peer 0 has researched what it needs and
+        /// uses an active on peer 1's workers, who never fight back.
+        ///
+        ///   - 세계수 정령: 칼바람 회오리, chips circling the point and a ring on each hit;
+        ///   - 지옥불 군단: 유성우, the warning ring and the stones coming down;
+        ///   - 물 슬라임: 간헐천 on a field and 해일 부름 landing on the same tick;
+        ///   - 돌 골렘 부족: 모래폭풍, and a 바위 술사 throwing the debris beside it;
+        ///   - 차원 유랑종: no active, so a 멸종한 화염 슬라임 blinking out, its
+        ///     lifetime meter running out and its 화염 분출 going off, beside a
+        ///     멸종한 바위 슬라임 with half its life left;
+        ///   - 인간 마법 문명: 낙뢰, and a selected 견인 대포 deploying, its reach ring growing.
+        /// </summary>
+        private static int CastStrips(string output)
+        {
+            int written = 0;
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                CastScene probe = CastSceneOf(faction);
+                MatchStrip(output, "cast", probe.Log, probe.Moment, probe.Focus, () => CastSceneOf(faction).World,
+                           probe.Cells, probe.TicksPerFrame, "strip-" + Slug(faction) + "-cast", probe.Picked);
+                Debug.Log("cast strip " + Slug(faction) + ": moment at tick " + probe.Moment);
+                written++;
+            }
+            return written;
+        }
+
+        private static CastScene CastSceneOf(Faction faction)
+        {
+            switch (faction)
+            {
+                case Faction.TreeSpirits: return PointCast(faction, AbilityKind.StrikeZone, 10, 4);
+                case Faction.Hellfire: return PointCast(faction, AbilityKind.DelayedStrike, 37, 2);
+                case Faction.WaterSlimes: return GeyserAndTide();
+                case Faction.RockGolems: return SandAndThrow();
+                case Faction.Driftworlds: return SummonsLapsing();
+                default: return LightningAndDeploy();
+            }
+        }
+
+        /// <summary>
+        /// A caster of the faction's row of <paramref name="kind"/> on the left,
+        /// three of peer 1's workers on the point to its right, the cast
+        /// <see cref="CastLead"/> ticks in, and the strip's second frame
+        /// <paramref name="after"/> ticks after the cast.
+        /// </summary>
+        private static CastScene PointCast(Faction faction, AbilityKind kind, int after, int ticksPerFrame)
+        {
+            int index = AbilityIndex(faction, kind);
+            AbilityRow row = FactionData.Ability(faction, index);
+            World world = CastWorld(faction, row.Unlock);
+            Vector2 from = StatusAt + new Vector2(-3f, -1f), point = StatusAt + new Vector2(2.5f, 0.5f);
+            int caster = Spawn(world, row.Role, row.Slot, from);
+            Workers(world, point);
+            var scene = new CastScene { World = world, Focus = (from + point) * 0.5f, TicksPerFrame = ticksPerFrame };
+            int cast = world.Tick + CastLead;
+            scene.Log = Orders(cast, new Command(cast, 0, 1, CommandType.Cast, caster, MatchRunner.ToSim(point), index));
+            Hold(scene.Log, world.Tick, caster);
+            scene.Moment = cast + after;
+            return scene;
+        }
+
+        /// <summary>간헐천 on a field laid for it, and 해일 부름 on a second point, both landing on one tick.</summary>
+        private static CastScene GeyserAndTide()
+        {
+            const Faction faction = Faction.WaterSlimes;
+            int geyser = AbilityIndex(faction, AbilityKind.DelayedStrike), tide = AbilityIndex(faction, AbilityKind.TideStrike);
+            AbilityRow geyserRow = FactionData.Ability(faction, geyser), tideRow = FactionData.Ability(faction, tide);
+            World world = CastWorld(faction, geyserRow.Unlock, tideRow.Unlock);
+
+            Vector2 from = StatusAt + new Vector2(-4f, 0f);
+            Vector2 spring = StatusAt + new Vector2(2f, 2f), wave = StatusAt + new Vector2(1.5f, -2.5f);
+            int geyserCaster = Spawn(world, geyserRow.Role, geyserRow.Slot, from + new Vector2(0f, 1.2f));
+            int tideCaster = Spawn(world, tideRow.Role, tideRow.Slot, from + new Vector2(0f, -1.2f));
+            int centre = World.CellOf(MatchRunner.ToSim(spring));
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                for (int dx = -1; dx <= 1; dx++) world.SetWaterFieldForScenario(centre + dy * World.GridSize + dx, world.Tick + 1000);
+            }
+            Workers(world, spring);
+            Workers(world, wave);
+
+            int cast = world.Tick + CastLead;
+            int lands = cast + geyserRow.Ticks;
+            var scene = new CastScene { World = world, Focus = StatusAt + new Vector2(-1f, 0f), TicksPerFrame = 2 };
+            scene.Log = Orders(lands,
+                new Command(cast, 0, 1, CommandType.Cast, geyserCaster, MatchRunner.ToSim(spring), geyser));
+            scene.Log[lands].Add(new Command(lands, 0, 2, CommandType.Cast, tideCaster, MatchRunner.ToSim(wave), tide));
+            Hold(scene.Log, world.Tick, geyserCaster, tideCaster);
+            scene.Moment = lands;
+            return scene;
+        }
+
+        /// <summary>모래폭풍 over peer 1's workers, and a 바위 술사 beside six cells of debris shooting at them.</summary>
+        private static CastScene SandAndThrow()
+        {
+            const Faction faction = Faction.RockGolems;
+            int sand = AbilityIndex(faction, AbilityKind.SandZone);
+            AbilityRow sandRow = FactionData.Ability(faction, sand);
+            AbilityRow throwRow = FactionData.Ability(faction, AbilityIndex(faction, AbilityKind.RemnantThrow));
+            World world = CastWorld(faction, sandRow.Unlock, throwRow.Unlock);
+
+            Vector2 from = StatusAt + new Vector2(-4f, 1.5f), point = StatusAt + new Vector2(2.5f, 0.5f);
+            int caster = Spawn(world, sandRow.Role, sandRow.Slot, from);
+            Vector2 thrower = StatusAt + new Vector2(-2f, -2f);
+            int throwing = Spawn(world, throwRow.Role, throwRow.Slot, thrower);
+            int pile = World.CellOf(MatchRunner.ToSim(thrower));
+            int[] beside = { -1, 1, -World.GridSize - 1, -World.GridSize, -World.GridSize + 1, World.GridSize - 1 };
+            foreach (int d in beside) world.SetRemnantForScenario(pile + d, world.Tick + 2000);
+            Workers(world, point);
+
+            int cast = world.Tick + CastLead;
+            var scene = new CastScene { World = world, Focus = StatusAt + new Vector2(-0.5f, 0f), TicksPerFrame = 4 };
+            scene.Log = Orders(cast, new Command(cast, 0, 1, CommandType.Cast, caster, MatchRunner.ToSim(point), sand));
+            Hold(scene.Log, world.Tick, caster, throwing);
+            scene.Moment = cast + 6;
+            return scene;
+        }
+
+        /// <summary>
+        /// 차원 유랑종 has no active. Its 묶음 6 rows instead: a 멸종한 화염 슬라임
+        /// that lapses a strip's length in among peer 1's workers, blinking,
+        /// and goes off; a 멸종한 바위 슬라임 beside it with half its life left.
+        /// </summary>
+        private static CastScene SummonsLapsing()
+        {
+            const Faction faction = Faction.Driftworlds;
+            AbilityRow burst = FactionData.Ability(faction, AbilityIndex(faction, AbilityKind.DeathBurst));
+            World world = CastWorld(faction);
+            Vector2 at = StatusAt + new Vector2(0.5f, 0f);
+            int fire = Spawn(world, burst.Role, burst.Slot, at);
+            int stone = Spawn(world, Role.Melee, 2, at + new Vector2(-2.5f, -1.2f));
+            int lapses = world.Tick + CastLead + 30;
+            world.SetExpireTickForScenario(fire, lapses);
+            int life = world.LifetimeFor(0, FactionData.Stats(faction, Role.Melee, 2));
+            world.SetExpireTickForScenario(stone, world.Tick + life / 2);
+            Workers(world, at + new Vector2(1.5f, -0.8f));
+
+            var scene = new CastScene { World = world, Focus = at + new Vector2(-0.5f, 0f), TicksPerFrame = 3, Cells = 10f };
+            scene.Log = Orders(world.Tick);
+            Hold(scene.Log, world.Tick, fire, stone);
+            scene.Moment = lapses - 12;
+            return scene;
+        }
+
+        /// <summary>낙뢰 on peer 1's workers, and a selected 견인 대포 deploying on the same tick.</summary>
+        private static CastScene LightningAndDeploy()
+        {
+            const Faction faction = Faction.Humans;
+            int bolt = AbilityIndex(faction, AbilityKind.DelayedStrike), deploy = AbilityIndex(faction, AbilityKind.Deploy);
+            AbilityRow boltRow = FactionData.Ability(faction, bolt), deployRow = FactionData.Ability(faction, deploy);
+            World world = CastWorld(faction, boltRow.Unlock, deployRow.Unlock);
+
+            Vector2 mage = StatusAt + new Vector2(-3.5f, 1.2f), point = StatusAt + new Vector2(3f, 1f);
+            Vector2 gun = StatusAt + new Vector2(-2.5f, -2f);
+            int caster = Spawn(world, boltRow.Role, boltRow.Slot, mage);
+            int cannon = Spawn(world, deployRow.Role, deployRow.Slot, gun);
+            Workers(world, point);
+
+            int cast = world.Tick + CastLead;
+            var scene = new CastScene { World = world, Focus = StatusAt + new Vector2(0f, 0f), TicksPerFrame = 5, Picked = new[] { cannon } };
+            scene.Log = Orders(cast,
+                new Command(cast, 0, 1, CommandType.Cast, caster, MatchRunner.ToSim(point), bolt),
+                new Command(cast, 0, 2, CommandType.Cast, cannon, FixVec2.Zero, deploy));
+            Hold(scene.Log, world.Tick, caster, cannon);
+            scene.Moment = cast + 5;
+            return scene;
+        }
+
+        /// <summary>
+        /// strip-waterslimes-field (issue #212): a 물방울 생존자 lays a field
+        /// where it stands on the strip's second frame; beside it, three columns
+        /// of field laid by the scenario lapse a third of the strip apart, so the
+        /// fade is seen; and a 샘물 운반자 walks across, leaving its field behind.
+        /// </summary>
+        private static int FieldStrips(string output)
+        {
+            CastScene probe = FieldScene();
+            MatchStrip(output, "field", probe.Log, probe.Moment, probe.Focus, () => FieldScene().World,
+                       CastCells, probe.TicksPerFrame, "strip-waterslimes-field", probe.Picked);
+            Debug.Log("field strip: lays at tick " + probe.Moment);
+            return 1;
+        }
+
+        private static CastScene FieldScene()
+        {
+            const Faction faction = Faction.WaterSlimes;
+            int lay = AbilityIndex(faction, AbilityKind.LayField);
+            AbilityRow layRow = FactionData.Ability(faction, lay);
+            AbilityRow carrierRow = FactionData.Ability(faction, AbilityIndex(faction, AbilityKind.FieldEmitter));
+            World world = CastWorld(faction);
+
+            Vector2 survivor = StatusAt + new Vector2(-3f, 0.5f);
+            int caster = Spawn(world, layRow.Role, layRow.Slot, survivor);
+            Vector2 walkFrom = StatusAt + new Vector2(-4f, -3f);
+            int carrier = Spawn(world, carrierRow.Role, carrierRow.Slot, walkFrom);
+
+            const int ticksPerFrame = 6;
+            int cast = world.Tick + CastLead;
+            int patch = World.CellOf(MatchRunner.ToSim(StatusAt + new Vector2(2f, 1f)));
+            for (int dx = 0; dx < 3; dx++)
+            {
+                int lapses = cast + (dx + 1) * ticksPerFrame * 2 + 6;
+                for (int dy = -1; dy <= 1; dy++) world.SetWaterFieldForScenario(patch + dy * World.GridSize + dx, lapses);
+            }
+
+            var scene = new CastScene { World = world, Focus = StatusAt + new Vector2(-0.5f, 0f), TicksPerFrame = ticksPerFrame };
+            int walk = world.Tick + 2;
+            scene.Log = Orders(cast,
+                new Command(walk, 0, 1, CommandType.Move, carrier, MatchRunner.ToSim(walkFrom + new Vector2(8f, 0f))));
+            scene.Log[cast].Add(new Command(cast, 0, 2, CommandType.Cast, caster, FixVec2.Zero, lay));
+            scene.Moment = cast;
+            return scene;
+        }
+
+        /// <summary>
+        /// A fresh map, peer 0 the faction and peer 1 another, peer 0's research
+        /// of each of <paramref name="unlocks"/> landed (a row of buildings each,
+        /// along the bottom edge), and plenty to spend.
+        /// </summary>
+        private static World CastWorld(Faction faction, params int[] unlocks)
+        {
+            var world = new World(new WordCraft.Net.MatchConfig().Seed);
+            world.SetPeerFaction(0, faction);
+            world.SetPeerFaction(1, faction == Faction.Hellfire ? Faction.Humans : Faction.Hellfire);
+            int y = 3;
+            foreach (int unlock in unlocks)
+            {
+                if (unlock < 0) continue;
+                Research(world, unlock, y);
+                y += 5;
+            }
+            world.GrantResources(0, 1000);
+            return world;
+        }
+
+        /// <summary>
+        /// Three of peer 1's workers round <paramref name="point"/>, what an
+        /// active is aimed at: they never fight back, so nothing kills the
+        /// caster before its clock runs out. And a worker of peer 0 a little
+        /// short of them, for its sight: peer 0's fog is on.
+        /// </summary>
+        private static void Workers(World world, Vector2 point)
+        {
+            world.SpawnWorker(1, MatchRunner.ToSim(point + new Vector2(-0.6f, 0.4f)));
+            world.SpawnWorker(1, MatchRunner.ToSim(point + new Vector2(0.7f, 0.3f)));
+            world.SpawnWorker(1, MatchRunner.ToSim(point + new Vector2(0f, -0.7f)));
+            world.SpawnWorker(0, MatchRunner.ToSim(point + new Vector2(-1.5f, 2.2f)));
+        }
+
+        /// <summary>A log long enough to hold tick <paramref name="last"/>, with each command at its own tick.</summary>
+        private static List<Command>[] Orders(int last, params Command[] commands)
+        {
+            var log = new List<Command>[last + 1];
+            for (int t = 0; t < log.Length; t++) log[t] = new List<Command>();
+            foreach (Command c in commands) log[c.Tick].Add(c);
+            return log;
+        }
+
+        /// <summary>
+        /// Holds <paramref name="ids"/> where they stand from <paramref name="tick"/>:
+        /// an idle body chases what it sees, and a caster that walked into its
+        /// own zone would stand over what the strip is for.
+        /// </summary>
+        private static void Hold(List<Command>[] log, int tick, params int[] ids)
+        {
+            for (int k = 0; k < ids.Length; k++)
+            {
+                log[tick].Add(new Command(tick, 0, 100 + k, CommandType.HoldPosition, ids[k], FixVec2.Zero));
+            }
+        }
+
+        /// <summary>The index in the faction's ability table of its first row of <paramref name="kind"/>.</summary>
+        private static int AbilityIndex(Faction faction, AbilityKind kind)
+        {
+            for (int i = 0; i < FactionData.AbilityCount(faction); i++)
+            {
+                if (FactionData.Ability(faction, i).Kind == kind) return i;
+            }
+            throw new InvalidOperationException(faction + " holds no " + kind + " row");
         }
 
         // ------------------------------------------------------------------
