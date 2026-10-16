@@ -2,7 +2,7 @@
 
 - Date: 2026-10-16
 - GitHub Issue: #224
-- Status: In progress
+- Status: Implemented and verified; menu visual review and balance remain open
 
 ## Goal
 
@@ -25,12 +25,12 @@ Hindsight 기록은 서버 DNS 오류로 실패했다. 별도 워크트리는 �
 
 ## Approach (Checklist)
 - [x] **Step 0: Recon**: 현재 main 동기화, 기존 Net/Unity 구조와 미완료 이슈 확인.
-- [ ] **Step 1: Implementation**: Server/ 독립 ASP.NET Core 서비스와 Docker;
+- [x] **Step 1: Implementation**: Server/ 독립 ASP.NET Core 서비스와 Docker;
   Net/ WebSocket transport; Unity 온라인 메뉴와 취소/실패 흐름.
   AI 담당은 #211, 비주얼 담당은 #223을 병렬 수행한다.
 - [ ] **Step 2: Tests**: HTTP 매칭·버전 거부·인증·취소·relay 통합 검사,
   기존 Replay/Host/Unity 검사, 실제 두 클라이언트 연결과 화면 확인.
-- [ ] **Step 3: Rollout / Rollback**: 비공개 서버 저장소, 실행 가이드, 검증
+- [x] **Step 3: Rollout / Rollback**: 비공개 서버 저장소, 실행 가이드, 검증
   근거를 제공한다. 기존 LAN/솔로 기능을 유지한다.
 
 ## Validation
@@ -47,3 +47,24 @@ Hindsight 기록은 서버 DNS 오류로 실패했다. 별도 워크트리는 �
 
 ## Open Questions
 - 호스팅 제공자와 공개 도메인은 미정이다. Docker와 비공개 저장소까지 준비한다.
+
+## Results
+
+- 비공개 `Apptive-Game-Team/WordCraft-Server` 저장소 생성 및 push 완료.
+  Linux CI의 Release build, 통합 검사, Docker image build 모두 성공
+  (Actions run 38842089610). 로컬에는 Docker가 설치되어 있지 않다.
+- Replay 전체 및 Host selfcheck 통과. 실제 서버를 거친 400틱 명령/해시 검사 통과.
+- 실제 Windows 두 플레이어에서 tick 20 desync를 재현했다. 협상 전 상대 종족으로
+  생성된 유닛 HP가 남는 것이 원인이었으며, handshake 완료 시 scenario factory로
+  시작 월드를 재생성했다. 36개 종족 조합의 초기 hash 및 40틱 비교 회귀검사 통과.
+- 수정한 Windows 두 플레이어는 120틱 hash `0x609F80A1BB1607A2`로 일치했다.
+- 최종 빌드에서도 양쪽 120틱 hash `0xD5FC519B30A2FCEF` 일치. 연결 불가 서버
+  포트 59999를 지정한 자동 실행은 오류 로그와 exit 1로 종료한다.
+  실행 파일: `Client/Builds/online/WordCraft.exe` (빌드 산출물은 gitignored).
+- 취소한 POST가 받은 토큰 및 기존 대기 토큰 DELETE의 완료까지 재검색을 막는다.
+  DELETE 실패는 토큰을 보존해 다음 검색 요청에서 먼저 삭제를 재시도한다.
+- AI arena 36/36 종료, 복제 해시 모두 일치. 경쟁 밸런스(#221)와 돌 골렘 실전
+  2000틱 지원 생산(#211)은 미완료. 상세 결과는 #211 계획에 기록했다.
+- Unity ViewSelfCheck golden 유지; cast/field 시각 검토는 3회 각 12장 수행.
+  숨겨진 Windows 창의 최종 화면 캡처는 검정으로 나와 메뉴의 실제 화면 검증은
+  완료하지 못했다. 공개 운영 서버와 macOS 플레이어 검증도 이번 결과에 포함하지 않는다.
