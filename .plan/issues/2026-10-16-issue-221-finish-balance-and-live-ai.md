@@ -70,4 +70,3 @@ PR #225의 온라인/AI/비주얼 구현을 기반으로 한다. 추가 worktree
 - First actual build exposed a camera-home defect; fixed and verified in the final build. Solo pause preserves queued orders and never pauses online matches; Unity checks pass.
 - Final QA left its separate window paused at tick 777. Existing user windows and builds were preserved. Screenshot: `Client/Logs/balance42-final-research-complete.png`.
 - Remote GitHub issue update was rejected by automatic approval review for lacking explicit authorization to transmit this payload to that destination. PR and issue text are prepared locally; the user then explicitly approved branch push, PR creation and issue update. No workaround attempted.
-
