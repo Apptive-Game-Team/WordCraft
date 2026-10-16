@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using WordCraft.Sim;
 using WordCraft.View;
 using static WordCraft.Replay.AbilityChecks;
@@ -41,6 +42,11 @@ namespace WordCraft.Replay
             ACellIsCoolingExactlyWhileTheSimulationRefusesItForTheCooldown();
             TheLabelPriceIsWhatTheCastTakes();
             AHoldingBodyIsTheOneARowNames();
+            HoldsReadsLifeGrowthAndKind();
+            ADeathPathLeavesNoHolder();
+            ADeployGoesToOneStateAndTheGroupAgrees();
+            HardenGoesToTheRepresentativeAlone();
+            TheListingsAreBuiltOnceAndReused();
         }
 
         // ---------------------------------------------------------------------
@@ -117,6 +123,10 @@ namespace WordCraft.Replay
         {
             CheckCells("fighter", AbilityMenu.FighterCells, new[] { 0, 1, 2, 4, 5 });
             CheckCells("worker", AbilityMenu.WorkerCells, new[] { 0, 1, 4, 8 });
+            Check(Array.IndexOf(AbilityMenu.FighterCells, AbilityMenu.MoreCell) >= 0 &&
+                  Array.IndexOf(AbilityMenu.WorkerCells, AbilityMenu.MoreCell) >= 0,
+                "More takes cell " + AbilityMenu.MoreCell + ", which a card does not list as an ability cell, so a paging list would not give it up");
+            Check(AbilityMenu.MoreCell == 11, "More is not on the last cell of the card, where the building card puts it");
             Check(AbilityMenu.FighterCells[0] == 3 && AbilityMenu.FighterCells[1] == 7 && AbilityMenu.FighterCells[2] == 11,
                 "the first three ability cells are not the fourth column");
             Check(AbilityMenu.WorkerCells[0] == 3 && AbilityMenu.WorkerCells[1] == 7 && AbilityMenu.WorkerCells[2] == 11,
@@ -243,6 +253,15 @@ namespace WordCraft.Replay
                 if (FactionData.Ability(row.Faction, i).Name == row.Name) return i;
             }
             throw new Exception(row.Faction + " has no ability named " + row.Name);
+        }
+
+        private static AbilityMenu.Entry EntryOf(AbilityRow row)
+        {
+            foreach (AbilityMenu.Entry entry in AbilityMenu.For(row.Faction, row.Role, row.Slot))
+            {
+                if (entry.Index == IndexOf(row)) return entry;
+            }
+            throw new Exception(row.Name + " is on no body's card");
         }
 
         private static IEnumerable<AbilityRow> Actives()
@@ -373,7 +392,7 @@ namespace WordCraft.Replay
                     if (boosted && (row.Boost < 0 || row.BoostedCost == 0)) continue;
                     World w = Ready(row, unlocked: true, out int caster);
                     if (boosted) Research(w, 0, FactionData.Upgrade(row.Faction, row.Boost).Effect);
-                    string label = AbilityMenu.Label(w, 0, w.GetEntity(caster), row);
+                    string label = AbilityMenu.Label(w, 0, w.GetEntity(caster), EntryOf(row));
                     string[] lines = label.Split('\n');
                     Check(lines[0] == row.Name, row.Name + " label starts with '" + lines[0] + "'");
 
@@ -401,11 +420,11 @@ namespace WordCraft.Replay
             AbilityRow deploy = default;
             foreach (AbilityRow row in Actives()) if (row.Kind == AbilityKind.Deploy) deploy = row;
             World d = Ready(deploy, unlocked: true, out int cannon);
-            Check(AbilityMenu.Label(d, 0, d.GetEntity(cannon), deploy) == deploy.Name, "an undeployed cannon's cell is not named for deploying");
+            Check(AbilityMenu.Label(d, 0, d.GetEntity(cannon), EntryOf(deploy)) == deploy.Name, "an undeployed cannon's cell is not named for deploying");
             CastNow(d, cannon, deploy);
             for (int t = 0; t < deploy.Ticks + 2; t++) Step(d);
             Check(d.GetEntity(cannon).Deployed, "the cannon never deployed");
-            Check(AbilityMenu.Label(d, 0, d.GetEntity(cannon), deploy) == deploy.Name + " 해제",
+            Check(AbilityMenu.Label(d, 0, d.GetEntity(cannon), EntryOf(deploy)) == deploy.Name + " 해제",
                 "a deployed cannon's cell is not named for packing up");
         }
 
@@ -440,6 +459,150 @@ namespace WordCraft.Replay
                 }
                 Check(strangers > 0, row.Faction + " fields one walking entry");
             }
+        }
+
+        /// <summary>
+        /// Holds' clauses one by one, on copies of a real caster so everything
+        /// else about the body stays right: alive, growing, a building and a node
+        /// each flip the answer alone. Growing is the simulation's own IsGrowing,
+        /// and the building and node clauses cannot be reached with a real body
+        /// (no building has an active's Role and Slot), so they are exercised on
+        /// the copy.
+        /// </summary>
+        private static void HoldsReadsLifeGrowthAndKind()
+        {
+            foreach (AbilityRow row in Actives())
+            {
+                World w = Ready(row, unlocked: true, out int caster);
+                Entity e = w.GetEntity(caster);
+                Check(AbilityMenu.Holds(e, row), row.Name + " does not hold its own caster");
+
+                Entity dead = e;
+                dead.Alive = false;
+                Check(!AbilityMenu.Holds(dead, row), row.Name + " names a dead body");
+
+                Entity growing = e;
+                growing.MorphTicksLeft = 5;
+                Check(World.IsGrowing(growing), "a body with morph ticks is not growing");
+                Check(!AbilityMenu.Holds(growing, row), row.Name + " names a growing body");
+
+                Entity building = e;
+                building.Kind = EntityKind.Building;
+                Check(!AbilityMenu.Holds(building, row), row.Name + " names a building with its Role and Slot");
+
+                Entity node = e;
+                node.Kind = EntityKind.ResourceNode;
+                Check(!AbilityMenu.Holds(node, row), row.Name + " names a resource node with its Role and Slot");
+            }
+        }
+
+        /// <summary>
+        /// The same life clause against the simulation: a caster that the burn
+        /// killed is not held and the simulation refuses its Cast as "caster",
+        /// the first test CastRefusal runs. The harness has no way to kill a
+        /// body but a status (SetHpForScenario plus a burn), which is used here.
+        /// </summary>
+        private static void ADeathPathLeavesNoHolder()
+        {
+            AbilityRow row = Actives().First(r => r.Kind != AbilityKind.Harden);
+            World w = Ready(row, unlocked: true, out int caster);
+            w.SetHpForScenario(caster, 1);
+            w.SetStatusForScenario(caster, 0, 1);
+            Step(w);
+            Check(!w.GetEntity(caster).Alive, "the burn did not kill the caster, so the check proves nothing");
+            Check(!AbilityMenu.Holds(w.GetEntity(caster), row), row.Name + " names a body the burn killed");
+            Check(Refusal(w, caster, row) == "caster", row.Name + " on a dead body is refused as " + Refusal(w, caster, row));
+        }
+
+        /// <summary>
+        /// 전개 flips each body it reaches, so a mixed selection (two deployed,
+        /// two packed) sent to all four would swap them and never agree. Sent to
+        /// the bodies in the representative's state, one press brings the whole
+        /// group to the same state, whichever state leads. Run through the
+        /// simulation: the cannons transition for the row's ticks and are then
+        /// all deployed (or all packed), and the ones that did not receive it
+        /// are the ones that already were.
+        /// </summary>
+        private static void ADeployGoesToOneStateAndTheGroupAgrees()
+        {
+            AbilityRow row = Actives().First(r => r.Kind == AbilityKind.Deploy);
+            foreach (bool leaderDeployed in new[] { false, true })
+            {
+                World w = Ready(row, unlocked: true, out int first);
+                var group = new List<int> { first };
+                for (int i = 1; i < 4; i++) group.Add(w.SpawnUnit(0, row.Role, row.Slot, At(28 + i, 28)));
+                // Leader first: Representative takes the earliest of its rank.
+                w.SetCastForScenario(group[0], FixVec2.Zero, leaderDeployed);
+                w.SetCastForScenario(group[1], FixVec2.Zero, !leaderDeployed);
+                w.SetCastForScenario(group[2], FixVec2.Zero, leaderDeployed);
+                w.SetCastForScenario(group[3], FixVec2.Zero, !leaderDeployed);
+
+                Entity leader = w.GetEntity(group[0]);
+                var orders = new List<Command>();
+                int received = 0;
+                foreach (int id in group)
+                {
+                    if (!AbilityMenu.Receives(leader, w.GetEntity(id), row)) continue;
+                    orders.Add(new Command(w.Tick, 0, seq++, CommandType.Cast, id, FixVec2.Zero, IndexOf(row)));
+                    received++;
+                }
+                Check(received == 2, "a mixed four sent the 전개 to " + received + " bodies, not the two in the leader's state");
+                Step(w, orders);
+                for (int t = 0; t < row.Ticks + 2; t++) Step(w);
+
+                foreach (int id in group)
+                {
+                    Check(w.GetEntity(id).Deployed == !leaderDeployed,
+                        "after one press led by a " + (leaderDeployed ? "deployed" : "packed") +
+                        " cannon, body " + id + " is " + (w.GetEntity(id).Deployed ? "deployed" : "packed"));
+                }
+            }
+        }
+
+        /// <summary>
+        /// 굳기 ends its caster, so a selection of walls cast to the representative
+        /// alone: three 성벽 골렘 selected, one press, one dies. The recipients are
+        /// counted by AbilityMenu.Receives and then sent through the simulation,
+        /// which agrees (one fewer body alive, two untouched).
+        /// </summary>
+        private static void HardenGoesToTheRepresentativeAlone()
+        {
+            AbilityRow row = Actives().First(r => r.Kind == AbilityKind.Harden);
+            World w = Ready(row, unlocked: true, out int first);
+            var group = new List<int> { first };
+            for (int i = 1; i < 3; i++) group.Add(w.SpawnUnit(0, row.Role, row.Slot, At(30 + 3 * i, 30)));
+
+            Entity leader = w.GetEntity(group[0]);
+            var orders = new List<Command>();
+            foreach (int id in group)
+            {
+                if (!AbilityMenu.Receives(leader, w.GetEntity(id), row)) continue;
+                Check(id == group[0], "굳기 was sent to body " + id + " and not the representative");
+                orders.Add(new Command(w.Tick, 0, seq++, CommandType.Cast, id, FixVec2.Zero, IndexOf(row)));
+            }
+            Check(orders.Count == 1, "굳기 went to " + orders.Count + " of 3 selected 성벽 골렘");
+            Step(w, orders);
+            int alive = 0;
+            foreach (int id in group) if (w.GetEntity(id).Alive) alive++;
+            Check(alive == 2, alive + " of 3 성벽 골렘 are alive after one 굳기 press, expected 2");
+        }
+
+        /// <summary>The per-entry lists and labels are built once: a second ask returns the same objects, which is what keeps a frame from allocating.</summary>
+        private static void TheListingsAreBuiltOnceAndReused()
+        {
+            foreach (var entry in WalkingEntries())
+            {
+                Check(ReferenceEquals(AbilityMenu.For(entry.Faction, entry.Role, entry.Slot),
+                        AbilityMenu.For(entry.Faction, entry.Role, entry.Slot)),
+                    entry.Faction + " " + entry.Role + " " + entry.Slot + " rebuilds its active list on every ask");
+                Check(ReferenceEquals(AbilityMenu.Autocasts(entry.Faction, entry.Role, entry.Slot),
+                        AbilityMenu.Autocasts(entry.Faction, entry.Role, entry.Slot)),
+                    entry.Faction + " " + entry.Role + " " + entry.Slot + " rebuilds its autocast list on every ask");
+            }
+            AbilityRow awaken = Actives().First(r => r.Cost > 0);
+            AbilityMenu.Entry e = EntryOf(awaken);
+            Check(e.Label == awaken.Name + "\n" + awaken.Cost && e.BoostedLabel == awaken.Name + "\n" + awaken.BoostedCost,
+                awaken.Name + " cached labels are '" + e.Label + "' and '" + e.BoostedLabel + "'");
         }
 
         private static void Check(bool condition, string message)
