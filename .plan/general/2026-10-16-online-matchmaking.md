@@ -2,7 +2,7 @@
 
 - Date: 2026-10-16
 - GitHub Issue: #224
-- Status: Implemented and verified; menu visual review and balance remain open
+- Status: Online implementation verified; competitive balance remains open
 
 ## Goal
 
@@ -28,7 +28,7 @@ Hindsight 기록은 서버 DNS 오류로 실패했다. 별도 워크트리는 �
 - [x] **Step 1: Implementation**: Server/ 독립 ASP.NET Core 서비스와 Docker;
   Net/ WebSocket transport; Unity 온라인 메뉴와 취소/실패 흐름.
   AI 담당은 #211, 비주얼 담당은 #223을 병렬 수행한다.
-- [ ] **Step 2: Tests**: HTTP 매칭·버전 거부·인증·취소·relay 통합 검사,
+- [x] **Step 2: Tests**: HTTP 매칭·버전 거부·인증·취소·relay 통합 검사,
   기존 Replay/Host/Unity 검사, 실제 두 클라이언트 연결과 화면 확인.
 - [x] **Step 3: Rollout / Rollback**: 비공개 서버 저장소, 실행 가이드, 검증
   근거를 제공한다. 기존 LAN/솔로 기능을 유지한다.
@@ -66,5 +66,9 @@ Hindsight 기록은 서버 DNS 오류로 실패했다. 별도 워크트리는 �
 - AI arena 36/36 종료, 복제 해시 모두 일치. 경쟁 밸런스(#221)와 돌 골렘 실전
   2000틱 지원 생산(#211)은 미완료. 상세 결과는 #211 계획에 기록했다.
 - Unity ViewSelfCheck golden 유지; cast/field 시각 검토는 3회 각 12장 수행.
-  숨겨진 Windows 창의 최종 화면 캡처는 검정으로 나와 메뉴의 실제 화면 검증은
-  완료하지 못했다. 공개 운영 서버와 macOS 플레이어 검증도 이번 결과에 포함하지 않는다.
+  숨겨진 창 캡처가 검정으로 나와 사용자에게 창 표시 허용을 받은 뒤 재검증했다.
+  1280×720 온라인 메뉴에서 종족/서버/자동 매칭/방 입력을 시각 확인하고 자동 종료했다.
+  증거: `Client/Logs/online-menu-visible.png`. 공개 운영 서버와 macOS 플레이어
+  검증은 이번 결과에 포함하지 않는다.
+- GitHub 게임 CI run 38843685012: Linux determinism 및 Unity view determinism
+  모두 성공. 이후 변경은 검증 결과 문서뿐이다.
