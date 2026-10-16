@@ -17,7 +17,7 @@ namespace WordCraft.Replay
     /// defenses: 용암 아가리 and 굴림바위 언덕 neither take an attack order at a
     /// flier nor acquire one, while a defense that reaches the air shoots the same
     /// flier. 마도 정찰기: it refuses both attack orders and never acquires. And
-    /// the AI: with tier 3 open, 인간 still buys an armed body over the scout.
+    /// the AI: with tier 3 open, 인간 buys fighters before limited support scouts.
     /// </summary>
     internal static class RosterNumbersChecks
     {
@@ -440,18 +440,11 @@ namespace WordCraft.Replay
         private const int ShortBank = 40;
 
         /// <summary>
-        /// An 인간 AI with a finished 공방 has tier 3 open, and among the tier-3
-        /// entries its 마도 공창 makes is the unarmed 마도 정찰기. The ladder has
-        /// to buy an armed body there instead, on every think, because a body it
-        /// will never send to attack is a body that wins nothing. Six workers
-        /// stand from the start so the ladder goes straight to fighters.
-        ///
-        /// Two banks. First 40, which pays for the 20자원 scout and not for the
-        /// cheapest armed body the 마도 공창 makes, 석조 보행 포대 at 120: the
-        /// ladder has to wait rather than take the scout as the only thing it can
-        /// afford. Then 5000, where everything is affordable and the weapon rule
-        /// alone keeps the scout off the queue. The 마도 공창 since
-        /// docs/TECH-TREE.md 묶음 3; the 마법 탑 was its stand-in before.
+        /// A funded human AI keeps buying armed bodies while allowing scouts as
+        /// bounded marking support. A short opening bank must still be held for
+        /// fighters, not spent on the only affordable unarmed unit. The scout
+        /// now has a useful MarkAura, so banning it for an entire match would
+        /// pin the obsolete armed-only policy rather than combat readiness.
         /// </summary>
         private static void TheAiBuysAnArmedBodyOverTheScout()
         {
@@ -483,17 +476,20 @@ namespace WordCraft.Replay
                 world.Step(idle);
                 Entity b = world.GetEntity(tower);
                 if (b.QueueCount == 0) continue;
-                Check(!(b.ProduceRole == Role.Signature && b.ProduceSlot == 1),
-                    "the 인간 AI queued 마도 정찰기 on tick " + t);
+                if (t < ShortTicks)
+                    Check(!(b.ProduceRole == Role.Signature && b.ProduceSlot == 1),
+                        "the 인간 AI spent its opening fighter budget on 마도 정찰기 on tick " + t);
                 if (b.ProduceRole == Role.Ranged) armed++;
             }
             Check(armed > 0, "the 인간 AI never queued an armed body at the 마도 공창");
+            int scouts = 0;
             for (int i = 0; i < world.EntityCount; i++)
             {
                 Entity e = world.GetEntity(i);
-                Check(!(e.Owner == 0 && e.Role == Role.Signature && e.Slot == 1),
-                    "the 인간 AI fielded 마도 정찰기 as entity " + i);
+                if (e.Alive && e.Owner == 0 && e.Role == Role.Signature && e.Slot == 1) scouts++;
             }
+            Check(scouts <= FactionData.AiCompositionOf(Faction.Humans).SupportCap,
+                "the 인간 AI exceeded its support cap with scouts");
         }
 
         // ---------------------------------------------------------------------

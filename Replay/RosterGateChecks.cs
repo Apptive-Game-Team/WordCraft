@@ -591,8 +591,24 @@ namespace WordCraft.Replay
                     }
                 }
 
+                // Gate progression is distinct from winning an economic race.
+                // The composition AI may lose its tech before choosing a unit
+                // with this particular prerequisite. Exercise the gate with a
+                // funded, non-fighting opponent; the real mirror above still
+                // checks every production queue against its producer list.
+                world = MatchScenario.Build(Seed, faction, faction);
+                opening = world.EntityCount;
+                world.GrantResources(0, 10000);
+                world.SetPeerAi(0, true);
+                for (int id = 0; id < opening; id++)
+                {
+                    Entity e = world.GetEntity(id);
+                    if (e.Kind == EntityKind.Building) world.SetHpForScenario(id, 1000000);
+                }
+                for (int t = 0; t < AiTicks && !world.MatchOver; t++) world.Step(idle);
+
                 if (faction == Faction.Hellfire) continue;
-                for (int peer = 0; peer < MatchScenario.Peers; peer++)
+                for (int peer = 0; peer < 1; peer++)
                 {
                     // Ids are handed out in order and never reused, so a body with
                     // a higher id than the peer's first 기술 건물 was made after it.

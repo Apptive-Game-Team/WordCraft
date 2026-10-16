@@ -801,6 +801,47 @@ namespace WordCraft.Sim
     }
 
     /// <summary>
+    /// What a body is to the simulated opponent, docs/TECH-TREE.md 묶음 9: the
+    /// three shares its composition table is written in. Decided by rule from
+    /// the roster (World.AiRoleOf), never stored on an entity, so nothing here
+    /// is hashed. None is an entry the opponent never buys.
+    /// </summary>
+    public enum AiRole
+    {
+        None = 0,
+        Melee = 1,
+        Ranged = 2,
+
+        /// <summary>지원·시전: an entry with no weapon that helps the army, or one that holds an aimed active.</summary>
+        Support = 3,
+    }
+
+    /// <summary>
+    /// One faction's target army for the simulated opponent, docs/TECH-TREE.md
+    /// 묶음 9 조합. Percentages of the fighting bodies it owns, a cap on support
+    /// bodies, and the share of bodies that can hit air it wants once an air
+    /// enemy is in sight. Static, like every table here: the opponent re-reads
+    /// it every think and keeps nothing.
+    /// </summary>
+    public struct AiComposition
+    {
+        public int MeleePercent;
+        public int RangedPercent;
+        public int SupportPercent;
+
+        /// <summary>Most support bodies it keeps alive at once.</summary>
+        public int SupportCap;
+
+        /// <summary>The share of bodies that can hit air it wants while an air enemy is in sight.</summary>
+        public int AntiAirPercent;
+
+        public int Percent(AiRole role) =>
+            role == AiRole.Melee ? MeleePercent :
+            role == AiRole.Ranged ? RangedPercent :
+            role == AiRole.Support ? SupportPercent : 0;
+    }
+
+    /// <summary>
     /// The roster: stats per role, identity per faction and role. A role holds a
     /// list of entries rather than one, because the six factions do not field the
     /// same units. Plain constants on purpose. A parsed file or a ScriptableObject
@@ -884,9 +925,11 @@ namespace WordCraft.Sim
         /// standing beside the one it hits. 39 is docs/TECH-TREE.md 묶음 8: the
         /// Cast command and ten actives. A peer on 38 ignores a Cast that a
         /// peer on 39 answers with a water field, and the two disagree about
-        /// AbilityCooldown on the tick the order runs.
+        /// AbilityCooldown on the tick the order runs. 40 completes faction AI:
+        /// composition, growth, arrival points and active casts change the
+        /// generated commands, so solo replays require the matching policy.
         /// </summary>
-        public const uint ContentVersion = 39;
+        public const uint ContentVersion = 40;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -4055,6 +4098,35 @@ namespace WordCraft.Sim
             }
             return -1;
         }
+
+        /// <summary>
+        /// The simulated opponent's target army per faction, docs/TECH-TREE.md
+        /// 묶음 9 조합, indexed by Faction. Balance past "matches finish" is a
+        /// non-goal (P5), so the numbers are the issue's example shape bent only
+        /// where a roster leaves no choice: 인간 has no melee row, so its melee
+        /// share is 0 and its ranged share takes the rest; 지옥불 and 돌 골렘 are
+        /// written around heavy melee bodies and lean that way.
+        ///
+        /// Each row's three shares add up to 100, which the harness checks.
+        /// </summary>
+        private static readonly AiComposition[] aiCompositions =
+        {
+            // 세계수 정령
+            new AiComposition { MeleePercent = 40, RangedPercent = 40, SupportPercent = 20, SupportCap = 3, AntiAirPercent = 30 },
+            // 지옥불 군단
+            new AiComposition { MeleePercent = 50, RangedPercent = 30, SupportPercent = 20, SupportCap = 2, AntiAirPercent = 30 },
+            // 물 슬라임
+            new AiComposition { MeleePercent = 40, RangedPercent = 40, SupportPercent = 20, SupportCap = 3, AntiAirPercent = 30 },
+            // 돌 골렘 부족
+            new AiComposition { MeleePercent = 50, RangedPercent = 30, SupportPercent = 20, SupportCap = 3, AntiAirPercent = 30 },
+            // 차원 유랑종
+            new AiComposition { MeleePercent = 40, RangedPercent = 40, SupportPercent = 20, SupportCap = 2, AntiAirPercent = 30 },
+            // 인간 마법 문명
+            new AiComposition { MeleePercent = 0, RangedPercent = 70, SupportPercent = 30, SupportCap = 4, AntiAirPercent = 30 },
+        };
+
+        /// <summary>This faction's row of the opponent's composition table.</summary>
+        public static AiComposition AiCompositionOf(Faction faction) => aiCompositions[(int)faction];
 
         private static int Index(Faction faction, Role role) => (int)faction * RoleCount + (int)role;
     }
