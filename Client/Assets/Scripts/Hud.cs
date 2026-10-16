@@ -45,6 +45,8 @@ namespace WordCraft.View
         private string address = "";
         private string portText = MatchRunner.DefaultPort.ToString();
         private Faction faction = MatchConfig.DefaultFaction(0);
+        private AiDifficulty difficulty = AiDifficulty.Easy;
+        private Vector2 startScroll;
         private string formError;
         private bool onlineMenu;
         private string serverUrl = "http://localhost:5080";
@@ -56,6 +58,7 @@ namespace WordCraft.View
         /// box-select the army underneath it.
         /// </summary>
         private static bool mixerOpen;
+        public static bool MixerOpen => mixerOpen;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot() => new GameObject("WordCraft HUD").AddComponent<Hud>();
@@ -86,6 +89,7 @@ namespace WordCraft.View
         {
             MatchRunner runner = MatchRunner.Instance;
             if (runner != null && runner.Phase != Phase.Match) return true;
+            if (TutorialPanel.Covers(screenPosition)) return true;
             if (screenPosition.y <= UiStyle.BottomPanel ||
                 screenPosition.y >= Screen.height - UiStyle.TopBar)
             {
@@ -143,10 +147,12 @@ namespace WordCraft.View
         /// </summary>
         private void StartScreen()
         {
-            Rect panel = UiStyle.Middle(UiStyle.MenuWidth, onlineMenu ? 570f : UiStyle.MenuHeight + 48f);
+            Rect panel = UiStyle.Middle(UiStyle.MenuWidth,
+                Mathf.Min(Screen.height - 24f, onlineMenu ? 570f : UiStyle.MenuHeight + 180f));
             UiStyle.PanelBox(panel, UiStyle.Panel);
 
             GUILayout.BeginArea(UiStyle.Inside(panel));
+            startScroll = GUILayout.BeginScrollView(startScroll);
             GUILayout.Label("WORDCRAFT", UiStyle.DisplayStyle);
             GUILayout.Space(UiStyle.S2);
             GUILayout.BeginHorizontal();
@@ -157,6 +163,17 @@ namespace WordCraft.View
             if (online && !onlineMenu) { runner.ShowStart(); onlineMenu = true; }
             GUILayout.Space(UiStyle.S2);
 
+            if (!onlineMenu && !runner.Connecting)
+            {
+                bool tutorial = MenuButton("처음이라면 · 튜토리얼", UiStyle.ControlTall);
+                GUILayout.Space(UiStyle.S2);
+                if (tutorial)
+                {
+                    formError = null;
+                    runner.StartTutorial();
+                }
+            }
+
             GUILayout.Label("faction", UiStyle.MicroStyle);
             GUILayout.Space(UiStyle.S1);
             FactionPicker();
@@ -165,6 +182,7 @@ namespace WordCraft.View
             if (onlineMenu)
             {
                 OnlineMenu();
+                GUILayout.EndScrollView();
                 GUILayout.EndArea();
                 return;
             }
@@ -185,6 +203,7 @@ namespace WordCraft.View
             if (runner.Connecting) ConnectionState();
             else HostOrJoin();
 
+            GUILayout.EndScrollView();
             GUILayout.EndArea();
         }
 
@@ -260,6 +279,15 @@ namespace WordCraft.View
 
             // No address, no port, no handshake: nothing here can be malformed, so
             // this one takes no error path and starts the match outright.
+            GUILayout.Label("솔로 난이도", UiStyle.Toned(UiStyle.Ink));
+            GUILayout.BeginHorizontal();
+            foreach (AiDifficulty level in new[] { AiDifficulty.Easy, AiDifficulty.Normal, AiDifficulty.Hard })
+                if (MenuButton(MatchRunner.DifficultyName(level), UiStyle.Control, difficulty == level)) difficulty = level;
+            GUILayout.EndHorizontal();
+            string timing = difficulty == AiDifficulty.Easy ? "선제공격 120초 이후" :
+                difficulty == AiDifficulty.Normal ? "선제공격 60초 이후" : "선제공격 유예 없음";
+            GUILayout.Label(timing + " · 기지 방어는 즉시", UiStyle.Toned(UiStyle.InkMute));
+            GUILayout.Space(UiStyle.S2);
             bool solo = MenuButton("SOLO", UiStyle.ControlTall);
             GUILayout.Space(UiStyle.S3);
 
@@ -281,7 +309,7 @@ namespace WordCraft.View
             else if (solo)
             {
                 formError = null;
-                runner.StartSolo(faction);
+                runner.StartSolo(faction, difficulty);
             }
         }
 
@@ -402,6 +430,7 @@ namespace WordCraft.View
             float width = Mathf.Max(0f, right - x);
 
             UiStyle.Note(new Rect(x, y, width, UiStyle.Micro + UiStyle.S1),
+                runner.Tutorial != null && runner.Tutorial.Completed ? "Tutorial complete" :
                 runner.Paused ? "Paused · P to resume" : StateText(runner.Session), stopped ? UiStyle.Danger : UiStyle.InkMute);
             UiStyle.Note(new Rect(x, y + UiStyle.Micro + UiStyle.S1, width, UiStyle.Line),
                 "peer " + peer + "  ·  tick " + world.Tick + "  ·  " + runner.Link, UiStyle.InkMute);
@@ -809,7 +838,7 @@ namespace WordCraft.View
                         ? orders.Pending == CommandType.Cast && orders.CastIndex == card[i].Slot
                         : !card[i].More && orders.Pending == card[i].Type;
 
-                if (UiStyle.CardCell(cell, CommandCard.Keys[i].ToString(), card[i].Label, armed, live))
+                if (UiStyle.CardCell(cell, CommandCard.Shortcut(card[i], i).ToString(), card[i].Label, armed, live))
                 {
                     orders.Run(card[i]);
                 }

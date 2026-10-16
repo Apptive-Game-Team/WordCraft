@@ -36,6 +36,11 @@ namespace WordCraft.View
             CancelledApproachesNeverBurst();
             PlayerRosterControlsCheck.Run((ok, why) => Check(ok, why));
             SoloPauseChecks.Check((ok, why) => Check(ok, why));
+            WorkerProductionCardChecks.Run((ok, why) => Check(ok, why));
+            AttackInputChecks.Run((ok, why) => Check(ok, why));
+            EditorDifficultyChecks.Run((ok, why) => Check(ok, why));
+            TutorialChecks.Run((ok, why) => Check(ok, why));
+            TutorialSessionChecks.Run((ok, why) => Check(ok, why));
 
             ulong final = FinalHash();
             Debug.Log("final hash after " + ScriptedLog.Ticks + " ticks: 0x" + final.ToString("X16"));

@@ -60,6 +60,10 @@ namespace WordCraft.View
 
         public IReadOnlyList<int> Selected => selected;
 
+        // A new match can update before Selection.Update clears the previous ids.
+        public IReadOnlyList<int> SelectedIn(World world) =>
+            ReferenceEquals(held, world) ? selected : System.Array.Empty<int>();
+
         // Linear scan, but a selection is a handful of ids and this runs once per
         // rendered entity per frame.
         public bool Contains(int id) => selected.Contains(id);

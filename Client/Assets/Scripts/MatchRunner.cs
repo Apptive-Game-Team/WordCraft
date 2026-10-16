@@ -54,6 +54,7 @@ namespace WordCraft.View
         public LockstepSession Session { get; private set; }
         public int LocalPeer { get; private set; }
         public Phase Phase { get; private set; }
+        public TutorialProgress Tutorial { get; private set; }
 
         /// <summary>Human readable description of the link, for the HUD.</summary>
         public string Link { get; private set; }
@@ -266,7 +267,7 @@ namespace WordCraft.View
         /// Update only advances while Connecting, which is false without a
         /// transport — parking here would leave the lobby up forever.
         /// </summary>
-        public void StartSolo(Faction faction)
+        public void StartSolo(Faction faction, AiDifficulty difficulty = AiDifficulty.Easy)
         {
             StopOnline();
             CloseTransport();
@@ -280,16 +281,30 @@ namespace WordCraft.View
             LocalPeer = 0;
             World = MatchScenario.Build(cfg.Seed, faction, opponent);
             World.SetPeerAi(1, true);
+            World.SetPeerAiDifficulty(1, difficulty);
             Session = new LockstepSession(World, DeadTransport.It, cfg, 0);
-            Link = "solo";
+            Link = "solo · " + DifficultyName(World.GetPeerAiDifficulty(1));
 
             Phase = Phase.Match;
             ResetMatchState();
         }
 
+        /// <summary>A normal world with a passive opponent, isolated from network matches.</summary>
+        public void StartTutorial()
+        {
+            StartSolo(Faction.TreeSpirits, AiDifficulty.Easy);
+            World.SetPeerAi(1, false);
+            Tutorial = new TutorialProgress(World, LocalPeer);
+            Link = "tutorial";
+        }
+
+        public static string DifficultyName(AiDifficulty difficulty) => difficulty == AiDifficulty.Hard ? "고급" :
+            difficulty == AiDifficulty.Normal ? "보통" : "초급";
+
         /// <summary>Every per-match field, in one place, so a restart cannot miss one.</summary>
         private void ResetMatchState()
         {
+            Tutorial = null;
             startMs = -1;
             lastStepMs = 0;
             Paused = false;
@@ -373,6 +388,8 @@ namespace WordCraft.View
         private void Update()
         {
             long now = NowMs();
+            ObserveTutorial();
+            if (FreezeCompletedTutorial(now)) return;
             if (PauseFrame(now, Input.GetKeyDown(KeyCode.P))) return;
 
             if (transport is RelayTransport relay && relay.Failure != null && Phase != Phase.Result)
@@ -449,7 +466,9 @@ namespace WordCraft.View
             // how many actually run. A frame rate spike must never let this peer
             // execute a tick the other one has not sent input for.
             long due = (now - startMs) / TickMs;
-            while (World.Tick <= due && (stopAtTick <= 0 || World.Tick < stopAtTick) && StepOnce(now)) { }
+            while (World.Tick <= due && (Tutorial == null || !Tutorial.Completed) &&
+                (stopAtTick <= 0 || World.Tick < stopAtTick) && StepOnce(now)) { }
+            if (FreezeCompletedTutorial(now)) return;
 
             // A headless peer is measuring a hash, not playing. It runs to -ticks
             // and prints, and a result screen nobody can click would hang it.
@@ -511,6 +530,7 @@ namespace WordCraft.View
             previous.AddRange(current);
 
             if (!Session.TryStep(now)) return false;
+            ObserveTutorial();
 
             if (matchView == null) matchView = FindObjectOfType<MatchView>();
             if (matchView != null) matchView.ObserveStep(World);
@@ -528,6 +548,22 @@ namespace WordCraft.View
         {
             into.Clear();
             for (int i = 0; i < World.EntityCount; i++) into.Add(ToView(World.GetEntity(i).Position));
+        }
+
+        private void ObserveTutorial()
+        {
+            if (Tutorial == null || Phase != Phase.Match) return;
+            Tutorial.Observe(World, Selection.Instance == null
+                ? Array.Empty<int>() : Selection.Instance.SelectedIn(World));
+        }
+
+        // Keep the completion panel available even if the last objective also
+        // ends the match. Starting another match resets this local pause state.
+        private bool FreezeCompletedTutorial(long now)
+        {
+            if (Phase != Phase.Match || Tutorial == null || !Tutorial.Completed) return false;
+            if (!Paused) { Paused = true; pausedAtMs = now; }
+            return true;
         }
 
         private static long NowMs() => (long)(Time.realtimeSinceStartupAsDouble * 1000.0);
