@@ -28,6 +28,7 @@ namespace WordCraft.Host
                 FactionMismatchIsRejectedBeforeTick0();
                 PeerTimeoutEndsTheMatch();
                 SoloRunsWithoutAPeer();
+                ArenaIsReproducible();
                 SpectatorWatchesWithoutHoldingTheBarrier();
                 SpectatorThatFallsTooFarBehindIsDropped();
                 SocketSpectatorWatchesWithoutHoldingTheBarrier();
@@ -43,11 +44,22 @@ namespace WordCraft.Host
             Console.WriteLine("OK: lockstep self-check passed (" + Ticks +
                               " ticks over a lossy link, both peers saved the same match," +
                               " desync located, handshake rejected," +
-                              " timeout handled, solo barrier opens," +
+                              " timeout handled, solo barrier opens, arena pair reproducible," +
                               " spectator hashes match and never hold the barrier," +
                               " in process and over a socket," +
                               " a forged Watch is answered once and never fed)");
             return 0;
+        }
+
+        /// <summary>Two completed games with alternating sides produce the same result line on a second run.</summary>
+        private static void ArenaIsReproducible()
+        {
+            const int ArenaTicks = 1200;
+            string first = Arena.ResultLine(Faction.Driftworlds, Faction.Hellfire, 2, ArenaTicks, 0xC0FFEE);
+            string second = Arena.ResultLine(Faction.Driftworlds, Faction.Hellfire, 2, ArenaTicks, 0xC0FFEE);
+            Check(first == second, "arena pair result changed between runs: " + first + " / " + second);
+            Check(first.Contains("a wins   0, b wins   2, draws   0"),
+                "arena did not count both completed games for Hellfire after alternating sides: " + first);
         }
 
         /// <summary>Drop, duplicate, reorder, and delay, yet identical hashes every tick.</summary>
