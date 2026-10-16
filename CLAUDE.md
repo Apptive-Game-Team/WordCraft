@@ -53,10 +53,22 @@ brings its own build step.
 Unity -batchmode -quit -projectPath Client       -executeMethod WordCraft.View.ViewShots.Run       -shotsOutput shots -shotsTicks 900
 ```
 
-Renders five PNGs of the scripted match in progress — the base, the lane and its
-high ground, the whole map, a close-up, the flank — from the camera poses the
-player gets. No `-nographics`: it needs a GPU. This is how a change to the
-field, a model or the light is looked at without launching a player.
+Writes 57 PNGs into the `-shotsOutput` directory (created if missing; a relative
+path is taken from the working directory, not from `Client/`):
+
+- 5 `field` shots of the scripted match in progress: the base, the lane and its
+  high ground, the whole map, a close-up, the flank, from the camera poses the
+  player gets;
+- 6 `lineup-<faction>` shots: every roster entry of one faction in a row;
+- 43 `strip-<faction>-<motion>` shots: up to four bodies doing one motion, eight
+  frames across 0.9 seconds side by side, so an animation reads from one still;
+- 3 `strip-match-<fight|kill|spawn>` shots: the real `MatchView` driven over the
+  scripted log, so tracers, flinches and deaths are seen as the player sees them.
+
+`-shotsTicks` is how many ticks of the scripted log run before the field shots
+(900 by default). The log line `OK: N shots written to ...` prints the count per
+kind. No `-nographics`: it needs a GPU. This is how a change to the field, a
+model or the light is looked at without launching a player.
 
 ```bash
 Unity -batchmode -quit -projectPath Client       -executeMethod WordCraft.View.ViewSelfCheck.Run

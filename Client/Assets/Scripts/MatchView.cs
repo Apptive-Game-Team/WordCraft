@@ -164,7 +164,14 @@ namespace WordCraft.View
         public static readonly Fix TracerReach = Fix.FromInt(2);
 
         /// <summary>Whether a weapon with these stats throws a tracer rather than landing a blow. The one test, shared with ViewShots.</summary>
-        public static bool Throws(UnitStats stats) => stats.Range > TracerReach;
+        public static bool Throws(UnitStats stats) => Throws(stats.Range);
+
+        /// <summary>
+        /// The same test on a reach alone, for a caller holding a live body: World.RangeOf
+        /// is the researched reach, and 골렘 사거리 lifts a golem's 2 cells to 3, so a
+        /// swing that has become a throw gets a tracer.
+        /// </summary>
+        public static bool Throws(Fix range) => range > TracerReach;
 
         /// <summary>
         /// 돌 골렘 부족's combat unit leaves rubble where it falls (Sim/World.cs
@@ -420,12 +427,16 @@ namespace WordCraft.View
                 rings[i].Visible = picked;
                 if (picked) rings[i].Set(p, body.Footprint * 0.5f + band, band);
 
-                // "이게 저걸 때릴 수 있나" is a question the roster already answers;
-                // this only ever reads it, never a re-typed number of its own, so
-                // the ring can never say something FactionData does not (issue #104).
+                // "이게 저걸 때릴 수 있나" is a question the simulation already
+                // answers; this only ever reads it, never a re-typed number of its
+                // own, so the ring can never say something the shot does not. It is
+                // World.RangeOf and not the roster's Range: a researched range
+                // upgrade moves the reach the shot is tested against, and a ring
+                // left at the base number would draw a boundary the unit hits past
+                // (issues #104, #182).
                 if (picked && world.Armed(e))
                 {
-                    RangeRing(rangeRings[i], FactionData.Stats(world.FactionOf(e.Owner), e.Role, e.Slot).Range, p);
+                    RangeRing(rangeRings[i], world.RangeOf(e), p);
                 }
                 else
                 {
@@ -538,7 +549,7 @@ namespace WordCraft.View
             target.Alive = true;
             bool seen = Fog.Show(e.TargetId, target) == Fog.Seen;
 
-            if (Throws(FactionData.Stats(faction, e.Role, e.Slot)))
+            if (Throws(world.RangeOf(e)))
             {
                 // A tower kicks the instant it fires and has no wind-up to wait for.
                 float leave = e.Kind == EntityKind.Building ? 0f : BodyRig.StrikeDelay;
@@ -696,9 +707,10 @@ namespace WordCraft.View
             // question, and a map wearing every anchor's circle for a whole match
             // is a map with a pattern on it.
             ArrivalOrder.Anchors(world, peer, anchors);
+            Fix radius = ArrivalOrder.RadiusFor(world, peer);
             for (int i = 0; i < anchors.Count; i++)
             {
-                RangeRing(AnchorRing(i), ArrivalOrder.Radius, runner.DrawPosition(anchors[i]));
+                RangeRing(AnchorRing(i), radius, runner.DrawPosition(anchors[i]));
             }
             for (int i = anchors.Count; i < arrivalRings.Count; i++) arrivalRings[i].Visible = false;
         }
@@ -758,6 +770,7 @@ namespace WordCraft.View
         // cells the day a profile disagrees.
         private void Remnants(World world)
         {
+            int longest = RemnantFade.LongestTicks(world);
             int used = 0;
             for (int cell = 0; cell < World.GridCells; cell++)
             {
@@ -767,7 +780,7 @@ namespace WordCraft.View
                 pile.Show(true);
                 pile.Place(Field.At(MatchRunner.ToView(World.CellCenter(cell))));
 
-                float left = (world.RemnantExpiry(cell) - world.Tick) / (float)World.RemnantTicks;
+                float left = (world.RemnantExpiry(cell) - world.Tick) / (float)longest;
                 pile.Alpha(Mathf.Lerp(UiStyle.RemnantFade, 1f, Mathf.Clamp01(left)));
             }
 
@@ -930,7 +943,7 @@ namespace WordCraft.View
             // opponent being able to see them spent is the competition this
             // mechanic exists to create.
             float capture = e.Alive && e.Kind == EntityKind.Worker
-                ? CaptureOrder.Progress(e)
+                ? CaptureOrder.Progress(world, e)
                 : -1f;
 
             bool queue = e.Alive && picked && e.Kind == EntityKind.Building && e.QueueCount > 0;
