@@ -64,6 +64,9 @@ namespace WordCraft.View
         /// <summary>True when the session halted rather than the game finishing.</summary>
         public bool Halted { get; private set; }
 
+        /// <summary>Solo-only pause; networking and menu screens never pause.</summary>
+        public bool Paused { get; private set; }
+
         /// <summary>Tick the match ended on, held because the session keeps running afterwards.</summary>
         public int EndTick { get; private set; }
 
@@ -95,6 +98,7 @@ namespace WordCraft.View
 
         private long startMs = -1;
         private long lastStepMs;
+        private long pausedAtMs;
         private bool stopReported;
         private int stopAtTick;
 
@@ -121,7 +125,7 @@ namespace WordCraft.View
         }
 
         /// <summary>Fraction of a tick elapsed since the last one executed, 0 to 1.</summary>
-        public float Alpha => Mathf.Clamp01((NowMs() - lastStepMs) / (float)TickMs);
+        public float Alpha => Mathf.Clamp01(((Paused ? pausedAtMs : NowMs()) - lastStepMs) / (float)TickMs);
 
         /// <summary>Interpolated draw position. View only; not a simulation value.</summary>
         public Vector2 DrawPosition(int id) => Vector2.Lerp(previous[id], current[id], Alpha);
@@ -288,6 +292,8 @@ namespace WordCraft.View
         {
             startMs = -1;
             lastStepMs = 0;
+            Paused = false;
+            pausedAtMs = 0;
             stopReported = false;
             Outcome = null;
             Halted = false;
@@ -367,6 +373,7 @@ namespace WordCraft.View
         private void Update()
         {
             long now = NowMs();
+            if (PauseFrame(now, Input.GetKeyDown(KeyCode.P))) return;
 
             if (transport is RelayTransport relay && relay.Failure != null && Phase != Phase.Result)
             {
@@ -469,6 +476,33 @@ namespace WordCraft.View
             }
 
             if (World.MatchOver) End();
+        }
+
+        /// <summary>
+        /// Keeps the wall-clock origin still relative to simulation time while
+        /// paused. Orders may continue to queue in Session.Issue at the unchanged
+        /// tick; TryStep seals and executes them normally after resuming.
+        /// </summary>
+        private bool PauseFrame(long now, bool pressed)
+        {
+            if (Phase != Phase.Match || config == null || !config.Solo || transport != null ||
+                Session == null || Session.State != SessionState.Running || World.MatchOver) return false;
+            if (pressed)
+            {
+                if (!Paused)
+                {
+                    Paused = true;
+                    pausedAtMs = now;
+                }
+                else
+                {
+                    long elapsed = Math.Max(0, now - pausedAtMs);
+                    if (startMs >= 0) startMs += elapsed;
+                    lastStepMs += elapsed;
+                    Paused = false;
+                }
+            }
+            return Paused;
         }
 
         private bool StepOnce(long now)
