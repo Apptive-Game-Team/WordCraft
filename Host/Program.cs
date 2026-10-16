@@ -41,6 +41,7 @@ namespace WordCraft.Host
         {
             string mode = args.Length > 0 ? args[0] : "selfcheck";
             if (mode == "selfcheck") return SelfCheck.Run();
+            if (mode == "onlinecheck") return OnlineCheck.Run(args.Length > 1 ? args[1] : "http://localhost:5080").GetAwaiter().GetResult();
             if (mode == "arena") return Arena.Run(args);
             if (mode == "replay") return RunReplay(args);
             if (mode == "compare") return RunCompare(args);

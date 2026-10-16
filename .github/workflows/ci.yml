@@ -46,6 +46,9 @@ jobs:
       - name: Lockstep self-check
         run: dotnet run --project Host -- selfcheck
 
+      - name: Matchmaking and relay checks
+        run: dotnet run --project Server/Checks/Checks.csproj
+
   view:
     name: view determinism
     # Behind the cheap gate: if the simulation already disagrees with itself

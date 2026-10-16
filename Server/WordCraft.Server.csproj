@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- The Web SDK otherwise treats nested test output JSON as publishable content,
+         copying a Checks/ directory over the Linux test executable named Checks. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);Checks/**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

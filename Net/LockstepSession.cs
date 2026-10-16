@@ -114,7 +114,8 @@ namespace WordCraft.Net
         private const int BlockHeaderBytes = 6;  // tick, commandCount
         private const int CommandBytes = 29;     // type, entityId, seq, targetX, targetY, arg
 
-        private readonly World world;
+        private World world;
+        private readonly Func<ulong, Faction, Faction, World> scenarioFactory;
         private readonly ITransport transport;
         private readonly MatchConfig cfg;
         private readonly int localPeer;
@@ -158,6 +159,7 @@ namespace WordCraft.Net
         public bool ReportComplete { get; private set; } = true;
 
         public int PeerId => localPeer;
+        public World World => world;
         public int Tick => world.Tick;
 
         /// <summary>The tick ConfirmedCommands belongs to, or -1 before the first step.</summary>
@@ -178,11 +180,13 @@ namespace WordCraft.Net
         /// </summary>
         public IReadOnlyList<Command> ConfirmedCommands => batch;
 
-        public LockstepSession(World world, ITransport transport, MatchConfig cfg, int localPeerId)
+        public LockstepSession(World world, ITransport transport, MatchConfig cfg, int localPeerId,
+            Func<ulong, Faction, Faction, World> scenarioFactory = null)
         {
             this.world = world;
             this.transport = transport;
             this.cfg = cfg;
+            this.scenarioFactory = scenarioFactory;
             localPeer = localPeerId;
             remotePeer = 1 - localPeerId;
             for (int i = 0; i < PeerCount; i++) inputs[i] = new Dictionary<int, Command[]>();
@@ -393,13 +397,16 @@ namespace WordCraft.Net
 
         private void BeginMatch()
         {
-            State = SessionState.Running;
-
-            // Setup, not simulation: both factions are settled and neither world
-            // has stepped. Writing them here rather than trusting the scenario is
-            // what stops a peer's own config and its world from drifting apart.
+            // Lobby previews can contain a placeholder opponent. Rebuild starting
+            // entities with negotiated factions: changing only the faction enum
+            // leaves HP, resource costs and faction-specific spawns inconsistent.
+            if (scenarioFactory != null)
+                world = scenarioFactory(cfg.Seed,
+                    localPeer == 0 ? cfg.LocalFaction : remoteFaction,
+                    localPeer == 1 ? cfg.LocalFaction : remoteFaction);
             world.SetPeerFaction(localPeer, cfg.LocalFaction);
             world.SetPeerFaction(remotePeer, remoteFaction);
+            State = SessionState.Running;
 
             // Nothing could have been issued before the match existed, so the
             // first InputDelay ticks are empty on every peer by definition.

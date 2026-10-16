@@ -1,18 +1,26 @@
 # WordCraft
 
 WordCraft는 결정론적 락스텝(lockstep) 시뮬레이션을 P2P UDP로 동기화하는 데스크톱
-RTS입니다. 게임 로직을 처리하는 서버가 없습니다. 각 피어가 동일한 시뮬레이션을
+RTS입니다. 게임 로직은 각 피어가 처리합니다. 각 피어가 동일한 시뮬레이션을
 독립적으로 실행하고, 주고받는 것은 플레이어 입력과 상태 해시뿐입니다.
 
 아트와 진영 컨셉은 [WordOnline](https://github.com/Apptive-Game-Team/WordOnline)
 프로젝트에서 가져옵니다.
+
+온라인 대전은 게스트 자동 매칭·비공개 방·WebSocket 중계 서버를 사용합니다.
+시작 메뉴의 **ONLINE**에서 서버 주소를 입력하고 상대 찾기 또는 방 코드 참가를
+선택합니다. 기존 **SOLO / LAN**도 그대로 사용할 수 있습니다.
+로컬 서버는 `dotnet run --project Server/WordCraft.Server.csproj`로 실행합니다.
+Docker 및 배포·검증 방법은 [온라인 가이드](docs/ONLINE-SERVER.md)를 참고하세요.
+공개 운영 서버는 아직 배포되어 있지 않습니다.
 
 ## 저장소 구조
 
 | 경로 | 역할 | 기술 |
 | --- | --- | --- |
 | [`Sim/`](Sim/) | 순수 C# 시뮬레이션. 고정소수점 연산, 결정론 RNG, 엔티티 상태, 상태 해시 | .NET Standard 2.1 |
-| [`Net/`](Net/) | P2P 락스텝 세션과 UDP 전송 | .NET Standard 2.1 |
+| [`Net/`](Net/) | P2P 락스텝 세션, UDP 및 WebSocket 릴레이 전송 | .NET Standard 2.1 |
+| [`Server/`](Server/) | 게스트 매칭, 비공개 방, 인증된 릴레이와 통합 검사 | ASP.NET Core 8 |
 | [`Replay/`](Replay/) | 헤드리스 결정론 자체 검증과 리플레이 하네스 | .NET 8 |
 | [`Host/`](Host/) | 두 피어의 매치를 콘솔에서 돌리는 러너. `host`, `join`, `solo`, `selfcheck`, `watch`, `replay`, `compare`, `arena` | .NET 8 |
 | [`Client/`](Client/) | Unity 뷰와 HUD. `Sim`과 `Net`을 컴파일된 어셈블리로 참조 | Unity 2022 LTS |
@@ -25,8 +33,8 @@ RTS입니다. 게임 로직을 처리하는 서버가 없습니다. 각 피어�
 
 빌드해보지 않고 바로 플레이하려면
 [Releases](https://github.com/Apptive-Game-Team/WordCraft/releases)에서 Windows·macOS
-빌드를 받습니다. 서버가 없는 LAN 프로토타입이므로 한쪽이 host, 다른 쪽이 그
-IP로 join합니다.
+빌드를 받습니다. 기존 릴리스는 LAN 직접 연결을 사용합니다. 이 브랜치의 온라인
+기능은 최신 클라이언트 빌드와 위 매칭 서버를 함께 실행하여 확인할 수 있습니다.
 
 소스에서 돌리려면 .NET 8 SDK만 있으면 됩니다.
 

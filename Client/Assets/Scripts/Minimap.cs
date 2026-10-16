@@ -311,9 +311,8 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// Fills one cell's block of pixels. A cell this peer has never seen is
-        /// left alone: debris or a field painted there would report something it
-        /// has no way of knowing about.
+        /// Fills a currently visible cell. Remembered terrain does not reveal
+        /// new water fields or debris, nor their expiry outside current vision.
         /// </summary>
         private static void Cell(int cell, Color32 colour)
         {
@@ -322,7 +321,7 @@ namespace WordCraft.View
             const int block = Res / MatchScenario.MapSize;
             int cx = cell % MatchScenario.MapSize;
             int cy = cell / MatchScenario.MapSize;
-            if (Fog.AtCell(cx, cy) == Fog.Hidden) return;
+            if (Fog.AtCell(cx, cy) != Fog.Seen) return;
 
             int x0 = cx * block;
             int y0 = cy * block;

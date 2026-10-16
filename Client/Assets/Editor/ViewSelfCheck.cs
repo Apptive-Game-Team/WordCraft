@@ -31,6 +31,9 @@ namespace WordCraft.View
             RosterArtResolves();
             RosterBodiesAreWritten();
             RestartIsClean();
+            MinimapHidesUnseenChanges();
+            BlastRingsDoNotAllocateShards();
+            CancelledApproachesNeverBurst();
 
             ulong final = FinalHash();
             Debug.Log("final hash after " + ScriptedLog.Ticks + " ticks: 0x" + final.ToString("X16"));
@@ -350,6 +353,92 @@ namespace WordCraft.View
                 runner.ShowStart(); // closes the socket
                 Object.DestroyImmediate(go);
             }
+        }
+
+        private static void MinimapHidesUnseenChanges()
+        {
+            const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+            var pixelField = typeof(Minimap).GetField("pixels", flags);
+            var fogField = typeof(Fog).GetField("state", flags);
+            var activeProperty = typeof(Fog).GetProperty("Active");
+            bool savedActive = Fog.Active;
+            var cellMethod = typeof(Minimap).GetMethod("Cell", flags);
+            object savedPixels = pixelField.GetValue(null);
+            var state = (byte[])fogField.GetValue(null);
+            byte savedState = state[0];
+            var pixels = new Color32[128 * 128];
+            Color32 original = new Color32(10, 20, 30, 255);
+            Color32 dynamic = new Color32(150, 200, 240, 255);
+            try
+            {
+                pixelField.SetValue(null, pixels);
+                activeProperty.SetValue(null, true);
+                foreach (byte visibility in new[] { Fog.Hidden, Fog.Memory, Fog.Seen })
+                {
+                    state[0] = visibility;
+                    pixels[0] = original;
+                    cellMethod.Invoke(null, new object[] { 0, dynamic });
+                    Check(pixels[0].Equals(visibility == Fog.Seen ? dynamic : original),
+                        "minimap dynamic terrain leaked or vanished at visibility " + visibility);
+                }
+            }
+            finally
+            {
+                state[0] = savedState;
+                activeProperty.SetValue(null, savedActive);
+                pixelField.SetValue(null, savedPixels);
+            }
+        }
+
+        private static void BlastRingsDoNotAllocateShards()
+        {
+            var root = new GameObject("blast pool check");
+            try
+            {
+                var effects = new Effects(root.transform);
+                int before = root.GetComponentsInChildren<MeshRenderer>(true).Length;
+                for (int i = 0; i < 36; i++) effects.Blast(Vector3.zero, 3f, Color.white);
+                int after = root.GetComponentsInChildren<MeshRenderer>(true).Length;
+                Check(after - before == 36, "36 area rings must allocate 36 renderers, not shard bursts");
+                effects.Clear();
+                for (int i = 0; i < 36; i++) effects.Blast(Vector3.zero, 3f, Color.white);
+                Check(root.GetComponentsInChildren<MeshRenderer>(true).Length == after,
+                    "cleared blast rings were not reused");
+            }
+            finally { Object.DestroyImmediate(root); }
+        }
+
+        private static void CancelledApproachesNeverBurst()
+        {
+            var root = new GameObject("cancelled approach check");
+            try
+            {
+                var effects = new Effects(root.transform);
+                ViewClock.Hold(0f, 0f);
+                int first = effects.Approach(Vector3.zero, 7f, Color.red, 0.3f);
+                ViewClock.Hold(0.1f, 0.1f);
+                effects.Animate();
+                Check(VisibleRenderers(root) > 0, "approach was never visible");
+                effects.Cancel(first);
+                Check(VisibleRenderers(root) == 0, "cancelled approach remained visible");
+                effects.Approach(Vector3.zero, 7f, Color.red, 0.3f);
+                ViewClock.Hold(0.2f, 0.1f);
+                effects.Animate();
+                effects.Cancel(first);
+                Check(VisibleRenderers(root) > 0, "stale cancellation hid a reused tracer slot");
+                ViewClock.Hold(1f, 0.8f);
+                effects.Animate();
+                Check(VisibleRenderers(root) == 0, "unconfirmed approach produced an impact");
+            }
+            finally { ViewClock.Release(); Object.DestroyImmediate(root); }
+        }
+
+        private static int VisibleRenderers(GameObject root)
+        {
+            int count = 0;
+            foreach (MeshRenderer renderer in root.GetComponentsInChildren<MeshRenderer>())
+                if (renderer.enabled) count++;
+            return count;
         }
 
         private static ulong FinalHash()

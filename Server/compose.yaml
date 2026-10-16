@@ -1,0 +1,13 @@
+services:
+  matchmaking:
+    build: .
+    ports:
+      - "127.0.0.1:5080:5080"
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 2
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true

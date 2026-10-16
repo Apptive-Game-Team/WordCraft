@@ -23,9 +23,9 @@ namespace WordCraft.View
         /// <summary>
         /// Both peers must pass the same two factions or their worlds hash apart
         /// from tick 0. In a networked match the handshake is what makes that
-        /// true: LockstepSession writes both slots again once each peer's own
-        /// choice has crossed the wire, so what is passed here is what the local
-        /// player sees until then.
+        /// true: use this method as LockstepSession's scenario factory to rebuild
+        /// the complete starting roster after both choices have crossed the wire.
+        /// The pre-handshake world is only a local lobby preview.
         /// </summary>
         public static World Build(ulong seed, Faction peer0, Faction peer1)
         {

@@ -36,7 +36,7 @@ namespace WordCraft.View
     ///   WordCraft.app -shot out.png   with -ticks: save what the screen shows at the stop
     ///   WordCraft.app -faction Humans play that faction
     /// </summary>
-    public sealed class MatchRunner : MonoBehaviour
+    public sealed partial class MatchRunner : MonoBehaviour
     {
         public const int DefaultPort = 45677;
         private const int TickMs = 1000 / World.TicksPerSecond;
@@ -71,7 +71,8 @@ namespace WordCraft.View
         public float EndSeconds => EndTick / (float)World.TicksPerSecond;
 
         /// <summary>True once anything at all has arrived from the other side.</summary>
-        public bool PeerHeard => transport != null && transport.Received > 0;
+        public bool PeerHeard => transport is UdpTransport udp ? udp.Received > 0 :
+            transport is RelayTransport relay && relay.Received > 0;
 
         /// <summary>True between pressing host or join and the handshake settling.</summary>
         public bool Connecting => Phase == Phase.Start && transport != null;
@@ -82,7 +83,10 @@ namespace WordCraft.View
         private readonly List<Vector2> previous = new List<Vector2>();
         private readonly List<Vector2> current = new List<Vector2>();
 
-        private UdpTransport transport;
+        private ITransport transport;
+        private MatchView matchView;
+
+        private void CloseTransport() => (transport as IDisposable)?.Dispose();
 
         // The session reads this every Update, so the lobby's patience can be
         // handed back once the match is running.
@@ -166,7 +170,8 @@ namespace WordCraft.View
         /// </summary>
         public void ShowStart()
         {
-            transport?.Dispose();
+            StopOnline();
+            CloseTransport();
             transport = null;
 
             var cfg = new MatchConfig();
@@ -217,7 +222,8 @@ namespace WordCraft.View
                 return "socket: " + e.Message; // port already taken, usually
             }
 
-            transport?.Dispose();
+            StopOnline();
+            CloseTransport();
             transport = socket;
 
             var cfg = new MatchConfig { LocalFaction = faction };
@@ -238,9 +244,9 @@ namespace WordCraft.View
             World = MatchScenario.Build(cfg.Seed,
                 LocalPeer == 0 ? mine : theirs,
                 LocalPeer == 0 ? theirs : mine);
-            Session = new LockstepSession(World, transport, cfg, LocalPeer);
+            Session = new LockstepSession(World, transport, cfg, LocalPeer, MatchScenario.Build);
             Link = remote == null
-                ? "listening on udp " + transport.LocalPort
+                ? "listening on udp " + socket.LocalPort
                 : "connecting to " + remote + ":" + port;
 
             Phase = Phase.Start; // the handshake decides when this becomes Match
@@ -258,7 +264,8 @@ namespace WordCraft.View
         /// </summary>
         public void StartSolo(Faction faction)
         {
-            transport?.Dispose();
+            StopOnline();
+            CloseTransport();
             transport = null;
 
             Faction opponent = MatchConfig.DefaultFaction(1);
@@ -319,6 +326,20 @@ namespace WordCraft.View
             shotPath = Arg("-shot");
             ShowStart();
 
+            string menuShot = Arg("-menuShot");
+            if (menuShot != null)
+            {
+                StartCoroutine(CaptureMenu(menuShot));
+                return;
+            }
+
+            string server = Arg("-server");
+            if (server != null)
+            {
+                BeginOnline(server, Arg("-room"), Arg("-createRoom") != null, FactionArg(0));
+                return;
+            }
+
             string join = Arg("-join");
             if (!CommandLineMatch()) return;
 
@@ -326,9 +347,20 @@ namespace WordCraft.View
             if (bad != null) Debug.LogError("cannot start: " + bad);
         }
 
+        private System.Collections.IEnumerator CaptureMenu(string path)
+        {
+            while (!UnityEngine.Rendering.SplashScreen.isFinished) yield return null;
+            for (int i = 0; i < 12; i++) yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(path);
+            for (int i = 0; i < 8; i++) yield return new WaitForEndOfFrame();
+            Debug.Log("OK: menu screenshot captured");
+            Application.Quit();
+        }
+
         private void OnDestroy()
         {
-            transport?.Dispose();
+            StopOnline(release: false);
+            CloseTransport();
             if (Instance == this) Instance = null;
         }
 
@@ -336,14 +368,39 @@ namespace WordCraft.View
         {
             long now = NowMs();
 
+            if (transport is RelayTransport relay && relay.Failure != null && Phase != Phase.Result)
+            {
+                OnlineStatus = relay.Failure;
+                Halted = true;
+                Outcome = "CONNECTION LOST: " + relay.Failure;
+                EndTick = World.Tick;
+                Phase = Phase.Result;
+                if (stopAtTick > 0)
+                {
+                    Debug.LogError(Outcome);
+                    Application.Quit(1);
+                }
+                return;
+            }
+
             if (Phase == Phase.Start)
             {
                 if (!Connecting) return;
                 Session.Update(now);
                 // Tick 0 waits for the handshake. A rejection leaves the session
                 // stopped and the start screen up, holding the reason.
-                if (Session.State != SessionState.Running) return;
+                if (Session.State != SessionState.Running)
+                {
+                    if (Session.State == SessionState.Stopped && stopAtTick > 0)
+                    {
+                        Debug.LogError("Handshake failed: " + Session.StopReason);
+                        Application.Quit(1);
+                    }
+                    return;
+                }
 
+                World = Session.World;
+                ResetMatchState();
                 // Silence means a broken link from here on, not an empty lobby.
                 config.TimeoutMs = peerTimeoutMs;
                 Phase = Phase.Match;
@@ -366,6 +423,7 @@ namespace WordCraft.View
                 // leaves no trace in the player log cannot be diagnosed at all.
                 stopReported = true;
                 Debug.LogError("STOPPED at tick " + World.Tick + ": " + Session.StopReason);
+                if (stopAtTick > 0) Application.Quit(1);
             }
 
             if (Session.State != SessionState.Running)
@@ -384,7 +442,7 @@ namespace WordCraft.View
             // how many actually run. A frame rate spike must never let this peer
             // execute a tick the other one has not sent input for.
             long due = (now - startMs) / TickMs;
-            while (World.Tick <= due && StepOnce(now)) { }
+            while (World.Tick <= due && (stopAtTick <= 0 || World.Tick < stopAtTick) && StepOnce(now)) { }
 
             // A headless peer is measuring a hash, not playing. It runs to -ticks
             // and prints, and a result screen nobody can click would hang it.
@@ -419,6 +477,9 @@ namespace WordCraft.View
             previous.AddRange(current);
 
             if (!Session.TryStep(now)) return false;
+
+            if (matchView == null) matchView = FindObjectOfType<MatchView>();
+            if (matchView != null) matchView.ObserveStep(World);
 
             Snapshot(current);
             // Entities spawned during this tick have no previous position, so they

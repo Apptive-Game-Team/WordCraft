@@ -46,6 +46,9 @@ namespace WordCraft.View
         private string portText = MatchRunner.DefaultPort.ToString();
         private Faction faction = MatchConfig.DefaultFaction(0);
         private string formError;
+        private bool onlineMenu;
+        private string serverUrl = "http://localhost:5080";
+        private string roomCode = "";
 
         /// <summary>
         /// Whether the mixer is showing. Static because OverUi is static and has to
@@ -64,6 +67,8 @@ namespace WordCraft.View
             runner = MatchRunner.Instance;
             selection = Selection.Instance;
             address = PlayerPrefs.GetString(AddressKey, "");
+            serverUrl = PlayerPrefs.GetString("wordcraft.server", "http://localhost:5080");
+            onlineMenu = runner.OnlineBusy || Array.IndexOf(Environment.GetCommandLineArgs(), "-onlineMenu") >= 0;
         }
 
         /// <summary>
@@ -138,17 +143,31 @@ namespace WordCraft.View
         /// </summary>
         private void StartScreen()
         {
-            Rect panel = UiStyle.Middle(UiStyle.MenuWidth, UiStyle.MenuHeight);
+            Rect panel = UiStyle.Middle(UiStyle.MenuWidth, onlineMenu ? 570f : UiStyle.MenuHeight + 48f);
             UiStyle.PanelBox(panel, UiStyle.Panel);
 
             GUILayout.BeginArea(UiStyle.Inside(panel));
             GUILayout.Label("WORDCRAFT", UiStyle.DisplayStyle);
-            GUILayout.Space(UiStyle.S4);
+            GUILayout.Space(UiStyle.S2);
+            GUILayout.BeginHorizontal();
+            bool local = MenuButton("SOLO / LAN", UiStyle.Control, !onlineMenu);
+            bool online = MenuButton("ONLINE", UiStyle.Control, onlineMenu);
+            GUILayout.EndHorizontal();
+            if (local && onlineMenu) { runner.ShowStart(); onlineMenu = false; }
+            if (online && !onlineMenu) { runner.ShowStart(); onlineMenu = true; }
+            GUILayout.Space(UiStyle.S2);
 
             GUILayout.Label("faction", UiStyle.MicroStyle);
             GUILayout.Space(UiStyle.S1);
             FactionPicker();
             GUILayout.Space(UiStyle.S4);
+
+            if (onlineMenu)
+            {
+                OnlineMenu();
+                GUILayout.EndArea();
+                return;
+            }
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("address", UiStyle.MicroStyle);
@@ -167,6 +186,50 @@ namespace WordCraft.View
             else HostOrJoin();
 
             GUILayout.EndArea();
+        }
+
+        private void OnlineMenu()
+        {
+            if (runner.Connecting)
+            {
+                ConnectionState();
+                return;
+            }
+            if (runner.OnlineBusy)
+            {
+                GUILayout.Label(runner.OnlineStatus ?? "Connecting...", UiStyle.Toned(UiStyle.Ink));
+                if (!string.IsNullOrEmpty(runner.OnlineRoomCode))
+                {
+                    GUILayout.Space(UiStyle.S2);
+                    GUILayout.Label(runner.OnlineRoomCode, UiStyle.DisplayStyle);
+                    if (MenuButton("COPY ROOM CODE", UiStyle.Control)) GUIUtility.systemCopyBuffer = runner.OnlineRoomCode;
+                }
+                GUILayout.Space(UiStyle.S3);
+                if (MenuButton("CANCEL", UiStyle.Control)) runner.ShowStart();
+                return;
+            }
+            GUILayout.Label("matchmaking server", UiStyle.MicroStyle);
+            serverUrl = GUILayout.TextField(serverUrl, 256, UiStyle.FieldStyle);
+            GUILayout.Space(UiStyle.S2);
+            bool quick = MenuButton("FIND OPPONENT", UiStyle.ControlTall);
+            GUILayout.Space(UiStyle.S2);
+            bool create = MenuButton("CREATE PRIVATE ROOM", UiStyle.Control);
+            GUILayout.Space(UiStyle.S2);
+            GUILayout.Label("room code", UiStyle.MicroStyle);
+            GUILayout.BeginHorizontal();
+            roomCode = GUILayout.TextField(roomCode, 12, UiStyle.FieldStyle);
+            bool join = MenuButton("JOIN ROOM", UiStyle.Control);
+            GUILayout.EndHorizontal();
+            GUILayout.Space(UiStyle.S2);
+            if (!string.IsNullOrEmpty(runner.OnlineStatus))
+                GUILayout.Label(runner.OnlineStatus, UiStyle.Toned(UiStyle.Danger));
+            GUILayout.Label("Two players. Choose the same server. No port forwarding needed.", UiStyle.MicroStyle);
+            if (quick || create || join)
+            {
+                if (join && string.IsNullOrWhiteSpace(roomCode)) return;
+                PlayerPrefs.SetString("wordcraft.server", serverUrl.Trim());
+                runner.BeginOnline(serverUrl, join ? roomCode : null, create, faction);
+            }
         }
 
         /// <summary>All six by name, because a faction the player cannot see is not a choice.</summary>

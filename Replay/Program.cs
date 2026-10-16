@@ -20,6 +20,12 @@ namespace WordCraft.Replay
             SeparationChecks.EnforcePerformance = Array.IndexOf(args, "--perf") >= 0;
             try
             {
+                if (Array.IndexOf(args, "--ai") >= 0)
+                {
+                    AiChecks.Check();
+                    Console.WriteLine("OK: AI checks passed");
+                    return 0;
+                }
                 FixedPointSanity();
                 RandomSanity();
                 SameLogSameHashes();
@@ -139,6 +145,7 @@ namespace WordCraft.Replay
                 WaterFieldChecks.Check();
                 CastChecks.Check();
                 AbilityMenuChecks.Check();
+                AiChecks.Check();
                 SimAssemblyIsClean();
             }
             catch (Exception ex)

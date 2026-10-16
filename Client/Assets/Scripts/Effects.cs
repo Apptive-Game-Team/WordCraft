@@ -140,8 +140,8 @@ namespace WordCraft.View
         // radius the innermost ring of them runs, and how high they ride.
         private const float OrbitChip = 0.32f;
         private const float OrbitInner = 0.55f;
-        private const float OrbitLift = 0.35f;
-        private const float OrbitBob = 0.45f;
+        private const float OrbitLift = 0.18f;
+        private const float OrbitBob = 0.18f;
 
         // A building's dust ring (issue #186): out from just inside its
         // footprint to past it, a thicker band than a shot's, slower.
@@ -187,6 +187,7 @@ namespace WordCraft.View
 
         private struct Tracer
         {
+            public int Handle;
             public bool Live;
             public Vector3 From, To;
             public float Started, Flight;
@@ -264,6 +265,9 @@ namespace WordCraft.View
         private readonly List<Chunk> chunks = new List<Chunk>(CrumbleWarm * ChunksPerCrumble);
         private readonly List<MeshRenderer> chunkRenderers = new List<MeshRenderer>(CrumbleWarm * ChunksPerCrumble);
         private readonly List<Color> ringColours = new List<Color>(BurstWarm);
+        private readonly List<Burst> blasts = new List<Burst>();
+        private readonly List<Decal> blastRings = new List<Decal>();
+        private readonly List<Color> blastColours = new List<Color>();
         private readonly List<Floater> motes = new List<Floater>(MoteWarm);
         private readonly List<MeshRenderer> moteRenderers = new List<MeshRenderer>(MoteWarm);
         private readonly List<Bolt> bolts = new List<Bolt>(BoltWarm);
@@ -362,6 +366,7 @@ namespace WordCraft.View
         private float Launch(Tracer t)
         {
             int i = FreeTracer();
+            t.Handle = ++nextTracerHandle;
             t.Live = true;
             tracers[i] = t;
             MeshRenderer body = t.Chunk ? hurlRenderers[i] : tracerRenderers[i];
@@ -375,6 +380,31 @@ namespace WordCraft.View
             return t.Started - ViewClock.Now + t.Flight;
         }
 
+        private int nextTracerHandle;
+
+        /// <summary>A cancellable approach with no impact of its own. The simulation confirms impacts.</summary>
+        public int Approach(Vector3 to, float height, Color colour, float flight, float scale = 1f)
+        {
+            Fall(to, height, colour, 0f, flight, scale, 0f, bursts: false);
+            return nextTracerHandle;
+        }
+
+        /// <summary>Cancel by generation, so an expired slot reused by another shot is never hidden.</summary>
+        public void Cancel(int handle)
+        {
+            for (int i = 0; i < tracers.Count; i++)
+            {
+                Tracer t = tracers[i];
+                if (!t.Live || t.Handle != handle) continue;
+                t.Live = false;
+                tracers[i] = t;
+                tracerRenderers[i].enabled = false;
+                hurlRenderers[i].enabled = false;
+                trailRenderers[i].enabled = false;
+                return;
+            }
+        }
+
         /// <summary>
         /// A ring running out from a third of <paramref name="radius"/> to the
         /// whole of it over the ground round <paramref name="foot"/> (issue #212):
@@ -383,15 +413,22 @@ namespace WordCraft.View
         /// </summary>
         public void Blast(Vector3 foot, float radius, Color colour, float delay = 0f, float alpha = BlastAlpha)
         {
-            int i = FreeBurst();
-            bursts[i] = new Burst
+            int i = 0;
+            while (i < blasts.Count && blasts[i].Live) i++;
+            if (i == blasts.Count)
+            {
+                blasts.Add(default);
+                blastRings.Add(Decal.Make(parent, "BlastRing", ring: true, Color.clear));
+                blastColours.Add(Color.clear);
+            }
+            blasts[i] = new Burst
             {
                 Live = true, At = foot, Started = ViewClock.Now + delay, Shards = false,
                 From = radius * BlastFrom, To = radius, Band = Mathf.Max(BlastBandFloor, radius * BlastBand),
                 Seconds = BlastSeconds, Scale = 1f, Alpha = alpha,
             };
-            ringColours[i] = colour;
-            rings[i].Visible = false;
+            blastColours[i] = colour;
+            blastRings[i].Visible = false;
         }
 
         /// <summary>Starts a frame's zones: every chip handed out last frame is free again.</summary>
@@ -404,7 +441,7 @@ namespace WordCraft.View
         /// #212): a zone that stands on a point for as long as its clock runs.
         /// Every other chip is darker, so the ring reads as turning in a still.
         /// </summary>
-        public void Orbit(Vector2 centre, float radius, Color colour, int count, float turn, float seed)
+        public void Orbit(Vector2 centre, float radius, Color colour, int count, float turn, float seed, bool storm = false)
         {
             float now = ViewClock.Now;
             Color shade = BodyPalette.Darker(colour, 0.75f);
@@ -421,8 +458,10 @@ namespace WordCraft.View
                 float lift = OrbitLift + OrbitBob * (0.5f + 0.5f * Mathf.Sin(now * 3f + k * 1.7f));
                 Transform chip = r.transform;
                 chip.position = Field.At(centre + dir * reach, lift);
-                chip.rotation = Quaternion.Euler(now * 220f + k * 40f, -angle * Mathf.Rad2Deg, now * 160f);
-                chip.localScale = Vector3.one * OrbitChip * (band == 2 ? 1.2f : 1f);
+                chip.rotation = storm ? Quaternion.Euler(0f, -angle * Mathf.Rad2Deg, 0f)
+                    : Quaternion.Euler(now * 220f + k * 40f, -angle * Mathf.Rad2Deg, now * 160f);
+                chip.localScale = storm ? new Vector3(0.16f, 0.10f, 0.72f)
+                    : Vector3.one * OrbitChip * (band == 2 ? 1.2f : 1f);
                 Colour(r, k % 2 == 0 ? colour : shade);
                 r.enabled = true;
             }
@@ -615,6 +654,7 @@ namespace WordCraft.View
                     r.enabled = true;
                     continue;
                 }
+                r.transform.localScale = new Vector3(TracerWidth, TracerWidth, TracerLength) * t.Scale;
                 r.enabled = true;
 
                 // The streak hangs off the tracer's tail, never longer than the
@@ -673,6 +713,26 @@ namespace WordCraft.View
                     shard.localScale = Vector3.one * Mathf.Max(size, 0.001f);
                     r.enabled = true;
                 }
+            }
+
+            for (int i = 0; i < blasts.Count; i++)
+            {
+                Burst b = blasts[i];
+                if (!b.Live) continue;
+                float p = (now - b.Started) / b.Seconds;
+                if (p < 0f) continue;
+                Decal ring = blastRings[i];
+                ring.Visible = p < 1f;
+                if (p >= 1f)
+                {
+                    b.Live = false;
+                    blasts[i] = b;
+                    continue;
+                }
+                ring.Set(new Vector2(b.At.x, b.At.z), Mathf.Lerp(b.From, b.To, BodyRig.EaseOut(p)), b.Band);
+                Color colour = blastColours[i];
+                colour.a = b.Alpha * (1f - p);
+                ring.Colour = colour;
             }
 
             for (int i = 0; i < chunks.Count; i++)
@@ -860,6 +920,11 @@ namespace WordCraft.View
             for (int i = 0; i < shardRenderers.Count; i++) shardRenderers[i].enabled = false;
             for (int i = 0; i < trailRenderers.Count; i++) trailRenderers[i].enabled = false;
             for (int i = 0; i < rings.Count; i++) rings[i].Visible = false;
+            for (int i = 0; i < blasts.Count; i++)
+            {
+                blasts[i] = default;
+                blastRings[i].Visible = false;
+            }
             for (int i = 0; i < chunks.Count; i++)
             {
                 chunks[i] = default;

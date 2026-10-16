@@ -12,6 +12,20 @@ namespace WordCraft.Sim
     /// </summary>
     public sealed partial class World
     {
+        /// <summary>Read-only presentation record of a burst that landed in the last Step.</summary>
+        public readonly struct BurstEvent
+        {
+            public readonly int SourceId, Owner, Row;
+            public readonly FixVec2 Position;
+            internal BurstEvent(int sourceId, int owner, int row, FixVec2 position)
+            { SourceId = sourceId; Owner = owner; Row = row; Position = position; }
+        }
+
+        // Output only: no simulation system reads these records and Hash excludes them.
+        private readonly List<BurstEvent> landedBursts = new List<BurstEvent>();
+        public int LandedBurstCount => landedBursts.Count;
+        public BurstEvent LandedBurstAt(int index) => landedBursts[index];
+
         /// <summary>One queued burst: the body it came from, its owner, its ability row, and where it went off.</summary>
         private struct PendingBurst
         {
@@ -62,6 +76,7 @@ namespace WordCraft.Sim
                 Fix radius = Fix.FromInt(AbilityRadius(burst.Owner, row));
                 int damage = DamageAfterArmor(AbilityAmount(burst.Owner, row), 0, 0, 0);
                 DamageHostileBodies(burst.Owner, row.Targets, burst.Position, radius, damage);
+                landedBursts.Add(new BurstEvent(burst.SourceId, burst.Owner, burst.Row, burst.Position));
             }
             pendingBursts.Clear();
         }

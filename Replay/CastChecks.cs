@@ -372,6 +372,7 @@ namespace WordCraft.Replay
                 "the dead 운석 술사 still holds clock " + corpse.AbilityTicksLeft + " at its point");
             Run(w, 50);
             Check(w.GetEntity(target).Hp == hp, "a dead caster's meteor still fell");
+            Check(w.LandedBurstCount == 0, "a cancelled meteor emitted a presentation impact");
         }
 
         /// <summary>
@@ -394,6 +395,11 @@ namespace WordCraft.Replay
             w.SetStatusForScenario(caster, 0, 1);
             Step(w);
             Check(!w.GetEntity(caster).Alive, "the burn did not kill the 운석 술사 on the landing tick, so the check proves nothing");
+            Check(w.LandedBurstCount == 1 && w.LandedBurstAt(0).Position.Equals(p),
+                "the landing event lost the dead caster's original impact point");
+            ulong observedHash = w.Hash();
+            _ = w.LandedBurstAt(0);
+            Check(w.Hash() == observedHash, "reading a landing event changed simulation state");
             Check(hp - w.GetEntity(target).Hp == 30,
                 "a meteor whose caster died on its landing tick took " + (hp - w.GetEntity(target).Hp) + ", not 30");
         }
@@ -419,6 +425,8 @@ namespace WordCraft.Replay
             int[] hp = Hps(w, ids);
             int tick = w.Tick;
             Step(w, Cast(w, caster, p, "해일 부름"));
+            Check(w.LandedBurstCount == 1 && w.LandedBurstAt(0).Position.Equals(p),
+                "tide presentation did not preserve the exact command target");
             for (int i = 0; i < ids.Length; i++)
                 Check(hp[i] - w.GetEntity(ids[i]).Hp == want[i],
                     "해일 부름: body " + i + " lost " + (hp[i] - w.GetEntity(ids[i]).Hp) + ", not " + want[i]);
@@ -432,6 +440,20 @@ namespace WordCraft.Replay
                         "해일 부름 left cell " + dx + "," + dy + " lapsing on " + expiry);
                 }
             Check(w.GetEntity(caster).AbilityCooldown == 499, "해일 부름 started a cooldown of " + (w.GetEntity(caster).AbilityCooldown + 1));
+
+            // Longer-lived water must not mask the command target; simultaneous
+            // tides must remain separate even when their fields overlap.
+            int second = w.SpawnUnit(0, Role.Ranged, 1, Origin);
+            FixVec2 other = p + V(0, 1, 2);
+            w.SetAbilityForScenario(caster, 0, 0);
+            w.SetWaterFieldForScenario(World.CellOf(p), w.Tick + 2000);
+            var together = Cast(w, caster, p, "해일 부름");
+            together.AddRange(Cast(w, second, other, "해일 부름"));
+            Step(w, together);
+            Check(w.LandedBurstCount == 2 && w.LandedBurstAt(0).Position.Equals(p) &&
+                w.LandedBurstAt(1).Position.Equals(other), "overlapping tides lost their separate exact targets");
+            Step(w);
+            Check(w.LandedBurstCount == 0, "a landing event survived into the next step");
         }
 
         /// <summary>

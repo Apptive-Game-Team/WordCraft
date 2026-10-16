@@ -1039,6 +1039,7 @@ namespace WordCraft.View
                 while (world.Tick < first)
                 {
                     world.Step(world.Tick < log.Length ? log[world.Tick] : idle);
+                    view.ObserveStep(world);
                     seam.Snapshot();
                     for (int f = 1; f <= FramesPerTick; f++) DrawFrame(view, seam, ref now, f / (float)FramesPerTick);
                 }
@@ -1056,6 +1057,7 @@ namespace WordCraft.View
                         for (int k = 0; k < ticksPerFrame; k++)
                         {
                             world.Step(world.Tick < log.Length ? log[world.Tick] : idle);
+                            view.ObserveStep(world);
                             seam.Snapshot();
                             for (int f = 1; f <= FramesPerTick; f++) DrawFrame(view, seam, ref now, f / (float)FramesPerTick);
                         }

@@ -4,6 +4,7 @@ using System.IO;
 using WordCraft.Net;
 using WordCraft.Replay; // ReplayLog and ReplayHeader, compiled in from Replay; see Host.csproj
 using WordCraft.Sim;
+using WordCraft.View;
 
 namespace WordCraft.Host
 {
@@ -26,6 +27,7 @@ namespace WordCraft.Host
                 SeedMismatchIsRejectedBeforeTick0();
                 ContentMismatchIsRejectedBeforeTick0();
                 FactionMismatchIsRejectedBeforeTick0();
+                NegotiatedScenariosMatchForEveryFactionPair();
                 PeerTimeoutEndsTheMatch();
                 SoloRunsWithoutAPeer();
                 ArenaIsReproducible();
@@ -43,7 +45,7 @@ namespace WordCraft.Host
 
             Console.WriteLine("OK: lockstep self-check passed (" + Ticks +
                               " ticks over a lossy link, both peers saved the same match," +
-                              " desync located, handshake rejected," +
+                              " desync located, handshake rejected, all 36 negotiated faction scenarios match," +
                               " timeout handled, solo barrier opens, arena pair reproducible," +
                               " spectator hashes match and never hold the barrier," +
                               " in process and over a socket," +
@@ -976,6 +978,69 @@ namespace WordCraft.Host
             }
 
             public bool TryReceive(out byte[] packet) => inner.TryReceive(out packet);
+        }
+
+        /// <summary>
+        /// Each player knows only its own faction before the handshake. Replacing
+        /// placeholder factions alone leaves faction-specific entities and HP stale;
+        /// the negotiated scenario must be rebuilt identically in both seats.
+        /// </summary>
+        private static void NegotiatedScenariosMatchForEveryFactionPair()
+        {
+            const int ScenarioTicks = 40;
+            const ulong seed = 0xFAC710;
+            for (int first = 0; first < FactionData.FactionCount; first++)
+            for (int second = 0; second < FactionData.FactionCount; second++)
+            {
+                var faction0 = (Faction)first;
+                var faction1 = (Faction)second;
+                string pair = faction0 + " / " + faction1;
+                var placeholder0 = MatchScenario.Build(seed, faction0,
+                    (Faction)((second + 1) % FactionData.FactionCount));
+                var placeholder1 = MatchScenario.Build(seed,
+                    (Faction)((first + 1) % FactionData.FactionCount), faction1);
+                Check(placeholder0.Hash() != placeholder1.Hash(), "identical placeholders test nothing: " + pair);
+                var link = new FaultyLink(0xFAC710, dropPercent: 0, duplicatePercent: 0, baseDelayMs: 5, jitterMs: 0);
+                var a = new LockstepSession(placeholder0, link.A,
+                    new MatchConfig { Seed = seed, LocalFaction = faction0, HashInterval = 10 }, 0, MatchScenario.Build);
+                var b = new LockstepSession(placeholder1, link.B,
+                    new MatchConfig { Seed = seed, LocalFaction = faction1, HashInterval = 10 }, 1, MatchScenario.Build);
+                long now = 0;
+                for (; now <= 5000; now += StepMs)
+                {
+                    link.Now = now;
+                    a.Update(now);
+                    b.Update(now);
+                    Check(a.State != SessionState.Stopped && b.State != SessionState.Stopped,
+                        "negotiation stopped for " + pair + ": " + a.StopReason + " / " + b.StopReason);
+                    if (a.State == SessionState.Running && b.State == SessionState.Running) break;
+                }
+                Check(a.State == SessionState.Running && b.State == SessionState.Running,
+                    "negotiation stalled for " + pair);
+                Check(!ReferenceEquals(a.World, placeholder0) && !ReferenceEquals(b.World, placeholder1),
+                    "negotiation retained a placeholder world for " + pair);
+                var expected = MatchScenario.Build(seed, faction0, faction1);
+                Check(a.World.Tick == 0 && b.World.Tick == 0 && a.World.Hash() == expected.Hash() &&
+                    b.World.Hash() == expected.Hash(), "negotiated scenario differs from fresh scenario for " + pair);
+
+                var hashesA = new ulong[ScenarioTicks + 1];
+                var hashesB = new ulong[ScenarioTicks + 1];
+                long deadline = now + 10000;
+                for (; now <= deadline && (a.Tick < ScenarioTicks || b.Tick < ScenarioTicks); now += StepMs)
+                {
+                    link.Now = now;
+                    a.Update(now);
+                    b.Update(now);
+                    Check(a.State == SessionState.Running && b.State == SessionState.Running,
+                        "negotiated match stopped for " + pair + ": " + a.StopReason + " / " + b.StopReason);
+                    if (a.Tick < ScenarioTicks && a.TryStep(now)) hashesA[a.Tick] = a.World.Hash();
+                    if (b.Tick < ScenarioTicks && b.TryStep(now)) hashesB[b.Tick] = b.World.Hash();
+                }
+                Check(a.Tick == ScenarioTicks && b.Tick == ScenarioTicks, "negotiated match stalled for " + pair);
+                for (int tick = 1; tick <= ScenarioTicks; tick++)
+                    Check(hashesA[tick] == hashesB[tick], "negotiated match diverged for " + pair + " at tick " + tick);
+                Check(placeholder0.Tick == 0 && placeholder1.Tick == 0, "a discarded placeholder was stepped for " + pair);
+            }
         }
 
         private static bool Stopped(Peer p) => p.Session.State == SessionState.Stopped;
