@@ -69,6 +69,11 @@ namespace WordCraft.Sim
             if (FactionData.CastRunsClock(row.Kind) && e.AbilityTicksLeft > 0) return "cooldown";
             if (row.CastTarget != CastTarget.NoTarget)
             {
+                // On the map first. A point far enough off overflows the squared
+                // distance WithinRange compares and wraps to a small number, and
+                // CellOf would then clamp it onto the edge column: a Cast from
+                // anywhere could reach debris or water there.
+                if (!OnMap(target)) return "range";
                 if (!WithinRange(e.Position, target, Fix.FromInt(row.CastRange))) return "range";
                 int cell = CellOf(target);
                 if (row.CastTarget == CastTarget.WaterFieldCell && !HasWaterField(cell)) return "range";
@@ -177,6 +182,10 @@ namespace WordCraft.Sim
             if (x < 0 || y < 0 || x >= GridSize || y >= GridSize) return;
             WriteRemnant(y * GridSize + x, expiry);
         }
+
+        /// <summary>Whether a point lies on the map: both coordinates in [0, GridSize).</summary>
+        private static bool OnMap(FixVec2 p) =>
+            p.X.Raw >= 0 && p.Y.Raw >= 0 && p.X < Fix.FromInt(GridSize) && p.Y < Fix.FromInt(GridSize);
 
         /// <summary>Whether this caster's clock was set by a Cast this tick, which AbilitySystem leaves alone.</summary>
         private bool CastThisTick(int id) => castsThisTick.Contains(id);

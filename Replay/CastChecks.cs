@@ -203,6 +203,18 @@ namespace WordCraft.Replay
                         return w;
                     }, w => CastBy(w, 0, Caster(w), far, index));
                     refusals++;
+                    // A point 65536 cells east: its squared distance overflows
+                    // a long and wraps to 0, and its cell clamps onto the edge
+                    // column, which is prepared here so the cell rows have what
+                    // they ask for there.
+                    FixVec2 wrapped = Origin + new FixVec2(Fix.FromInt(65536), Fix.Zero);
+                    Refused(aim.Name + " 65536 cells off the map", () =>
+                    {
+                        World w = ready();
+                        Prepare(w, row, wrapped);
+                        return w;
+                    }, w => CastBy(w, 0, Caster(w), wrapped, index));
+                    refusals++;
                     if (row.CastTarget != CastTarget.Point)
                     {
                         FixVec2 bare = Beside(Origin, 3) + new FixVec2(Fix.Zero, Fix.FromInt(2));
@@ -230,8 +242,9 @@ namespace WordCraft.Replay
                 }
             }
             // 10 actives × 7 always, 5 unlocks, 6 running clocks, 7 point
-            // ranges and 2 cells, 2 for 깨우기's cost and population.
-            Check(refusals == 70 + 5 + 6 + 7 + 2 + 2, "checked " + refusals + " refusals, not 92");
+            // ranges, 7 points off the map and 2 cells, 2 for 깨우기's cost
+            // and population.
+            Check(refusals == 70 + 5 + 6 + 7 + 7 + 2 + 2, "checked " + refusals + " refusals, not 99");
         }
 
         /// <summary>A point exactly CastRange cells off is in range: the test is WithinRange, a square compare.</summary>
