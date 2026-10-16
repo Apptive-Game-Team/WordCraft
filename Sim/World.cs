@@ -1430,6 +1430,11 @@ namespace WordCraft.Sim
             // still walks 512 words per tick over a layer that never changes. Fold
             // it to a digest taken once when the map is built if Hash() ever shows
             // up in a profile.
+            for (int p = 0; p < MaxPeers; p++)
+            {
+                Mix(ref h, (ulong)aiDifficulties[p]);
+                Mix(ref h, (ulong)aiNextAttackTick[p]);
+            }
             for (int c = 0; c < GridCells; c += 8)
             {
                 ulong word = 0;
