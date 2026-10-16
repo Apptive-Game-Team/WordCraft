@@ -215,7 +215,7 @@ namespace WordCraft.View
             switch (design.Gait)
             {
                 case Gait.Hop: design.Stride = 0.9f * size; break;
-                case Gait.Walk: design.Stride = (b.Limbs == LimbMotion.Step ? 0.4f : 0.6f) * size; break;
+                case Gait.Walk: design.Stride = WalkStride(design, b.Limbs, size); break;
                 default: design.Stride = size; break;
             }
 
@@ -223,6 +223,25 @@ namespace WordCraft.View
                                       Mathf.Max(Mathf.Max(b.LimbLeft.Highest, b.LimbRight.Highest), b.Crown.Highest));
             design.Top = highest * b.Hull.Scale + (flying ? BodyRig.HoverHeight : 0f) + TopMargin;
             return design;
+        }
+
+        /// <summary>
+        /// Ground covered by one full gait cycle, chosen so a planted foot does not
+        /// skate. A swinging leg's foot travels 2·hip·sin(swing) back while it is
+        /// planted, which is half a cycle, so the cycle covers twice that; a
+        /// stepping crawler's foot slides back half its stride, which BodyRig
+        /// sets its reach from. A walker with no legs to plant keeps the old
+        /// fraction of its height.
+        /// </summary>
+        private static float WalkStride(Design design, LimbMotion limbs, float size)
+        {
+            bool legs = design.LimbLeft != null || design.LimbRight != null;
+            if (legs && limbs == LimbMotion.Swing)
+            {
+                float hip = Mathf.Max(design.LimbLeft != null ? design.LimbLeftPivot.y : design.LimbRightPivot.y, 0.05f * size);
+                return 4f * hip * Mathf.Sin(BodyRig.SwingDegrees * Mathf.Deg2Rad);
+            }
+            return (limbs == LimbMotion.Step ? 0.4f : 0.6f) * size;
         }
 
         private static Mesh Bake(Solids part, string name, out Vector3 pivot)
