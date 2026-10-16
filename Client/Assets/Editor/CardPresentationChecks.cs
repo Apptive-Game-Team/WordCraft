@@ -38,6 +38,7 @@ namespace WordCraft.View
                 "Build submenu opener must not look like a specific building");
             check(CardDetails.Text(null, 0, new CardSlot { Label = "Move" }) == "Move", "Command text fallback missing");
             check(CardDetails.Text(null, 0, new CardSlot()) == "", "Empty card has hover text");
+            ModelPortraitChecks.Run(check);
         }
     }
 }

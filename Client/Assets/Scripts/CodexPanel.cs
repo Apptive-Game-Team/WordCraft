@@ -137,7 +137,7 @@ namespace WordCraft.View
             else if (count > 0) GUI.Label(picture, "그림 준비 중", body);
             if (count > 0)
             {
-                GUILayout.Label("도감 그림 · 전장 3D 모델과 표현이 다를 수 있습니다.", body);
+                GUILayout.Label("전장 모델 · 기본 모습", body);
                 GUILayout.Label(Details(SelectedFaction, SelectedRole, SelectedSlot), body);
             }
             GUILayout.EndScrollView();
