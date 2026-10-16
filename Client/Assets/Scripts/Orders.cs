@@ -19,6 +19,8 @@ namespace WordCraft.View
     ///   arrive key         names 차원 유랑종's 도착 지점; sends nothing by itself
     ///   more key           turns the production or research list to its next page; sends nothing
     ///   research cell      Research to the one representative 기술 건물, row in Arg
+    ///   ability cell       Cast, row in Arg, to every selected body that holds the row;
+    ///                      a point-aimed row waits for the next ground click
     /// </summary>
     public sealed class Orders : MonoBehaviour
     {
@@ -28,6 +30,13 @@ namespace WordCraft.View
 
         /// <summary>Command waiting for a left click to name its target, or None.</summary>
         public CommandType Pending { get; private set; }
+
+        /// <summary>
+        /// The row of the faction's ability table an armed Cast will send, read
+        /// only while <see cref="Pending"/> is Cast. The Arg of the command, and
+        /// the number the card cell carries in Slot.
+        /// </summary>
+        public int CastIndex { get; private set; }
 
         /// <summary>Which building an armed Build will place. None when nothing is armed.</summary>
         public Role Placing { get; private set; }
@@ -119,10 +128,17 @@ namespace WordCraft.View
             // The HUD can draw a frame before Start has found the runner.
             if (runner == null || selection == null)
             {
-                return CommandCard.Of(CardKind.None, null, 0, Role.None, 0, 0);
+                return CommandCard.Of(CardKind.None, null, 0, -1, Role.None, 0, 0);
             }
             SyncPage();
-            return CommandCard.Of(Kind(), runner.World, runner.LocalPeer, LeadRole(), LeadSlot(), Page);
+            return CommandCard.Of(Kind(), runner.World, runner.LocalPeer, LeadId(), LeadRole(), LeadSlot(), Page);
+        }
+
+        /// <summary>The entity the card speaks for, -1 when nothing qualifies.</summary>
+        public int LeadId()
+        {
+            if (runner == null || selection == null) return -1;
+            return CommandCard.Representative(runner.World, selection.Selected, runner.LocalPeer);
         }
 
         /// <summary>
@@ -210,6 +226,11 @@ namespace WordCraft.View
             // most: an aim left armed over a building that is gone is a click that
             // names a point nothing will ever read.
             if (Aiming && !Aims()) Aiming = false;
+
+            // An armed Cast belongs to the body that holds the row, for the same
+            // reason: with the selection gone to something that cannot cast it, the
+            // next click would be an order no card is offering any more.
+            if (Pending == CommandType.Cast && !CastArmable(CastIndex)) Pending = CommandType.None;
 
             CardSlot[] card = Card();
             for (int i = 0; i < CommandCard.Cells; i++)
@@ -318,7 +339,13 @@ namespace WordCraft.View
                 // the player never has to find another key for it. Nothing is
                 // sent: the page is this component's own.
                 Page = ProductionMenu.NextPage(Page,
-                    CommandCard.PageCount(runner.World.FactionOf(runner.LocalPeer), LeadRole(), LeadSlot()));
+                    CommandCard.PageCount(Kind(), runner.World.FactionOf(runner.LocalPeer), LeadRole(), LeadSlot()));
+                return;
+            }
+
+            if (slot.Type == CommandType.Cast)
+            {
+                Cast(slot);
                 return;
             }
 
@@ -401,6 +428,67 @@ namespace WordCraft.View
         }
 
         /// <summary>
+        /// An ability cell. A row aimed at nothing goes out now; one aimed at a
+        /// point is armed (Pending) and the next ground click sends it.
+        ///
+        /// A locked cell is refused here for the reason a maxed research row is:
+        /// the card draws it on a Void face, and the key has to mean what the
+        /// button does. A cell cooling down is not. The cooldown on the card is
+        /// the representative's, the rest of the selection may be ready, and the
+        /// simulation refuses whatever is not.
+        /// </summary>
+        private void Cast(CardSlot slot)
+        {
+            if (slot.Locked || !CastArmable(slot.Slot)) return;
+
+            AbilityRow row = FactionData.Ability(runner.World.FactionOf(runner.LocalPeer), slot.Slot);
+            Cancel();
+            if (!AbilityMenu.NeedsPoint(row))
+            {
+                CastEach(slot.Slot, row, FixVec2.Zero);
+                return;
+            }
+            Pending = CommandType.Cast;
+            CastIndex = slot.Slot;
+        }
+
+        /// <summary>
+        /// Whether the representative holds this row of the local faction's table
+        /// and it is an active at all, which is what a Cast cell needs before it
+        /// may arm or fire. The representative, because it is the body the card
+        /// was drawn for; the rest of the selection is sorted out by CastEach.
+        /// </summary>
+        private bool CastArmable(int index)
+        {
+            if (runner == null || selection == null) return false;
+            int id = LeadId();
+            if (id < 0) return false;
+            AbilityRow row = FactionData.Ability(runner.World.FactionOf(runner.LocalPeer), index);
+            return FactionData.IsCast(row.Kind) && AbilityMenu.Holds(runner.World.GetEntity(id), row);
+        }
+
+        /// <summary>
+        /// The row, named by every selected body of ours that holds it, one Cast
+        /// each. Not to the representative alone the way Research goes: every body
+        /// has a cooldown and a position of its own, and sending only the one that
+        /// leads would leave the others idle. The document marks no ability as
+        /// one-body-only, so there is no exception list here. The simulation
+        /// refuses the casters that cannot (cooldown, range, cost), each on its
+        /// own, and a refused Cast changes nothing.
+        /// </summary>
+        private void CastEach(int index, AbilityRow row, FixVec2 target)
+        {
+            World world = runner.World;
+            for (int i = 0; i < selection.Selected.Count; i++)
+            {
+                int id = selection.Selected[i];
+                Entity e = world.GetEntity(id);
+                if (e.Owner != runner.LocalPeer || !AbilityMenu.Holds(e, row)) continue;
+                Issue(CommandType.Cast, id, target, index);
+            }
+        }
+
+        /// <summary>
         /// Whether the current selection is something that keeps an arrival point,
         /// which is what makes the Arrive cell live. The representative is the same
         /// body the card is drawn for (Hud.Card), so the key and the button ask
@@ -433,6 +521,17 @@ namespace WordCraft.View
                 // the rest. Sent whatever the ghost's tint says: the tint is a
                 // guess made a tick late, and the simulation is what decides.
                 Issue(CommandType.Build, -1, MatchRunner.ToSim(point), (int)role);
+                return;
+            }
+
+            if (type == CommandType.Cast)
+            {
+                // Taken wherever the player clicked, whatever the ring said: the
+                // ring is the reach the simulation tests the point against, and it
+                // is the simulation that decides.
+                if (!CastArmable(CastIndex)) return;
+                CastEach(CastIndex, FactionData.Ability(runner.World.FactionOf(runner.LocalPeer), CastIndex),
+                    MatchRunner.ToSim(point));
                 return;
             }
 

@@ -508,6 +508,24 @@ namespace WordCraft.View
                 y += UiStyle.Line;
             }
 
+            // Autocasts have no cell: nothing a player presses changes them, so they
+            // are a status. Muted while the research that unlocks them is missing.
+            // Kept clear of the bottom line (Arrival), which is the one that must
+            // never be pushed out of the panel.
+            if (e.Kind == EntityKind.Unit || e.Kind == EntityKind.Worker)
+            {
+                Faction faction = world.FactionOf(e.Owner);
+                var autocasts = AbilityMenu.Autocasts(faction, e.Role, e.Slot);
+                for (int i = 0; i < autocasts.Count && y + UiStyle.Line * 2f <= area.yMax; i++)
+                {
+                    AbilityRow row = autocasts[i].Row;
+                    UiStyle.Note(new Rect(area.x, y, area.width, UiStyle.Line),
+                        AbilityMenu.AutocastLine(world, e.Owner, row),
+                        AbilityMenu.Locked(world, e.Owner, row) ? UiStyle.InkMute : UiStyle.InkDim);
+                    y += UiStyle.Line;
+                }
+            }
+
             // The research's progress, in the colour the production queue's bar is
             // drawn in on the field: it is the same question, what is this building
             // making, and the colour says "work in progress" everywhere on this HUD.
@@ -543,6 +561,15 @@ namespace WordCraft.View
             if (orders.Aiming)
             {
                 UiStyle.Label(line, "arrive: click a point, Esc cancels", UiStyle.Accent);
+                return;
+            }
+
+            if (orders.Pending == CommandType.Cast)
+            {
+                // The ability's name, not "Cast": the card is one cell per ability
+                // and the line is what says which of them is waiting for the click.
+                string name = FactionData.Ability(world.FactionOf(e.Owner), orders.CastIndex).Name;
+                UiStyle.Label(line, name + ": click a point, Esc cancels", UiStyle.Accent);
                 return;
             }
 
@@ -691,9 +718,12 @@ namespace WordCraft.View
                 //
                 // A research row at its last level is the same sentence a third
                 // time: the cell exists and there is nothing left in it to buy.
+                //
+                // An ability the peer has not unlocked is the fourth: it exists, and
+                // the research that opens it is on another building.
                 bool live = card[i].Aim
                     ? orders.Aims()
-                    : !card[i].Maxed &&
+                    : !card[i].Maxed && !card[i].Locked &&
                       (card[i].Type != CommandType.Capture || CaptureOrder.Available(faction));
 
                 // Armed is the cell inverting, and the aim cell is armed by its own
@@ -704,13 +734,28 @@ namespace WordCraft.View
                 // nothing is armed, so left to the comparison it would read as armed
                 // the whole time. Turning a page is a press and a release, never a
                 // state.
+                //
+                // A Cast cell is armed only when its own row is the one waiting:
+                // every ability cell is Type Cast, so the type alone would invert
+                // all of them at once.
                 bool armed = card[i].Aim
                     ? orders.Aiming
-                    : !card[i].More && orders.Pending == card[i].Type;
+                    : card[i].Type == CommandType.Cast
+                        ? orders.Pending == CommandType.Cast && orders.CastIndex == card[i].Slot
+                        : !card[i].More && orders.Pending == card[i].Type;
 
                 if (UiStyle.CardCell(cell, CommandCard.Keys[i].ToString(), card[i].Label, armed, live))
                 {
                     orders.Run(card[i]);
+                }
+
+                // What is left of the wait, on the cell's bottom edge, where the
+                // label's rectangle leaves a strip free. Void behind, Queue in front,
+                // the Meter every other timer on this HUD is.
+                if (card[i].Type == CommandType.Cast && card[i].Cooldown > 0f)
+                {
+                    UiStyle.Meter(new Rect(cell.x + UiStyle.S1, cell.yMax - UiStyle.S1,
+                        cell.width - UiStyle.S2, UiStyle.S1 - 1f), card[i].Cooldown, UiStyle.Queue);
                 }
             }
         }

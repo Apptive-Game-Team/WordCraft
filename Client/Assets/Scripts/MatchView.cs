@@ -306,6 +306,7 @@ namespace WordCraft.View
         private Decal arrivalMark;
         private Decal arrivalCursor;
         private readonly List<Decal> arrivalRings = new List<Decal>();
+        private readonly List<Decal> castRings = new List<Decal>();
 
         /// <summary>Refilled every frame the aim is armed, so nothing here allocates per frame.</summary>
         private readonly List<int> anchors = new List<int>();
@@ -598,6 +599,7 @@ namespace WordCraft.View
             Hover(world);
             Ghost(world);
             Arrival(world);
+            CastRings(world);
         }
 
         /// <summary>
@@ -1150,6 +1152,38 @@ namespace WordCraft.View
                 arrivalRings.Add(Decal.Make(transform, "ArrivalRing", ring: true, UiStyle.RangeRing));
             }
             return arrivalRings[index];
+        }
+
+        /// <summary>
+        /// The reach of an armed Cast, on every selected body that would send it.
+        /// Only while the ability waits for its click (Orders.Pending), and in
+        /// Accent, the colour that means "you are in the middle of this" on the
+        /// HUD; the weapon rings stay the white hairline, so the two never read
+        /// as one. The radius is the row's CastRange, the number the simulation
+        /// tests the point against, never a typed copy.
+        /// </summary>
+        private void CastRings(World world)
+        {
+            Orders orders = Orders.Instance;
+            int used = 0;
+            if (orders != null && orders.Pending == CommandType.Cast && Selection.Instance != null)
+            {
+                AbilityRow row = FactionData.Ability(world.FactionOf(runner.LocalPeer), orders.CastIndex);
+                IReadOnlyList<int> selected = Selection.Instance.Selected;
+                for (int i = 0; i < selected.Count; i++)
+                {
+                    Entity e = world.GetEntity(selected[i]);
+                    if (e.Owner != runner.LocalPeer || !AbilityMenu.Holds(e, row)) continue;
+
+                    while (castRings.Count <= used)
+                    {
+                        castRings.Add(Decal.Make(transform, "CastRing", ring: true, UiStyle.Accent));
+                    }
+                    Decal ring = castRings[used++];
+                    RangeRing(ring, Fix.FromInt(row.CastRange), runner.DrawPosition(selected[i]));
+                }
+            }
+            for (int i = used; i < castRings.Count; i++) castRings[i].Visible = false;
         }
 
         /// <summary>
