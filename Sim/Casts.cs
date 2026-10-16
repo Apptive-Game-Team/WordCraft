@@ -69,6 +69,11 @@ namespace WordCraft.Sim
             if (FactionData.CastRunsClock(row.Kind) && e.AbilityTicksLeft > 0) return "cooldown";
             if (row.CastTarget != CastTarget.NoTarget)
             {
+                // On the map first. A point far enough off overflows the squared
+                // distance WithinRange compares and wraps to a small number, and
+                // CellOf would then clamp it onto the edge column: a Cast from
+                // anywhere could reach debris or water there.
+                if (!OnMap(target)) return "range";
                 if (!WithinRange(e.Position, target, Fix.FromInt(row.CastRange))) return "range";
                 int cell = CellOf(target);
                 if (row.CastTarget == CastTarget.WaterFieldCell && !HasWaterField(cell)) return "range";
@@ -178,6 +183,10 @@ namespace WordCraft.Sim
             WriteRemnant(y * GridSize + x, expiry);
         }
 
+        /// <summary>Whether a point lies on the map: both coordinates in [0, GridSize).</summary>
+        private static bool OnMap(FixVec2 p) =>
+            p.X.Raw >= 0 && p.Y.Raw >= 0 && p.X < Fix.FromInt(GridSize) && p.Y < Fix.FromInt(GridSize);
+
         /// <summary>Whether this caster's clock was set by a Cast this tick, which AbilitySystem leaves alone.</summary>
         private bool CastThisTick(int id) => castsThisTick.Contains(id);
 
@@ -238,23 +247,63 @@ namespace WordCraft.Sim
         /// Zones do not stack: the first found by ascending caster id answers,
         /// and every zone gives the same number. A body that reaches 2 or less
         /// already is untouched by the cap.
+        ///
+        /// Reads the zones CollectSandStorms gathered at the start of the pass
+        /// that asks, and asks each caster's life and clock live, so a caster
+        /// killed earlier in the same pass ends its zone at once. Read between
+        /// ticks, it answers from the zones the last MoveSystem gathered.
         /// </summary>
         private int SandStormReach(Entity t)
         {
             if (t.Owner < 0 || t.Owner >= MaxPeers) return -1;
-            for (int i = 0; i < entities.Count; i++)
+            for (int k = 0; k < stormIds.Count; k++)
             {
-                Entity s = entities[i];
-                if (s.AbilityTicksLeft == 0 || !s.Alive || s.Owner == t.Owner || s.Owner < 0 || s.Owner >= MaxPeers) continue;
-                if (!FactionData.FactionHolds(factions[s.Owner], AbilityKind.SandZone)) continue;
-                int row = RunningAbility(s, AbilityKind.SandZone);
-                if (row < 0) continue;
-                AbilityRow r = FactionData.AbilityRowAt(row);
+                Entity s = entities[stormIds[k]];
+                if (!s.Alive || s.AbilityTicksLeft == 0 || s.Owner == t.Owner) continue;
+                AbilityRow r = FactionData.AbilityRowAt(stormRows[k]);
                 if (!AuraTargets(r.Targets, t)) continue;
                 if (WithinRange(s.AbilityPoint, t.Position, Fix.FromInt(AbilityRadius(s.Owner, r))))
                     return AbilityAmount(s.Owner, r);
             }
             return -1;
+        }
+
+        /// <summary>
+        /// Whether a hostile 모래폭풍 slows this body. docs/TECH-TREE.md 모래폭풍:
+        /// 사거리 2 근접은 영향 없음, read whole: an armed body whose reach is 2
+        /// or less is neither capped nor slowed. An unarmed body (a worker, a
+        /// support unit) has no reach to speak of and is slowed.
+        /// </summary>
+        private bool SandStormSlows(Entity e) =>
+            SandStormReach(e) >= 0 && !(Armed(e) && UnstormedRangeFor(e) <= MeleeReach);
+
+        /// <summary>The reach docs/TECH-TREE.md calls 근접 for 모래폭풍: 2 cells.</summary>
+        private static readonly Fix MeleeReach = Fix.FromInt(2);
+
+        // The 모래폭풍 casters whose zone stands at the start of the pass that
+        // reads them, by ascending id, and the row each runs. Scratch, not
+        // state, the way the aura source list is: rebuilt by every pass that
+        // collects aura sources (CombatSystem, MoveSystem and the rest), so
+        // RangeFor and MoveSpeedFor scan the few zones standing rather than
+        // every body on the map.
+        private readonly List<int> stormIds = new List<int>();
+        private readonly List<int> stormRows = new List<int>();
+
+        /// <summary>Fills the zone list. Called at the end of CollectAuraSources.</summary>
+        private void CollectSandStorms()
+        {
+            stormIds.Clear();
+            stormRows.Clear();
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity s = entities[i];
+                if (s.AbilityTicksLeft == 0 || !s.Alive || s.Owner < 0 || s.Owner >= MaxPeers) continue;
+                if (!FactionData.FactionHolds(factions[s.Owner], AbilityKind.SandZone)) continue;
+                int row = RunningAbility(s, AbilityKind.SandZone);
+                if (row < 0) continue;
+                stormIds.Add(i);
+                stormRows.Add(row);
+            }
         }
 
         /// <summary>The 전개 row this body holds, or -1. Read by the deployed reach and splash.</summary>
