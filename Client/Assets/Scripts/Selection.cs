@@ -128,6 +128,7 @@ namespace WordCraft.View
             }
 
             Prune();
+            if (CodexPanel.IsOpen) { dragging = false; return; }
             // Group keys work while the left button belongs to something else: an
             // armed command is aimed at whatever the groups just recalled.
             GroupKeys();

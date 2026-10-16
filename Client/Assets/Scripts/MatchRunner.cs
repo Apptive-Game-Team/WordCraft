@@ -390,7 +390,7 @@ namespace WordCraft.View
             long now = NowMs();
             ObserveTutorial();
             if (FreezeCompletedTutorial(now)) return;
-            if (PauseFrame(now, Input.GetKeyDown(KeyCode.P))) return;
+            if (PauseFrame(now, !CodexPanel.IsOpen && Input.GetKeyDown(KeyCode.P))) return;
 
             if (transport is RelayTransport relay && relay.Failure != null && Phase != Phase.Result)
             {

@@ -334,13 +334,14 @@ namespace WordCraft.View
 
         /// <summary>The button that opens the mixer. Narrow: one word, and it is not the point of the bar.</summary>
         public const float MixerButton = 92f;
+        public const float CodexButton = 90f;
 
         /// <summary>
         /// Everything pinned to the right of the top bar. The diagnostics to its
         /// left stop here, so one number moves when a control is added rather than
         /// three subtractions being kept in step by hand.
         /// </summary>
-        public const float TopRightWidth = MixerButton + S2 + IdleWidth + S4;
+        public const float TopRightWidth = CodexButton + S2 + MixerButton + S2 + IdleWidth + S4;
 
         /// <summary>A mixer level's track. Thick enough to hit without aiming, thin enough not to read as a button.</summary>
         public const float SliderTrack = S2;

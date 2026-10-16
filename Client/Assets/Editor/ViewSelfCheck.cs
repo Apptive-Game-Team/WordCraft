@@ -38,6 +38,7 @@ namespace WordCraft.View
             SoloPauseChecks.Check((ok, why) => Check(ok, why));
             WorkerProductionCardChecks.Run((ok, why) => Check(ok, why));
             CardPresentationChecks.Run((ok, why) => Check(ok, why));
+            CodexChecks.Run((ok, why) => Check(ok, why));
             AttackInputChecks.Run((ok, why) => Check(ok, why));
             EditorDifficultyChecks.Run((ok, why) => Check(ok, why));
             TutorialChecks.Run((ok, why) => Check(ok, why));

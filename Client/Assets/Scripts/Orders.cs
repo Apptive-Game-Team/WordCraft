@@ -210,6 +210,7 @@ namespace WordCraft.View
         private void Update()
         {
             if (runner == null || selection == null) return;
+            if (CodexPanel.IsOpen) { Cancel(); selection.Blocked = false; return; }
             if (cam == null)
             {
                 cam = Camera.main;

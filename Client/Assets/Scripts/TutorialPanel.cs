@@ -25,7 +25,7 @@ namespace WordCraft.View
         private void Awake() => DontDestroyOnLoad(gameObject);
 
         private static bool Visible(MatchRunner runner) =>
-            runner != null && runner.Phase == Phase.Match && runner.Tutorial != null && !Hud.MixerOpen;
+            runner != null && runner.Phase == Phase.Match && runner.Tutorial != null && !Hud.MixerOpen && !CodexPanel.IsOpen;
 
         private static Rect Bounds()
         {

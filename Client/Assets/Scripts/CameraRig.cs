@@ -179,7 +179,8 @@ namespace WordCraft.View
             // nobody's idea of a text field. The ease below keeps running, so a
             // camera sent back to the middle for the menu actually gets there.
             bool homed = SyncMatchHome(MatchRunner.Instance);
-            if (!homed && (MatchRunner.Instance == null || MatchRunner.Instance.Phase == Phase.Match)) Controls();
+            if (CodexPanel.IsOpen) dragging = false;
+            if (!homed && !CodexPanel.IsOpen && (MatchRunner.Instance == null || MatchRunner.Instance.Phase == Phase.Match)) Controls();
 
             Clamp();
 

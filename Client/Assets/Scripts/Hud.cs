@@ -65,6 +65,11 @@ namespace WordCraft.View
 
         private void Awake() => DontDestroyOnLoad(gameObject);
 
+        private void Update()
+        {
+            if (Input.GetKeyDown(KeyCode.F1)) CodexPanel.Toggle();
+        }
+
         private void Start()
         {
             runner = MatchRunner.Instance;
@@ -87,6 +92,7 @@ namespace WordCraft.View
         /// </summary>
         public static bool OverUi(Vector2 screenPosition)
         {
+            if (CodexPanel.IsOpen) return true;
             MatchRunner runner = MatchRunner.Instance;
             if (runner != null && runner.Phase != Phase.Match) return true;
             if (TutorialPanel.Covers(screenPosition)) return true;
@@ -106,6 +112,7 @@ namespace WordCraft.View
         private void OnGUI()
         {
             if (runner == null) return;
+            if (CodexPanel.IsOpen) return;
 
             switch (runner.Phase)
             {
@@ -175,6 +182,7 @@ namespace WordCraft.View
             }
 
             GUILayout.Label("faction", UiStyle.MicroStyle);
+            if (MenuButton("유닛·건물 도감 · F1", UiStyle.Control)) CodexPanel.Toggle();
             GUILayout.Space(UiStyle.S1);
             FactionPicker();
             GUILayout.Space(UiStyle.S4);
@@ -437,6 +445,10 @@ namespace WordCraft.View
 
             float controls = Screen.width - UiStyle.TopRightWidth;
             float row = (UiStyle.TopBar - UiStyle.Control) * 0.5f;
+
+            if (UiStyle.Button(new Rect(controls, row, UiStyle.CodexButton, UiStyle.Control), "도감 · F1"))
+                CodexPanel.Toggle();
+            controls += UiStyle.CodexButton + UiStyle.S2;
 
             // Armed, because the accent inverting is how every other control on this
             // HUD says "this is the one you are in the middle of". The press itself
