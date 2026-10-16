@@ -78,11 +78,24 @@ line of the `ViewShots.Run` log counts them, per kind. The kinds:
   `MatchView` driven over the scripted log, so tracers, flinches, deaths and a
   site finishing are seen as the player sees them. The scripted log razes no
   building, so `raze` drives it over a small siege of its own: a finished
-  풀씨 둥지 shot down by four 지옥불 ranged units.
+  풀씨 둥지 shot down by four 지옥불 ranged units;
+- `status`: `strip-<faction>-status`, one per faction: a slowed walker behind a
+  normal one, a burning ranged unit, and the faction's healing aura source
+  between two wounded allies, with the aura rings drawn because the sources are
+  selected;
+- `chain`: `strip-<faction>-chain` for the two factions with a chain-on-hit row
+  (세계수 정령, 인간 마법 문명): the shot jumping across three buildings;
+- `cast`: `strip-<faction>-cast`, one per faction: one active ability used on
+  workers that never fight back (칼바람 회오리, 유성우, 간헐천 with 해일 부름,
+  모래폭풍 with a debris throw, 낙뢰 with a 견인 대포 deploying; 차원 유랑종 has
+  no active, so its strip shows a summon running out). `field` also writes
+  `strip-waterslimes-field`: water fields laid, lapsing and left behind a
+  walking 샘물 운반자.
 
 `-shotsTicks` is how many ticks of the scripted log run before the field shots
 (900 by default). `-shotsOnly lineup,build` writes only the kinds it names:
-`field`, `lineup`, `match`, `growth`, or any strip motion above, so one kind can
+`field`, `lineup`, `match`, `growth`, `status`, `chain`, `cast`, or any strip
+motion above, so one kind can
 be looked at again in a minute instead of rendering everything. A name that is
 no kind fails the run. No `-nographics`: it needs a GPU. This is how a change to
 the field, a model or the light is looked at without launching a player.
