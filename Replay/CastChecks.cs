@@ -33,6 +33,7 @@ namespace WordCraft.Replay
             GeyserBurstsTwentyTicksLaterOnAFieldCell();
             LightningDropFallsThirtyTicksLaterOnTheGround();
             ADeadCasterDropsNothing();
+            ACasterDyingOnTheLandingTickStillDropsIt();
             TideCallHitsAndLaysAFieldAtOnce();
             LayingAFieldLeavesTheGatherAlone();
             HardenKillsTheCasterAndWallsFiveCells();
@@ -371,6 +372,30 @@ namespace WordCraft.Replay
                 "the dead 운석 술사 still holds clock " + corpse.AbilityTicksLeft + " at its point");
             Run(w, 50);
             Check(w.GetEntity(target).Hp == hp, "a dead caster's meteor still fell");
+        }
+
+        /// <summary>
+        /// The other side of the rule above, and the order of the systems: a
+        /// 운석 술사 that dies on the tick its meteor lands (here in
+        /// StatusSystem, after AbilitySystem queued the burst and before
+        /// BurstSystem landed it) still drops it. The burst is already in the
+        /// queue when the caster falls, and the queue does not ask who is alive.
+        /// </summary>
+        private static void ACasterDyingOnTheLandingTickStillDropsIt()
+        {
+            World w = Ready(Faction.Hellfire, "유성우", true, out int caster);
+            FixVec2 p = Point(Faction.Hellfire, "유성우");
+            int target = w.SpawnWorker(1, p);
+            int hp = w.GetEntity(target).Hp;
+            Step(w, Cast(w, caster, p, "유성우"));
+            Run(w, 39);
+            Check(w.GetEntity(target).Hp == hp, "the meteor fell before its 40th tick");
+            w.SetHpForScenario(caster, 1);
+            w.SetStatusForScenario(caster, 0, 1);
+            Step(w);
+            Check(!w.GetEntity(caster).Alive, "the burn did not kill the 운석 술사 on the landing tick, so the check proves nothing");
+            Check(hp - w.GetEntity(target).Hp == 30,
+                "a meteor whose caster died on its landing tick took " + (hp - w.GetEntity(target).Hp) + ", not 30");
         }
 
         /// <summary>
