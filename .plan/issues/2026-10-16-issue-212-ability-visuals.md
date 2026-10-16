@@ -22,7 +22,7 @@
 | 용암 폭발·폭격 | 해금된 `SplashOnHit` 행의 몸이 쏨 | 표적 위에서 떨어지는 낙하 tracer, 닿을 때 반경 ring |
 | 유성우·낙뢰·간헐천 | `DelayedStrike` 행, `AbilityTicksLeft`, `AbilityPoint` | 시계가 도는 동안 지점에 반경 ring(예고). 남은 틱이 6 이하가 되는 프레임에 낙하 tracer 를 떨어뜨려 시계가 0 이 되는 틱에 닿게 한다(유성우는 셋, 낙뢰는 위에서 내려오는 bolt). 닿으면 ring 과 burst. 간헐천은 떨어지지 않고 솟는다 |
 | 해일 부름 | 시전자의 `AbilityCooldown` 이 뛰고, 시전 틱 + 300 을 만료로 가진 셀 | 그 셀들의 중심에 ring 과 burst |
-| 칼바람 회오리·모래폭풍 | `StrikeZone`·`SandZone` 행, `AbilityTicksLeft > 0`, `AbilityPoint` | 지점을 도는 입자 고리(프레임마다 다시 그리는 chip 풀)와 옅은 반경 ring. 칼바람 회오리는 10틱마다 치는 순간 작은 ring |
+| 칼바람 회오리·모래폭풍 | `StrikeZone`·`SandZone` 행, `AbilityTicksLeft > 0`, `AbilityPoint` | 지점을 도는 입자 고리(프레임마다 다시 그리는 chip pool)와 옅은 반경 ring. 칼바람 회오리는 10틱마다 치는 순간 작은 ring |
 | 잔해 투척 | 해금된 `RemnantThrow` 행의 몸이 쏘는 프레임에 0 으로 바뀐 잔해 셀 | 그 셀에서 표적까지 날아가는 chunk tracer(일반 tracer 대신), 닿을 때 반경 1칸 ring |
 | 잔해 수리 | `RemnantRepair` 행 몸의 `AbilityCooldown` 이 뜀, 0 으로 바뀐 잔해 셀, 체력이 오른 아군 | 그 셀에서 치유된 몸까지 chunk tracer. 치유 표시는 #206 의 것을 그대로 쓴다 |
 | 수리(공방 기술자) | 체력이 오른 건물·장치 | #206 의 치유 표시가 이미 그린다 |
@@ -47,7 +47,7 @@
 - 유성우는 처음에 시계가 0 이 된 뒤 떨어졌고 체력바가 돌보다 먼저 줄었다. 남은 6틱에 떨어뜨려 폭발 틱에 닿게 했다.
   낙뢰는 떨어지는 tracer 와 그 뒤에 서는 bolt 둘이다.
 - 견인 대포의 내려앉음이 처음 값(크기의 8%)으로는 보이지 않았다. 12%, 포신 20% 로 키웠다.
-- 물 지대 alpha 를 0.38 에서 0.48 로 올렸다.
+- 물 지대 alpha 는 0.48, 만료 직전 alpha 는 0.15 로 맞췄다.
 - 견인 대포의 전개 사거리 ring 은 `World.RangeFor` 를 전개한 복사본과 하지 않은 복사본에 물어 그 사이를 잇는다.
   #214 리뷰 뒤 대포 사거리 연구가 있으면 11 이고, 그것도 그대로 따라간다.
 - 차원 유랑종은 액티브가 없어서 `strip-driftworlds-cast` 는 한시 소환 만료와 화염 분출을 보여준다.

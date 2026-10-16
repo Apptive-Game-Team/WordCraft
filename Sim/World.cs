@@ -864,6 +864,7 @@ namespace WordCraft.Sim
         /// </summary>
         public void Step(IReadOnlyList<Command> commands)
         {
+            landedBursts.Clear();
             // A decided match still advances its tick, so the lockstep barrier and
             // the hash exchange keep running instead of stalling on a dead world.
             if (!MatchOver)

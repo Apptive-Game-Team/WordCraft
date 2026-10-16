@@ -83,6 +83,7 @@ namespace WordCraft.View
         private readonly List<Vector2> current = new List<Vector2>();
 
         private UdpTransport transport;
+        private MatchView matchView;
 
         // The session reads this every Update, so the lobby's patience can be
         // handed back once the match is running.
@@ -419,6 +420,9 @@ namespace WordCraft.View
             previous.AddRange(current);
 
             if (!Session.TryStep(now)) return false;
+
+            if (matchView == null) matchView = FindObjectOfType<MatchView>();
+            if (matchView != null) matchView.ObserveStep(World);
 
             Snapshot(current);
             // Entities spawned during this tick have no previous position, so they

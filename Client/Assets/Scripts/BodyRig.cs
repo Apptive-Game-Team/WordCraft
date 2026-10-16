@@ -105,8 +105,8 @@ namespace WordCraft.View
 
         /// <summary>
         /// A building a player builds: put together part by part, at work,
-        /// razed. Everything else that stands still — a resource node, a
-        /// rubble pile — is false, keeps one hull and sinks the old way.
+        /// razed. Everything else that stands still, a resource node, a
+        /// rubble pile, is false, keeps one hull and sinks the old way.
         /// </summary>
         public bool Assembled;
         public Assembly Assembly;
@@ -120,7 +120,7 @@ namespace WordCraft.View
 
     /// <summary>
     /// One body on the field: where it stands, which way it faces, and the few
-    /// moving parts that make it read as alive — legs, an arm, a head bob, wings,
+    /// moving parts that make it read as alive, legs, an arm, a head bob, wings,
     /// a turret. No animation clips and no bones; issue #159 rules both out, and
     /// a dozen sines on five transforms is all a body twenty-five cells from the
     /// camera can show anyway.
@@ -411,7 +411,7 @@ namespace WordCraft.View
         /// Hangs the design's parts under this transform. Legs hang from the root
         /// so they stay planted while the hull bobs; the arm, the crown and any
         /// wings hang from the hull so they ride its bob, lunge and squash. At most
-        /// six GameObjects: root, hull, two limbs, arm — or root, hull, crown.
+        /// six GameObjects: root, hull, two limbs, arm, or root, hull, crown.
         /// </summary>
         internal void Assemble(Design design, int variation)
         {
@@ -686,10 +686,15 @@ namespace WordCraft.View
         /// <summary>
         /// How far into 전개 the body is (issue #212), 0 ready to walk to 1
         /// deployed, read off the transition clock by the caller: the hull sinks
-        /// and spreads and its top part — the crown, or the arm of a body that
-        /// has none, as a 견인 대포's barrel is — settles down onto it.
+        /// and spreads and its top part, the crown, or the arm of a body that
+        /// has none, as a 견인 대포's barrel is, settles down onto it.
         /// </summary>
-        public void Deploy(float settle) => deploy = Mathf.Clamp01(settle);
+        public void Deploy(float settle)
+        {
+            if (deploy > 0f && settle <= 0f && crown != null)
+                crown.localPosition = crownRest + crownLift;
+            deploy = Mathf.Clamp01(settle);
+        }
 
         /// <summary>
         /// A unit just came out of this building toward <paramref name="yawDegrees"/>:
@@ -776,8 +781,8 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// The two looks motion changes frame to frame — a wash toward one colour
-        /// and a fade — pushed only when they moved, so a body at rest costs no
+        /// The two looks motion changes frame to frame, a wash toward one colour
+        /// and a fade, pushed only when they moved, so a body at rest costs no
         /// property block at all.
         /// </summary>
         private void Look(Color toward, float amount, float opacity)
@@ -974,8 +979,8 @@ namespace WordCraft.View
                     }
                     case Strike.Recoil:
                     {
-                        // Brace for the wind-up — crouched, leaning in, the arm
-                        // levelled — then a kick back at the shot and an easing
+                        // Brace for the wind-up, crouched, leaning in, the arm
+                        // levelled, then a kick back at the shot and an easing
                         // return. The arm travels about 70 degrees from the brace
                         // to the top of the kick. The opposite direction and the
                         // opposite timing of a lunge, so the two never read alike.
@@ -1021,7 +1026,9 @@ namespace WordCraft.View
             // 전개: down onto the ground and out, and the top settled onto it.
             offset.y -= DeploySink * size * deploy;
             scale = Vector3.Scale(scale, new Vector3(1f + DeploySpread * deploy, 1f - DeploySpread * deploy, 1f + DeploySpread * deploy));
-            Vector3 settle = Vector3.down * (DeploySettle * size * deploy);
+            Vector3 settle = Vector3.down * (DeploySettle * size * deploy * 0.25f);
+            pitch += 6f * deploy;
+            armPitch -= 10f * deploy;
 
             hull.localPosition = hullRest + offset;
             hull.localRotation = Quaternion.Euler(pitch, twist, roll);
@@ -1032,7 +1039,7 @@ namespace WordCraft.View
                 arm.localRotation = Quaternion.Euler(armPitch + breath * 3f * idle, 0f, 0f);
                 if (crown == null) arm.localPosition = armRest + settle;
             }
-            if (crown != null) crown.localPosition = crownRest + crownLift + settle;
+            if (crown != null && deploy > 0f) crown.localPosition = crownRest + crownLift + settle;
 
             Limbs(now, phase, gait, size);
         }
@@ -1069,8 +1076,8 @@ namespace WordCraft.View
                 }
                 case LimbMotion.Flap:
                 {
-                    // A flyer beats whether or not it travels — it is holding
-                    // itself up — and beats harder and faster when it does.
+                    // A flyer beats whether or not it travels, it is holding
+                    // itself up, and beats harder and faster when it does.
                     float rate = design.Flying ? 7f + 3f * gait : 3.2f;
                     float sweep = design.Flying ? 26f + 12f * gait : 16f;
                     float beat = Mathf.Sin(now * rate * tempo + seed) * sweep;

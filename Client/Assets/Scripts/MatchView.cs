@@ -138,9 +138,8 @@ namespace WordCraft.View
         /// <summary>The issue's last 60 ticks of a summon's life, in which it blinks.</summary>
         private const int ExpiryBlinkTicks = 60;
 
-        /// <summary>A summon's lifetime meter beside the hp bar: its width, and its gap from the bar, in world units.</summary>
+        /// <summary>A summon's lifetime meter under the hp bar, in world units.</summary>
         private const float LifeWidth = 0.42f;
-        private const float LifeGap = 0.06f;
 
         /// <summary>A death or arrival burst, and a strike landing: the issue's 1.5 of a weapon's impact.</summary>
         private const float BlastImpact = 1.5f;
@@ -170,7 +169,7 @@ namespace WordCraft.View
         // A zone's chips: how many and how fast they turn, degrees a second.
         private const int GaleChips = 12;
         private const float GaleTurn = 320f;
-        private const int SandChips = 18;
+        private const int SandChips = 36;
         private const float SandTurn = 110f;
 
         /// <summary>
@@ -381,6 +380,7 @@ namespace WordCraft.View
 
         /// <summary>One square a water field cell, pooled like the debris piles (issue #212).</summary>
         private readonly List<Decal> fieldCells = new List<Decal>();
+        private readonly int[] fieldCellSlots = new int[World.GridCells];
 
         /// <summary>Delayed strikes' warning rings and zones' edges, handed out afresh every frame (issue #212).</summary>
         private readonly List<Decal> zoneRings = new List<Decal>();
@@ -396,6 +396,7 @@ namespace WordCraft.View
 
         /// <summary>Whether each entity's hp rose as a heal this frame, parallel to bodies: what a 잔해 수리's guess looks for.</summary>
         private readonly List<bool> mended = new List<bool>();
+        private readonly List<int> healedAmount = new List<int>();
 
         /// <summary>The 잔해 수리 casters seen to go off this frame, handled once every body's heal is known.</summary>
         private readonly List<int> menders = new List<int>();
@@ -484,8 +485,11 @@ namespace WordCraft.View
                 Drop(queueFills);
                 Drop(lifeBacks);
                 Drop(lifeFills);
+                Drop(fieldCells);
+                System.Array.Clear(fieldCellSlots, 0, fieldCellSlots.Length);
                 castRows.Clear();   // parallel to bodies, and Create refills it
                 mended.Clear();     // same
+                healedAmount.Clear();
                 System.Array.Clear(hadRemnant, 0, hadRemnant.Length);
                 skins.Clear();      // parallel to bodies, and Create refills it
                 cooldowns.Clear();  // same
@@ -498,6 +502,7 @@ namespace WordCraft.View
                 auraRows.Clear();   // same
                 DropBodies(retiring);
                 effects.Clear();
+                approaches.Clear();
                 primed = false;
                 shown = world;
 
@@ -538,6 +543,7 @@ namespace WordCraft.View
             zoneRingsUsed = 0;
 
             Fog.Update(runner);
+            LandObservedBursts(world);
 
             float band = Band();
             int markers = 0;
@@ -609,6 +615,7 @@ namespace WordCraft.View
                 bool healed = e.Alive && e.Hp > last.Hp && e.MaxHp == last.MaxHp && last.Site == 0 && e.BuildTicksLeft == 0;
                 bool scorched = e.Alive && e.BurnTicksLeft < last.Burn && BurnPeriods(last.Burn) > BurnPeriods(e.BurnTicksLeft);
                 mended[i] = healed;
+                healedAmount[i] = healed ? e.Hp - last.Hp : 0;
 
                 // Every entity, seen or not: a caster in the fog can still drop
                 // a meteor where the player can see (issue #212).
@@ -969,89 +976,93 @@ namespace WordCraft.View
                 case AbilityKind.DelayedStrike: DelayedStrike(world, e, r, last); break;
                 case AbilityKind.StrikeZone:
                 case AbilityKind.SandZone: Zone(world, e, r, last); break;
-                case AbilityKind.TideStrike: Tide(world, e, r, last); break;
                 case AbilityKind.RemnantRepair:
                     if (e.Alive && e.AbilityCooldown > last.Cooldown) menders.Add(i);
                     break;
             }
         }
 
-        /// <summary>
-        /// 유성우, 낙뢰, 간헐천: a ring on the point while the clock runs, filling
-        /// in as the landing nears, and the strike itself on the frame the clock
-        /// reaches 0. A clock that reached 0 because its caster died never lands:
-        /// Kill clears it, and only a caster still standing, or one whose last
-        /// tick it was, is read as a landing.
-        /// </summary>
+        private readonly List<World.BurstEvent> observedBursts = new List<World.BurstEvent>();
+        private readonly Dictionary<int, int> approaches = new Dictionary<int, int>();
+        private World observedWorld;
+        private int observedTick = -1;
+
+        /// <summary>Called after every successful step, including catch-up ticks between frames.</summary>
+        public void ObserveStep(World world)
+        {
+            if (!ReferenceEquals(observedWorld, world))
+            {
+                observedBursts.Clear();
+                observedWorld = world;
+                observedTick = -1;
+            }
+            if (observedTick == world.Tick) return;
+            observedTick = world.Tick;
+            for (int i = 0; i < world.LandedBurstCount; i++)
+            {
+                World.BurstEvent hit = world.LandedBurstAt(i);
+                AbilityKind kind = FactionData.AbilityRowAt(hit.Row).Kind;
+                if (kind == AbilityKind.DelayedStrike || kind == AbilityKind.TideStrike)
+                    observedBursts.Add(hit);
+            }
+        }
+
+        private void LandObservedBursts(World world)
+        {
+            if (!ReferenceEquals(observedWorld, world)) return;
+            for (int i = 0; i < observedBursts.Count; i++)
+            {
+                World.BurstEvent hit = observedBursts[i];
+                CancelApproach(hit.SourceId);
+                if (!Shows(hit.Owner, hit.Position)) continue;
+                AbilityRow row = FactionData.AbilityRowAt(hit.Row);
+                Faction faction = world.FactionOf(hit.Owner);
+                Vector2 point = MatchRunner.ToView(hit.Position);
+                Color colour = StrikeColour(faction);
+                Vector3 ground = Field.At(point);
+                effects.Impact(ground + Vector3.up * 0.3f, colour, 0f, BlastImpact);
+                effects.Blast(ground, world.AbilityRadius(hit.Owner, row), colour);
+                if (row.Kind == AbilityKind.DelayedStrike)
+                {
+                    if (faction == Faction.Humans)
+                        effects.Jump(ground + Vector3.up * DropHeight, ground, colour, 0f);
+                    else if (faction == Faction.WaterSlimes)
+                        effects.Fall(ground, -SpoutHeight, BodyPalette.WaterSlimes.Pale, 0f, DropFlight, 2.4f, 0f, bursts: false);
+                }
+            }
+            observedBursts.Clear();
+        }
+
+        private void CancelApproach(int id)
+        {
+            if (!approaches.TryGetValue(id, out int handle)) return;
+            effects.Cancel(handle);
+            approaches.Remove(id);
+        }
+
+        /// <summary>Warning and harmless approach only; landed simulation events own the impact.</summary>
         private void DelayedStrike(World world, Entity e, AbilityRow r, Vital last)
         {
-            if (!Shows(e.Owner, e.AbilityPoint)) return;
+            if (!e.Alive || e.AbilityTicksLeft == 0 || !Shows(e.Owner, e.AbilityPoint))
+            {
+                CancelApproach(e.Id);
+                return;
+            }
             Faction faction = world.FactionOf(e.Owner);
             Vector2 point = MatchRunner.ToView(e.AbilityPoint);
             float radius = world.AbilityRadius(e.Owner, r);
             Color colour = StrikeColour(faction);
-
-            if (e.Alive && e.AbilityTicksLeft > 0)
+            float left = e.AbilityTicksLeft / (float)Mathf.Max(world.AbilityTicks(e.Owner, r), 1);
+            Edge(point, radius, WithAlpha(colour, Mathf.Lerp(WarnAlphaLast, WarnAlphaFirst, left)));
+            if (e.AbilityTicksLeft <= DropLead && last.Clock > DropLead && faction != Faction.WaterSlimes)
             {
-                float left = e.AbilityTicksLeft / (float)Mathf.Max(world.AbilityTicks(e.Owner, r), 1);
-                Edge(point, radius, WithAlpha(colour, Mathf.Lerp(WarnAlphaLast, WarnAlphaFirst, left)));
-            }
-
-            // Dropped DropLead ticks early, timed to land on the tick the burst
-            // does, so the stones and the hp bars they empty arrive together. A
-            // frame that jumped past the lead straight onto the landing drops
-            // it at once. The cost: a caster killed in those last ticks takes its
-            // strike with it, and the stones already falling land on nothing.
-            int clock = e.AbilityTicksLeft;
-            if (e.Alive && clock > 0 && clock <= DropLead && last.Clock > DropLead)
-            {
-                Strike(faction, point, radius, colour, clock / (float)World.TicksPerSecond);
-            }
-            else if (last.Clock > DropLead && clock == 0 && e.Alive)
-            {
-                Strike(faction, point, radius, colour, ShortDrop);
+                CancelApproach(e.Id);
+                approaches[e.Id] = effects.Approach(Field.At(point, 0.3f), DropHeight, colour,
+                    e.AbilityTicksLeft / (float)World.TicksPerSecond, BlastImpact);
             }
         }
 
-        /// <summary>How many ticks before a delayed strike lands its stones start falling: the fall's 0.3 s.</summary>
         private const int DropLead = 6;
-
-        /// <summary>The fall of a strike whose lead the frame skipped: short, since the burst has already landed.</summary>
-        private const float ShortDrop = 0.12f;
-
-        /// <summary>
-        /// A delayed strike landing on <paramref name="point"/>. 유성우: three
-        /// stones falling from the sky a moment apart. 낙뢰: a bolt down from it.
-        /// 간헐천: a spout up out of the ground. Each bursts at 1.5 a weapon's
-        /// size with a ring the strike's radius.
-        /// </summary>
-        private void Strike(Faction faction, Vector2 point, float radius, Color colour, float arrive)
-        {
-            Vector3 ground = Field.At(point);
-            switch (faction)
-            {
-                case Faction.Humans:
-                    // The bolt that fell, standing the moment it lands.
-                    effects.Fall(Field.At(point, 0.3f), DropHeight, colour, 0f, arrive, BlastImpact, radius);
-                    effects.Jump(ground + Vector3.up * DropHeight, ground, colour, arrive);
-                    return;
-                case Faction.WaterSlimes:
-                    effects.Fall(ground, -SpoutHeight, BodyPalette.WaterSlimes.Pale, arrive, DropFlight, 1f, 0f, bursts: false);
-                    effects.Impact(ground + Vector3.up * 0.3f, colour, arrive, BlastImpact);
-                    effects.Blast(ground, radius, colour, arrive);
-                    return;
-                default:
-                    // Two smaller stones either side a moment ahead, then the main one on the point.
-                    for (int k = 0; k < 2; k++)
-                    {
-                        float around = (k == 0 ? 40f : 220f) * Mathf.Deg2Rad;
-                        Vector2 off = new Vector2(Mathf.Cos(around), Mathf.Sin(around)) * (radius * 0.5f);
-                        effects.Fall(Field.At(point + off, 0.2f), DropHeight, colour, 0f, arrive * (0.7f + 0.15f * k), 1f, 0f);
-                    }
-                    effects.Fall(Field.At(point, 0.3f), DropHeight, colour, 0f, arrive, BlastImpact, radius);
-                    return;
-            }
-        }
 
         /// <summary>
         /// 칼바람 회오리 and 모래폭풍: chips circling the point and a faint edge
@@ -1070,7 +1081,7 @@ namespace WordCraft.View
 
             if (e.AbilityTicksLeft > 0)
             {
-                effects.Orbit(point, radius, colour, sand ? SandChips : GaleChips, sand ? SandTurn : GaleTurn, e.Id * 37f);
+                effects.Orbit(point, radius, colour, sand ? SandChips : GaleChips, sand ? SandTurn : GaleTurn, e.Id * 37f, storm: sand);
                 Edge(point, radius, WithAlpha(colour, ZoneAlpha));
             }
 
@@ -1085,48 +1096,9 @@ namespace WordCraft.View
             was > now && (was - 1) / period * period >= now;
 
         /// <summary>
-        /// 해일 부름 lands in Apply and leaves neither clock nor point, so the
-        /// view finds it from what it does leave: the caster's cooldown jumps,
-        /// and the 3×3 field it laid lapses on the tick of the cast plus the
-        /// row's ticks. The middle of the cells with exactly that expiry, within
-        /// the cast's range of the caster, is the point. A 물 지대 깔기 cast on
-        /// the same tick close by would pull it off centre.
-        /// </summary>
-        private void Tide(World world, Entity e, AbilityRow r, Vital last)
-        {
-            if (!e.Alive || e.AbilityCooldown <= last.Cooldown) return;
-            // The cooldown is set to the row's on the cast tick and taken down
-            // once on that same tick, so the cast tick is this far back.
-            int cast = world.Tick - r.Cooldown + e.AbilityCooldown;
-            int expiry = cast + world.AbilityTicks(e.Owner, r);
-            int centre = World.CellOf(e.Position);
-            int cx = centre % World.GridSize, cy = centre / World.GridSize;
-            int reach = r.CastRange + 2;
-            Vector2 sum = Vector2.zero;
-            int count = 0;
-            for (int y = Mathf.Max(cy - reach, 0); y <= Mathf.Min(cy + reach, World.GridSize - 1); y++)
-            {
-                for (int x = Mathf.Max(cx - reach, 0); x <= Mathf.Min(cx + reach, World.GridSize - 1); x++)
-                {
-                    int cell = y * World.GridSize + x;
-                    if (world.WaterFieldExpiry(cell) != expiry) continue;
-                    sum += MatchRunner.ToView(World.CellCenter(cell));
-                    count++;
-                }
-            }
-            if (count == 0) return;
-            Vector2 point = sum / count;
-            if (!Shows(e.Owner, MatchRunner.ToSim(point))) return;
-            Color colour = StrikeColour(Faction.WaterSlimes);
-            Vector3 ground = Field.At(point);
-            effects.Impact(ground + Vector3.up * 0.3f, colour, 0f, BlastImpact);
-            effects.Blast(ground, world.AbilityRadius(e.Owner, r), colour);
-        }
-
-        /// <summary>
         /// 잔해 수리, once every body's heal this frame is known: a lump of the
         /// debris it took flies from its cell to the ally that was mended, the
-        /// one nearest the caster among those whose hp rose. The heal's own mark
+        /// one whose hp rose most within reach. The heal's own mark
         /// is issue #206's and is already drawn. Only between seen ends.
         /// </summary>
         private void Mends(World world)
@@ -1142,6 +1114,7 @@ namespace WordCraft.View
                 int row = castRows[id];
                 float reach = world.AbilityRadius(caster.Owner, FactionData.AbilityRowAt(row)) + MendSlack;
                 float best = reach * reach;
+                int largestHeal = 0;
                 int ally = -1;
                 for (int j = 0; j < world.EntityCount; j++)
                 {
@@ -1150,7 +1123,8 @@ namespace WordCraft.View
                     if (v.Owner != caster.Owner) continue;
                     float d = (MatchRunner.ToView(v.Position) - at).sqrMagnitude;
                     if (d > best) continue;
-                    best = d;
+                    if (healedAmount[j] <= largestHeal) continue;
+                    largestHeal = healedAmount[j];
                     ally = j;
                 }
                 if (ally < 0 || !Seen(world, ally)) continue;
@@ -1182,7 +1156,8 @@ namespace WordCraft.View
         {
             int row = UnlockedRow(world, e, kind);
             if (row < 0) return;
-            Color colour = BodyPalette.Shot(world.FactionOf(e.Owner));
+            Color colour = kind == AbilityKind.DeathBurst && world.FactionOf(e.Owner) == Faction.Driftworlds
+                ? BodyPalette.Shot(Faction.Hellfire) : BodyPalette.Shot(world.FactionOf(e.Owner));
             Vector3 ground = Field.At(at);
             effects.Impact(ground + Vector3.up * 0.4f, colour, delay, BlastImpact);
             effects.Blast(ground, world.AbilityRadius(e.Owner, FactionData.AbilityRowAt(row)), colour, delay);
@@ -1269,24 +1244,28 @@ namespace WordCraft.View
         // a list of live cells the day a profile disagrees.
         private void WaterFields(World world)
         {
-            int used = 0;
+            for (int k = 0; k < fieldCells.Count; k++) fieldCells[k].Visible = false;
             for (int cell = 0; cell < World.GridCells; cell++)
             {
                 if (!world.HasWaterField(cell)) continue;
                 if (Fog.AtCell(cell % World.GridSize, cell / World.GridSize) != Fog.Seen) continue;
 
-                while (fieldCells.Count <= used) fieldCells.Add(Decal.MakeSquare(transform, "WaterField", BodyPalette.WaterSlimes.Pale));
-                Decal square = fieldCells[used++];
-                square.Set(MatchRunner.ToView(World.CellCenter(cell)), 0.5f, 0f);
+                if (fieldCellSlots[cell] == 0)
+                {
+                    Decal made = Decal.MakeSquare(transform, "WaterField", BodyPalette.WaterSlimes.Pale);
+                    made.Set(MatchRunner.ToView(World.CellCenter(cell)), 0.5f, 0f);
+                    fieldCells.Add(made);
+                    fieldCellSlots[cell] = fieldCells.Count;
+                }
+                Decal square = fieldCells[fieldCellSlots[cell] - 1];
                 float left = (world.WaterFieldExpiry(cell) - world.Tick) / (float)FieldFadeTicks;
                 square.Colour = WithAlpha(BodyPalette.WaterSlimes.Pale, Mathf.Lerp(FieldAlphaLast, FieldAlpha, Mathf.Clamp01(left)));
                 square.Visible = true;
             }
-            for (int k = used; k < fieldCells.Count; k++) fieldCells[k].Visible = false;
         }
 
         /// <summary>
-        /// A summon's lifetime, beside its hp bar whether or not the bar is up:
+        /// A summon's lifetime, below its hp bar whether or not the bar is up:
         /// a short bar of <see cref="UiStyle.InkDim"/> on a meter back, full at
         /// the lifetime its owner gives the row and empty on the tick it lapses.
         /// 층위 고정 can hold it past full; it reads full.
@@ -1305,7 +1284,7 @@ namespace WordCraft.View
             }
             int lifetime = world.LifetimeFor(e.Owner, FactionData.Stats(world.FactionOf(e.Owner), e.Role, e.Slot));
             float left = Mathf.Clamp01((e.ExpireTick - world.Tick) / (float)Mathf.Max(lifetime, 1));
-            Vector3 at = head + Cam.transform.right * (barWidth * 0.5f + LifeGap + LifeWidth * 0.5f);
+            Vector3 at = head - Cam.transform.up * (BarHeight * 1.4f);
             lifeBacks[i].Set(Cam, at, LifeWidth, BarHeight, 1f);
             lifeFills[i].Set(Cam, at, LifeWidth, BarHeight, left);
             lifeBacks[i].Visible = true;
@@ -2037,6 +2016,7 @@ namespace WordCraft.View
                 auraRows.Add(AuraRow(world, e));
                 castRows.Add(CastRow(world, e));
                 mended.Add(false);
+                healedAmount.Add(0);
                 lifeBacks.Add(null); // made on first use: Life
                 lifeFills.Add(null);
                 slowRings.Add(null); // made on first use: Lazy
