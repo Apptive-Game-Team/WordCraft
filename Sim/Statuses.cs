@@ -107,17 +107,7 @@ namespace WordCraft.Sim
                 if (!s.Alive) continue;
                 Fix radius = Fix.FromInt(AbilityRadius(s.Owner, row));
                 FixVec2 from = auraPositions[k];
-                int damage = AbilityAmount(s.Owner, row);
-                for (int i = 0; i < entities.Count; i++)
-                {
-                    Entity t = entities[i];
-                    if (!t.Alive || t.Owner < 0 || t.Owner == s.Owner) continue;
-                    if (!AuraTargets(row.Targets, t)) continue;
-                    if (!WithinRange(from, t.Position, radius)) continue;
-                    t.Hp -= damage;
-                    if (t.Hp <= 0) Kill(ref t);
-                    entities[i] = t;
-                }
+                DamageHostileBodies(s.Owner, row.Targets, from, radius, AbilityAmount(s.Owner, row));
             }
         }
 

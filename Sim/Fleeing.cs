@@ -24,10 +24,12 @@ namespace WordCraft.Sim
     /// exactly why it is the same on both peers and why moving either system past
     /// the other would move it.
     ///
-    /// The threat can die. Deaths happen in CombatSystem, which runs immediately
-    /// before this one, so a body killed on tick T is not fled from on tick T. The
-    /// carrier can die in the same pass, and the loop below skips it for the same
-    /// reason. Both boundaries fall out of the order rather than out of a test.
+    /// The threat can die. Deaths happen in ExpirySystem, CombatSystem,
+    /// StatusSystem and BurstSystem, all of which run before this one, and
+    /// BurstSystem, the last of them, runs immediately before it, so a body killed
+    /// on tick T is not fled from on tick T. The carrier can die in the same tick,
+    /// and the loop below skips it for the same reason. Both boundaries fall out
+    /// of the order rather than out of a test.
     ///
     /// The threat can move — it is usually walking straight at the carrier. It
     /// moves in MoveSystem, which runs after this, so the positions read here are

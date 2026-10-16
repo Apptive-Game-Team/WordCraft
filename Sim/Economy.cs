@@ -465,6 +465,9 @@ namespace WordCraft.Sim
                     // Walked, not teleported: a rally point costs what crossing the
                     // ground costs, and the unit is catchable on the way.
                     if (b.HasRallyPoint) SetDestination(spawned, b.RallyPoint);
+                    // 도착 방전: where the body stands, an invalid arrival
+                    // at the 통로 included, and landed by BurstSystem.
+                    QueueArrivalBurst(spawned);
                     continue;
                 }
                 entities[i] = b;

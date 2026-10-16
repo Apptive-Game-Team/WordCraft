@@ -294,6 +294,19 @@ namespace WordCraft.Sim
         /// included, the body takes World.BurnDamage: six hits from sixty.
         /// </summary>
         public int BurnTicksLeft;
+
+        // 한시 소환, docs/TECH-TREE.md 묶음 6. One number on the body that lapses
+        // and nowhere else, the one-sidedness every field above has.
+
+        /// <summary>
+        /// The tick this body lapses on, or 0 for a body that lives until it is
+        /// killed, which is every row but the 멸종 슬라임. Set by SpawnUnit to
+        /// Tick plus the row's lifetime, pushed back a tick at a time by 층위
+        /// 고정, and read by ExpirySystem, which kills the body on the first
+        /// tick that reaches it. Hashed: two peers that disagreed here would
+        /// lose the same body on different ticks.
+        /// </summary>
+        public int ExpireTick;
     }
 
     /// <summary>
@@ -476,6 +489,10 @@ namespace WordCraft.Sim
         /// </summary>
         private void Kill(ref Entity e)
         {
+            // 전격 과부하 and 화염 분출: queued, never landed here, per
+            // docs/TECH-TREE.md 능력 공통 규칙. First, while the body still
+            // counts as alive and able, which is what asks whether it bursts.
+            QueueDeathBurst(e);
             e.Hp = 0;
             e.Alive = false;
             ReleasePopulation(e);
@@ -504,6 +521,8 @@ namespace WordCraft.Sim
             // killing something forgets can keep counting on it.
             e.SlowTicksLeft = 0;
             e.BurnTicksLeft = 0;
+            // A corpse never lapses a second time.
+            e.ExpireTick = 0;
         }
 
         /// <summary>
@@ -707,6 +726,7 @@ namespace WordCraft.Sim
             UnitStats s = FactionData.Stats(factions[owner], role, slot);
             int id = Add(EntityKind.Unit, owner, role, slot, position, s.Speed, hpOverride < 0 ? s.Hp : hpOverride);
             ArmSpawner(id);
+            ArmLifetime(id, s);
             return id;
         }
 
@@ -812,8 +832,10 @@ namespace WordCraft.Sim
                 ProductionSystem();
                 ResearchSystem();
                 SpawnerSystem();
+                ExpirySystem();
                 CombatSystem();
                 StatusSystem();
+                BurstSystem();
                 FleeSystem();
                 MoveSystem();
                 VictorySystem();
@@ -1416,6 +1438,7 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.ResearchTicksLeft);
                 Mix(ref h, (ulong)e.SlowTicksLeft);
                 Mix(ref h, (ulong)e.BurnTicksLeft);
+                Mix(ref h, (ulong)e.ExpireTick);
 
                 List<int> path = paths[i];
                 Mix(ref h, (ulong)path.Count);

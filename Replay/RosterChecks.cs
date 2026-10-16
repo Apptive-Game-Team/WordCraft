@@ -503,11 +503,16 @@ namespace WordCraft.Replay
             Research(Faction.Humans, "연쇄 방전", 125, 200, 2, UpgradeEffect.ChainDischarge, Role.Tech, 1, Role.None, 0),
             Research(Faction.Humans, "증폭 반경", 100, 160, 2, UpgradeEffect.AmplifyRadius, Role.Tech, 1, Role.None, 0),
             Research(Faction.Humans, "표식 강화", 100, 160, 2, UpgradeEffect.MarkAmount, Role.Tech, 1, Role.None, 0),
+            // 묶음 6 (#202): summons that lapse and bursts.
+            Research(Faction.TreeSpirits, "과부하 강화", 75, 120, 2, UpgradeEffect.OverloadDamage, Role.Tech, 2, Role.None, 0),
+            Research(Faction.Driftworlds, "소환 수명", 150, 200, 3, UpgradeEffect.SummonLifetime, Role.Tech, 0, Role.None, 0),
+            Research(Faction.Driftworlds, "층위 고정 반경", 100, 160, 3, UpgradeEffect.StrataHoldRadius, Role.Tech, 0, Role.None, 0),
+            Research(Faction.Driftworlds, "화염 분출 강화", 75, 120, 2, UpgradeEffect.FireBurstDamage, Role.Tech, 1, Role.None, 0),
         };
 
         private static void TheResearchRowsAreTheDocumentedOnes()
         {
-            int[] counts = { 11, 12, 9, 7, 9, 11 };
+            int[] counts = { 12, 12, 9, 7, 12, 11 };
             for (int f = 0; f < FactionData.FactionCount; f++)
             {
                 var faction = (Faction)f;
