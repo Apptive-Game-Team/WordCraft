@@ -124,6 +124,7 @@ namespace WordCraft.Replay
                 TerrainChecks.Check();
                 SeparationChecks.Check();
                 UpgradeChecks.Check();
+                ResearchMenuChecks.Check();
                 SimAssemblyIsClean();
             }
             catch (Exception ex)

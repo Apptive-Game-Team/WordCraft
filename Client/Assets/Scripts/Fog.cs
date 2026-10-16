@@ -292,14 +292,17 @@ namespace WordCraft.View
         /// never fogged under itself — or as far as it shoots, whichever is more.
         /// That puts a defence tower at 6 and everything else between 2 and 4, all
         /// of them under a unit's 10.
+        ///
+        /// "As far as it shoots" is <see cref="World.RangeOf"/>, the one place the
+        /// simulation reads a weapon's reach. A 대포 사거리 that adds a cell to the
+        /// cannon adds it to what the cannon sees, and the roster entry is the one
+        /// asked (a cannon and a 전기 타워 share a role) rather than the role's
+        /// first row.
         /// </summary>
-        private static float Sight(Faction faction, Entity e) =>
+        private static float Sight(Entity e) =>
             Static(e)
-                ? Mathf.Max(Reach(faction, e.Role), MatchView.Cells(e.Role))
+                ? Mathf.Max(Reach(shown.RangeOf(e)), MatchView.Cells(e.Role))
                 : Reach(World.AcquireRange);
-
-        private static float Reach(Faction faction, Role role) =>
-            Reach(FactionData.Stats(faction, role).Range);
 
         private static float Reach(Fix f) => f.Raw / (float)Fix.One;
 
@@ -321,7 +324,7 @@ namespace WordCraft.View
             int level = Field.Level(cy * Cells + cx);
 
             bool air = FactionData.Stats(faction, e.Role).Air;
-            float radius = Sight(faction, e);
+            float radius = Sight(e);
             float near = PlateauSight;
             if (!air)
             {
