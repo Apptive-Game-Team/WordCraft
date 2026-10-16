@@ -1,0 +1,13 @@
+name: server
+on: [push, pull_request]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet build Checks/Checks.csproj --configuration Release
+      - run: dotnet run --project Checks/Checks.csproj --configuration Release --no-build
+      - run: docker build -t wordcraft-server:check .
