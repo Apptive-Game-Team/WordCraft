@@ -951,7 +951,7 @@ StarCraft 방향은 방어 구조물과 공성, 공중 폭격이다.
 | 징발 (기존) | 수습 마법생 | 액티브(기존 `Capture`) | 기본 | 인접 60틱 | `CaptureSystem` | 기존 `CaptureTargetId`·`CaptureTicksLeft` | 그대로 |
 | 낙뢰 (`LightningDrop`) | 마도사 | 액티브, 지점(8칸 이내) | 낙뢰 | 30틱 뒤 반경 2칸 적 지상 유닛·건물에 고정 22. 쿨다운 400 | `AbilitySystem` | `AbilityCooldown`·`AbilityTicksLeft`·`AbilityPoint` | 공중은 맞지 않는다(대공 원칙). 시전자가 죽으면 떨어지지 않는다 |
 | 수리 | 공방 기술자 | 오토캐스트 | 기본 | 10틱마다 3칸 안 가장 많이 다친 아군 건물 또는 장치 유닛에 +4 | `AbilitySystem`, `Tick % 10 == 0` | 없음 | 잃은 체력 최대·낮은 id. 건설 중 건물 제외. 장치 유닛은 Towerback, 석조 보행 포대, 견인 대포, 마도 폭격선, 마도 정찰기, 마나 증폭기 |
-| 전개 | 견인 대포 | 액티브, 목표 없음(전환) | 전개 장치 | 전환 40틱. 전개 중 속도 0, 사거리 10, 반경 1칸 광역. 해제도 40틱 | `Apply`가 `AbilityTicksLeft = 40`을 세우고 `AbilitySystem`이 센다 | `Deployed`, `AbilityTicksLeft` | 전환 방향은 `Deployed`의 현재 값으로 정한다: false면 전개 중, true면 해제 중. `AbilityTicksLeft`가 0이 되는 틱에 `Deployed`를 뒤집는다. 전환 중에는 쏘지도 걷지도 않고 다시 온 `Cast`는 거부한다. 전개 중 이동 명령도 거부 |
+| 전개 | 견인 대포 | 액티브, 목표 없음(전환) | 전개 장치 | 전환 40틱. 전개 중 속도 0, 사거리 10, 반경 1칸 광역. 해제도 40틱 | `Apply`가 `AbilityTicksLeft = 40`을 세우고 `AbilitySystem`이 센다 | `Deployed`, `AbilityTicksLeft` | 전환 방향은 `Deployed`의 현재 값으로 정한다: false면 전개 중, true면 해제 중. `AbilityTicksLeft`가 0이 되는 틱에 `Deployed`를 뒤집는다. 전환 중에는 쏘지도 걷지도 않고 다시 온 `Cast`는 거부한다. 전개 중 이동 명령도 거부. 광역 피해는 용암 폭발·폭격과 같은 `최종 피해 / 2`로 구현했다(#209) |
 | 증폭 | 마나 증폭기 | 오라 | 기본 | 반경 4칸 아군 완공 방어 건물 공격 주기 −5, 하한 8 | `CombatSystem`이 쿨다운을 세울 때 조회 | 없음 | 겹치지 않는다 |
 | 표식 | 마도 정찰기 | 오라 | 기본 | 반경 5칸 안의 적 유닛은 인간의 일반 공격에서 피해 +1 | 피해 계산 조회 | 없음 | 겹치지 않는다. 고정 피해에는 더하지 않는다 |
 | 폭격 | 마도 폭격선 | 패시브, 명중 시 광역 | 기본 | 반경 2칸, 절반 피해, 지상만 | `CombatSystem` | 없음 | id 오름차순 |

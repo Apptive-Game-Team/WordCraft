@@ -104,6 +104,8 @@ namespace WordCraft.Sim
                     auraPositions.Add(e.Position);
                 }
             }
+            // 모래폭풍 zones are read in the same passes, so they are gathered here too.
+            CollectSandStorms();
         }
 
         /// <summary>Whether this body is one an aura of these targets reaches, before the question of distance and side.</summary>
