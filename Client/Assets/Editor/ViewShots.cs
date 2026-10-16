@@ -15,10 +15,14 @@ namespace WordCraft.View
     ///
     ///   - five of the scripted match: the home base, the lane and its high
     ///     ground, the whole map, a close-up of bodies, the flank;
-    ///   - lineup-&lt;faction&gt;: every roster entry of one faction in a row;
-    ///   - strip-&lt;faction&gt;-&lt;motion&gt;: up to four bodies doing one motion,
-    ///     eight frames across 0.9 seconds side by side, so an animation can be
-    ///     judged from one still image.
+    ///   - lineup-&lt;faction&gt;: every roster entry of one faction in a row,
+    ///     and lineup-&lt;faction&gt;-units and -buildings: the same row split in
+    ///     two, so each body is twice the size;
+    ///   - strip-&lt;faction&gt;-&lt;motion&gt;: four bodies (three buildings)
+    ///     doing one motion, eight frames across 0.9 seconds side by side, so
+    ///     an animation can be judged from one still image. A faction with more
+    ///     rows than one page holds gets -2, -3 pages after the first, so every
+    ///     row is seen.
     ///
     ///   Unity -batchmode -quit -projectPath Client \
     ///         -executeMethod WordCraft.View.ViewShots.Run \
@@ -196,8 +200,6 @@ namespace WordCraft.View
             for (int f = 0; f < FactionData.FactionCount; f++)
             {
                 var faction = (Faction)f;
-                World world = Empty(faction);
-
                 var entries = new List<(Role Role, int Slot)>();
                 for (int r = 1; r < FactionData.RoleCount; r++)
                 {
@@ -209,32 +211,41 @@ namespace WordCraft.View
                     }
                 }
 
-                float span = -LineupGap;
-                foreach (var entry in entries) span += MatchView.Cells(entry.Role) + LineupGap;
-                float x = World.GridSize * 0.5f - span * 0.5f;
-                foreach (var entry in entries)
-                {
-                    float width = MatchView.Cells(entry.Role);
-                    Spawn(world, entry.Role, entry.Slot, new Vector2(x + width * 0.5f, Row));
-                    x += width + LineupGap;
-                }
-
-                using (var studio = new Studio(world, LineupWidth, LineupHeight))
-                {
-                    List<BodyRig> rigs = Dress(world, studio.Root.transform);
-                    for (int i = 0; i < rigs.Count; i++)
-                    {
-                        if (world.GetEntity(i).Kind != EntityKind.Building) Turn(rigs[i], FacingYaw);
-                    }
-                    Settle(rigs);
-
-                    Frame(studio, new Vector2(World.GridSize * 0.5f, Row + 1.2f), span + 4f, 0f);
-                    studio.Render(0);
-                    studio.Write(Path.Combine(output, "lineup-" + Slug(faction) + ".png"));
-                    written++;
-                }
+                Lineup(output, faction, "", entries);
+                Lineup(output, faction, "-units", entries.FindAll(entry => !FactionData.IsBuilding(entry.Role)));
+                Lineup(output, faction, "-buildings", entries.FindAll(entry => FactionData.IsBuilding(entry.Role)));
+                written += 3;
             }
             return written;
+        }
+
+        /// <summary>One lineup shot: these entries of one faction standing in a row, named lineup-faction plus suffix.</summary>
+        private static void Lineup(string output, Faction faction, string suffix, List<(Role Role, int Slot)> entries)
+        {
+            World world = Empty(faction);
+            float span = -LineupGap;
+            foreach (var entry in entries) span += MatchView.Cells(entry.Role) + LineupGap;
+            float x = World.GridSize * 0.5f - span * 0.5f;
+            foreach (var entry in entries)
+            {
+                float width = MatchView.Cells(entry.Role);
+                Spawn(world, entry.Role, entry.Slot, new Vector2(x + width * 0.5f, Row));
+                x += width + LineupGap;
+            }
+
+            using (var studio = new Studio(world, LineupWidth, LineupHeight))
+            {
+                List<BodyRig> rigs = Dress(world, studio.Root.transform);
+                for (int i = 0; i < rigs.Count; i++)
+                {
+                    if (world.GetEntity(i).Kind != EntityKind.Building) Turn(rigs[i], FacingYaw);
+                }
+                Settle(rigs);
+
+                Frame(studio, new Vector2(World.GridSize * 0.5f, Row + 1.2f), span + 4f, 0f);
+                studio.Render(0);
+                studio.Write(Path.Combine(output, "lineup-" + Slug(faction) + suffix + ".png"));
+            }
         }
 
         // ------------------------------------------------------------------
@@ -331,8 +342,13 @@ namespace WordCraft.View
                 {
                     List<(Role Role, int Slot)> cast = motion == "tower" ? towers : walkers;
                     if (cast.Count == 0 || !Wanted(motion)) continue;
-                    Strip(output, faction, motion, cast);
-                    written++;
+                    // Four bodies a page, so each stays as large as before.
+                    for (int page = 0; page * StripCast < cast.Count; page++)
+                    {
+                        int count = Math.Min(StripCast, cast.Count - page * StripCast);
+                        Strip(output, faction, motion, cast.GetRange(page * StripCast, count), page == 0 ? "" : "-" + (page + 1));
+                        written++;
+                    }
                 }
 
                 List<(Role Role, int Slot)> growth = Growths(faction);
@@ -346,17 +362,25 @@ namespace WordCraft.View
                 {
                     List<(Role Role, int Slot)> cast = Buildings(faction, motion);
                     if (cast.Count == 0 || !Wanted(motion)) continue;
-                    Strip(output, faction, motion, cast);
-                    written++;
+                    // Three buildings a page: the first page is the one it always was.
+                    for (int page = 0; page * BuildingCast < cast.Count; page++)
+                    {
+                        int count = Math.Min(BuildingCast, cast.Count - page * BuildingCast);
+                        Strip(output, faction, motion, cast.GetRange(page * BuildingCast, count), page == 0 ? "" : "-" + (page + 1));
+                        written++;
+                    }
                 }
             }
             return written;
         }
 
+        /// <summary>Bodies on one strip page.</summary>
+        private const int StripCast = 4;
+
         /// <summary>
-        /// Up to four bodies that walk, for the motion strips: entry 0 of every
-        /// fighting role first, so the strip shows as many gaits and strikes as
-        /// the faction has, then the extras, then the worker.
+        /// Every body that walks, for the motion strips: entry 0 of every
+        /// fighting role first, so the first page shows as many gaits and strikes
+        /// as the faction has, then the extras, then the worker.
         /// </summary>
         private static List<(Role Role, int Slot)> Walkers(Faction faction)
         {
@@ -375,7 +399,6 @@ namespace WordCraft.View
                 }
             }
             if (FactionData.Has(faction, Role.Worker, 0)) list.Add((Role.Worker, 0));
-            if (list.Count > 4) list.RemoveRange(4, list.Count - 4);
             return list;
         }
 
@@ -398,18 +421,34 @@ namespace WordCraft.View
             return list;
         }
 
+        /// <summary>Buildings on one building strip page.</summary>
+        private const int BuildingCast = 3;
+
         /// <summary>
         /// Entry 0 of the base, the production building, and a third: the
         /// defense building for build and destroy, the tech building for work,
         /// because a defense building never queues or researches anything.
+        /// Then every other entry of the production, defense and tech slots,
+        /// so every building is seen going up, at work and coming down; work
+        /// leaves out the defenses for the same reason.
         /// </summary>
         private static List<(Role Role, int Slot)> Buildings(Faction faction, string motion)
         {
             var list = new List<(Role Role, int Slot)>();
-            Role[] roles = { Role.Base, Role.Production, motion == "work" ? Role.Tech : Role.Defense };
+            bool work = motion == "work";
+            Role[] roles = { Role.Base, Role.Production, work ? Role.Tech : Role.Defense };
             foreach (Role role in roles)
             {
                 if (FactionData.Has(faction, role, 0)) list.Add((role, 0));
+            }
+            Role[] extras = work ? new[] { Role.Production, Role.Tech } : new[] { Role.Production, Role.Defense, Role.Tech };
+            foreach (Role role in extras)
+            {
+                int slots = FactionData.SlotCount(faction, role);
+                for (int slot = role == Role.Tech && !work ? 0 : 1; slot < slots; slot++)
+                {
+                    if (FactionData.Has(faction, role, slot)) list.Add((role, slot));
+                }
             }
             return list;
         }
@@ -431,7 +470,7 @@ namespace WordCraft.View
             return list;
         }
 
-        private static void Strip(string output, Faction faction, string motion, List<(Role Role, int Slot)> cast)
+        private static void Strip(string output, Faction faction, string motion, List<(Role Role, int Slot)> cast, string page = "")
         {
             World world = Empty(faction);
             bool towers = motion == "tower";
@@ -512,7 +551,7 @@ namespace WordCraft.View
                     studio.Render(frame * FrameWidth);
                 }
 
-                studio.Write(Path.Combine(output, "strip-" + Slug(faction) + "-" + motion + ".png"));
+                studio.Write(Path.Combine(output, "strip-" + Slug(faction) + "-" + motion + page + ".png"));
             }
         }
 

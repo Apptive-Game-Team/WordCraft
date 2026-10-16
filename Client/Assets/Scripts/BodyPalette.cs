@@ -169,6 +169,10 @@ namespace WordCraft.View
             public static readonly Color StormWorld = Hex(0xEFCB45);
             /// <summary>Chosen. The extinct rock slime, from ExtinctRockSlime.png.</summary>
             public static readonly Color StoneWorld = Hex(0xD6CBAE);
+            /// <summary>Chosen. The nature world: the extinct nature slime and 덩쿨편's vine, an olive green sampled by eye from VineShard.png's vine.</summary>
+            public static readonly Color NatureWorld = Hex(0x9AAE4E);
+            /// <summary>Chosen. The wind world: the extinct wind slime's trailing wisps, <see cref="TealLight"/> lifted toward white as ExtinctWindSlime.png's tails are.</summary>
+            public static readonly Color WindWorld = Hex(0xA9DCE0);
         }
 
         /// <summary>
