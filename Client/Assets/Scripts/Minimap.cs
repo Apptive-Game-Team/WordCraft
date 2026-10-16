@@ -253,6 +253,7 @@ namespace WordCraft.View
 
             if (foggedVersion != Fog.Version) Fogged();
             fogged.CopyTo(pixels, 0);
+            WaterFields(world);
             Debris(world);
 
             for (int i = 0; i < world.EntityCount; i++)
@@ -289,27 +290,45 @@ namespace WordCraft.View
         /// </summary>
         private static void Debris(World world)
         {
+            for (int cell = 0; cell < World.GridCells; cell++)
+            {
+                if (world.HasRemnant(cell)) Cell(cell, UiStyle.MinimapRemnant);
+            }
+        }
+
+        /// <summary>
+        /// 물 슬라임 물 지대 (issue #212), under the debris and the dots: a field
+        /// is why a 급류 슬라임 is suddenly fast and a 간헐천 can be aimed, and
+        /// both are questions a player asks of the whole map. No fade here; how
+        /// long a field has left is the field's to say, as with debris.
+        /// </summary>
+        private static void WaterFields(World world)
+        {
+            for (int cell = 0; cell < World.GridCells; cell++)
+            {
+                if (world.HasWaterField(cell)) Cell(cell, UiStyle.MinimapWaterField);
+            }
+        }
+
+        /// <summary>
+        /// Fills one cell's block of pixels. A cell this peer has never seen is
+        /// left alone: debris or a field painted there would report something it
+        /// has no way of knowing about.
+        /// </summary>
+        private static void Cell(int cell, Color32 colour)
+        {
             // Res is a whole multiple of the map, so a cell is a square block of
             // pixels rather than something to resample.
             const int block = Res / MatchScenario.MapSize;
+            int cx = cell % MatchScenario.MapSize;
+            int cy = cell / MatchScenario.MapSize;
+            if (Fog.AtCell(cx, cy) == Fog.Hidden) return;
 
-            for (int cell = 0; cell < World.GridCells; cell++)
+            int x0 = cx * block;
+            int y0 = cy * block;
+            for (int y = y0; y < y0 + block; y++)
             {
-                if (!world.HasRemnant(cell)) continue;
-
-                int cx = cell % MatchScenario.MapSize;
-                int cy = cell / MatchScenario.MapSize;
-
-                // Debris obeys the fog. Rubble painted on ground this peer has
-                // never seen would report a fight it has no way of knowing about.
-                if (Fog.AtCell(cx, cy) == Fog.Hidden) continue;
-
-                int x0 = cx * block;
-                int y0 = cy * block;
-                for (int y = y0; y < y0 + block; y++)
-                {
-                    for (int x = x0; x < x0 + block; x++) pixels[y * Res + x] = UiStyle.MinimapRemnant;
-                }
+                for (int x = x0; x < x0 + block; x++) pixels[y * Res + x] = colour;
             }
         }
 

@@ -61,12 +61,37 @@ namespace WordCraft.View
         /// (the worker is still walking, or the rock has just changed hands), and
         /// CaptureTargetId is what tells those apart from not capturing at all.
         /// A worker on its way is 0, not nothing: the order has been taken.
+        ///
+        /// This reading divides by the base clock, <see cref="World.CaptureTicks"/>,
+        /// which is right for a peer that has not researched 포획 가속 and wrong
+        /// after: the clock then starts at 40 and the bar would begin a third of
+        /// the way across. Nothing in the view calls it any more: MatchView's field
+        /// meter reads the overload below. It stays as the base-clock reading
+        /// Replay/ResearchMenuChecks.cs compares an unresearched peer's bar
+        /// against; delete it with that comparison. Anything that can ask the
+        /// world should use the overload below.
         /// </summary>
-        public static float Progress(Entity worker)
+        public static float Progress(Entity worker) => Progress(worker, World.CaptureTicks);
+
+        /// <summary>
+        /// The same reading divided by this worker's own peer's clock,
+        /// <see cref="World.CaptureTicksFor"/>: 60, or 40 once 포획 가속 is
+        /// researched. The simulation reads that number when a capture starts and
+        /// not again, so a capture already counting when the level lands runs on
+        /// the 60 it began with while this divides by 40. Its fraction would go
+        /// negative until the 40 remaining ticks catch up, which the clamp holds
+        /// at an empty bar rather than drawing backwards. One capture in a match
+        /// at most is in that position, for under a second.
+        /// </summary>
+        public static float Progress(World world, Entity worker) =>
+            Progress(worker, world.CaptureTicksFor(worker.Owner));
+
+        private static float Progress(Entity worker, int clock)
         {
             if (worker.CaptureTargetId < 0) return -1f;
             if (worker.CaptureTicksLeft <= 0) return 0f;
-            return (World.CaptureTicks - worker.CaptureTicksLeft) / (float)World.CaptureTicks;
+            float done = (clock - worker.CaptureTicksLeft) / (float)clock;
+            return done < 0f ? 0f : done > 1f ? 1f : done;
         }
     }
 }

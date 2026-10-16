@@ -20,7 +20,7 @@ namespace WordCraft.View
         /// on. Update it only when the simulation intentionally changes, and only
         /// after both runtimes agree on the new value.
         /// </summary>
-        public const ulong GoldenHash = 0x20B573A2BAE79B6FUL;
+        public const ulong GoldenHash = 0x89303B33ED3EA28DUL;
 
         /// <summary>
         /// The factions the golden hash was taken over. Factions are hashed, so
@@ -33,6 +33,12 @@ namespace WordCraft.View
         // Ids are handed out in MatchScenario.Build order and never reused.
         private const int Base0 = 0, Worker0A = 1, Worker0B = 2, Melee0 = 3, Ranged0 = 4, Node0 = 5;
         private const int Base1 = 6, Worker1A = 7, Worker1B = 8, Melee1 = 9, Ranged1 = 10, Node1 = 11;
+
+        // The two production buildings, placed by the Builds at tick 150 right
+        // after the neutral rocks MatchScenario spawns last. The fighters below
+        // come out of these: a 세계수 정령 or 지옥불 base makes workers and
+        // nothing that fights.
+        private const int Works0 = 18, Works1 = 19;
 
         // Peer 0's 기술 건물, placed by the Build at tick 250. Ids are handed out
         // in order and never reused, so it is 20 on every run of this log;
@@ -80,10 +86,12 @@ namespace WordCraft.View
             Add(log, 480, 0, seq, CommandType.Build, -1, At(22, 22), (int)Role.Defense);
             Add(log, 480, 1, seq, CommandType.Build, -1, At(42, 42), (int)Role.Defense);
 
-            Add(log, 300, 0, seq, CommandType.Produce, Base0, FixVec2.Zero, 0);
-            Add(log, 300, 1, seq, CommandType.Produce, Base1, FixVec2.Zero, 0);
-            Add(log, 420, 0, seq, CommandType.Produce, Base0, FixVec2.Zero, 0);
-            Add(log, 420, 1, seq, CommandType.Produce, Base1, FixVec2.Zero, 0);
+            // Peer 1 orders one 용암 갑각 악마 rather than two. It costs 90 per
+            // docs/FACTION-MECHANICS.md, and a second one at 420 would leave
+            // peer 1 with 35 at 480, short of the defense building below.
+            Add(log, 300, 0, seq, CommandType.Produce, Works0, FixVec2.Zero, 0);
+            Add(log, 300, 1, seq, CommandType.Produce, Works1, FixVec2.Zero, 0);
+            Add(log, 420, 0, seq, CommandType.Produce, Works0, FixVec2.Zero, 0);
 
             // One research, on the 기술 건물 that finished at 369, so the golden
             // hash covers the Research command, the price it takes, the
@@ -94,6 +102,15 @@ namespace WordCraft.View
             // that a researched hit happens.
             Add(log, 370, 0, seq, CommandType.Research, Tech0, FixVec2.Zero, 0);
             Add(log, 530, 0, seq, CommandType.Attack, Ranged0, FixVec2.Zero, Melee1);
+
+            // One Cast, 칼바람 회오리 (세계수 정령 ability row 7), named by peer 0's
+            // 잎날 정령. It is refused on the row rule: the row is 바람 정령's,
+            // and no 세계수 정령 or 지옥불 body that holds an active can be
+            // fielded and unlocked inside 600 ticks (a 바람 토템, its research
+            // and a 바람 정령 land past tick 670). So the golden hash covers the
+            // Cast's decoding and its refusal on both runtimes, and Replay's
+            // CastChecks.TheScriptedLogCarriesOneCast pins that it changes nothing.
+            Add(log, 41, 0, seq, CommandType.Cast, Melee0, At(31, 31), 7);
 
             for (int t = 60; t < Ticks; t += 37)
             {

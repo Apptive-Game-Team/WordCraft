@@ -25,9 +25,11 @@ namespace WordCraft.View
 
             ConversionRoundTripsExactly();
             FieldAgreesWithSim();
+            FieldMeshAgreesWithField();
             SameLogSameHashes();
             ViewReadsDoNotMutate();
             RosterArtResolves();
+            RosterBodiesAreWritten();
             RestartIsClean();
 
             ulong final = FinalHash();
@@ -106,6 +108,102 @@ namespace WordCraft.View
             }
         }
 
+        /// <summary>
+        /// The mesh the player sees stands on the heights every body stands on:
+        /// builds the terrain for the scenario's world and finds, in each Ground
+        /// chunk, every top facet of an open cell — a triangle whose three
+        /// vertices are three different corners of one cell — and holds each
+        /// vertex to Field.Corner. Every open cell must have its top drawn. A
+        /// wall, a prop, a rut or the map's edge never has three corners of one
+        /// cell for vertices, so nothing else is caught. Also logs the largest
+        /// Ground and Water chunk, in vertices, against the 65535 a 16 bit index
+        /// buffer holds.
+        /// </summary>
+        private static void FieldMeshAgreesWithField()
+        {
+            World world = MatchScenario.Build(new MatchConfig().Seed,
+                ScriptedLog.Peer0Faction, ScriptedLog.Peer1Faction);
+            Field.Build(world);
+
+            var parent = new GameObject("FieldMeshCheck");
+            try
+            {
+                FieldMesh.Build(world, parent.transform);
+
+                var covered = new int[World.GridCells];
+                int largestGround = 0;
+                int largestWater = 0;
+                foreach (MeshFilter filter in parent.GetComponentsInChildren<MeshFilter>())
+                {
+                    Mesh mesh = filter.sharedMesh;
+                    if (filter.name.StartsWith("Water")) largestWater = Mathf.Max(largestWater, mesh.vertexCount);
+                    if (!filter.name.StartsWith("Ground")) continue;
+                    largestGround = Mathf.Max(largestGround, mesh.vertexCount);
+
+                    Vector3[] vertices = mesh.vertices;
+                    int[] triangles = mesh.triangles;
+                    for (int t = 0; t < triangles.Length; t += 3)
+                    {
+                        Vector3 a = vertices[triangles[t]];
+                        Vector3 b = vertices[triangles[t + 1]];
+                        Vector3 c = vertices[triangles[t + 2]];
+                        if (!OnGrid(a) || !OnGrid(b) || !OnGrid(c)) continue;
+
+                        int cx = Mathf.RoundToInt(Mathf.Min(a.x, Mathf.Min(b.x, c.x)));
+                        int cy = Mathf.RoundToInt(Mathf.Min(a.z, Mathf.Min(b.z, c.z)));
+                        if (cx < 0 || cy < 0 || cx >= World.GridSize || cy >= World.GridSize) continue;
+                        int ca = CornerOf(a, cx, cy);
+                        int cb = CornerOf(b, cx, cy);
+                        int cc = CornerOf(c, cx, cy);
+                        if (ca < 0 || cb < 0 || cc < 0 || ca == cb || cb == cc || ca == cc) continue;
+
+                        int cell = cy * World.GridSize + cx;
+                        if (world.TerrainAt(cell) != TileKind.Open) continue;
+                        covered[cell]++;
+                        CheckCorner(cell, ca, a);
+                        CheckCorner(cell, cb, b);
+                        CheckCorner(cell, cc, c);
+                    }
+                }
+
+                int missing = 0;
+                for (int cell = 0; cell < World.GridCells; cell++)
+                {
+                    if (world.TerrainAt(cell) == TileKind.Open && covered[cell] < 2) missing++;
+                }
+                Check(missing == 0, missing + " open cells have no top drawn from Field's corners");
+
+                Debug.Log("field mesh: largest Ground chunk " + largestGround + " vertices, largest Water chunk " +
+                          largestWater + " vertices");
+                Check(largestGround <= 65535 && largestWater <= 65535,
+                    "a field chunk outgrew a 16 bit index buffer: " + largestGround + " / " + largestWater);
+            }
+            finally
+            {
+                FieldMesh.Drop();
+                Object.DestroyImmediate(parent);
+            }
+        }
+
+        private static bool OnGrid(Vector3 v) =>
+            Mathf.Abs(v.x - Mathf.Round(v.x)) < 1e-4f && Mathf.Abs(v.z - Mathf.Round(v.z)) < 1e-4f;
+
+        /// <summary>Which corner of cell (cx, cy) a grid vertex is, in Field.Corner order, or -1 if it is not one.</summary>
+        private static int CornerOf(Vector3 v, int cx, int cy)
+        {
+            int ox = Mathf.RoundToInt(v.x) - cx;
+            int oy = Mathf.RoundToInt(v.z) - cy;
+            if (ox < 0 || ox > 1 || oy < 0 || oy > 1) return -1;
+            return ox + 2 * oy;
+        }
+
+        private static void CheckCorner(int cell, int corner, Vector3 v)
+        {
+            float want = Field.Corner(cell, corner);
+            Check(Mathf.Abs(v.y - want) <= 1e-4f,
+                "cell " + cell + " corner " + corner + ": the mesh draws " + v.y + " where Field says " + want);
+        }
+
         /// <summary>One edge: returns 1 when it is a cliff on both sides of the agreement, 0 otherwise.</summary>
         private static int Agree(World world, int a, int b)
         {
@@ -165,6 +263,30 @@ namespace WordCraft.View
                         if (file.Length == 0) continue;
                         Check(Resources.Load<Sprite>(MatchView.SpriteFolder + file) != null,
                             "roster sprite missing: " + (Faction)f + "." + (Role)r + "[" + s + "] -> " + file);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Every roster entry has a body written for it in Models. An entry
+        /// without one still draws, as entry 0 of its slot or as the generic
+        /// body, which is exactly why it goes unnoticed: issue #195 found 65
+        /// such rows drawn as their neighbours.
+        /// </summary>
+        private static void RosterBodiesAreWritten()
+        {
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                for (int r = 1; r < FactionData.RoleCount; r++)
+                {
+                    int slots = FactionData.SlotCount((Faction)f, (Role)r);
+                    for (int s = 0; s < slots; s++)
+                    {
+                        if (!FactionData.Has((Faction)f, (Role)r, s)) continue;
+                        Check(Models.HasBuilder((Faction)f, (Role)r, s),
+                            "roster entry has no body of its own: " + (Faction)f + "." + (Role)r + "[" + s + "] " +
+                            FactionData.Name((Faction)f, (Role)r, s));
                     }
                 }
             }

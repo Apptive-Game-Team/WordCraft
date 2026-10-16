@@ -88,16 +88,23 @@ namespace WordCraft.View
     }
 
     /// <summary>
-    /// A ring or a disc that lies on the ground and follows it: every vertex is
-    /// dropped onto the terrain, so a ring around a body halfway up a ramp bends
-    /// with the ramp instead of cutting into it on one side and floating on the
-    /// other. Rebuilt whenever it moves, which is cheap — a few dozen vertices —
-    /// and only ever for the handful of marks that are on at once.
+    /// A ring, a disc or a square that lies on the ground and follows it: every
+    /// vertex is dropped onto the terrain, so a ring around a body halfway up a
+    /// ramp bends with the ramp instead of cutting into it on one side and
+    /// floating on the other. Rebuilt whenever it moves, which is cheap — a few
+    /// dozen vertices — and only ever for the handful of marks that are on at once.
     /// </summary>
     public sealed class Decal : MonoBehaviour
     {
         /// <summary>Segments round the circle. Enough that a ring 4 cells across is a circle and not a polygon.</summary>
         private const int Segments = 48;
+
+        /// <summary>
+        /// Quads along each side of a square (issue #212): a cell-sized square
+        /// split four ways bends over a slope's lip the way a ring does, where
+        /// one quad would cut into it.
+        /// </summary>
+        private const int SquareSteps = 4;
 
         /// <summary>How far above the ground the vertices sit, so a slope between two samples does not poke through.</summary>
         private const float Lift = 0.04f;
@@ -109,18 +116,30 @@ namespace WordCraft.View
         private Vector3[] vertices;
         private Color[] colours;
         private bool ring;
+        private bool square;
 
         private Vector2 at;
         private float radius = -1f;
         private float band = -1f;
 
         /// <summary>Makes one, switched off, parented under <paramref name="parent"/>.</summary>
-        public static Decal Make(Transform parent, string name, bool ring, Color colour)
+        public static Decal Make(Transform parent, string name, bool ring, Color colour) =>
+            Make(parent, name, ring, square: false, colour);
+
+        /// <summary>
+        /// A square, switched off: <see cref="Set"/> reads its radius as half the
+        /// side. One a cell is what a water field cell is drawn with (issue #212).
+        /// </summary>
+        public static Decal MakeSquare(Transform parent, string name, Color colour) =>
+            Make(parent, name, ring: false, square: true, colour);
+
+        private static Decal Make(Transform parent, string name, bool ring, bool square, Color colour)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, worldPositionStays: false);
             var d = go.AddComponent<Decal>();
             d.ring = ring;
+            d.square = square;
             d.filter = go.AddComponent<MeshFilter>();
             d.meshRenderer = go.AddComponent<MeshRenderer>();
             d.meshRenderer.sharedMaterial = Marks.Ground;
@@ -131,7 +150,7 @@ namespace WordCraft.View
             d.filter.sharedMesh = d.mesh;
             d.block = new MaterialPropertyBlock();
 
-            int count = ring ? Segments * 2 : Segments + 1;
+            int count = square ? (SquareSteps + 1) * (SquareSteps + 1) : ring ? Segments * 2 : Segments + 1;
             d.vertices = new Vector3[count];
             d.colours = new Color[count];
             d.Triangles();
@@ -167,7 +186,18 @@ namespace WordCraft.View
             this.radius = radius;
             this.band = band;
 
-            if (ring)
+            if (square)
+            {
+                for (int y = 0; y <= SquareSteps; y++)
+                {
+                    for (int x = 0; x <= SquareSteps; x++)
+                    {
+                        var corner = new Vector2(x / (float)SquareSteps * 2f - 1f, y / (float)SquareSteps * 2f - 1f);
+                        vertices[y * (SquareSteps + 1) + x] = Field.At(centre + corner * radius, Lift);
+                    }
+                }
+            }
+            else if (ring)
             {
                 float inner = Mathf.Max(radius - band, 0f);
                 for (int i = 0; i < Segments; i++)
@@ -198,7 +228,26 @@ namespace WordCraft.View
             for (int i = 0; i < colours.Length; i++) colours[i] = Color.white;
 
             int[] tris;
-            if (ring)
+            if (square)
+            {
+                tris = new int[SquareSteps * SquareSteps * 6];
+                int t = 0;
+                for (int y = 0; y < SquareSteps; y++)
+                {
+                    for (int x = 0; x < SquareSteps; x++)
+                    {
+                        int o = y * (SquareSteps + 1) + x;
+                        int up = o + SquareSteps + 1;
+                        tris[t++] = o;
+                        tris[t++] = up;
+                        tris[t++] = o + 1;
+                        tris[t++] = o + 1;
+                        tris[t++] = up;
+                        tris[t++] = up + 1;
+                    }
+                }
+            }
+            else if (ring)
             {
                 tris = new int[Segments * 6];
                 for (int i = 0; i < Segments; i++)
@@ -249,7 +298,14 @@ namespace WordCraft.View
         private MeshRenderer meshRenderer;
         private MaterialPropertyBlock block;
 
-        public static Billboard Make(Transform parent, string name, Color colour)
+        /// <summary>
+        /// Makes one, switched off. <paramref name="front"/> draws it after the
+        /// other billboards: a fill and its back stand on the same spot, and
+        /// with no depth test the camera-distance sort alone can put the back
+        /// over the fill. The cost: where two bars overlap on screen, a far
+        /// body's fill also paints over a near body's back.
+        /// </summary>
+        public static Billboard Make(Transform parent, string name, Color colour, bool front = false)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, worldPositionStays: false);
@@ -259,6 +315,7 @@ namespace WordCraft.View
             b.meshRenderer.sharedMaterial = Marks.Overlay;
             b.meshRenderer.shadowCastingMode = ShadowCastingMode.Off;
             b.meshRenderer.receiveShadows = false;
+            if (front) b.meshRenderer.sortingOrder = 1;
             b.block = new MaterialPropertyBlock();
             b.Colour = colour;
             b.Visible = false;

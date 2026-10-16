@@ -1,0 +1,162 @@
+namespace WordCraft.Sim
+{
+    /// <summary>
+    /// 상태 이상과 오라, docs/TECH-TREE.md 묶음 5. Two numbers are state, and
+    /// only two: how long a body stays slowed and how long it keeps burning,
+    /// both on the body itself. Every aura is a question asked at the moment a
+    /// system needs the number, of the bodies standing around the one it is
+    /// asking about, the way 일제 사격 is.
+    /// </summary>
+    public sealed partial class World
+    {
+        /// <summary>What a body that burns takes on a burning tick. Fixed damage: armor and levels do not touch it.</summary>
+        public const int BurnDamage = 1;
+
+        /// <summary>Every how many ticks of burn the body takes BurnDamage.</summary>
+        public const int BurnPeriod = 10;
+
+        /// <summary>
+        /// Puts a status clock at the longer of what is left and the new
+        /// duration. Never a sum: a second hit renews the status and does not
+        /// make it last twice as long.
+        /// </summary>
+        private static void Refresh(ref int left, int ticks)
+        {
+            if (left < ticks) left = ticks;
+        }
+
+        /// <summary>
+        /// 휘감기 and 화염탄: what a landed hit leaves on a target that survived
+        /// it. 휘감기 takes ground bodies only, so a flier or a building shot by
+        /// a 덩쿨 정령 walks on; 화염탄 sets anything it hits alight. Both refresh
+        /// to the longer clock rather than adding.
+        /// </summary>
+        private void ApplyHitStatus(Entity a, ref Entity t)
+        {
+            int slow = ActiveAbility(a, AbilityKind.SlowOnHit);
+            if (slow >= 0)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(slow);
+                if (AuraTargets(row.Targets, t)) Refresh(ref t.SlowTicksLeft, AbilityTicks(a.Owner, row));
+            }
+            int burn = ActiveAbility(a, AbilityKind.BurnOnHit);
+            if (burn >= 0) Refresh(ref t.BurnTicksLeft, AbilityTicks(a.Owner, FactionData.AbilityRowAt(burn)));
+        }
+
+        /// <summary>
+        /// How far this body walks this tick: SpeedFor, or RapidsSpeed for a
+        /// 급류 슬라임 starting its step on a water field, or RollSpeed while it
+        /// rolls, doubled while 질풍 runs, halved while it is slowed by 휘감기
+        /// or stands in a hostile 덩굴 지대 (the two together still halve it
+        /// once), and never past MaxMoveSpeed. Asked by
+        /// MoveSystem after CollectAuraSources.
+        /// </summary>
+        private Fix MoveSpeedFor(Entity e)
+        {
+            Fix speed = RapidsSpeedFor(e, SpeedFor(e));
+            // 굴러 들이받기 sets the speed outright, and 질풍 multiplies it,
+            // both before the slow and the cap. A body holds one of the two at most.
+            if (RunningAbility(e, AbilityKind.RollCharge) >= 0) speed = RollSpeed;
+            int gale = RunningAbility(e, AbilityKind.GaleAfterAttack);
+            if (gale >= 0) speed = speed * Fix.FromInt(AbilityAmount(e.Owner, FactionData.AbilityRowAt(gale)));
+            // 모래폭풍 slows by the same factor, and once with the other two.
+            if (e.SlowTicksLeft > 0 || InHostileAura(AbilityKind.SlowAura, e) || SandStormSlows(e))
+                speed = speed * SlowFactor;
+            return speed > MaxMoveSpeed ? MaxMoveSpeed : speed;
+        }
+
+        /// <summary>
+        /// Runs right after CombatSystem and before FleeSystem, by ascending
+        /// entity id. First the clocks every body carries: a tick off 휘감기, a
+        /// tick off the burn and, when what is left lands on a multiple of
+        /// BurnPeriod, the burn's damage.
+        /// </summary>
+        private void StatusSystem()
+        {
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (!e.Alive) continue;
+                if (e.SlowTicksLeft == 0 && e.BurnTicksLeft == 0) continue;
+
+                if (e.SlowTicksLeft > 0) e.SlowTicksLeft--;
+                if (e.BurnTicksLeft > 0)
+                {
+                    e.BurnTicksLeft--;
+                    if (e.BurnTicksLeft % BurnPeriod == 0)
+                    {
+                        e.Hp -= BurnDamage;
+                        if (e.Hp <= 0) Kill(ref e);
+                    }
+                }
+                entities[i] = e;
+            }
+
+            // Then the periodic auras, damage before healing, so a body the burn
+            // aura finishes is not healed first, and each on the ticks its row's
+            // period divides.
+            CollectAuraSources();
+            BurnAuras();
+            HealAuras();
+        }
+
+        /// <summary>
+        /// 화상 오라: every source on its own, the one aura that stacks. By
+        /// ascending source id, each burning the hostile ground bodies within
+        /// its radius by ascending id. A source the burn of an earlier source
+        /// killed this tick burns nothing.
+        /// </summary>
+        private void BurnAuras()
+        {
+            for (int k = 0; k < auraIds.Count; k++)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(auraRows[k]);
+                if (row.Kind != AbilityKind.BurnAura || Tick % row.Period != 0) continue;
+                Entity s = entities[auraIds[k]];
+                if (!s.Alive) continue;
+                Fix radius = Fix.FromInt(AbilityRadius(s.Owner, row));
+                FixVec2 from = auraPositions[k];
+                DamageHostileBodies(s.Owner, row.Targets, from, radius, AbilityAmount(s.Owner, row));
+            }
+        }
+
+        /// <summary>
+        /// 회복, 회복의 비, 이끼 재생, 생명 기록: on its period, each healing row
+        /// heals every allied body of its targets that some source of the row
+        /// reaches, once however many do. Integer, and never past MaxHp. Rows of
+        /// different names are different auras and each heals.
+        /// </summary>
+        private void HealAuras()
+        {
+            for (int r = 0; r < FactionData.AbilityRowCount; r++)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(r);
+                if (row.Kind != AbilityKind.HealAura || Tick % row.Period != 0) continue;
+                if (!auraRows.Contains(r)) continue;
+                for (int i = 0; i < entities.Count; i++)
+                {
+                    Entity t = entities[i];
+                    if (!t.Alive || t.Owner < 0 || t.Owner >= MaxPeers || t.Hp >= t.MaxHp) continue;
+                    if (factions[t.Owner] != row.Faction) continue;
+                    if (!AlliedAuraReaches(r, t, t.Owner)) continue;
+                    t.Hp += AbilityAmount(t.Owner, row);
+                    if (t.Hp > t.MaxHp) t.Hp = t.MaxHp;
+                    entities[i] = t;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Scenario setup only. Never call this from a system. Lets a harness put
+        /// two worlds one status clock apart, which no order can do without
+        /// also moving the hp the hit took.
+        /// </summary>
+        public void SetStatusForScenario(int id, int slowTicksLeft, int burnTicksLeft)
+        {
+            Entity e = entities[id];
+            e.SlowTicksLeft = slowTicksLeft;
+            e.BurnTicksLeft = burnTicksLeft;
+            entities[id] = e;
+        }
+    }
+}

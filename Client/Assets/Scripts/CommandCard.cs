@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using WordCraft.Sim;
@@ -33,8 +34,10 @@ namespace WordCraft.View
 
         /// <summary>
         /// Which entry of <see cref="Produce"/>'s roster list this cell orders.
-        /// Only Produce reads it; Build still names entry 0 only (#111 opens that).
-        /// Zero on every cell that is not a Produce button, which packs to the same
+        /// Produce reads it; Build still names entry 0 only (#111 opens that).
+        /// Research reads it as something else entirely: the row of the faction's
+        /// upgrade table, which is the whole Arg of that command and has no role
+        /// beside it. Zero on every cell that is neither, which packs to the same
         /// argument a role-only command always sent.
         /// </summary>
         public int Slot;
@@ -60,6 +63,33 @@ namespace WordCraft.View
         /// state (Orders.Page).
         /// </summary>
         public bool More;
+
+        /// <summary>
+        /// True on a Research cell whose row the peer has bought to its last
+        /// level. The cell stays on the card, drawn on a Void face like any other
+        /// command that exists and cannot be used (Hud.Card), and Orders.Run
+        /// refuses it so the key means what the button does. Only that: a row
+        /// short of tier or resources is left live and the simulation refuses it,
+        /// the rule the build menu follows.
+        /// </summary>
+        public bool Maxed;
+
+        /// <summary>
+        /// True on a Cast cell whose unlock research the peer has not bought. The
+        /// cell stays on the card, drawn on a Void face like a maxed research row
+        /// (Hud.Card), and Orders.Run refuses it so the key means what the button
+        /// does. Cast reads Slot as the row of the faction's ability table, which
+        /// is the whole Arg of that command.
+        /// </summary>
+        public bool Locked;
+
+        /// <summary>
+        /// How much of a Cast cell's wait is left, 1 for all of it and 0 for none
+        /// (AbilityMenu.Remaining). Drawn as a Meter under the cell. The cell is
+        /// not dead while it counts down: the representative's clock is not the
+        /// whole selection's, and refusing a Cast is the simulation's job.
+        /// </summary>
+        public float Cooldown;
     }
 
     /// <summary>
@@ -97,7 +127,8 @@ namespace WordCraft.View
         // The column convention every card below obeys, so a cell means the same
         // thing whatever is selected. Columns 0-2 are the old 3x3 and keep their
         // meaning; column 3 (cells 3, 7, 11) is new and stays empty on every card
-        // except where a card says otherwise.
+        // except where a card says otherwise. On the two unit cards it is where
+        // the body's actives go (Unit below), and so is the free part of row 2.
         //   cell 0  (R)  point at the ground   Move, or where produced units walk to
         //   cell 1  (T)  cancel                Stop, or take one off the queue
         //   cell 2  (Y)  stand and shoot       Hold; on a building, the rest of row 0
@@ -164,45 +195,128 @@ namespace WordCraft.View
         private static readonly CardSlot[] none = new CardSlot[Cells];
 
         /// <summary>
+        /// The fighter and worker tables above with the representative's actives
+        /// laid over their free cells. Filled per call, like the building card,
+        /// because which abilities a body holds is roster data and the cooldown is
+        /// its own state. The tables stay as they were drawn.
+        /// </summary>
+        private static readonly CardSlot[] fighterCard = new CardSlot[Cells];
+        private static readonly CardSlot[] workerCard = new CardSlot[Cells];
+
+        /// <summary>
         /// The card for this selection kind, laid out for this faction. Always
         /// Cells long. The HUD and the keys both get it through Orders.Card, so
         /// what a key fires is always what the button under it says. Page is the
-        /// production list's page and means nothing to any other card. Lead is the
-        /// role of the entity the card speaks for, which only the building card
-        /// reads: a Tech building has its own title and no production list.
+        /// production or research list's page and means nothing to any other card.
+        /// Lead and leadSlot are the role and entry of the entity the card speaks
+        /// for, which only the building card reads: a Tech building lists research
+        /// where every other building lists production, and each building entry
+        /// lists only what it makes or researches.
+        ///
+        /// LeadId is the entity itself, which only the two unit cards read: an
+        /// ability cell shows that body's cooldown, and a roster entry alone is
+        /// not a body. -1 when nothing qualifies.
+        ///
+        /// The world and the peer are here because a research cell says the level
+        /// the peer has reached and the price of the next one, and those are
+        /// simulation state. Both are unread by every other card, so a caller with
+        /// no match yet may pass null for the world with CardKind.None.
         /// </summary>
-        public static CardSlot[] Of(CardKind kind, Faction faction, Role lead, int page)
+        public static CardSlot[] Of(CardKind kind, World world, int peer, int leadId, Role lead, int leadSlot, int page)
         {
             switch (kind)
             {
-                case CardKind.Fighter: return fighter;
-                case CardKind.Worker: return worker;
-                case CardKind.Building: return Building(faction, lead, page);
+                case CardKind.Fighter: return Unit(fighter, fighterCard, AbilityMenu.FighterCells, world, peer, leadId, page);
+                case CardKind.Worker: return Unit(worker, workerCard, AbilityMenu.WorkerCells, world, peer, leadId, page);
+                case CardKind.Building: return Building(world, peer, lead, leadSlot, page);
                 case CardKind.BuildMenu: return buildMenu;
                 default: return none;
             }
         }
 
         /// <summary>
-        /// What this faction's buildings can produce, named and priced, one cell
-        /// per roster entry rather than per role. Which entries that is comes
-        /// from <see cref="ProductionMenu"/>, kept Unity-free so its one
-        /// interesting question — does every faction's list still fit the card
-        /// — runs headless in Replay/ProductionMenuChecks.cs. This method only
-        /// turns that list into CardSlots and keys.
+        /// A unit card with its representative's actives laid into the cells
+        /// <see cref="AbilityMenu"/> names, in table order: the fourth column
+        /// first, then row 2. A body that holds none gets the table as drawn, so
+        /// every faction's Move, Stop and Attack stay where they were.
         ///
-        /// A Tech building (<paramref name="lead"/>) lists nothing: see below.
+        /// A body holding more actives than the cells take pages them the way the
+        /// production list does: cell 11 becomes More and the other ability cells
+        /// hold the page. No body does
+        /// today (each holds one), and Replay/AbilityMenuChecks.cs fails the day
+        /// one would need more than AbilityMenu.MaxPages.
+        ///
+        /// Every cell is a live Cast cell except the one the peer has not
+        /// unlocked. The cost is on the label, and a shortfall is left to the
+        /// simulation to refuse, the rule the build menu follows.
+        /// </summary>
+        private static CardSlot[] Unit(CardSlot[] basis, CardSlot[] card, int[] cells, World world, int peer, int leadId, int page)
+        {
+            Array.Copy(basis, card, Cells);
+            if (world == null || leadId < 0) return card;
+
+            Entity caster = world.GetEntity(leadId);
+            IReadOnlyList<AbilityMenu.Entry> actives = AbilityMenu.For(world.FactionOf(peer), caster.Role, caster.Slot);
+            int pages = AbilityMenu.Pages(actives.Count, cells.Length);
+            int shown = AbilityMenu.PageRange(actives.Count, cells.Length, page, out int first, out int length);
+
+            // A paging list gives up cell 11 to More, the cell the building card
+            // puts it on, and fills the other cells in order. A list that fits
+            // uses all of them, so the first three keep U J M.
+            int cell = 0;
+            for (int i = 0; i < length; i++)
+            {
+                if (pages > 1 && cells[cell] == AbilityMenu.MoreCell) cell++;
+                AbilityMenu.Entry active = actives[first + i];
+                card[cells[cell++]] = new CardSlot
+                {
+                    Label = AbilityMenu.Label(world, peer, caster, active),
+                    Type = CommandType.Cast,
+                    Slot = active.Index,
+                    Locked = AbilityMenu.Locked(world, peer, active.Row),
+                    Cooldown = AbilityMenu.Remaining(caster, active.Row),
+                };
+            }
+
+            if (pages > 1)
+            {
+                card[AbilityMenu.MoreCell] = new CardSlot { Label = "More\n" + (shown + 1) + "/" + pages, More = true };
+            }
+            return card;
+        }
+
+        /// <summary>
+        /// What this building lists in rows 1 and 2, one cell per entry: for most
+        /// buildings what this building entry produces, named and priced, and for
+        /// a Tech building (<paramref name="lead"/>) the upgrades researched in
+        /// that entry, with the level reached and the price of the next. Per
+        /// building entry since docs/TECH-TREE.md 묶음 3 (#180) spread each
+        /// faction's ten or more producible entries and up to eight research rows
+        /// over two or three buildings. Which entries those are comes
+        /// from <see cref="ProductionMenu"/> and <see cref="ResearchMenu"/>, kept
+        /// Unity-free so their one interesting question — does every faction's
+        /// list still fit the card — runs headless in Replay. This method only
+        /// turns a list into CardSlots and keys.
+        ///
+        /// Row 0 is the building's own settings and is the same on every building.
+        /// Cancel is in it for a Tech building too, and there it takes back the
+        /// research that is running: the simulation reads CancelProduction on a
+        /// building with an empty queue and a running research as that
+        /// (Sim/Research.cs TryCancelResearch), so the cell needs no label or
+        /// command of its own and keeps its key.
         ///
         /// Rows 1 and 2 (<see cref="ProductionMenu.Cells"/>, eight) are the whole
         /// budget, column 3 included: the card was widened to four columns so a
-        /// roster past six entries still has a button each. 차원 유랑종 fills six
-        /// today, every other faction three.
+        /// roster past six entries still has a button each. Since 묶음 3 three
+        /// buildings list more than eight entries or come close: 물 슬라임 거품
+        /// 생성기 10, 차원 유랑종 통로 9, 돌 골렘 각성 바위 7.
         ///
-        /// A list longer than eight is paged. Each page lists seven entries and
-        /// cell 11 (key M) becomes More, which turns to the next page and, on the
-        /// last, back to the first. The page is the caller's: it is view state
+        /// A list longer than eight is paged, and the research list pages the same
+        /// way the production list does. Each page lists seven entries and cell 11
+        /// (key M) becomes More, which turns to the next page and, on the last,
+        /// back to the first. The page is the caller's: it is view state
         /// (Orders.Page), and turning it sends nothing to the simulation. Every
-        /// entry is on exactly one page, in roster order.
+        /// entry is on exactly one page, in list order.
         ///
         /// 도착 goes in cell 2 because it is the last free cell of row 0, and row 0
         /// is where a building's own settings live rather than what it makes. It
@@ -216,7 +330,7 @@ namespace WordCraft.View
         /// appeared only for 차원 유랑종 would move nothing today and everything the
         /// day row 0 grows a fourth entry.
         /// </summary>
-        public static CardSlot[] Building(Faction faction, Role lead, int page)
+        public static CardSlot[] Building(World world, int peer, Role lead, int leadSlot, int page)
         {
             for (int i = 0; i < Cells; i++) building[i] = Empty;
             building[0] = Cmd("Rally", CommandType.SetRallyPoint);
@@ -224,27 +338,47 @@ namespace WordCraft.View
             // Type stays None: nothing leaves the client when this cell is pressed.
             building[2] = new CardSlot { Label = "Arrive", Aim = true };
 
-            // Rows 1 and 2 are held for research, which lands with #164's tech tree
-            // and a follow-up issue. Left empty rather than hidden so the position
-            // is already the card's by the time the buttons arrive. Still the
-            // Building card, not a new CardKind: selection ranking, the keys and
-            // row 0 are all the building's, and only the title differs.
-            if (lead == Role.Tech) return building;
+            Faction faction = world.FactionOf(peer);
+            int count, pages;
+            int first, length;
+            List<ProductionMenu.Entry> produced = null;
+            List<ResearchMenu.Entry> researched = null;
+            if (lead == Role.Tech)
+            {
+                researched = ResearchMenu.For(faction, lead, leadSlot);
+                count = researched.Count;
+            }
+            else
+            {
+                produced = ProductionMenu.For(faction, lead, leadSlot);
+                count = produced.Count;
+            }
+            pages = ProductionMenu.Pages(count);
+            page = ProductionMenu.PageRange(count, page, out first, out length);
 
-            List<ProductionMenu.Entry> entries = ProductionMenu.For(faction);
-            int pages = ProductionMenu.Pages(entries.Count);
-            page = ProductionMenu.PageRange(entries.Count, page, out int first, out int length);
-
-            int cell = Cols; // rows 1-2: one cell per producible roster entry
+            int cell = Cols; // rows 1-2: one cell per entry
             for (int i = first; i < first + length; i++)
             {
-                ProductionMenu.Entry entry = entries[i];
+                if (researched != null)
+                {
+                    ResearchMenu.Entry entry = researched[i];
+                    building[cell++] = new CardSlot
+                    {
+                        Label = ResearchMenu.Label(world, peer, entry),
+                        Type = CommandType.Research,
+                        Slot = entry.Index,
+                        Maxed = ResearchMenu.Maxed(world, peer, entry),
+                    };
+                    continue;
+                }
+
+                ProductionMenu.Entry made = produced[i];
                 building[cell++] = new CardSlot
                 {
-                    Label = entry.Name + "\n" + entry.Resources,
+                    Label = made.Name + "\n" + made.Resources,
                     Type = CommandType.Produce,
-                    Produce = entry.Role,
-                    Slot = entry.Slot,
+                    Produce = made.Role,
+                    Slot = made.Slot,
                 };
             }
 
@@ -258,12 +392,23 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// How many pages this faction's production list takes. Orders reads it to
-        /// know where More wraps; the card itself only needs the count to decide
-        /// whether it has a More at all.
+        /// How many pages the list this card shows takes: the actives the body
+        /// holds for a unit card, the faction's research for a Tech building, its
+        /// production for any other building. Orders reads it to know where More
+        /// wraps; the card itself only needs the count to decide whether it has a
+        /// More at all.
         /// </summary>
-        public static int PageCount(Faction faction) =>
-            ProductionMenu.Pages(ProductionMenu.For(faction).Count);
+        public static int PageCount(CardKind kind, Faction faction, Role lead, int leadSlot)
+        {
+            if (kind == CardKind.Fighter || kind == CardKind.Worker)
+            {
+                return AbilityMenu.Pages(AbilityMenu.For(faction, lead, leadSlot).Count,
+                    (kind == CardKind.Worker ? AbilityMenu.WorkerCells : AbilityMenu.FighterCells).Length);
+            }
+            return ProductionMenu.Pages(lead == Role.Tech
+                ? ResearchMenu.For(faction, lead, leadSlot).Count
+                : ProductionMenu.For(faction, lead, leadSlot).Count);
+        }
 
         /// <summary>
         /// What the card is for, drawn over it so the player is never guessing. A

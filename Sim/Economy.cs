@@ -160,10 +160,11 @@ namespace WordCraft.Sim
             // A negative entry is refused here too, which is what a malformed Arg
             // decodes to.
             if (!FactionData.Has(factions[peer], role, slot)) return false;
-            // ponytail: the tier is still read off the role, so every entry of a
-            // building slot opens at once. Give it the entry the day a faction is
-            // meant to reach its second defense building later than its first.
-            if (FactionData.Tier(role) > TierOf(peer)) return false;
+            // The tier and the prerequisite of the entry, not of the role: the
+            // second research building docs/TECH-TREE.md gives each faction is a
+            // T2 building in a slot whose entry 0 is too, and needs a different
+            // building standing.
+            if (!MeetsTierAndPrerequisite(peer, role, slot)) return false;
             if (resources[peer] < FactionData.BuildCost(factions[peer], role, slot)) return false;
 
             // Reject an out-of-bounds request outright instead of silently clamping
@@ -175,16 +176,8 @@ namespace WordCraft.Sim
             // Nothing stands in water or on rock. Checked here rather than in
             // TryPlaceBuilding so the client's placement ghost, which calls this,
             // greys out the same cells the simulation is going to refuse.
-            if (!IsPassable(cell, air: false)) return false;
-
-            for (int i = 0; i < entities.Count; i++)
-            {
-                Entity e = entities[i];
-                if (!e.Alive) continue;
-                if (e.Kind != EntityKind.Building && e.Kind != EntityKind.ResourceNode) continue;
-                if (CellOf(e.Position) == cell) return false;
-            }
-            return true;
+            // Nor on a cell a building or a resource node already holds.
+            return GroundCellOpen(cell);
         }
 
         /// <summary>
@@ -214,52 +207,107 @@ namespace WordCraft.Sim
                 if (!e.Alive || e.Kind != EntityKind.Building || e.BuildTicksLeft <= 0) continue;
 
                 e.BuildTicksLeft--;
-                // Integer ramp so hp never depends on a division that rounds
-                // differently anywhere. The divisor is this building's own total,
-                // or a cheap building would finish its hp on someone else's clock.
-                // Its own entry's total: two entries of one slot are timed apart the
-                // moment an override row says so, and a divisor taken at the role
-                // would ramp 전기 타워 against 대포's clock and land it on the wrong
-                // hp every tick of its construction.
-                e.Hp = e.MaxHp -
-                    (e.MaxHp * e.BuildTicksLeft) / FactionData.BuildTicks(factions[e.Owner], e.Role, e.Slot);
-                if (e.Hp < 1) e.Hp = 1;
+                // The ramp adds this tick's share instead of rewriting hp from
+                // progress, so damage a site has taken stays taken and a site under
+                // fire can be razed before it finishes (issue #191). The share is
+                // the difference of two integer divisions on the tick number, so
+                // the remainders add up exactly with no state of their own and
+                // never depend on a division that rounds differently anywhere.
+                //
+                // The ramp climbs from the 1 hp a site is spawned with to MaxHp, so
+                // it is MaxHp - 1 that is spread over the clock: an undamaged site
+                // ends on exactly MaxHp, and one that took d damage ends on
+                // MaxHp - d.
+                //
+                // The divisor is this building's own total, or a cheap building
+                // would finish its hp on someone else's clock. Its own entry's
+                // total: two entries of one slot are timed apart the moment an
+                // override row says so, and a divisor taken at the role would ramp
+                // 전기 타워 against 대포's clock and land it on the wrong hp.
+                int total = FactionData.BuildTicks(factions[e.Owner], e.Role, e.Slot);
+                int elapsed = total - e.BuildTicksLeft;
+                int climb = e.MaxHp - 1;
+                e.Hp += (climb * elapsed) / total - (climb * (elapsed - 1)) / total;
                 entities[i] = e;
             }
         }
 
         /// <summary>
-        /// T1 is the base, T2 a production building, T3 a tech building. Derived
+        /// T1 is the base, T2 the production building, T3 the 기술 건물. Derived
         /// from standing buildings rather than latched, so losing the tech building
         /// closes tier 3 on the tick it falls while the units it opened stay alive.
+        ///
+        /// Which buildings open a tier is the roster's answer, asked per entry:
+        /// entry 0 of the production slot and entry 0 of the Tech slot, and no
+        /// other. A second production or research building stands at a tier
+        /// rather than opening one.
+        ///
+        /// Public because the harness asserts on it and a view will one day grey a
+        /// card with it. The answer that counts is the one the command layer takes.
         /// </summary>
-        private int TierOf(int peer)
+        public int TierOf(int peer)
         {
             int tier = 1;
+            if (peer < 0 || peer >= MaxPeers) return tier;
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
                 if (!e.Alive || e.Kind != EntityKind.Building || e.Owner != peer) continue;
                 if (e.BuildTicksLeft > 0) continue; // an unfinished building opens nothing
-                if (e.Role == Role.Tech) return 3;  // nothing above 3, so stop looking
-                if (e.Role == Role.Production && tier < 2) tier = 2;
+                int grants = FactionData.GrantsTier(factions[peer], e.Role, e.Slot);
+                if (grants > tier) tier = grants;
+                if (tier >= FactionData.MaxTier) return tier; // nothing above it, so stop looking
             }
             return tier;
         }
 
         /// <summary>
-        /// arrival is the 차원 유랑종 arrival point the order named, and it is read
-        /// only after every other rule has passed: a refused Produce leaves the
-        /// building's arrival point exactly as it found it, which is the same
-        /// "refused whole" every rule here already keeps about resources and the
-        /// queue. Every other faction's Produce carries a point too and none of them
-        /// keeps one — see World.AimArrival.
+        /// True when this peer has a building of this entry standing: alive and
+        /// finished. The one question every prerequisite asks — a Produce, a
+        /// Build, a Grow and a Research — so the four cannot disagree about
+        /// whether a half-built 기술 건물 counts. It does not, for the reason an
+        /// unfinished building opens no tier.
         /// </summary>
-        private void TryQueueUnit(int peer, int buildingId, Role role, int slot, FixVec2 arrival)
+        public bool HasStanding(int peer, Role role, int slot)
         {
-            if (!OwnedAndAlive(buildingId, peer)) return;
+            if (peer < 0 || peer >= MaxPeers) return false;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (!e.Alive || e.Kind != EntityKind.Building || e.Owner != peer) continue;
+                if (e.Role == role && e.Slot == slot && e.BuildTicksLeft == 0) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// The two tech tree questions about one entry of this peer's roster, in
+        /// the order docs/TECH-TREE.md asks them: the tier, then the building it
+        /// names. One method rather than the two tests written out at each gate,
+        /// so producing, placing and growing into an entry cannot drift apart on
+        /// what it takes.
+        /// </summary>
+        private bool MeetsTierAndPrerequisite(int peer, Role role, int slot)
+        {
+            Faction faction = factions[peer];
+            if (FactionData.Tier(faction, role, slot) > TierOf(peer)) return false;
+            var needs = FactionData.Prerequisite(faction, role, slot);
+            return needs.Role == Role.None || HasStanding(peer, needs.Role, needs.Slot);
+        }
+
+        /// <summary>
+        /// Every rule a Produce has to pass that is about the building and the
+        /// entry, and none that is about the moment: not the queue, the
+        /// population or the bank. Public for the reason CanBuild is, and the AI
+        /// asks it to find an entry the building it is looking at can make.
+        /// </summary>
+        public bool CanProduce(int peer, int buildingId, Role role, int slot)
+        {
+            if (peer < 0 || peer >= MaxPeers) return false;
+            if (!OwnedAndAlive(buildingId, peer)) return false;
             Entity b = entities[buildingId];
-            if (b.Kind != EntityKind.Building || b.BuildTicksLeft > 0) return;
+            if (b.Kind != EntityKind.Building || b.BuildTicksLeft > 0) return false;
+            if ((int)role < 0 || (int)role >= FactionData.RoleCount) return false;
             // An entry the roster does not put on the production list cannot be
             // queued at any price. That covers a building, which is placed rather
             // than produced, and 지옥불 자손, which is spawned. An entry past the
@@ -267,8 +315,8 @@ namespace WordCraft.Sim
             // produced, so a Produce naming one is refused by the same line rather
             // than by a range test of its own: the table is what knows how long
             // each list is, and one gate cannot drift from the other.
-            ProductionCost cost = FactionData.Production(factions[peer], role, slot);
-            if (!cost.Produced) return;
+            Faction faction = factions[peer];
+            if (!FactionData.Production(faction, role, slot).Produced) return false;
             // And the roster has to field it. The line above says the slot is the
             // kind of thing a queue makes; this one says this faction fields one,
             // which is the test CanBuild has always made and Produce never had.
@@ -284,8 +332,28 @@ namespace WordCraft.Sim
             // aimed at the line above; asked first, this line would take that
             // refusal over and the check would go on passing with the rule it was
             // written for deleted.
-            if (!FactionData.Has(factions[peer], role, slot)) return;
-            if (FactionData.Tier(role) > TierOf(peer)) return;
+            if (!FactionData.Has(faction, role, slot)) return false;
+            // And this building has to be one the entry comes out of. A 생명의
+            // 나무 makes 풀씨 정령 and nothing that fights; a 기술 건물 makes
+            // nothing at all. Before the tier, so a building that could never make
+            // the entry is refused for that and not for what the peer has reached.
+            if (!FactionData.IsProducedAt(faction, role, slot, b.Role, b.Slot)) return false;
+            return MeetsTierAndPrerequisite(peer, role, slot);
+        }
+
+        /// <summary>
+        /// arrival is the 차원 유랑종 arrival point the order named, and it is read
+        /// only after every other rule has passed: a refused Produce leaves the
+        /// building's arrival point exactly as it found it, which is the same
+        /// "refused whole" every rule here already keeps about resources and the
+        /// queue. Every other faction's Produce carries a point too and none of them
+        /// keeps one — see World.AimArrival.
+        /// </summary>
+        private void TryQueueUnit(int peer, int buildingId, Role role, int slot, FixVec2 arrival)
+        {
+            if (!CanProduce(peer, buildingId, role, slot)) return;
+            Entity b = entities[buildingId];
+            ProductionCost cost = FactionData.Production(factions[peer], role, slot);
             if (b.QueueCount >= MaxQueue) return;
             // One roster entry for the whole queue, so a second order naming a
             // different one is refused rather than silently replacing what the
@@ -335,6 +403,10 @@ namespace WordCraft.Sim
             if (!OwnedAndAlive(buildingId, peer)) return false;
             Entity b = entities[buildingId];
             if (b.Kind != EntityKind.Building || b.QueueCount <= 0) return false;
+            // 씨앗 요람: the queue was filled for free, so there is nothing to pay
+            // back, and a cancel that paid the entry's price would mint resources.
+            // Refused whole, the way a Produce the building cannot take is.
+            if (HasFreeQueue(b)) return false;
 
             b.QueueCount--;
             // The queue holds one roster entry, so the price it was bought at is
@@ -393,6 +465,9 @@ namespace WordCraft.Sim
                     // Walked, not teleported: a rally point costs what crossing the
                     // ground costs, and the unit is catchable on the way.
                     if (b.HasRallyPoint) SetDestination(spawned, b.RallyPoint);
+                    // 도착 방전: where the body stands, an invalid arrival
+                    // at the 통로 included, and landed by BurstSystem.
+                    QueueArrivalBurst(spawned);
                     continue;
                 }
                 entities[i] = b;

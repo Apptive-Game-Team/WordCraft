@@ -31,7 +31,7 @@ namespace WordCraft.Replay
     ///   body freezes the point onto it.
     /// - <see cref="ArrivalOrder.Valid"/> against where the body actually stands up
     ///   fifty ticks later.
-    /// - <see cref="ArrivalOrder.Radius"/> against the boundary the simulation
+    /// - <see cref="ArrivalOrder.RadiusFor"/> against the boundary the simulation
     ///   admits, both sides of it.
     /// - <see cref="ArrivalOrder.Anchors"/> against whether each body, alone in a
     ///   world, makes the ground under it a valid arrival.
@@ -93,8 +93,8 @@ namespace WordCraft.Replay
         }
 
         /// <summary>
-        /// 반경, and both sides of it. Not ArrivalOrder.Radius compared with
-        /// World.ArrivalRadius, which is the same expression twice: the rings
+        /// 반경, and both sides of it. Not ArrivalOrder.RadiusFor compared with
+        /// World.ArrivalRadiusFor, which is the same expression twice: the rings
         /// MatchView draws are this number, so what has to hold is that a point on
         /// the ring is a point the simulation arrives at and a point outside it is
         /// not.
@@ -121,15 +121,15 @@ namespace WordCraft.Replay
             World world = Anchored(carrier);
             FixVec2 anchor = world.GetEntity(Pillar).Position;
 
-            var onTheRing = new FixVec2(anchor.X + ArrivalOrder.Radius, anchor.Y);
-            var justOutside = new FixVec2(anchor.X + ArrivalOrder.Radius + Fix.Ratio(1, 16), anchor.Y);
+            var onTheRing = new FixVec2(anchor.X + ArrivalOrder.RadiusFor(world, 0), anchor.Y);
+            var justOutside = new FixVec2(anchor.X + ArrivalOrder.RadiusFor(world, 0) + Fix.Ratio(1, 16), anchor.Y);
 
             Check(world.ArrivalValid(0, onTheRing),
                 "a point on the ring the view draws around the " + what + " is refused by the " +
-                "simulation: ArrivalOrder.Radius reaches further than World.ArrivalRadius");
+                "simulation: ArrivalOrder.RadiusFor reaches further than World.ArrivalRadiusFor");
             Check(!world.ArrivalValid(0, justOutside),
                 "a point a sixteenth of a cell outside the ring the view draws around the " + what +
-                " is still arrived at: ArrivalOrder.Radius falls short of World.ArrivalRadius");
+                " is still arrived at: ArrivalOrder.RadiusFor falls short of World.ArrivalRadiusFor");
         }
 
         // 차원 유랑종 조준 픽스처. Both peers arrive, so the enemy's own 통로 is a
@@ -255,9 +255,9 @@ namespace WordCraft.Replay
             FixVec2 pillar = measure.GetEntity(Pillar).Position;
 
             Arrives("three cells inside the ring", At(33, 30));
-            Arrives("exactly on the ring", new FixVec2(pillar.X + ArrivalOrder.Radius, pillar.Y));
+            Arrives("exactly on the ring", new FixVec2(pillar.X + ArrivalOrder.RadiusFor(measure, 0), pillar.Y));
             Arrives("a sixteenth of a cell outside the ring",
-                new FixVec2(pillar.X + ArrivalOrder.Radius + Fix.Ratio(1, 16), pillar.Y));
+                new FixVec2(pillar.X + ArrivalOrder.RadiusFor(measure, 0) + Fix.Ratio(1, 16), pillar.Y));
             Arrives("far from every anchor", At(5, 50));
             Arrives("off the west edge", new FixVec2(Fix.FromInt(-1), At(30, 30).Y));
             Arrives("off the east edge", new FixVec2(Fix.FromInt(World.GridSize), At(30, 30).Y));
@@ -345,7 +345,11 @@ namespace WordCraft.Replay
             var into = new List<int>();
             ArrivalOrder.Anchors(world, 0, into);
             bool drawn = into.Contains(id);
-            bool covers = world.ArrivalValid(0, world.GetEntity(id).Position);
+            // One cell east of the body rather than on it: since #197 a walking
+            // body may not stand up on a cell a building stands on, so the anchor's
+            // own cell answers no for a 굴절 기둥 whatever its ring says.
+            FixVec2 beside = world.GetEntity(id).Position + new FixVec2(Fix.FromInt(1), Fix.Zero);
+            bool covers = world.ArrivalValid(0, beside);
 
             Check(drawn == covers,
                 what + ": the client draws a ring = " + drawn +

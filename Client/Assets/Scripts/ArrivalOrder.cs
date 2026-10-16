@@ -40,11 +40,21 @@ namespace WordCraft.View
         public static bool Available(Faction faction) => faction == World.PassageFaction;
 
         /// <summary>
-        /// 반경, straight off the simulation. The rings MatchView draws are this
-        /// number and nothing else, so a radius retuned in Sim moves the drawing
-        /// with it.
+        /// 반경, straight off the simulation: the base one, which is the radius of
+        /// a peer that has not researched 도착 반경. Nothing in the view draws it
+        /// any more: MatchView's rings read <see cref="RadiusFor"/>. It stays as the
+        /// base radius Replay/ResearchMenuChecks.cs compares the researched one
+        /// against; delete it with that comparison.
         /// </summary>
         public static Fix Radius => World.ArrivalRadius;
+
+        /// <summary>
+        /// 반경 for this peer, straight off <see cref="World.ArrivalRadiusFor"/>:
+        /// the base radius, or the wider one once 도착 반경 is researched. What a
+        /// ring drawn for a peer's anchors is (MatchView.Arrival), because it is
+        /// what the simulation's own check uses (ArrivalValid) for that peer.
+        /// </summary>
+        public static Fix RadiusFor(World world, int peer) => world.ArrivalRadiusFor(peer);
 
         /// <summary>
         /// Whether this selected body is one that keeps an arrival point: a live

@@ -15,10 +15,14 @@ namespace WordCraft.View
     ///
     ///   - five of the scripted match: the home base, the lane and its high
     ///     ground, the whole map, a close-up of bodies, the flank;
-    ///   - lineup-&lt;faction&gt;: every roster entry of one faction in a row;
-    ///   - strip-&lt;faction&gt;-&lt;motion&gt;: up to four bodies doing one motion,
-    ///     eight frames across 0.9 seconds side by side, so an animation can be
-    ///     judged from one still image.
+    ///   - lineup-&lt;faction&gt;: every roster entry of one faction in a row,
+    ///     and lineup-&lt;faction&gt;-units and -buildings: the same row split in
+    ///     two, so each body is twice the size;
+    ///   - strip-&lt;faction&gt;-&lt;motion&gt;: four bodies (three buildings)
+    ///     doing one motion, eight frames across 0.9 seconds side by side, so
+    ///     an animation can be judged from one still image. A faction with more
+    ///     rows than one page holds gets -2, -3 pages after the first, so every
+    ///     row is seen.
     ///
     ///   Unity -batchmode -quit -projectPath Client \
     ///         -executeMethod WordCraft.View.ViewShots.Run \
@@ -53,17 +57,29 @@ namespace WordCraft.View
             string output = Arg("-shotsOutput");
             if (string.IsNullOrEmpty(output)) output = "shots";
             int ticks = int.TryParse(Arg("-shotsTicks"), out int parsed) ? parsed : 900;
+            only = Arg("-shotsOnly");
 
             try
             {
                 Directory.CreateDirectory(output);
-                World world = Advance(ticks);
-                Shoot(world, output);
-                int lineups = Lineups(output);
+                Known();
+                int fields = 0;
+                if (Wanted("field"))
+                {
+                    World world = Advance(ticks);
+                    Shoot(world, output);
+                    fields = Shots.Length;
+                }
+                int lineups = Wanted("lineup") ? Lineups(output) : 0;
                 int strips = Strips(output);
-                int matches = MatchStrips(output);
-                Debug.Log("OK: " + (Shots.Length + lineups + strips + matches) + " shots written to " + Path.GetFullPath(output) +
-                          " (" + Shots.Length + " field, " + lineups + " lineup, " + strips + " strip, " + matches + " match strip)");
+                int matches = Wanted("match") ? MatchStrips(output) : 0;
+                int statuses = Wanted("status") ? StatusStrips(output) : 0;
+                int chains = Wanted("chain") ? ChainStrips(output) : 0;
+                int casts = Wanted("cast") ? CastStrips(output) : 0;
+                if (Wanted("field")) casts += FieldStrips(output);
+                Debug.Log("OK: " + (fields + lineups + strips + matches + statuses + chains + casts) + " shots written to " + Path.GetFullPath(output) +
+                          " (" + fields + " field, " + lineups + " lineup, " + strips + " strip, " + matches + " match strip, " +
+                          statuses + " status strip, " + chains + " chain strip, " + casts + " cast strip)");
                 EditorApplication.Exit(0);
             }
             catch (Exception e)
@@ -75,6 +91,44 @@ namespace WordCraft.View
             {
                 ViewClock.Release();
             }
+        }
+
+        /// <summary>
+        /// -shotsOnly: a comma-separated list of the kinds to write — field,
+        /// lineup, match, or a strip motion such as build — so one motion can be
+        /// looked at again without rendering all of them. Everything when absent.
+        /// </summary>
+        private static string only;
+
+        /// <summary>
+        /// Refuses a -shotsOnly kind that names nothing, so a typo fails the run
+        /// rather than writing no shots and printing OK.
+        /// </summary>
+        private static void Known()
+        {
+            if (string.IsNullOrEmpty(only)) return;
+            foreach (string part in only.Split(','))
+            {
+                string kind = part.Trim();
+                bool known = kind == "field" || kind == "lineup" || kind == "match" || kind == "growth" ||
+                             kind == "status" || kind == "chain" || kind == "cast" ||
+                             Array.IndexOf(Motions, kind) >= 0 || Array.IndexOf(BuildingMotions, kind) >= 0;
+                if (!known)
+                {
+                    throw new ArgumentException("-shotsOnly names '" + kind + "', which is no kind of shot. Kinds: field, lineup, match, growth, status, chain, cast, " +
+                                                string.Join(", ", Motions) + ", " + string.Join(", ", BuildingMotions));
+                }
+            }
+        }
+
+        private static bool Wanted(string kind)
+        {
+            if (string.IsNullOrEmpty(only)) return true;
+            foreach (string part in only.Split(','))
+            {
+                if (part.Trim() == kind) return true;
+            }
+            return false;
         }
 
         /// <summary>The scripted match, some way in, so there is something on the field to look at.</summary>
@@ -152,8 +206,6 @@ namespace WordCraft.View
             for (int f = 0; f < FactionData.FactionCount; f++)
             {
                 var faction = (Faction)f;
-                World world = Empty(faction);
-
                 var entries = new List<(Role Role, int Slot)>();
                 for (int r = 1; r < FactionData.RoleCount; r++)
                 {
@@ -165,32 +217,41 @@ namespace WordCraft.View
                     }
                 }
 
-                float span = -LineupGap;
-                foreach (var entry in entries) span += MatchView.Cells(entry.Role) + LineupGap;
-                float x = World.GridSize * 0.5f - span * 0.5f;
-                foreach (var entry in entries)
-                {
-                    float width = MatchView.Cells(entry.Role);
-                    Spawn(world, entry.Role, entry.Slot, new Vector2(x + width * 0.5f, Row));
-                    x += width + LineupGap;
-                }
-
-                using (var studio = new Studio(world, LineupWidth, LineupHeight))
-                {
-                    List<BodyRig> rigs = Dress(world, studio.Root.transform);
-                    for (int i = 0; i < rigs.Count; i++)
-                    {
-                        if (world.GetEntity(i).Kind != EntityKind.Building) Turn(rigs[i], FacingYaw);
-                    }
-                    Settle(rigs);
-
-                    Frame(studio, new Vector2(World.GridSize * 0.5f, Row + 1.2f), span + 4f, 0f);
-                    studio.Render(0);
-                    studio.Write(Path.Combine(output, "lineup-" + Slug(faction) + ".png"));
-                    written++;
-                }
+                Lineup(output, faction, "", entries);
+                Lineup(output, faction, "-units", entries.FindAll(entry => !FactionData.IsBuilding(entry.Role)));
+                Lineup(output, faction, "-buildings", entries.FindAll(entry => FactionData.IsBuilding(entry.Role)));
+                written += 3;
             }
             return written;
+        }
+
+        /// <summary>One lineup shot: these entries of one faction standing in a row, named lineup-faction plus suffix.</summary>
+        private static void Lineup(string output, Faction faction, string suffix, List<(Role Role, int Slot)> entries)
+        {
+            World world = Empty(faction);
+            float span = -LineupGap;
+            foreach (var entry in entries) span += MatchView.Cells(entry.Role) + LineupGap;
+            float x = World.GridSize * 0.5f - span * 0.5f;
+            foreach (var entry in entries)
+            {
+                float width = MatchView.Cells(entry.Role);
+                Spawn(world, entry.Role, entry.Slot, new Vector2(x + width * 0.5f, Row));
+                x += width + LineupGap;
+            }
+
+            using (var studio = new Studio(world, LineupWidth, LineupHeight))
+            {
+                List<BodyRig> rigs = Dress(world, studio.Root.transform);
+                for (int i = 0; i < rigs.Count; i++)
+                {
+                    if (world.GetEntity(i).Kind != EntityKind.Building) Turn(rigs[i], FacingYaw);
+                }
+                Settle(rigs);
+
+                Frame(studio, new Vector2(World.GridSize * 0.5f, Row + 1.2f), span + 4f, 0f);
+                studio.Render(0);
+                studio.Write(Path.Combine(output, "lineup-" + Slug(faction) + suffix + ".png"));
+            }
         }
 
         // ------------------------------------------------------------------
@@ -236,6 +297,44 @@ namespace WordCraft.View
         /// </summary>
         private static readonly string[] Motions = { "walk", "attack", "hit", "death", "idle", "spawn", "tower" };
 
+        /// <summary>
+        /// The building motions of issue #186, each over three buildings of one
+        /// faction: a site assembling, a building at work, a building razed.
+        /// </summary>
+        private static readonly string[] BuildingMotions = { "build", "work", "destroy", "sitedestroy" };
+
+        /// <summary>
+        /// How far built a sitedestroy strip's sites are: halfway, so the fall
+        /// starts from a pose with parts still missing and parts still rising.
+        /// </summary>
+        private const float SiteDestroyProgress = 0.5f;
+
+        /// <summary>
+        /// How long a sitedestroy strip's sites stand after Die before they
+        /// fall: the hold a tracer still in the air puts on a death in MatchView.
+        /// </summary>
+        private const float HeldDeath = 0.25f;
+
+        /// <summary>
+        /// How long a build strip takes to go from nothing to finished: six of the
+        /// seven frame gaps, so the last frame shows the settle and the dust ring
+        /// rather than the instant of completion.
+        /// </summary>
+        private const float BuildSeconds = StripSeconds * 6f / 7f;
+
+        /// <summary>Cells between two buildings' footprints in a building strip.</summary>
+        private const float BuildingGap = 1.6f;
+
+        /// <summary>
+        /// When a work strip's base and production building deliver a unit:
+        /// just before frame 3, so frames 4 and 5 hold the swell, the lean and
+        /// the unit coming up.
+        /// </summary>
+        private const float DeliverAt = 0.36f;
+
+        /// <summary>Where a delivered unit stands up: toward the camera and to the right of its building, at its door.</summary>
+        private const float DoorYaw = 135f;
+
         private static int Strips(string output)
         {
             int written = 0;
@@ -248,25 +347,46 @@ namespace WordCraft.View
                 foreach (string motion in Motions)
                 {
                     List<(Role Role, int Slot)> cast = motion == "tower" ? towers : walkers;
-                    if (cast.Count == 0) continue;
-                    Strip(output, faction, motion, cast);
-                    written++;
+                    if (cast.Count == 0 || !Wanted(motion)) continue;
+                    // Four bodies a page, so each stays as large as before.
+                    for (int page = 0; page * StripCast < cast.Count; page++)
+                    {
+                        int count = Math.Min(StripCast, cast.Count - page * StripCast);
+                        Strip(output, faction, motion, cast.GetRange(page * StripCast, count), page == 0 ? "" : "-" + (page + 1));
+                        written++;
+                    }
                 }
 
                 List<(Role Role, int Slot)> growth = Growths(faction);
-                if (growth.Count > 0)
+                if (growth.Count > 0 && Wanted("growth"))
                 {
                     Strip(output, faction, "growth", growth);
                     written++;
+                }
+
+                foreach (string motion in BuildingMotions)
+                {
+                    List<(Role Role, int Slot)> cast = Buildings(faction, motion);
+                    if (cast.Count == 0 || !Wanted(motion)) continue;
+                    // Three buildings a page: the first page is the one it always was.
+                    for (int page = 0; page * BuildingCast < cast.Count; page++)
+                    {
+                        int count = Math.Min(BuildingCast, cast.Count - page * BuildingCast);
+                        Strip(output, faction, motion, cast.GetRange(page * BuildingCast, count), page == 0 ? "" : "-" + (page + 1));
+                        written++;
+                    }
                 }
             }
             return written;
         }
 
+        /// <summary>Bodies on one strip page.</summary>
+        private const int StripCast = 4;
+
         /// <summary>
-        /// Up to four bodies that walk, for the motion strips: entry 0 of every
-        /// fighting role first, so the strip shows as many gaits and strikes as
-        /// the faction has, then the extras, then the worker.
+        /// Every body that walks, for the motion strips: entry 0 of every
+        /// fighting role first, so the first page shows as many gaits and strikes
+        /// as the faction has, then the extras, then the worker.
         /// </summary>
         private static List<(Role Role, int Slot)> Walkers(Faction faction)
         {
@@ -285,7 +405,6 @@ namespace WordCraft.View
                 }
             }
             if (FactionData.Has(faction, Role.Worker, 0)) list.Add((Role.Worker, 0));
-            if (list.Count > 4) list.RemoveRange(4, list.Count - 4);
             return list;
         }
 
@@ -308,34 +427,95 @@ namespace WordCraft.View
             return list;
         }
 
-        /// <summary>Every defense entry: the buildings that turn, fire and kick.</summary>
+        /// <summary>Buildings on one building strip page.</summary>
+        private const int BuildingCast = 3;
+
+        /// <summary>
+        /// Entry 0 of the base, the production building, and a third: the
+        /// defense building for build and destroy, the tech building for work,
+        /// because a defense building never queues or researches anything.
+        /// Then every other entry of the production, defense and tech slots,
+        /// so every building is seen going up, at work and coming down; work
+        /// leaves out the defenses for the same reason.
+        /// </summary>
+        private static List<(Role Role, int Slot)> Buildings(Faction faction, string motion)
+        {
+            var list = new List<(Role Role, int Slot)>();
+            bool work = motion == "work";
+            Role[] roles = { Role.Base, Role.Production, work ? Role.Tech : Role.Defense };
+            foreach (Role role in roles)
+            {
+                if (FactionData.Has(faction, role, 0)) list.Add((role, 0));
+            }
+            Role[] extras = work ? new[] { Role.Production, Role.Tech } : new[] { Role.Production, Role.Defense, Role.Tech };
+            foreach (Role role in extras)
+            {
+                int slots = FactionData.SlotCount(faction, role);
+                for (int slot = role == Role.Tech && !work ? 0 : 1; slot < slots; slot++)
+                {
+                    if (FactionData.Has(faction, role, slot)) list.Add((role, slot));
+                }
+            }
+            return list;
+        }
+
+        private static bool IsBuildingMotion(string motion) => Array.IndexOf(BuildingMotions, motion) >= 0;
+
+        /// <summary>Construction progress a build strip shows <paramref name="since"/> seconds after it starts.</summary>
+        private static float BuildAt(float since) => Mathf.Clamp01(since / BuildSeconds);
+
+        /// <summary>
+        /// Every defense entry that has a weapon: the buildings that turn, fire
+        /// and kick. A defense with no weapon (잠듦의 고리) never fires, so a
+        /// strip of firing would show a motion it does not have.
+        /// </summary>
         private static List<(Role Role, int Slot)> Towers(Faction faction)
         {
             var list = new List<(Role Role, int Slot)>();
             int slots = FactionData.SlotCount(faction, Role.Defense);
             for (int slot = 0; slot < slots; slot++)
             {
-                if (FactionData.Has(faction, Role.Defense, slot)) list.Add((Role.Defense, slot));
+                if (FactionData.Has(faction, Role.Defense, slot) && FactionData.Stats(faction, Role.Defense, slot).HasWeapon) list.Add((Role.Defense, slot));
             }
             return list;
         }
 
-        private static void Strip(string output, Faction faction, string motion, List<(Role Role, int Slot)> cast)
+        private static void Strip(string output, Faction faction, string motion, List<(Role Role, int Slot)> cast, string page = "")
         {
             World world = Empty(faction);
             bool towers = motion == "tower";
             // A growth strip's cast is worker and grown body in pairs, and each
             // pair stands on one spot: the grown body replaces the worker there.
             bool growth = motion == "growth";
+            bool buildings = IsBuildingMotion(motion);
             int places = growth ? cast.Count / 2 : cast.Count;
             float spacing = towers ? 4.5f : growth ? StripSpacing * 1.4f : StripSpacing;
             float left = World.GridSize * 0.5f - (places - 1) * spacing * 0.5f;
             var homes = new List<Vector2>(cast.Count);
-            for (int i = 0; i < cast.Count; i++)
+            if (buildings)
             {
-                var home = new Vector2(left + (growth ? i / 2 : i) * spacing, Row);
-                Spawn(world, cast[i].Role, cast[i].Slot, home);
-                homes.Add(home);
+                // Footprint by footprint, as a lineup stands, since a base is
+                // half again as wide as the defense beside it.
+                float span = -BuildingGap;
+                foreach (var entry in cast) span += MatchView.Cells(entry.Role) + BuildingGap;
+                float x = World.GridSize * 0.5f - span * 0.5f;
+                for (int i = 0; i < cast.Count; i++)
+                {
+                    float width = MatchView.Cells(cast[i].Role);
+                    var home = new Vector2(x + width * 0.5f, Row);
+                    Spawn(world, cast[i].Role, cast[i].Slot, home);
+                    homes.Add(home);
+                    x += width + BuildingGap;
+                }
+            }
+            else
+            {
+                for (int i = 0; i < cast.Count; i++)
+                {
+                    var home = new Vector2(left + (growth ? i / 2 : i) * spacing, Row);
+                    Spawn(world, cast[i].Role, cast[i].Slot, home);
+                    homes.Add(home);
+                }
             }
 
             using (var studio = new Studio(world, FrameWidth * Frames, FrameHeight, FrameWidth, FrameHeight))
@@ -345,14 +525,23 @@ namespace WordCraft.View
                 var speeds = new float[rigs.Count];
                 for (int i = 0; i < rigs.Count; i++)
                 {
-                    if (!towers) Turn(rigs[i], FacingYaw);
+                    rigs[i].Use(effects);
+                    if (!towers && !buildings) Turn(rigs[i], FacingYaw);
                     if (growth && i % 2 == 1) rigs[i].Spawn(1e6f); // not there until the worker has swelled
+                    if (motion == "build") rigs[i].Progress(0f); // a bare site through the preroll
+                    if (motion == "sitedestroy") rigs[i].Progress(SiteDestroyProgress);
+                    if (motion == "work") rigs[i].Work(true);   // at work through the preroll, so motes are already up
                     // Fix is cells a tick; a strip walks at the roster's own pace.
                     speeds[i] = FactionData.Stats(faction, cast[i].Role, cast[i].Slot).Speed.Raw / (float)Fix.One * World.TicksPerSecond;
                 }
 
                 float now = StartSeconds - PrerollSeconds;
                 var shot = new Shooting { World = world, Faction = faction, Cast = cast, Effects = effects };
+                if (motion == "work")
+                {
+                    Deliveries(studio.Root.transform, faction, cast, rigs, homes, shot);
+                    Array.Resize(ref speeds, rigs.Count);
+                }
                 // An attack starts a moment before frame 0, so frame 0 holds its
                 // wind-up rather than the rest pose the wind-up starts from.
                 float lead = motion == "attack" ? AttackLead : 0f;
@@ -372,7 +561,7 @@ namespace WordCraft.View
                     studio.Render(frame * FrameWidth);
                 }
 
-                studio.Write(Path.Combine(output, "strip-" + Slug(faction) + "-" + motion + ".png"));
+                studio.Write(Path.Combine(output, "strip-" + Slug(faction) + "-" + motion + page + ".png"));
             }
         }
 
@@ -407,6 +596,12 @@ namespace WordCraft.View
                     case "spawn":
                         rigs[i].Spawn();
                         break;
+                    case "destroy":
+                        rigs[i].Die(false);
+                        break;
+                    case "sitedestroy":
+                        rigs[i].Die(false, HeldDeath);
+                        break;
                 }
             }
         }
@@ -419,6 +614,42 @@ namespace WordCraft.View
             public Faction Faction;
             public List<(Role Role, int Slot)> Cast;
             public Effects Effects;
+            /// <summary>Per rig in a work strip: the rig of the unit it delivers, or -1.</summary>
+            public readonly List<int> Delivers = new List<int>();
+        }
+
+        /// <summary>
+        /// The units a work strip's base and production building put out: a
+        /// worker from the base, the first melee entry (or a worker) from the
+        /// production building, standing at the door and not yet there. Added
+        /// after the buildings, so rig i is still entity i for every building.
+        /// </summary>
+        private static void Deliveries(Transform parent, Faction faction, List<(Role Role, int Slot)> cast,
+                                       List<BodyRig> rigs, List<Vector2> homes, Shooting shot)
+        {
+            int buildings = rigs.Count;
+            for (int i = 0; i < buildings; i++) shot.Delivers.Add(-1);
+            for (int i = 0; i < buildings; i++)
+            {
+                Role made = cast[i].Role == Role.Production && FactionData.Has(faction, Role.Melee, 0) ? Role.Melee
+                          : cast[i].Role == Role.Base || cast[i].Role == Role.Production ? Role.Worker
+                          : Role.None;
+                if (made == Role.None) continue;
+
+                EntityKind kind = made == Role.Worker ? EntityKind.Worker : EntityKind.Unit;
+                BodyRig unit = Models.Build(parent, faction, made, 0, kind, 0, neutral: false);
+                float radians = DoorYaw * Mathf.Deg2Rad;
+                float reach = MatchView.Cells(cast[i].Role) * 0.5f + 0.7f;
+                Vector2 door = homes[i] + new Vector2(Mathf.Sin(radians), Mathf.Cos(radians)) * reach;
+                unit.Show(true);
+                unit.Place(Field.At(door));
+                Turn(unit, DoorYaw);
+                unit.Spawn(1e6f); // not there until it is delivered
+                shot.Delivers[i] = rigs.Count;
+                shot.Delivers.Add(-1);
+                rigs.Add(unit);
+                homes.Add(door);
+            }
         }
 
         /// <summary>
@@ -469,6 +700,12 @@ namespace WordCraft.View
                     Vector2 at = homes[i];
                     if (motion == "walk" && since > 0f) at += Walk(since, speeds[i]);
                     rigs[i].Place(Field.At(at));
+                    if (motion == "build") rigs[i].Progress(BuildAt(since));
+                    if (motion == "work" && since >= DeliverAt && since - step < DeliverAt && shot.Delivers[i] >= 0)
+                    {
+                        rigs[i].Deliver(DoorYaw);
+                        rigs[shot.Delivers[i]].Spawn();
+                    }
 
                     if (motion == "tower")
                     {
@@ -517,11 +754,12 @@ namespace WordCraft.View
                 Include(ref min, ref max, homes[i]);
                 if (motion == "walk") Include(ref min, ref max, homes[i] + Walk(WalkSeconds, speeds[i]));
             }
-            float margin = motion == "tower" ? 3f : 2.2f;
+            bool buildings = IsBuildingMotion(motion);
+            float margin = motion == "tower" ? 3f : buildings ? 3.4f : 2.2f;
             width = max.x - min.x + margin * 2f;
             // Pushed away from the camera by about a body's height, so the frame
             // centres on the bodies rather than on the ground at their feet.
-            return new Vector2((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f + 1.8f);
+            return new Vector2((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f + (buildings ? 1.4f : 1.8f));
         }
 
         private static void Include(ref Vector2 min, ref Vector2 max, Vector2 p)
@@ -562,15 +800,141 @@ namespace WordCraft.View
         {
             List<Command>[] log = ScriptedLog.Build();
             Moments(log, out int shotTick, out Vector2 shotAt, out int killTick, out Vector2 killAt,
-                    out int spawnTick, out Vector2 spawnAt);
+                    out int spawnTick, out Vector2 spawnAt, out int finishTick, out Vector2 finishAt);
+            int razeTick = Razed(out Vector2 razeAt);
             Debug.Log("match strips: first ranged shot at tick " + shotTick + ", first unit death at tick " + killTick +
-                      ", first produced unit at tick " + spawnTick);
+                      ", first produced unit at tick " + spawnTick + ", first site finished at tick " + finishTick +
+                      ", siege razes the building at tick " + razeTick);
 
             int written = 0;
             if (shotTick >= 0) { MatchStrip(output, "fight", log, shotTick, shotAt); written++; }
             if (killTick >= 0) { MatchStrip(output, "kill", log, killTick, killAt); written++; }
             if (spawnTick >= 0) { MatchStrip(output, "spawn", log, spawnTick, spawnAt); written++; }
+            if (finishTick >= 0) { MatchStrip(output, "build", log, finishTick, finishAt); written++; }
+            if (razeTick >= 0) { MatchStrip(output, "raze", NoLog, razeTick, razeAt, Siege, SiegeCells, SiegeTicksPerFrame); written++; }
+
+            // 상태 이상과 오라 (issue #206), only if the scripted log ever sets one off.
+            int statusTick = StatusMoment(log, out Vector2 statusAt, out string what);
+            Debug.Log(statusTick >= 0
+                ? "match strips: first status effect (" + what + ") at tick " + statusTick
+                : "match strips: the scripted log sets off no slow, burn, heal or chain; no strip-match-status");
+            if (statusTick >= 0) { MatchStrip(output, "status", log, statusTick, statusAt); written++; }
             return written;
+        }
+
+        /// <summary>
+        /// The first tick the scripted log sets off anything issue #206 draws:
+        /// a body slowed or burning, a heal (hp up with MaxHp unchanged, and
+        /// not a site, nor one that finished this tick), or a shot by a body holding an unlocked chain row. Read as
+        /// MatchView reads them. -1 when there is none.
+        /// </summary>
+        private static int StatusMoment(List<Command>[] log, out Vector2 at, out string what)
+        {
+            at = Vector2.zero;
+            what = null;
+            World world = Scripted();
+            var hp = new List<int>();
+            var top = new List<int>();
+            var sites = new List<int>();
+            var cooldowns = new List<int>();
+            for (int t = 0; t < log.Length; t++)
+            {
+                world.Step(log[t]);
+                for (int i = 0; i < world.EntityCount; i++)
+                {
+                    Entity e = world.GetEntity(i);
+                    if (i >= hp.Count)
+                    {
+                        hp.Add(e.Hp);
+                        top.Add(e.MaxHp);
+                        sites.Add(e.BuildTicksLeft);
+                        cooldowns.Add(e.AttackCooldown);
+                        continue;
+                    }
+                    if (e.Alive && e.SlowTicksLeft > 0) what = "slow";
+                    else if (e.Alive && e.BurnTicksLeft > 0) what = "burn";
+                    else if (e.Alive && e.Hp > hp[i] && e.MaxHp == top[i] && sites[i] == 0 && e.BuildTicksLeft == 0) what = "heal";
+                    else if (e.Owner >= 0 && e.AttackCooldown > cooldowns[i])
+                    {
+                        int row = FactionData.AbilityOf(world.FactionOf(e.Owner), e.Role, e.Slot, AbilityKind.ChainOnHit);
+                        if (row >= 0 && world.AbilityUnlocked(e.Owner, FactionData.AbilityRowAt(row))) what = "chain";
+                    }
+                    hp[i] = e.Hp;
+                    top[i] = e.MaxHp;
+                    sites[i] = e.BuildTicksLeft;
+                    cooldowns[i] = e.AttackCooldown;
+                    if (what != null)
+                    {
+                        at = MatchRunner.ToView(e.Position);
+                        return world.Tick;
+                    }
+                }
+            }
+            return -1;
+        }
+
+        private static readonly List<Command>[] NoLog = new List<Command>[0];
+
+        /// <summary>Where the siege's building is put, mid map. The world may stand it a little elsewhere; the strip reads where.</summary>
+        private static readonly Vector2 SiegeAt = new Vector2(32f, 32f);
+
+        /// <summary>Cells across a siege strip's frame: closer than a fight's, so the building is the subject.</summary>
+        private const float SiegeCells = 9f;
+
+        /// <summary>How many 지옥불 ranged units besiege it.</summary>
+        private const int SiegeShooters = 4;
+
+        /// <summary>
+        /// Ticks between two frames of a siege strip: eight frames cover 1.4 s,
+        /// the tracer's flight that holds the fall back and the 0.8 s fall.
+        /// </summary>
+        private const int SiegeTicksPerFrame = 4;
+
+        /// <summary>
+        /// The scripted log never razes a building, so the raze is seen through
+        /// MatchView in a siege of its own (issue #186): a fresh map, peer 1's
+        /// finished 풀씨 둥지 (세계수 정령 production), and four of peer 0's
+        /// 지옥불 ranged standing either side of it with nothing to do but find
+        /// it. Peer 0 is the local peer, so the fog is the attackers'.
+        ///
+        /// Finished, not a site: ConstructionSystem sets a site's hp from its
+        /// progress every tick, so damage short of the whole ramp in one tick is
+        /// undone, and a site only falls to a burst in its first few percent. A
+        /// half-built site falling is the sitedestroy strip, driven directly.
+        /// </summary>
+        private static World Siege()
+        {
+            var world = new World(new WordCraft.Net.MatchConfig().Seed);
+            world.SetPeerFaction(0, Faction.Hellfire);
+            world.SetPeerFaction(1, Faction.TreeSpirits);
+            world.SpawnBuilding(1, Role.Production, 0, MatchRunner.ToSim(SiegeAt), complete: true);
+            // Shooters, either side of it as the camera looks and out of reach
+            // of a swing: melee crowd onto the building and hide it, a shooter
+            // behind it hovers over it on screen, and a shot is what the real
+            // path delays a death for.
+            Vector2 home = MatchRunner.ToView(world.GetEntity(0).Position);
+            for (int k = 0; k < SiegeShooters; k++)
+            {
+                float side = k % 2 == 0 ? 1f : -1f;
+                float around = side * (80f + (k / 2) * 20f) * Mathf.Deg2Rad;
+                Vector2 at = home + new Vector2(Mathf.Sin(around), Mathf.Cos(around)) * 4.5f;
+                world.SpawnUnit(0, Role.Ranged, 0, MatchRunner.ToSim(at));
+            }
+            return world;
+        }
+
+        /// <summary>The tick the siege's building dies, or -1 if it stands for a minute.</summary>
+        private static int Razed(out Vector2 at)
+        {
+            World world = Siege();
+            at = MatchRunner.ToView(world.GetEntity(0).Position);
+            var idle = new List<Command>();
+            for (int t = 0; t < 60 * World.TicksPerSecond; t++)
+            {
+                world.Step(idle);
+                if (!world.GetEntity(0).Alive) return world.Tick;
+            }
+            return -1;
         }
 
         private static World Scripted() =>
@@ -583,17 +947,20 @@ namespace WordCraft.View
         /// an id appearing.
         /// </summary>
         private static void Moments(List<Command>[] log, out int shotTick, out Vector2 shotAt,
-                                    out int killTick, out Vector2 killAt, out int spawnTick, out Vector2 spawnAt)
+                                    out int killTick, out Vector2 killAt, out int spawnTick, out Vector2 spawnAt,
+                                    out int finishTick, out Vector2 finishAt)
         {
-            shotTick = killTick = spawnTick = -1;
-            shotAt = killAt = spawnAt = Vector2.zero;
+            shotTick = killTick = spawnTick = finishTick = -1;
+            shotAt = killAt = spawnAt = finishAt = Vector2.zero;
             World world = Scripted();
             var cooldowns = new List<int>();
             var alive = new List<bool>();
+            var sites = new List<int>();
             for (int i = 0; i < world.EntityCount; i++)
             {
                 cooldowns.Add(world.GetEntity(i).AttackCooldown);
                 alive.Add(world.GetEntity(i).Alive);
+                sites.Add(world.GetEntity(i).BuildTicksLeft);
             }
 
             for (int t = 0; t < log.Length; t++)
@@ -606,6 +973,7 @@ namespace WordCraft.View
                     {
                         cooldowns.Add(e.AttackCooldown);
                         alive.Add(e.Alive);
+                        sites.Add(e.BuildTicksLeft);
                         if (spawnTick < 0 && e.Kind == EntityKind.Unit)
                         {
                             spawnTick = world.Tick;
@@ -626,28 +994,40 @@ namespace WordCraft.View
                         killAt = MatchRunner.ToView(e.Position);
                         Debug.Log("match strips: entity " + i + " (" + e.Role + ", peer " + e.Owner + ") dies at tick " + killTick);
                     }
+                    // A site finishing (issue #186), read the way MatchView reads
+                    // it: BuildTicksLeft reaching zero.
+                    if (finishTick < 0 && e.Kind == EntityKind.Building && e.Alive && sites[i] > 0 && e.BuildTicksLeft == 0)
+                    {
+                        finishTick = world.Tick;
+                        finishAt = MatchRunner.ToView(e.Position);
+                    }
                     cooldowns[i] = e.AttackCooldown;
                     alive[i] = e.Alive;
+                    sites[i] = e.BuildTicksLeft;
                 }
             }
         }
 
-        private static void MatchStrip(string output, string name, List<Command>[] log, int moment, Vector2 focus)
+        private static void MatchStrip(string output, string name, List<Command>[] log, int moment, Vector2 focus,
+                                       Func<World> make = null, float cells = MatchStripCells, int ticksPerFrame = TicksPerFrame,
+                                       string file = null, int[] picked = null)
         {
-            World world = Scripted();
-            int first = moment - TicksPerFrame;
+            World world = make != null ? make() : Scripted();
+            int first = moment - ticksPerFrame;
             int from = Mathf.Max(first - MatchPreroll, 0);
             var idle = new List<Command>();
             while (world.Tick < from) world.Step(world.Tick < log.Length ? log[world.Tick] : idle);
 
             var runnerObject = new GameObject("MatchRunner (shots)");
             MatchRunner runner = runnerObject.AddComponent<MatchRunner>();
+            GameObject selectionObject = null;
             MatchView view = null;
             var target = new RenderTexture(FrameWidth, FrameHeight, 24) { antiAliasing = 4 };
             var image = new Texture2D(FrameWidth * Frames, FrameHeight, TextureFormat.RGB24, mipChain: false);
 
             try
             {
+                if (picked != null) selectionObject = Pick(picked);
                 var seam = new RunnerSeam(runner);
                 seam.Start(world);
                 view = MatchView.Detached(runner);
@@ -667,13 +1047,13 @@ namespace WordCraft.View
                 cam.targetTexture = target;
                 cam.ResetAspect();
                 float halfAcross = Mathf.Tan(CameraRig.FieldOfView * 0.5f * Mathf.Deg2Rad) * (FrameWidth / (float)FrameHeight);
-                CameraRig.Aim(cam, focus + new Vector2(0f, 0.6f), MatchStripCells / (2f * halfAcross), 0f, hud: false);
+                CameraRig.Aim(cam, focus + new Vector2(0f, 0.6f), cells / (2f * halfAcross), 0f, hud: false);
 
                 for (int frame = 0; frame < Frames; frame++)
                 {
                     if (frame > 0)
                     {
-                        for (int k = 0; k < TicksPerFrame; k++)
+                        for (int k = 0; k < ticksPerFrame; k++)
                         {
                             world.Step(world.Tick < log.Length ? log[world.Tick] : idle);
                             seam.Snapshot();
@@ -687,7 +1067,7 @@ namespace WordCraft.View
                 }
 
                 image.Apply();
-                File.WriteAllBytes(Path.Combine(output, "strip-match-" + name + ".png"), image.EncodeToPNG());
+                File.WriteAllBytes(Path.Combine(output, (file ?? "strip-match-" + name) + ".png"), image.EncodeToPNG());
             }
             finally
             {
@@ -704,11 +1084,39 @@ namespace WordCraft.View
                 UnityEngine.Object.DestroyImmediate(target);
                 UnityEngine.Object.DestroyImmediate(image);
                 UnityEngine.Object.DestroyImmediate(runnerObject);
+                if (selectionObject != null)
+                {
+                    SelectionInstance.GetSetMethod(true).Invoke(null, new object[] { null });
+                    UnityEngine.Object.DestroyImmediate(selectionObject);
+                }
                 foreach (Light light in UnityEngine.Object.FindObjectsOfType<Light>())
                 {
                     UnityEngine.Object.DestroyImmediate(light.gameObject);
                 }
             }
+        }
+
+        private static PropertyInfo SelectionInstance =>
+            typeof(Selection).GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)
+            ?? throw new MissingMemberException("Selection", "Instance");
+
+        /// <summary>
+        /// A Selection holding <paramref name="ids"/>, installed as the one
+        /// MatchView asks, so a strip shows what a selected body shows. The
+        /// editor calls none of its lifecycle, and Instance and the list are
+        /// private to it, so reflection, as RunnerSeam does for MatchRunner.
+        /// </summary>
+        private static GameObject Pick(int[] ids)
+        {
+            var go = new GameObject("Selection (shots)");
+            Selection selection = go.AddComponent<Selection>();
+            SelectionInstance.GetSetMethod(true).Invoke(null, new object[] { selection });
+            FieldInfo list = typeof(Selection).GetField("selected", BindingFlags.NonPublic | BindingFlags.Instance)
+                             ?? throw new MissingFieldException("Selection", "selected");
+            var selected = (List<int>)list.GetValue(selection);
+            selected.Clear();
+            selected.AddRange(ids);
+            return go;
         }
 
         /// <summary>
@@ -790,6 +1198,534 @@ namespace WordCraft.View
                                     ?? throw new MissingMemberException("MatchRunner", property);
                 info.GetSetMethod(true).Invoke(runner, new[] { value });
             }
+        }
+
+        // ------------------------------------------------------------------
+        // Status strips: 상태 이상과 오라 through the real MatchView (issue #206)
+        // ------------------------------------------------------------------
+
+        /// <summary>Where a status strip's scene stands, mid map.</summary>
+        private static readonly Vector2 StatusAt = new Vector2(32f, 32f);
+
+        /// <summary>Cells across a status strip's frame: the walkers' lane, the heal group and an aura's ring.</summary>
+        private const float StatusCells = 18f;
+
+        /// <summary>
+        /// Ticks between two frames of a status strip: eight frames cover 1.4 s,
+        /// 28 ticks, which holds two or three burn ticks (every 10) and one heal
+        /// (every 20).
+        /// </summary>
+        private const int StatusTicksPerFrame = 4;
+
+        /// <summary>The tick the walkers are sent: just before the first frame, so the strip opens on them setting off.</summary>
+        private const int StatusWalkTick = 16;
+
+        /// <summary>
+        /// The walker's slow, set at tick 0: runs out at the strip's last frame,
+        /// so the vine ring is seen fading and the walker seen catching up.
+        /// </summary>
+        private const int StatusSlowTicks = MatchPreroll + StatusTicksPerFrame * (Frames - 1);
+
+        /// <summary>The burning body's burn: longer than the strip, so it burns throughout.</summary>
+        private const int StatusBurnTicks = 400;
+
+        /// <summary>
+        /// strip-&lt;faction&gt;-status, one a faction: the real MatchView over a
+        /// scene of its own, peer 0 only. Two of the faction's melee entry 0 set
+        /// off walking right together, the back one slowed (World.SetStatusForScenario);
+        /// a ranged entry 0 burns in front; behind, the faction's healing aura
+        /// source between two allies spawned at two fifths of their hp, and the
+        /// faction's first other aura source. Both sources are selected, so
+        /// their radius rings show. A faction with no healing aura (지옥불 군단,
+        /// 인간) shows the slow, the burn and its aura without the heal.
+        /// </summary>
+        private static int StatusStrips(string output)
+        {
+            int written = 0;
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                World probe = StatusScene(faction, out int[] picked, out List<Command>[] log);
+                // The scene starts where the wounding left it, so the strip counts from there.
+                int start = probe.Tick;
+                MatchStrip(output, "status", log, start + MatchPreroll + StatusTicksPerFrame, StatusAt + new Vector2(0f, -0.2f),
+                           () => StatusScene(faction, out _, out _), StatusCells, StatusTicksPerFrame,
+                           "strip-" + Slug(faction) + "-status", picked);
+                Debug.Log("status strip " + Slug(faction) + ": " + probe.EntityCount + " bodies, " + picked.Length + " selected");
+                written++;
+            }
+            return written;
+        }
+
+        private static World StatusScene(Faction faction, out int[] picked, out List<Command>[] log)
+        {
+            var world = new World(new WordCraft.Net.MatchConfig().Seed);
+            world.SetPeerFaction(0, faction);
+            world.SetPeerFaction(1, faction);
+            var selected = new List<int>();
+
+            // The heal group and the other aura source, behind. The allies go
+            // first and are wounded before anything else stands: a spawned
+            // body's MaxHp is its hp, so an hp override is a weaker body and
+            // not a hurt one, and a scenario burn is the one way to hurt it
+            // (Replay's StatusChecks.Wound). Half their hp, at one a burn tick.
+            int heal = -1, aura = -1;
+            for (int i = 0; i < FactionData.AbilityCount(faction); i++)
+            {
+                AbilityRow row = FactionData.Ability(faction, i);
+                if (row.Kind == AbilityKind.HealAura && heal < 0) heal = i;
+                else if (row.Radius > 0 && aura < 0 && FactionData.IsAura(row.Kind) && row.Kind != AbilityKind.BurnAura) aura = i;
+            }
+            Vector2 source = StatusAt + new Vector2(-3f, 2.5f);
+            if (heal >= 0)
+            {
+                int wound = FactionData.Stats(faction, Role.Ranged, 0).Hp / 2;
+                for (int k = 0; k < 2; k++)
+                {
+                    Vector2 beside = source + new Vector2(k == 0 ? -2f : 2f, -0.4f);
+                    int ally = world.SpawnUnit(0, Role.Ranged, 0, MatchRunner.ToSim(beside));
+                    world.SetStatusForScenario(ally, 0, wound * World.BurnPeriod);
+                }
+                var idle = new List<Command>();
+                for (int t = 0; t < wound * World.BurnPeriod; t++) world.Step(idle);
+                AbilityRow row = FactionData.Ability(faction, heal);
+                selected.Add(Spawn(world, row.Role, row.Slot, source));
+            }
+            if (aura >= 0)
+            {
+                AbilityRow row = FactionData.Ability(faction, aura);
+                selected.Add(Spawn(world, row.Role, row.Slot, StatusAt + new Vector2(heal >= 0 ? 4f : 0f, 2.5f)));
+            }
+            int start = world.Tick;
+
+            // The walkers' lane, in front.
+            Vector2 lane = StatusAt + new Vector2(-4.5f, -1.8f);
+            int slowed = world.SpawnUnit(0, Role.Melee, 0, MatchRunner.ToSim(lane));
+            int fresh = world.SpawnUnit(0, Role.Melee, 0, MatchRunner.ToSim(lane + new Vector2(0f, -1.6f)));
+            world.SetStatusForScenario(slowed, StatusSlowTicks, 0);
+
+            // The burning body, in front on the right.
+            int burning = world.SpawnUnit(0, Role.Ranged, 0, MatchRunner.ToSim(StatusAt + new Vector2(5f, -2.4f)));
+            world.SetStatusForScenario(burning, 0, StatusBurnTicks);
+
+            // The log is indexed by tick, and the scene starts where the wounding left it.
+            int walk = start + StatusWalkTick;
+            log = new List<Command>[walk + 1];
+            for (int t = 0; t < log.Length; t++) log[t] = new List<Command>();
+            // Short of the burning body, so the fresh walker stops before it.
+            Vector2 goal = lane + new Vector2(6f, 0f);
+            log[walk].Add(new Command(walk, 0, 1, CommandType.Move, slowed, MatchRunner.ToSim(goal)));
+            log[walk].Add(new Command(walk, 0, 2, CommandType.Move, fresh, MatchRunner.ToSim(goal + new Vector2(0f, -1.6f))));
+            picked = selected.ToArray();
+            return world;
+        }
+
+        /// <summary>Cells across a chain strip's frame: the shooter and its three targets.</summary>
+        private const float ChainCells = 12f;
+
+        /// <summary>
+        /// strip-&lt;faction&gt;-chain, for each faction with a ChainOnHit row
+        /// (세계수 정령's 번개 정령, 인간's 전기 타워): the real MatchView over a
+        /// scene where peer 0 has researched the chain and its holder stands
+        /// before three of peer 1's unarmed buildings two cells apart, so the
+        /// shot jumps. Eight frames from one tick before a shot, two ticks apart.
+        /// </summary>
+        private static int ChainStrips(string output)
+        {
+            int written = 0;
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                int chain = -1;
+                for (int i = 0; i < FactionData.AbilityCount(faction); i++)
+                {
+                    if (FactionData.Ability(faction, i).Kind == AbilityKind.ChainOnHit) chain = i;
+                }
+                if (chain < 0) continue;
+
+                World world = ChainScene(faction, chain, out int shooter, out Vector2 focus);
+                int start = world.Tick;
+                int moment = -1;
+                int cooldown = world.GetEntity(shooter).AttackCooldown;
+                var idle = new List<Command>();
+                while (world.Tick < start + 20 * World.TicksPerSecond)
+                {
+                    world.Step(idle);
+                    int now = world.GetEntity(shooter).AttackCooldown;
+                    bool fired = now > cooldown;
+                    cooldown = now;
+                    if (fired && world.Tick >= start + MatchPreroll + TicksPerFrame)
+                    {
+                        moment = world.Tick;
+                        break;
+                    }
+                }
+                Debug.Log("chain strip " + Slug(faction) + ": shot at tick " + moment);
+                if (moment < 0) continue;
+
+                MatchStrip(output, "chain", NoLog, moment, focus, () => ChainScene(faction, chain, out _, out _),
+                           ChainCells, TicksPerFrame, "strip-" + Slug(faction) + "-chain");
+                written++;
+            }
+            return written;
+        }
+
+        private static World ChainScene(Faction faction, int chain, out int shooter, out Vector2 focus)
+        {
+            AbilityRow row = FactionData.Ability(faction, chain);
+            var world = new World(new WordCraft.Net.MatchConfig().Seed);
+            world.SetPeerFaction(0, faction);
+            world.SetPeerFaction(1, Faction.Hellfire);
+            if (row.Unlock >= 0) Research(world, row.Unlock);
+
+            Vector2 from = StatusAt + new Vector2(-4f, 0f);
+            shooter = Spawn(world, row.Role, row.Slot, from);
+            Vector2 first = from + new Vector2(3f, 0.5f);
+            // Hops under the rows' two cells: 1.87 and 1.79.
+            Vector2[] targets = { first, first + new Vector2(1.8f, 0.5f), first + new Vector2(3.4f, -0.3f) };
+            foreach (Vector2 at in targets) world.SpawnBuilding(1, Role.Supply, MatchRunner.ToSim(at), complete: true);
+            // A worker of peer 0 behind the targets, for its sight: a tower sees
+            // less far than it shoots, and peer 0's fog is on. A worker never
+            // attacks, so it changes nothing about the shot.
+            world.SpawnWorker(0, MatchRunner.ToSim(targets[1] + new Vector2(0f, 2.6f)));
+            focus = (from + targets[2]) * 0.5f;
+            return world;
+        }
+
+        /// <summary>
+        /// Raises peer 0's upgrade row <paramref name="index"/> to level 1 in a
+        /// corner of the map, as Replay's StatusChecks.Research does: the base,
+        /// production 0, tech 0, the research building and what the row
+        /// requires, finished, then the research run to its end.
+        /// </summary>
+        private static void Research(World world, int index, int y = 3)
+        {
+            Faction faction = world.FactionOf(0);
+            UpgradeRow row = FactionData.Upgrade(faction, index);
+            world.GrantResources(0, 10000);
+            world.SpawnBuilding(0, Role.Base, Corner(3, y), complete: true);
+            world.SpawnBuilding(0, Role.Production, 0, Corner(7, y), complete: true);
+            world.SpawnBuilding(0, Role.Tech, 0, Corner(11, y), complete: true);
+            if (row.Requires.Role != Role.None)
+                world.SpawnBuilding(0, row.Requires.Role, row.Requires.Slot, Corner(19, y), complete: true);
+            int at = world.SpawnBuilding(0, row.ResearchAt.Role, row.ResearchAt.Slot, Corner(15, y), complete: true);
+            world.Step(new List<Command> { new Command(0, 0, 1000 + world.Tick, CommandType.Research, at, FixVec2.Zero, index) });
+            var idle = new List<Command>();
+            for (int t = 0; t < row.Ticks + 1 && world.UpgradeLevel(0, index) == 0; t++) world.Step(idle);
+            if (world.UpgradeLevel(0, index) == 0) throw new InvalidOperationException(row.Name + " research never landed");
+        }
+
+        private static FixVec2 Corner(int x, int y = 3)
+        {
+            Fix half = Fix.Ratio(1, 2);
+            return new FixVec2(Fix.FromInt(x) + half, Fix.FromInt(y) + half);
+        }
+
+        // ------------------------------------------------------------------
+        // Cast strips: 묶음 6·7·8 through the real MatchView (issue #212)
+        // ------------------------------------------------------------------
+
+        /// <summary>One cast strip's scene: the world, its log, and how the strip is taken.</summary>
+        private sealed class CastScene
+        {
+            public World World;
+            public List<Command>[] Log;
+            public Vector2 Focus;
+            public int[] Picked;
+            /// <summary>The tick the strip's second frame lands on, as MatchStrip counts it.</summary>
+            public int Moment;
+            public int TicksPerFrame;
+            public float Cells = CastCells;
+        }
+
+        /// <summary>Cells across a cast strip's frame: a caster and a point up to eight cells off, and the radius round it.</summary>
+        private const float CastCells = 17f;
+
+        /// <summary>Ticks after a cast scene is built before its first order, so the view's preroll sees the field before it changes.</summary>
+        private const int CastLead = 30;
+
+        /// <summary>
+        /// strip-&lt;faction&gt;-cast, one a faction (issue #212): the real
+        /// MatchView over a scene where peer 0 has researched what it needs and
+        /// uses an active on peer 1's workers, who never fight back.
+        ///
+        ///   - 세계수 정령: 칼바람 회오리, chips circling the point and a ring on each hit;
+        ///   - 지옥불 군단: 유성우, the warning ring and the stones coming down;
+        ///   - 물 슬라임: 간헐천 on a field and 해일 부름 landing on the same tick;
+        ///   - 돌 골렘 부족: 모래폭풍, and a 바위 술사 throwing the debris beside it;
+        ///   - 차원 유랑종: no active, so a 멸종한 화염 슬라임 blinking out, its
+        ///     lifetime meter running out and its 화염 분출 going off, beside a
+        ///     멸종한 바위 슬라임 with half its life left;
+        ///   - 인간 마법 문명: 낙뢰, and a selected 견인 대포 deploying, its reach ring growing.
+        /// </summary>
+        private static int CastStrips(string output)
+        {
+            int written = 0;
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                CastScene probe = CastSceneOf(faction);
+                MatchStrip(output, "cast", probe.Log, probe.Moment, probe.Focus, () => CastSceneOf(faction).World,
+                           probe.Cells, probe.TicksPerFrame, "strip-" + Slug(faction) + "-cast", probe.Picked);
+                Debug.Log("cast strip " + Slug(faction) + ": moment at tick " + probe.Moment);
+                written++;
+            }
+            return written;
+        }
+
+        private static CastScene CastSceneOf(Faction faction)
+        {
+            switch (faction)
+            {
+                case Faction.TreeSpirits: return PointCast(faction, AbilityKind.StrikeZone, 10, 4);
+                case Faction.Hellfire: return PointCast(faction, AbilityKind.DelayedStrike, 37, 2);
+                case Faction.WaterSlimes: return GeyserAndTide();
+                case Faction.RockGolems: return SandAndThrow();
+                case Faction.Driftworlds: return SummonsLapsing();
+                default: return LightningAndDeploy();
+            }
+        }
+
+        /// <summary>
+        /// A caster of the faction's row of <paramref name="kind"/> on the left,
+        /// three of peer 1's workers on the point to its right, the cast
+        /// <see cref="CastLead"/> ticks in, and the strip's second frame
+        /// <paramref name="after"/> ticks after the cast.
+        /// </summary>
+        private static CastScene PointCast(Faction faction, AbilityKind kind, int after, int ticksPerFrame)
+        {
+            int index = AbilityIndex(faction, kind);
+            AbilityRow row = FactionData.Ability(faction, index);
+            World world = CastWorld(faction, row.Unlock);
+            Vector2 from = StatusAt + new Vector2(-3f, -1f), point = StatusAt + new Vector2(2.5f, 0.5f);
+            int caster = Spawn(world, row.Role, row.Slot, from);
+            Workers(world, point);
+            var scene = new CastScene { World = world, Focus = (from + point) * 0.5f, TicksPerFrame = ticksPerFrame };
+            int cast = world.Tick + CastLead;
+            scene.Log = Orders(cast, new Command(cast, 0, 1, CommandType.Cast, caster, MatchRunner.ToSim(point), index));
+            Hold(scene.Log, world.Tick, caster);
+            scene.Moment = cast + after;
+            return scene;
+        }
+
+        /// <summary>간헐천 on a field laid for it, and 해일 부름 on a second point, both landing on one tick.</summary>
+        private static CastScene GeyserAndTide()
+        {
+            const Faction faction = Faction.WaterSlimes;
+            int geyser = AbilityIndex(faction, AbilityKind.DelayedStrike), tide = AbilityIndex(faction, AbilityKind.TideStrike);
+            AbilityRow geyserRow = FactionData.Ability(faction, geyser), tideRow = FactionData.Ability(faction, tide);
+            World world = CastWorld(faction, geyserRow.Unlock, tideRow.Unlock);
+
+            Vector2 from = StatusAt + new Vector2(-4f, 0f);
+            Vector2 spring = StatusAt + new Vector2(2f, 2f), wave = StatusAt + new Vector2(1.5f, -2.5f);
+            int geyserCaster = Spawn(world, geyserRow.Role, geyserRow.Slot, from + new Vector2(0f, 1.2f));
+            int tideCaster = Spawn(world, tideRow.Role, tideRow.Slot, from + new Vector2(0f, -1.2f));
+            int centre = World.CellOf(MatchRunner.ToSim(spring));
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                for (int dx = -1; dx <= 1; dx++) world.SetWaterFieldForScenario(centre + dy * World.GridSize + dx, world.Tick + 1000);
+            }
+            Workers(world, spring);
+            Workers(world, wave);
+
+            int cast = world.Tick + CastLead;
+            int lands = cast + geyserRow.Ticks;
+            var scene = new CastScene { World = world, Focus = StatusAt + new Vector2(-1f, 0f), TicksPerFrame = 2 };
+            scene.Log = Orders(lands,
+                new Command(cast, 0, 1, CommandType.Cast, geyserCaster, MatchRunner.ToSim(spring), geyser));
+            scene.Log[lands].Add(new Command(lands, 0, 2, CommandType.Cast, tideCaster, MatchRunner.ToSim(wave), tide));
+            Hold(scene.Log, world.Tick, geyserCaster, tideCaster);
+            scene.Moment = lands;
+            return scene;
+        }
+
+        /// <summary>모래폭풍 over peer 1's workers, and a 바위 술사 beside six cells of debris shooting at them.</summary>
+        private static CastScene SandAndThrow()
+        {
+            const Faction faction = Faction.RockGolems;
+            int sand = AbilityIndex(faction, AbilityKind.SandZone);
+            AbilityRow sandRow = FactionData.Ability(faction, sand);
+            AbilityRow throwRow = FactionData.Ability(faction, AbilityIndex(faction, AbilityKind.RemnantThrow));
+            World world = CastWorld(faction, sandRow.Unlock, throwRow.Unlock);
+
+            Vector2 from = StatusAt + new Vector2(-4f, 1.5f), point = StatusAt + new Vector2(2.5f, 0.5f);
+            int caster = Spawn(world, sandRow.Role, sandRow.Slot, from);
+            Vector2 thrower = StatusAt + new Vector2(-2f, -2f);
+            int throwing = Spawn(world, throwRow.Role, throwRow.Slot, thrower);
+            int pile = World.CellOf(MatchRunner.ToSim(thrower));
+            int[] beside = { -1, 1, -World.GridSize - 1, -World.GridSize, -World.GridSize + 1, World.GridSize - 1 };
+            foreach (int d in beside) world.SetRemnantForScenario(pile + d, world.Tick + 2000);
+            Workers(world, point);
+
+            int cast = world.Tick + CastLead;
+            var scene = new CastScene { World = world, Focus = StatusAt + new Vector2(-0.5f, 0f), TicksPerFrame = 4 };
+            scene.Log = Orders(cast, new Command(cast, 0, 1, CommandType.Cast, caster, MatchRunner.ToSim(point), sand));
+            Hold(scene.Log, world.Tick, caster, throwing);
+            scene.Moment = cast + 6;
+            return scene;
+        }
+
+        /// <summary>
+        /// 차원 유랑종 has no active. Its 묶음 6 rows instead: a 멸종한 화염 슬라임
+        /// that lapses a strip's length in among peer 1's workers, blinking,
+        /// and goes off; a 멸종한 바위 슬라임 beside it with half its life left.
+        /// </summary>
+        private static CastScene SummonsLapsing()
+        {
+            const Faction faction = Faction.Driftworlds;
+            AbilityRow burst = FactionData.Ability(faction, AbilityIndex(faction, AbilityKind.DeathBurst));
+            World world = CastWorld(faction);
+            Vector2 at = StatusAt + new Vector2(0.5f, 0f);
+            int fire = Spawn(world, burst.Role, burst.Slot, at);
+            int stone = Spawn(world, Role.Melee, 2, at + new Vector2(-2.5f, -1.2f));
+            int lapses = world.Tick + CastLead + 30;
+            world.SetExpireTickForScenario(fire, lapses);
+            int life = world.LifetimeFor(0, FactionData.Stats(faction, Role.Melee, 2));
+            world.SetExpireTickForScenario(stone, world.Tick + life / 2);
+            Workers(world, at + new Vector2(1.5f, -0.8f));
+
+            var scene = new CastScene { World = world, Focus = at + new Vector2(-0.5f, 0f), TicksPerFrame = 3, Cells = 10f };
+            scene.Log = Orders(world.Tick);
+            Hold(scene.Log, world.Tick, fire, stone);
+            scene.Moment = lapses - 12;
+            return scene;
+        }
+
+        /// <summary>낙뢰 on peer 1's workers, and a selected 견인 대포 deploying on the same tick.</summary>
+        private static CastScene LightningAndDeploy()
+        {
+            const Faction faction = Faction.Humans;
+            int bolt = AbilityIndex(faction, AbilityKind.DelayedStrike), deploy = AbilityIndex(faction, AbilityKind.Deploy);
+            AbilityRow boltRow = FactionData.Ability(faction, bolt), deployRow = FactionData.Ability(faction, deploy);
+            World world = CastWorld(faction, boltRow.Unlock, deployRow.Unlock);
+
+            Vector2 mage = StatusAt + new Vector2(-3.5f, 1.2f), point = StatusAt + new Vector2(3f, 1f);
+            Vector2 gun = StatusAt + new Vector2(-2.5f, -2f);
+            int caster = Spawn(world, boltRow.Role, boltRow.Slot, mage);
+            int cannon = Spawn(world, deployRow.Role, deployRow.Slot, gun);
+            Workers(world, point);
+
+            int cast = world.Tick + CastLead;
+            var scene = new CastScene { World = world, Focus = StatusAt + new Vector2(0f, 0f), TicksPerFrame = 5, Picked = new[] { cannon } };
+            scene.Log = Orders(cast,
+                new Command(cast, 0, 1, CommandType.Cast, caster, MatchRunner.ToSim(point), bolt),
+                new Command(cast, 0, 2, CommandType.Cast, cannon, FixVec2.Zero, deploy));
+            Hold(scene.Log, world.Tick, caster, cannon);
+            scene.Moment = cast + 5;
+            return scene;
+        }
+
+        /// <summary>
+        /// strip-waterslimes-field (issue #212): a 물방울 생존자 lays a field
+        /// where it stands on the strip's second frame; beside it, three columns
+        /// of field laid by the scenario lapse a third of the strip apart, so the
+        /// fade is seen; and a 샘물 운반자 walks across, leaving its field behind.
+        /// </summary>
+        private static int FieldStrips(string output)
+        {
+            CastScene probe = FieldScene();
+            MatchStrip(output, "field", probe.Log, probe.Moment, probe.Focus, () => FieldScene().World,
+                       CastCells, probe.TicksPerFrame, "strip-waterslimes-field", probe.Picked);
+            Debug.Log("field strip: lays at tick " + probe.Moment);
+            return 1;
+        }
+
+        private static CastScene FieldScene()
+        {
+            const Faction faction = Faction.WaterSlimes;
+            int lay = AbilityIndex(faction, AbilityKind.LayField);
+            AbilityRow layRow = FactionData.Ability(faction, lay);
+            AbilityRow carrierRow = FactionData.Ability(faction, AbilityIndex(faction, AbilityKind.FieldEmitter));
+            World world = CastWorld(faction);
+
+            Vector2 survivor = StatusAt + new Vector2(-3f, 0.5f);
+            int caster = Spawn(world, layRow.Role, layRow.Slot, survivor);
+            Vector2 walkFrom = StatusAt + new Vector2(-4f, -3f);
+            int carrier = Spawn(world, carrierRow.Role, carrierRow.Slot, walkFrom);
+
+            const int ticksPerFrame = 6;
+            int cast = world.Tick + CastLead;
+            int patch = World.CellOf(MatchRunner.ToSim(StatusAt + new Vector2(2f, 1f)));
+            for (int dx = 0; dx < 3; dx++)
+            {
+                int lapses = cast + (dx + 1) * ticksPerFrame * 2 + 6;
+                for (int dy = -1; dy <= 1; dy++) world.SetWaterFieldForScenario(patch + dy * World.GridSize + dx, lapses);
+            }
+
+            var scene = new CastScene { World = world, Focus = StatusAt + new Vector2(-0.5f, 0f), TicksPerFrame = ticksPerFrame };
+            int walk = world.Tick + 2;
+            scene.Log = Orders(cast,
+                new Command(walk, 0, 1, CommandType.Move, carrier, MatchRunner.ToSim(walkFrom + new Vector2(8f, 0f))));
+            scene.Log[cast].Add(new Command(cast, 0, 2, CommandType.Cast, caster, FixVec2.Zero, lay));
+            scene.Moment = cast;
+            return scene;
+        }
+
+        /// <summary>
+        /// A fresh map, peer 0 the faction and peer 1 another, peer 0's research
+        /// of each of <paramref name="unlocks"/> landed (a row of buildings each,
+        /// along the bottom edge), and plenty to spend.
+        /// </summary>
+        private static World CastWorld(Faction faction, params int[] unlocks)
+        {
+            var world = new World(new WordCraft.Net.MatchConfig().Seed);
+            world.SetPeerFaction(0, faction);
+            world.SetPeerFaction(1, faction == Faction.Hellfire ? Faction.Humans : Faction.Hellfire);
+            int y = 3;
+            foreach (int unlock in unlocks)
+            {
+                if (unlock < 0) continue;
+                Research(world, unlock, y);
+                y += 5;
+            }
+            world.GrantResources(0, 1000);
+            return world;
+        }
+
+        /// <summary>
+        /// Three of peer 1's workers round <paramref name="point"/>, what an
+        /// active is aimed at: they never fight back, so nothing kills the
+        /// caster before its clock runs out. And a worker of peer 0 a little
+        /// short of them, for its sight: peer 0's fog is on.
+        /// </summary>
+        private static void Workers(World world, Vector2 point)
+        {
+            world.SpawnWorker(1, MatchRunner.ToSim(point + new Vector2(-0.6f, 0.4f)));
+            world.SpawnWorker(1, MatchRunner.ToSim(point + new Vector2(0.7f, 0.3f)));
+            world.SpawnWorker(1, MatchRunner.ToSim(point + new Vector2(0f, -0.7f)));
+            world.SpawnWorker(0, MatchRunner.ToSim(point + new Vector2(-1.5f, 2.2f)));
+        }
+
+        /// <summary>A log long enough to hold tick <paramref name="last"/>, with each command at its own tick.</summary>
+        private static List<Command>[] Orders(int last, params Command[] commands)
+        {
+            var log = new List<Command>[last + 1];
+            for (int t = 0; t < log.Length; t++) log[t] = new List<Command>();
+            foreach (Command c in commands) log[c.Tick].Add(c);
+            return log;
+        }
+
+        /// <summary>
+        /// Holds <paramref name="ids"/> where they stand from <paramref name="tick"/>:
+        /// an idle body chases what it sees, and a caster that walked into its
+        /// own zone would stand over what the strip is for.
+        /// </summary>
+        private static void Hold(List<Command>[] log, int tick, params int[] ids)
+        {
+            for (int k = 0; k < ids.Length; k++)
+            {
+                log[tick].Add(new Command(tick, 0, 100 + k, CommandType.HoldPosition, ids[k], FixVec2.Zero));
+            }
+        }
+
+        /// <summary>The index in the faction's ability table of its first row of <paramref name="kind"/>.</summary>
+        private static int AbilityIndex(Faction faction, AbilityKind kind)
+        {
+            for (int i = 0; i < FactionData.AbilityCount(faction); i++)
+            {
+                if (FactionData.Ability(faction, i).Kind == kind) return i;
+            }
+            throw new InvalidOperationException(faction + " holds no " + kind + " row");
         }
 
         // ------------------------------------------------------------------

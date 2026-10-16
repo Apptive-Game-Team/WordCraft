@@ -31,7 +31,8 @@ namespace WordCraft.View
         ///
         /// A list that fits in these eight is drawn whole. A longer one is paged:
         /// the last cell becomes More, so each page holds <see cref="PageSize"/>
-        /// entries, one fewer than the cells. 차원 유랑종 fields six today.
+        /// entries, one fewer than the cells. Since docs/TECH-TREE.md 묶음 3 the
+        /// longest list is 물 슬라임 거품 생성기 at ten, two pages.
         /// </summary>
         public const int Cells = 8;
 
@@ -120,6 +121,26 @@ namespace WordCraft.View
                     if (!cost.Produced) continue;
                     entries.Add(new Entry(role, s, FactionData.Name(faction, role, s), cost.Resources));
                 }
+            }
+            return entries;
+        }
+
+        /// <summary>
+        /// The entries of <see cref="For(Faction)"/> that one building makes:
+        /// only those whose producer list names this building entry
+        /// (FactionData.IsProducedAt, the test the simulation's own Produce gate
+        /// takes). docs/TECH-TREE.md 묶음 3 gives every faction ten or more
+        /// producible entries spread over two or three buildings, and the card
+        /// lists what the selected building can make rather than everything.
+        /// </summary>
+        public static List<Entry> For(Faction faction, Role buildingRole, int buildingSlot)
+        {
+            List<Entry> all = For(faction);
+            var entries = new List<Entry>();
+            for (int i = 0; i < all.Count; i++)
+            {
+                Entry e = all[i];
+                if (FactionData.IsProducedAt(faction, e.Role, e.Slot, buildingRole, buildingSlot)) entries.Add(e);
             }
             return entries;
         }
