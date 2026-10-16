@@ -518,10 +518,10 @@ namespace WordCraft.View
                 var autocasts = AbilityMenu.Autocasts(faction, e.Role, e.Slot);
                 for (int i = 0; i < autocasts.Count && y + UiStyle.Line * 2f <= area.yMax; i++)
                 {
-                    AbilityRow row = autocasts[i].Row;
+                    AbilityMenu.Entry autocast = autocasts[i];
                     UiStyle.Note(new Rect(area.x, y, area.width, UiStyle.Line),
-                        AbilityMenu.AutocastLine(world, e.Owner, row),
-                        AbilityMenu.Locked(world, e.Owner, row) ? UiStyle.InkMute : UiStyle.InkDim);
+                        AbilityMenu.AutocastLine(world, e.Owner, autocast),
+                        AbilityMenu.Locked(world, e.Owner, autocast.Row) ? UiStyle.InkMute : UiStyle.InkDim);
                     y += UiStyle.Line;
                 }
             }

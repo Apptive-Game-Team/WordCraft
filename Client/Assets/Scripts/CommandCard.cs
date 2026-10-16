@@ -241,7 +241,8 @@ namespace WordCraft.View
         /// every faction's Move, Stop and Attack stay where they were.
         ///
         /// A body holding more actives than the cells take pages them the way the
-        /// production list does: the last ability cell becomes More. No body does
+        /// production list does: cell 11 becomes More and the other ability cells
+        /// hold the page. No body does
         /// today (each holds one), and Replay/AbilityMenuChecks.cs fails the day
         /// one would need more than AbilityMenu.MaxPages.
         ///
@@ -255,14 +256,21 @@ namespace WordCraft.View
             if (world == null || leadId < 0) return card;
 
             Entity caster = world.GetEntity(leadId);
-            List<AbilityMenu.Entry> actives = AbilityMenu.For(world.FactionOf(peer), caster.Role, caster.Slot);
+            IReadOnlyList<AbilityMenu.Entry> actives = AbilityMenu.For(world.FactionOf(peer), caster.Role, caster.Slot);
+            int pages = AbilityMenu.Pages(actives.Count, cells.Length);
             int shown = AbilityMenu.PageRange(actives.Count, cells.Length, page, out int first, out int length);
+
+            // A paging list gives up cell 11 to More, the cell the building card
+            // puts it on, and fills the other cells in order. A list that fits
+            // uses all of them, so the first three keep U J M.
+            int cell = 0;
             for (int i = 0; i < length; i++)
             {
+                if (pages > 1 && cells[cell] == AbilityMenu.MoreCell) cell++;
                 AbilityMenu.Entry active = actives[first + i];
-                card[cells[i]] = new CardSlot
+                card[cells[cell++]] = new CardSlot
                 {
-                    Label = AbilityMenu.Label(world, peer, caster, active.Row),
+                    Label = AbilityMenu.Label(world, peer, caster, active),
                     Type = CommandType.Cast,
                     Slot = active.Index,
                     Locked = AbilityMenu.Locked(world, peer, active.Row),
@@ -270,10 +278,9 @@ namespace WordCraft.View
                 };
             }
 
-            int pages = AbilityMenu.Pages(actives.Count, cells.Length);
             if (pages > 1)
             {
-                card[cells[cells.Length - 1]] = new CardSlot { Label = "More\n" + (shown + 1) + "/" + pages, More = true };
+                card[AbilityMenu.MoreCell] = new CardSlot { Label = "More\n" + (shown + 1) + "/" + pages, More = true };
             }
             return card;
         }
