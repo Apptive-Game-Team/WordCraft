@@ -161,6 +161,16 @@ namespace WordCraft.View
         /// <summary>Debris on the minimap. Over the ground so it blocks, under the rock so it is not permanent.</summary>
         public static readonly Color MinimapRemnant = Rgb(0x3A3844);
 
+        // ---- field: 물 슬라임 물 지대 (issue #212) ----
+
+        /// <summary>
+        /// A water field cell on the minimap. 물 슬라임's Pale pushed down to the
+        /// square's value range: lighter than the ground, because a field is
+        /// ground you walk on, and nothing like the lake's near-black
+        /// <see cref="MinimapWater"/>, because a lake is ground you cannot.
+        /// </summary>
+        public static readonly Color MinimapWaterField = Rgb(0x3B6F7C);
+
         // ---- field: 인간 마법 문명 징발 ----
         //
         // A neutral 꼬마돌 is a body, not terrain, so it does not answer to the
