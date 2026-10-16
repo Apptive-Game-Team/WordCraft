@@ -37,14 +37,20 @@ namespace WordCraft.View
             }
             hull.Taper(Point(0f, 0.4f, -0.48f), Pair(0.14f, 0.12f), Pair(0.015f, 0.015f),
                 0.34f, shell, Turn(-100f, 0f, 0f));
-            Slits(hull, Point(0f, 0.51f, 0.38f), 0.15f, 0.04f);
+            // The head reads separately from the overlapping back armour.
+            hull.Lump(Point(0f, 0.48f, 0.32f), Extent(0.19f, 0.115f, 0.16f), shell, Turn(-12f, 0f, 0f));
+            Slits(hull, Point(0f, 0.52f, 0.455f), 0.19f, 0.065f);
             b.Arm.Origin = Point(0f, 0.43f, 0.3f);
             b.Arm.Prism(Point(0f, 0.43f, 0.28f), 7, 0.14f, 0.11f, 0.3f, dark, Lying);
+            b.Arm.Prism(Point(0f, 0.43f, 0.48f), 7, 0.125f, 0.11f, 0.08f, plate, Lying);
             b.Arm.Prism(Point(0f, 0.43f, 0.565f), 7, 0.08f, 0.08f, 0.012f, ember, Lying);
             b.Arm.Prism(Point(0f, 0.43f, 0.58f), 7, 0.044f, 0.044f, 0.012f, dark, Lying);
             FourLegs(b, 0.22f, 0.15f, -0.29f,
-                (part, x, z) => CrawlerLeg(part, x, z, dark, plate,
-                    Pair(0.055f, 0.14f), Pair(0.06f, 0.07f), 0.35f));
+                (part, x, z) =>
+                {
+                    CrawlerLeg(part, x, z, dark, plate, Pair(0.055f, 0.14f), Pair(0.06f, 0.07f), 0.35f);
+                    part.Lump(Point(x, 0.32f, z), Extent(0.1f, 0.09f, 0.13f), shell, Turn(0f, x > 0f ? 20f : -20f, 0f));
+                });
             // A small team-colored shell seam preserves ownership without a belt.
             if (b.HasAccent) hull.Box(Point(0f, 0.64f, -0.08f), Extent(0.18f, 0.018f, 0.035f), b.Accent);
         }
@@ -55,15 +61,20 @@ namespace WordCraft.View
             Color facet = BodyPalette.Hellfire.Facet, ember = BodyPalette.Hellfire.Ember;
             Solids hull = b.Hull;
             Legs(b, 0.26f, 0.16f, 0.18f, dark, shell);
-            hull.Ball(Point(0f, 0.53f, 0f), Extent(0.3f, 0.3f, 0.23f), ember);
+            hull.Ball(Point(0f, 0.53f, 0f), Extent(0.27f, 0.28f, 0.22f), ember);
+            // Broad chest plates expose narrow molten seams instead of a flat orange belly.
+            hull.Lump(Point(0f, 0.65f, 0.19f), Extent(0.19f, 0.13f, 0.08f), facet, Turn(-12f, 0f, 8f));
+            hull.Lump(Point(0f, 0.38f, 0.16f), Extent(0.19f, 0.1f, 0.1f), dark, Turn(8f, 0f, -6f));
             for (int side = -1; side <= 1; side += 2)
             {
                 hull.Lump(Point(side * 0.16f, 0.59f, 0.1f), Extent(0.17f, 0.21f, 0.17f), shell, Turn(0f, side * 12f, side * 14f));
                 hull.Lump(Point(side * 0.27f, 0.77f, -0.02f), Extent(0.2f, 0.18f, 0.21f), dark, Turn(0f, side * 24f, 0f));
+                hull.Lump(Point(side * 0.3f, 0.84f, 0.015f), Extent(0.15f, 0.06f, 0.18f), facet, Turn(0f, side * 24f, side * -15f));
                 hull.Prism(Point(side * 0.24f, 0.85f, -0.08f), 5, 0.07f, 0f, 0.17f, facet, Turn(-25f, 0f, side * -22f));
             }
             hull.Lump(Point(0f, 0.87f, 0.06f), Extent(0.16f, 0.16f, 0.15f), dark, Turn(0f, 15f, 0f));
-            Slits(hull, Point(0f, 0.88f, 0.2f), 0.13f, 0.045f);
+            hull.Lump(Point(0f, 0.8f, 0.15f), Extent(0.1f, 0.075f, 0.09f), shell, Turn(0f, 0f, 0f));
+            Slits(hull, Point(0f, 0.88f, 0.205f), 0.14f, 0.065f);
             // Massive faceted stone arms, separated by molten joints.
             CatalogMagmaArm(hull, -1f, shell, dark, ember);
             b.Arm.Origin = Point(0.34f, 0.74f, 0f);

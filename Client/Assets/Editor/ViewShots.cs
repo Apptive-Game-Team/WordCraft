@@ -185,7 +185,7 @@ namespace WordCraft.View
         // ------------------------------------------------------------------
 
         private const int LineupWidth = 2560;
-        private const int LineupHeight = 880;
+        private const int LineupHeight = 640;
 
         /// <summary>Cells left empty between two neighbours in a lineup.</summary>
         private const float LineupGap = 0.8f;
@@ -221,6 +221,7 @@ namespace WordCraft.View
                 Lineup(output, faction, "-units", entries.FindAll(entry => !FactionData.IsBuilding(entry.Role)));
                 Lineup(output, faction, "-buildings", entries.FindAll(entry => FactionData.IsBuilding(entry.Role)));
                 written += 3;
+                written += RosterPages(output, faction, entries);
             }
             return written;
         }
@@ -248,10 +249,104 @@ namespace WordCraft.View
                 }
                 Settle(rigs);
 
-                Frame(studio, new Vector2(World.GridSize * 0.5f, Row + 1.2f), span + 4f, 0f);
+                FitBodies(studio, rigs, 0.07f, 0.08f);
                 studio.Render(0);
                 studio.Write(Path.Combine(output, "lineup-" + Slug(faction) + suffix + ".png"));
             }
+        }
+
+        // Fit rendered geometry, not logical footprints: wings, crowns and
+        // leaning rigs can reach well beyond the cells the simulation occupies.
+        private static void FitBodies(Studio studio, List<BodyRig> rigs, float margin, float bottom)
+        {
+            var corners = new List<Vector3>();
+            Bounds all = new Bounds();
+            bool first = true;
+            foreach (BodyRig rig in rigs)
+            foreach (Renderer renderer in rig.GetComponentsInChildren<Renderer>())
+            {
+                if (!renderer.enabled || !renderer.gameObject.activeInHierarchy) continue;
+                Bounds bounds = renderer.bounds;
+                if (first) { all = bounds; first = false; } else all.Encapsulate(bounds);
+                for (int n = 0; n < 8; n++)
+                    corners.Add(bounds.center + Vector3.Scale(bounds.extents,
+                        new Vector3((n & 1) == 0 ? -1 : 1, (n & 2) == 0 ? -1 : 1, (n & 4) == 0 ? -1 : 1)));
+            }
+            if (first) throw new InvalidOperationException("Roster shot has no visible geometry");
+            CameraRig.Aim(studio.Cam, new Vector2(World.GridSize * 0.5f, Row), 20f, 0f, hud: false);
+            Vector3 forward = studio.Cam.transform.forward;
+            // Move the body upward when a name strip is reserved at the bottom.
+            float verticalOffset = (bottom - margin) * 0.5f;
+            float low = 0.6f, high = 200f;
+            for (int attempt = 0; attempt < 32; attempt++)
+            {
+                float distance = (low + high) * 0.5f;
+                float viewHeight = 2f * distance * Mathf.Tan(studio.Cam.fieldOfView * Mathf.Deg2Rad * 0.5f);
+                studio.Cam.transform.position = all.center - forward * distance -
+                    studio.Cam.transform.up * (verticalOffset * viewHeight);
+                bool fits = true;
+                foreach (Vector3 corner in corners)
+                {
+                    Vector3 p = studio.Cam.WorldToViewportPoint(corner);
+                    if (p.z <= studio.Cam.nearClipPlane || p.x < margin || p.x > 1f - margin ||
+                        p.y < bottom || p.y > 1f - margin) { fits = false; break; }
+                }
+                if (fits) high = distance; else low = distance;
+            }
+            float height = 2f * high * Mathf.Tan(studio.Cam.fieldOfView * Mathf.Deg2Rad * 0.5f);
+            studio.Cam.transform.position = all.center - forward * high - studio.Cam.transform.up * (verticalOffset * height);
+        }
+
+        // Detail plates normalize each tile independently. The lineup images
+        // remain the reference for comparing physical size across the roster.
+        private static int RosterPages(string output, Faction faction, List<(Role Role, int Slot)> entries)
+        {
+            const int columns = 4, rows = 3, width = 512, height = 360;
+            int pages = (entries.Count + columns * rows - 1) / (columns * rows);
+            for (int page = 0; page < pages; page++)
+            {
+                World world = Empty(faction);
+                using (var studio = new Studio(world, columns * width, rows * height, width, height))
+                {
+                    studio.PlainGround();
+                    studio.ClearImage(new Color(0.08f, 0.09f, 0.08f));
+                    for (int tile = 0; tile < columns * rows; tile++)
+                    {
+                        int index = page * columns * rows + tile;
+                        if (index >= entries.Count) break;
+                        var entry = entries[index];
+                        var body = Models.Build(studio.Root.transform, faction, entry.Role, entry.Slot,
+                            FactionData.IsBuilding(entry.Role) ? EntityKind.Building :
+                            entry.Role == Role.Worker ? EntityKind.Worker : EntityKind.Unit, 0, neutral: false);
+                        body.Show(true);
+                        body.Progress(1f);
+                        body.Place(Field.At(new Vector2(World.GridSize * 0.5f, Row)));
+                        if (!FactionData.IsBuilding(entry.Role)) Turn(body, 150f);
+                        var rigs = new List<BodyRig> { body };
+                        Settle(rigs);
+                        FitBodies(studio, rigs, 0.12f, 0.24f);
+                        var label = new GameObject("Roster label").AddComponent<TextMesh>();
+                        label.transform.SetParent(studio.Cam.transform, false);
+                        float depth = 2f;
+                        label.transform.localPosition = new Vector3(0f,
+                            -Mathf.Tan(studio.Cam.fieldOfView * Mathf.Deg2Rad * 0.5f) * depth * 0.78f, depth);
+                        label.anchor = TextAnchor.MiddleCenter;
+                        label.alignment = TextAlignment.Center;
+                        label.font = Font.CreateDynamicFontFromOSFont(new[] { "Malgun Gothic", "Arial" }, 36);
+                        label.fontSize = 36;
+                        label.characterSize = 0.022f;
+                        label.color = Color.white;
+                        label.text = FactionData.Name(faction, entry.Role, entry.Slot) + "\n" + entry.Role + " · " + entry.Slot + " / detail";
+                        label.GetComponent<Renderer>().sharedMaterial = label.font.material;
+                        studio.Render(tile % columns * width, (rows - 1 - tile / columns) * height);
+                        UnityEngine.Object.DestroyImmediate(label.font);
+                        UnityEngine.Object.DestroyImmediate(label.gameObject);
+                        UnityEngine.Object.DestroyImmediate(body.gameObject);
+                    }
+                    studio.Write(Path.Combine(output, "roster-detail-" + Slug(faction) + "-" + (page + 1) + ".png"));
+                }
+            }
+            return pages;
         }
 
         // ------------------------------------------------------------------
@@ -1812,8 +1907,28 @@ namespace WordCraft.View
             private readonly RenderTexture target;
             private readonly Texture2D image;
             private readonly int frameWidth, frameHeight;
+            private Mesh plainMesh;
+            private Material plainMaterial;
 
             public float FrameAspect => frameWidth / (float)frameHeight;
+
+            public void PlainGround()
+            {
+                Transform terrain = Root.transform.Find("Terrain");
+                if (terrain != null) terrain.gameObject.SetActive(false);
+                var ground = new GameObject("Detail ground");
+                ground.transform.SetParent(Root.transform, false);
+                plainMesh = new Mesh { name = "Detail ground" };
+                plainMesh.vertices = new[] { new Vector3(-100, 0, -100), new Vector3(-100, 0, 100),
+                    new Vector3(100, 0, 100), new Vector3(100, 0, -100) };
+                plainMesh.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
+                Color tone = new Color(0.43f, 0.49f, 0.32f);
+                plainMesh.colors = new[] { tone, tone, tone, tone };
+                plainMesh.triangles = new[] { 0, 1, 2, 0, 2, 3 };
+                ground.AddComponent<MeshFilter>().sharedMesh = plainMesh;
+                plainMaterial = new Material(Resources.Load<Shader>("Shaders/Ground"));
+                ground.AddComponent<MeshRenderer>().sharedMaterial = plainMaterial;
+            }
 
             public Studio(World world, int width, int height) : this(world, width, height, width, height) { }
 
@@ -1847,11 +1962,20 @@ namespace WordCraft.View
             }
 
             /// <summary>Renders one frame and copies it into the image at <paramref name="x"/> pixels from the left.</summary>
-            public void Render(int x)
+            public void Render(int x) => Render(x, 0);
+
+            public void ClearImage(Color color)
+            {
+                var pixels = new Color[image.width * image.height];
+                for (int i = 0; i < pixels.Length; i++) pixels[i] = color;
+                image.SetPixels(pixels);
+            }
+
+            public void Render(int x, int y)
             {
                 Cam.Render();
                 RenderTexture.active = target;
-                image.ReadPixels(new Rect(0, 0, frameWidth, frameHeight), x, 0);
+                image.ReadPixels(new Rect(0, 0, frameWidth, frameHeight), x, y);
                 RenderTexture.active = null;
             }
 
@@ -1863,6 +1987,8 @@ namespace WordCraft.View
 
             public void Dispose()
             {
+                if (plainMesh != null) UnityEngine.Object.DestroyImmediate(plainMesh);
+                if (plainMaterial != null) UnityEngine.Object.DestroyImmediate(plainMaterial);
                 Cam.targetTexture = null;
                 FieldMesh.Drop();
                 UnityEngine.Object.DestroyImmediate(target);

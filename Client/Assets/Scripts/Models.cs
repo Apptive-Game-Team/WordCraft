@@ -633,12 +633,22 @@ namespace WordCraft.View
             {
                 float yaw = i * 137.5f;
                 float y = 0.25f + i * 0.065f;
-                hull.Ball(Around(yaw) * (0.1f + i * 0.009f) + Point(0f, y, 0f),
-                          Extent(0.08f, 0.25f, 0.13f), i % 3 == 0 ? BodyPalette.TreeSpirits.LeafLight : BodyPalette.TreeSpirits.Leaf,
-                          Outward(yaw, -28f), 1);
+                TreePointedLeaf(hull, Around(yaw) * (0.1f + i * 0.009f) + Point(0f, y, 0f),
+                    0.14f, 0.46f, i % 3 == 0 ? BodyPalette.TreeSpirits.LeafLight : BodyPalette.TreeSpirits.Leaf,
+                    Outward(yaw, -28f));
             }
             b.Arm.Origin = Point(0.27f, 0.5f, 0f);
-            hull.Ball(Point(0.04f, 0.97f, -0.09f), Extent(0.035f, 0.3f, 0.065f), BodyPalette.TreeSpirits.LeafLight, Turn(-24f, 0f, -12f), 1);
+            TreePointedLeaf(hull, Point(0.04f, 0.97f, -0.09f), 0.055f, 0.6f,
+                BodyPalette.TreeSpirits.LeafLight, Turn(-24f, 0f, -12f));
+        }
+
+        // A thin folded leaf with two pointed ends; broad facets survive the game camera.
+        private static void TreePointedLeaf(Solids part, Vector3 center, float width, float length, Color color, Quaternion rotation)
+        {
+            Vector3 root = center + rotation * Point(0f, -length * 0.5f, 0f);
+            part.Prism(root, 4, 0f, width, length * 0.38f, color, rotation, 0.27f);
+            part.Prism(root + rotation * Point(0f, length * 0.38f, 0f), 4, width, 0f,
+                length * 0.62f, color, rotation, 0.27f);
         }
 
         /// <summary>고목 수호자: a living trunk guardian with branch sprouts and heavy wooden fists.</summary>
@@ -647,8 +657,18 @@ namespace WordCraft.View
             Color bark = BodyPalette.TreeSpirits.Bark, barkShade = BodyPalette.TreeSpirits.BarkShade;
             Solids hull = b.Hull;
 
-            Legs(b, 0.3f, 0.15f, 0.15f, barkShade, bark);
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Solids leg = side < 0 ? b.LimbLeft : b.LimbRight;
+                leg.Origin = Point(side * 0.15f, 0.3f, 0f);
+                leg.Prism(Point(side * 0.15f, 0.06f, 0f), 6, 0.09f, 0.075f, 0.27f, bark, Turn(0f, 0f, -side * 7f));
+                leg.Ball(Point(side * 0.15f, 0.19f, 0.01f), 0.095f, barkShade);
+                leg.Lump(Point(side * 0.15f, 0.06f, 0.06f), Extent(0.11f, 0.065f, 0.15f), bark, Turn(0f, side * 15f, 0f));
+            }
             hull.Taper(Point(0f, 0.28f, 0f), Pair(0.46f, 0.32f), Pair(0.6f, 0.38f), 0.4f, bark);
+            for (int i = -1; i <= 1; i++)
+                hull.Prism(Point(i * 0.13f, 0.34f, 0.18f), 5, 0.019f, 0.012f, 0.29f,
+                    barkShade, Turn(0f, 0f, i * -9f));
             hull.Prism(Point(0f, 0.7f, 0.03f), 7, 0.15f, 0.13f, 0.34f, bark);
             hull.Prism(Point(-0.07f, 1.01f, 0.02f), 5, 0.025f, 0.015f, 0.16f, barkShade, Turn(0f, 0f, 22f));
             hull.Ball(Point(-0.1f, 1.14f, 0.02f), Extent(0.07f, 0.025f, 0.04f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 0f, -25f), 1);
@@ -656,11 +676,13 @@ namespace WordCraft.View
             hull.Lump(Point(0.25f, 0.73f, -0.05f), Extent(0.11f, 0.09f, 0.11f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 40f, 10f));
             Eyes(hull, Point(0f, 0.81f, 0.155f), 0.1f, 0.035f);
             hull.Prism(Point(-0.37f, 0.3f, 0.02f), 6, 0.08f, 0.075f, 0.38f, bark, Turn(0f, 0f, -6f));
-            hull.Box(Point(-0.38f, 0.26f, 0.03f), Extent(0.17f, 0.15f, 0.17f), barkShade);
+            hull.Ball(Point(-0.37f, 0.48f, 0.02f), 0.095f, barkShade);
+            hull.Lump(Point(-0.38f, 0.26f, 0.03f), Extent(0.11f, 0.12f, 0.11f), bark, Turn(0f, 15f, -8f));
 
             b.Arm.Origin = Point(0.36f, 0.66f, 0.02f);
             b.Arm.Prism(Point(0.37f, 0.32f, 0.02f), 6, 0.08f, 0.09f, 0.36f, bark);
-            b.Arm.Box(Point(0.38f, 0.27f, 0.04f), Extent(0.19f, 0.17f, 0.19f), barkShade);
+            b.Arm.Ball(Point(0.37f, 0.49f, 0.02f), 0.1f, barkShade);
+            b.Arm.Lump(Point(0.38f, 0.27f, 0.04f), Extent(0.12f, 0.13f, 0.12f), bark, Turn(0f, -15f, 8f));
             b.Arm.Lump(Point(0.4f, 0.62f, 0f), Extent(0.09f, 0.06f, 0.09f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 30f, 0f));
         }
 
@@ -696,17 +718,20 @@ namespace WordCraft.View
             hull.Ball(Point(0f, 0.66f, 0f), Extent(0.25f, 0.23f, 0.23f), BodyPalette.TreeSpirits.LeafLight);
             // Continuous tapered S-shaped vine, with a broad leaf framing the face.
             Vector3 vine = Point(0f, 0.49f, -0.02f);
-            for (int i = 0; i < 7; i++)
+            float vineRadius = 0.095f;
+            for (int i = 0; i < 9; i++)
             {
-                float t = (i + 1) / 7f;
-                Vector3 next = Point(Mathf.Sin(t * Mathf.PI * 2f) * 0.16f, 0.49f - t * 0.42f, -0.02f - t * 0.13f);
+                float t = (i + 1) / 9f;
+                Vector3 next = Point(Mathf.Sin(t * Mathf.PI * 2f) * 0.22f, 0.49f - t * 0.46f, -0.02f - t * 0.13f);
                 Vector3 segment = next - vine;
-                hull.Prism(vine, 6, 0.09f * (1f - t * 0.65f), 0.08f * (1f - t * 0.7f), segment.magnitude + 0.015f,
+                float nextRadius = 0.095f * (1f - t * 0.82f);
+                hull.Prism(vine, 6, vineRadius, nextRadius, segment.magnitude + 0.025f,
                            BodyPalette.TreeSpirits.Leaf, Quaternion.FromToRotation(Vector3.up, segment));
                 vine = next;
+                vineRadius = nextRadius;
             }
-            hull.Ball(Point(-0.16f, 0.82f, -0.04f), Extent(0.14f, 0.3f, 0.09f), BodyPalette.TreeSpirits.LeafShade, Turn(0f, 0f, -36f), 1);
-            hull.Ball(Point(0.16f, 0.87f, -0.04f), Extent(0.15f, 0.32f, 0.09f), BodyPalette.TreeSpirits.Leaf, Turn(0f, 0f, 48f), 1);
+            TreePointedLeaf(hull, Point(-0.16f, 0.82f, -0.04f), 0.19f, 0.57f, BodyPalette.TreeSpirits.LeafShade, Turn(0f, 0f, -36f));
+            TreePointedLeaf(hull, Point(0.16f, 0.87f, -0.04f), 0.22f, 0.62f, BodyPalette.TreeSpirits.Leaf, Turn(0f, 0f, 48f));
             Eyes(hull, Point(0f, 0.68f, 0.215f), 0.15f, 0.06f);
 
             b.Arm.Origin = Point(0.18f, 0.55f, 0f);
