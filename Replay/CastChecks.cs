@@ -653,7 +653,7 @@ namespace WordCraft.Replay
         /// Deployed, the 견인 대포 reaches 10 rather than 7 and its hit (15,
         /// armor 0) splashes 7 on a ground body 0.8 cells from the one it hits;
         /// an enemy flier there takes nothing. Undeployed it never touches a
-        /// body 9 cells off.
+        /// body 9 cells off. Under 대포 사거리 the deployed reach is 11.
         /// </summary>
         private static void ADeployedCannonReachesTenAndSplashes()
         {
@@ -675,6 +675,15 @@ namespace WordCraft.Replay
             Check(hpT - w.GetEntity(target).Hp == 15, "the deployed shot took " + (hpT - w.GetEntity(target).Hp) + ", not 15");
             Check(hpB - w.GetEntity(beside).Hp == 7, "the deployed splash took " + (hpB - w.GetEntity(beside).Hp) + ", not 7");
             Check(w.GetEntity(flier).Hp == hpF, "the deployed splash reached a flier");
+
+            // 대포 사거리 adds its cell to the deployed reach: 11.
+            World r = Ready(Faction.Humans, "전개", true, out int researched);
+            Research(r, 0, UpgradeEffect.CannonRange);
+            Step(r, Cast(r, researched, Origin, "전개"));
+            Run(r, 40);
+            Check(r.GetEntity(researched).Deployed, "the researched cannon never deployed");
+            Check(r.RangeFor(r.GetEntity(researched)) == Fix.FromInt(11),
+                "a deployed cannon under 대포 사거리 reaches " + r.RangeFor(r.GetEntity(researched)) + ", not 11");
         }
 
         /// <summary>
