@@ -2,7 +2,7 @@
 
 - Date: 2026-10-16
 - GitHub Issue: #221 (depends on #211 and PR #225)
-- Status: In progress
+- Status: Implementation and local validation complete; publication approved, remote CI pending
 
 ## Goal
 실제 시작 자원과 맵에서 AI 생산·성장·도착·능력·인구 조건을 충족하고,
@@ -21,7 +21,7 @@ PR #225의 온라인/AI/비주얼 구현을 기반으로 한다. 추가 worktree
 ## Approach (Checklist)
 - [x] **Step 0: Recon** 144경기 기준선, 실전 AI 실패 원인, 개막 가격과 자리 편향 분석.
 - [x] **Step 1: Implementation** AI 조건 개선 후 6개 유닛의 9개 수치를 조정. 전후 표는 FACTION-MECHANICS에 기록.
-- [ ] **Step 2: Tests** BalanceChecks, Replay, Host, 144경기, Unity 및 실제 플레이.
+- [x] **Step 2: Tests** BalanceChecks, Replay, Host, 144경기, Unity 및 실제 플레이.
 - [ ] **Step 3: Rollout / Rollback** 문서 수치·버전 갱신, PR과 검증 증거 제공.
 
 ## Validation
@@ -65,4 +65,9 @@ PR #225의 온라인/AI/비주얼 구현을 기반으로 한다. 추가 worktree
 - CoreCLR and Unity Mono independently produced `FAEC9B582915E10D` before golden update. Final Unity selfcheck passed with that golden.
 - Updated old price/HP test expectations without weakening tier-gate or desync diagnostics. Mirror combat window is 2000 ticks; Drift's first death occurs at tick 865, beyond the old 800-tick window.
 - Some individual matchups remain one-sided. The 144 games repeat 36 deterministic seat configurations, not independent randomized matches.
-- Changed UI actual-play validation and full final regression remain in progress.
+- Full final Release Replay passed (`balance-replay-repaired.log`), including the golden, live AI, roster, 30 cross-faction repeats and opening price checks.
+- Actual-play validation passed on `Client/Builds/balanced-final/WordCraft.exe`: new game camera at base, P pause/resume, production building completion, unit production, resource gathering, page-two Tech slot 1 construction, paid research completion, worker-to-vine growth and building double-click selection.
+- First actual build exposed a camera-home defect; fixed and verified in the final build. Solo pause preserves queued orders and never pauses online matches; Unity checks pass.
+- Final QA left its separate window paused at tick 777. Existing user windows and builds were preserved. Screenshot: `Client/Logs/balance42-final-research-complete.png`.
+- Remote GitHub issue update was rejected by automatic approval review for lacking explicit authorization to transmit this payload to that destination. PR and issue text are prepared locally; the user then explicitly approved branch push, PR creation and issue update. No workaround attempted.
+
