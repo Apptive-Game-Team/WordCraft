@@ -254,6 +254,102 @@ namespace WordCraft.Sim
         /// flight — see FleeSystem for what that buys and what it costs.
         /// </summary>
         public bool Fleeing;
+
+        // 업그레이드 연구. Both live on the 기술 건물 running the research and
+        // nowhere else, the one-sidedness the capture and growth fields have, and
+        // for the same payoff: a building that dies takes its research with it,
+        // because there was never a second copy to clear. What a finished level
+        // leaves behind is a per-peer number in World, not anything on a body.
+
+        /// <summary>
+        /// The row of the owner's upgrade table this building is researching, or
+        /// -1 for everything that is not researching, which is every entity but
+        /// a busy 기술 건물. -1 rather than 0 because row 0 is 공격력.
+        /// </summary>
+        public int ResearchIndex;
+
+        /// <summary>
+        /// Ticks left before that level lands. Set in full when the order is
+        /// accepted, unlike ProduceTicksLeft, because research has no queue for a
+        /// clock to wait behind.
+        /// </summary>
+        public int ResearchTicksLeft;
+
+        // 상태 이상, docs/TECH-TREE.md 묶음 5. Both live on the body that suffers
+        // them and nowhere else: the shooter keeps no list of whom it slowed or
+        // set alight, so a shooter that dies is a body dying and nothing more.
+        // A new hit refreshes to the longer of what is left and the new
+        // duration and never adds, so neither number grows past one hit's worth.
+
+        /// <summary>
+        /// Ticks of 휘감기 left. StatusSystem takes one off every tick before
+        /// MoveSystem reads it, and a body walks at half speed on every tick it
+        /// is still above zero after that.
+        /// </summary>
+        public int SlowTicksLeft;
+
+        /// <summary>
+        /// Ticks of 화염탄 burn left. StatusSystem takes one off every tick, and
+        /// on every tick the result is a multiple of World.BurnPeriod, zero
+        /// included, the body takes World.BurnDamage: six hits from sixty.
+        /// </summary>
+        public int BurnTicksLeft;
+
+        // 한시 소환, docs/TECH-TREE.md 묶음 6. One number on the body that lapses
+        // and nowhere else, the one-sidedness every field above has.
+
+        /// <summary>
+        /// The tick this body lapses on, or 0 for a body that lives until it is
+        /// killed, which is every row but the 멸종 슬라임. Set by SpawnUnit to
+        /// Tick plus the row's lifetime, pushed back a tick at a time by 층위
+        /// 고정, and read by ExpirySystem, which kills the body on the first
+        /// tick that reaches it. Hashed: two peers that disagreed here would
+        /// lose the same body on different ticks.
+        /// </summary>
+        public int ExpireTick;
+
+        // 오토캐스트, docs/TECH-TREE.md 묶음 7. Both live on the body running
+        // the ability and nowhere else: a body holds at most one ability with
+        // state (FactionData refuses a second at type load), so two numbers
+        // carry all of it, and a body that dies takes its ability with it.
+
+        /// <summary>
+        /// Ticks before this body's ability can go off again, or 0 when it is
+        /// ready. Set to the row's cooldown when it goes off (잔해 수리 100, 굴러
+        /// 들이받기 240) and taken down one a tick by AbilitySystem.
+        /// </summary>
+        public int AbilityCooldown;
+
+        /// <summary>
+        /// What this body's ability is in the middle of. Counts down for 질풍
+        /// (ticks of double speed left) and 굴러 들이받기 (ticks of rolling
+        /// left); counts up for 정조준 (ticks stood still, stopping at 40).
+        /// Which of the three it means is the body's own ability row: a body
+        /// holds at most one.
+        /// </summary>
+        public int AbilityTicksLeft;
+
+        // 액티브, docs/TECH-TREE.md 묶음 8. Both on the caster and nowhere
+        // else, the one-sidedness every field above has: a delayed hit or a
+        // zone lives in the caster's clock and point, so a caster that dies
+        // takes the hit or the zone with it and Kill clearing two fields is all
+        // that ending it takes.
+
+        /// <summary>
+        /// Where the caster's point active is aimed: the Target of the Cast that
+        /// set it, as it was on the tick of the order. Read by AbilitySystem
+        /// while AbilityTicksLeft runs, for 유성우, 간헐천, 낙뢰 and the two zones.
+        /// Hashed: two peers that disagreed here would drop one meteor on two
+        /// different armies.
+        /// </summary>
+        public FixVec2 AbilityPoint;
+
+        /// <summary>
+        /// Whether this 견인 대포 stands deployed: no walking, the deployed reach,
+        /// and a splash. False on every other body. Flipped by AbilitySystem on
+        /// the tick a 전개 transition's clock reaches 0, never by the Cast itself.
+        /// </summary>
+        public bool Deployed;
     }
 
     /// <summary>
@@ -297,6 +393,9 @@ namespace WordCraft.Sim
         /// </summary>
         public const int RemnantTicks = 400;
 
+        /// <summary>How long debris stands once 오래 남는 잔해 is researched.</summary>
+        public const int RemnantTicksResearched = 600;
+
         /// <summary>
         /// 지옥불 군단장: whole ticks between one offspring and the next, per
         /// docs/FACTION-MECHANICS.md. The clock runs whether or not there is room,
@@ -308,6 +407,12 @@ namespace WordCraft.Sim
         /// <summary>Most offspring one 지옥불 군단장 keeps alive at once.</summary>
         public const int WarlordOffspring = 5;
 
+        /// <summary>The cap once 군단 확장 is researched. See WarlordOffspringCap.</summary>
+        public const int WarlordOffspringResearched = 7;
+
+        /// <summary>The period once 산란 가속 is researched. See WarlordSpawnTicksFor.</summary>
+        public const int WarlordSpawnTicksResearched = 70;
+
         /// <summary>
         /// 인간 마법 문명 징발: whole ticks an 인간 worker stands beside a neutral
         /// 꼬마돌 before it is taken, per docs/FACTION-MECHANICS.md. Three seconds
@@ -315,6 +420,9 @@ namespace WordCraft.Sim
         /// costs on top of walking there.
         /// </summary>
         public const int CaptureTicks = 60;
+
+        /// <summary>How long a capture takes once 포획 가속 is researched.</summary>
+        public const int CaptureTicksResearched = 40;
 
         /// <summary>
         /// What a neutral 꼬마돌 stands on the map with, per
@@ -424,11 +532,18 @@ namespace WordCraft.Sim
         /// </summary>
         private void Kill(ref Entity e)
         {
+            // 전격 과부하 and 화염 분출: queued, never landed here, per
+            // docs/TECH-TREE.md 능력 공통 규칙. First, while the body still
+            // counts as alive and able, which is what asks whether it bursts.
+            QueueDeathBurst(e);
             e.Hp = 0;
             e.Alive = false;
             ReleasePopulation(e);
             ReleaseOffspringSlot(e);
             DropRemnant(e);
+            // 씨앗 귀환, after the population line above so the cap is asked of
+            // the peer without this body.
+            ReturnSeed(e);
             // A capture this body was running dies with it, per
             // docs/FACTION-MECHANICS.md: 둘 중 하나가 죽으면 진행도는 사라진다.
             // Here rather than in the capture loop, so a corpse never carries a
@@ -441,6 +556,24 @@ namespace WordCraft.Sim
             // corpse never carries one a second way of killing something could
             // forget to stop.
             ClearGrowth(ref e);
+            // 건물이 죽으면 진행 중 연구는 사라지고 환불하지 않는다. Same shape as
+            // the growth line above: the clock goes with the body, and nothing
+            // here pays anything back.
+            ClearResearch(ref e);
+            // A corpse carries no status clock, so nothing a second way of
+            // killing something forgets can keep counting on it.
+            e.SlowTicksLeft = 0;
+            e.BurnTicksLeft = 0;
+            // A corpse never lapses a second time.
+            e.ExpireTick = 0;
+            // Nor carries an ability clock: a roll or a cooldown ends with the body.
+            e.AbilityCooldown = 0;
+            e.AbilityTicksLeft = 0;
+            // A meteor, a geyser or a bolt the body had aimed never falls, and
+            // a zone it held ends, per docs/TECH-TREE.md 동점과 경계: the point
+            // goes with the clock.
+            e.AbilityPoint = FixVec2.Zero;
+            e.Deployed = false;
         }
 
         /// <summary>
@@ -453,16 +586,56 @@ namespace WordCraft.Sim
         /// Dropped from inside the combat system's pass, which is where deaths
         /// happen, so creation and expiry both land at one fixed point in the
         /// system order and two peers repath against the same map on the same tick.
+        ///
+        /// docs/TECH-TREE.md 잔해 규칙, since 묶음 4: the cells come from
+        /// FactionData's remnant shape (고대 골렘 covers its own cell and x−1, x+1),
+        /// only open terrain inside the map is written, and every write is the max
+        /// of the expiry already there and the new one. Overwriting let a short
+        /// expiry cut a longer one short the moment two durations existed (잔해 지속
+        /// 600 against 400); max keeps the longer one, and while there was one
+        /// duration the two rules gave the same answer.
         /// </summary>
         private void DropRemnant(Entity e)
         {
             if (e.Kind != EntityKind.Unit) return; // workers and buildings leave nothing
             if (e.Owner < 0 || e.Owner >= MaxPeers) return;
-            if (factions[e.Owner] != Faction.RockGolems) return;
-            // Overwrites rather than stacks: a second body on one cell resets the
-            // clock, and a count nobody can see is a count nobody can play around.
-            remnantExpiry[CellOf(e.Position)] = Tick + RemnantTicks;
+            Faction faction = factions[e.Owner];
+            if (faction != Faction.RockGolems) return;
+
+            int expiry = Tick + RemnantTicksFor(e.Owner);
+            int fell = CellOf(e.Position);
+            int fx = fell % GridSize, fy = fell / GridSize;
+            int count = FactionData.RemnantCellCount(faction, e.Role, e.Slot);
+            for (int i = 0; i < count; i++)
+            {
+                var (dx, dy) = FactionData.RemnantCell(faction, e.Role, e.Slot, i);
+                int x = fx + dx, y = fy + dy;
+                if (x < 0 || y < 0 || x >= GridSize || y >= GridSize) continue;
+                WriteRemnant(y * GridSize + x, expiry);
+            }
         }
+
+        /// <summary>
+        /// The write that lays or lengthens debris in remnantExpiry: open terrain
+        /// only, and never shorter than what stands there. Debris on water or rock
+        /// blocks nothing that was not blocked already, and it would be hashed
+        /// state saying so. A fallen 돌 골렘 and 잠듦의 고리 write through here.
+        /// Two other writes do not: ConsumeRemnant writes 0, which is what using
+        /// debris means, and SetRemnantForScenario writes what a harness asks.
+        /// </summary>
+        private void WriteRemnant(int cell, int expiry)
+        {
+            if (terrain[cell] != (byte)TileKind.Open) return;
+            if (remnantExpiry[cell] < expiry) remnantExpiry[cell] = expiry;
+        }
+
+        /// <summary>
+        /// 오래 남는 잔해: how long debris this peer's dead leave stands. Read when
+        /// the body falls, so debris already on the map keeps the expiry it was
+        /// dropped with and only what falls after the level lands lasts longer.
+        /// </summary>
+        public int RemnantTicksFor(int peer) =>
+            UpgradeLevelOf(peer, UpgradeEffect.RemnantTicks) > 0 ? RemnantTicksResearched : RemnantTicks;
 
         public TileKind TerrainAt(int cell) => (TileKind)terrain[cell];
 
@@ -529,6 +702,25 @@ namespace WordCraft.Sim
             air || (terrain[cell] == (byte)TileKind.Open && remnantExpiry[cell] <= Tick);
 
         /// <summary>
+        /// Whether something may be put down on this cell on the ground: IsPassable
+        /// for a walker, and no building or resource node standing on it. The cells
+        /// the pathfinder blocks, asked by CanBuild for a placement and by
+        /// ArrivalValid for a walking body's arrival, so the two cannot disagree.
+        /// </summary>
+        public bool GroundCellOpen(int cell)
+        {
+            if (!IsPassable(cell, air: false)) return false;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (!e.Alive) continue;
+                if (e.Kind != EntityKind.Building && e.Kind != EntityKind.ResourceNode) continue;
+                if (CellOf(e.Position) == cell) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
         /// The roster row this body fights from: its owner's faction, its role,
         /// and its own entry of that role. One accessor rather than the lookup
         /// written out at each call site, so no system can ask by role alone and
@@ -587,7 +779,8 @@ namespace WordCraft.Sim
         {
             UnitStats s = FactionData.Stats(factions[owner], role, slot);
             int id = Add(EntityKind.Unit, owner, role, slot, position, s.Speed, hpOverride < 0 ? s.Hp : hpOverride);
-            ArmWarlord(id);
+            ArmSpawner(id);
+            ArmLifetime(id, s);
             return id;
         }
 
@@ -653,6 +846,7 @@ namespace WordCraft.Sim
                 TargetId = -1,
                 ParentId = -1,
                 CaptureTargetId = -1,
+                ResearchIndex = -1,
             };
             entities.Add(e);
             paths.Add(new List<int>());
@@ -690,8 +884,13 @@ namespace WordCraft.Sim
                 GrowthSystem();
                 ConstructionSystem();
                 ProductionSystem();
-                WarlordSpawnSystem();
+                ResearchSystem();
+                SpawnerSystem();
+                ExpirySystem();
+                AbilitySystem();
                 CombatSystem();
+                StatusSystem();
+                BurstSystem();
                 FleeSystem();
                 MoveSystem();
                 VictorySystem();
@@ -754,7 +953,7 @@ namespace WordCraft.Sim
             // make. A player who wants the worker back does not get it.
             //
             // Commands that name a building rather than the body being ordered —
-            // Produce, CancelProduction, SetRallyPoint — pass through untouched: a
+            // Produce, CancelProduction, SetRallyPoint, Research — pass through untouched: a
             // building never grows, so the test can only ever answer false for them.
             // Build names no entity at all and carries -1, which the range test drops.
             if (c.EntityId >= 0 && c.EntityId < entities.Count && IsGrowing(entities[c.EntityId])) return;
@@ -765,6 +964,8 @@ namespace WordCraft.Sim
                 {
                     if (!OwnedAndAlive(c.EntityId, c.PeerId)) return;
                     Entity e = entities[c.EntityId];
+                    // 전개 중 이동 명령도 거부, and mid-transition too.
+                    if (Anchored(e)) return;
                     ClearOrders(ref e);
                     entities[c.EntityId] = e;
                     SetDestination(c.EntityId, c.Target);
@@ -788,8 +989,9 @@ namespace WordCraft.Sim
                     e.TargetId = c.Arg;
                     entities[c.EntityId] = e;
                     // Walk into range. A turret has no walk to give, and its Target
-                    // is hashed state, so it takes the order without moving.
-                    if (e.Speed.Raw != 0) SetDestination(c.EntityId, victim.Position);
+                    // is hashed state, so it takes the order without moving. Nor
+                    // does a deployed 견인 대포, which shoots from where it stands.
+                    if (e.Speed.Raw != 0 && !e.Deployed) SetDestination(c.EntityId, victim.Position);
                     break;
                 }
 
@@ -800,7 +1002,7 @@ namespace WordCraft.Sim
                     // Has to walk and has to shoot. On anything else this order is a
                     // plain Move wearing another name, and accepting it would leave
                     // an entity in a mode whose systems never touch it.
-                    if (e.Speed.Raw == 0 || !CanAttack(e)) return;
+                    if (e.Speed.Raw == 0 || !CanAttack(e) || Anchored(e)) return;
                     ClearOrders(ref e);
                     e.Mode = OrderMode.AttackMove;
                     e.OrderPoint = c.Target;
@@ -983,7 +1185,23 @@ namespace WordCraft.Sim
                 }
 
                 case CommandType.CancelProduction:
-                    TryCancelQueuedUnit(c.PeerId, c.EntityId);
+                    // One cancel for both things a building can be busy with. A
+                    // queue goes first, because it is what the command has always
+                    // meant; only an empty queue lets the cancel reach research.
+                    if (!TryCancelQueuedUnit(c.PeerId, c.EntityId)) TryCancelResearch(c.PeerId, c.EntityId);
+                    break;
+
+                case CommandType.Research:
+                    // Arg is the row index as it stands. No unpacking and no
+                    // default: every rule lives in CanResearch, and an index
+                    // outside the table fails there like any other refusal.
+                    TryResearch(c.PeerId, c.EntityId, c.Arg);
+                    break;
+
+                case CommandType.Cast:
+                    // Arg is the row of the owner's ability table and Target the
+                    // point. Every rule lives in CastRefusal. See Sim/Casts.cs.
+                    TryCast(c);
                     break;
             }
         }
@@ -1050,6 +1268,8 @@ namespace WordCraft.Sim
 
         private void MoveSystem()
         {
+            // 덩굴 지대 is read per step, so its sources are gathered once.
+            CollectAuraSources();
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
@@ -1058,13 +1278,19 @@ namespace WordCraft.Sim
                 // written. Enforced here as well as in CombatSystem because this
                 // is the only line that decides whether an entity moves at all.
                 if (e.Mode == OrderMode.Hold) continue;
+                // 전개: a deployed 견인 대포 and one mid-transition stand still.
+                if (Anchored(e)) continue;
 
                 List<int> path = paths[i];
                 FixVec2 goal = e.PathIndex < path.Count ? CellCenter(path[e.PathIndex]) : e.Target;
 
+                // Researched speed is read here and nowhere else that moves a
+                // body; e.Speed stays the hashed value. See World.SpeedFor. The
+                // slow of 휘감기 and 덩굴 지대 rides on top, in MoveSpeedFor.
+                Fix speed = MoveSpeedFor(e);
                 FixVec2 delta = goal - e.Position;
-                bool arrives = delta.Magnitude <= e.Speed;
-                FixVec2 next = arrives ? goal : e.Position + delta.Normalized() * e.Speed;
+                bool arrives = delta.Magnitude <= speed;
+                FixVec2 next = arrives ? goal : e.Position + delta.Normalized() * speed;
 
                 // The last word on where a body may stand. The pathfinder already
                 // routes around terrain and cliffs, so this only ever catches the
@@ -1118,6 +1344,12 @@ namespace WordCraft.Sim
             int to = CellOf(q);
             int fx = from % GridSize, fy = from / GridSize;
             int tx = to % GridSize, ty = to / GridSize;
+            // A step inside the cell the body already stands on is always
+            // taken. The only way a walker stands on a blocked cell is debris
+            // laid under it, by 굳기 (docs/TECH-TREE.md 묶음 8: 그 몸은 나가는
+            // 걸음만 할 수 있다) or by a golem falling beside it, and a body at a
+            // cell's centre needs several such steps to reach the edge it leaves by.
+            if (from == to) return true;
             if (!StepPassable(from, to, air)) return false;
             // Same cell, an orthogonal neighbour, or a step longer than a cell,
             // which no roster Speed takes today; for that last one the two ends
@@ -1182,6 +1414,13 @@ namespace WordCraft.Sim
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)population[p]);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, aiPeers[p] ? 1UL : 0UL);
             for (int p = 0; p < MaxPeers; p++) Mix(ref h, (ulong)aiSeq[p]);
+            // Upgrade levels, peer major and row minor, every slot whether the
+            // faction fields that row or not: a fixed walk of a fixed array, so
+            // two peers cannot disagree about which numbers were mixed.
+            for (int p = 0; p < MaxPeers; p++)
+            {
+                for (int i = 0; i < FactionData.MaxUpgrades; i++) Mix(ref h, (ulong)upgradeLevels[p, i]);
+            }
             // Terrain never changes after the map is built, but it is hashed every
             // tick anyway: two peers that generated different maps have to diverge
             // on tick 1, not twenty seconds later when a unit first walks into
@@ -1219,6 +1458,14 @@ namespace WordCraft.Sim
                 if (remnantExpiry[c] == 0) continue;
                 Mix(ref h, (ulong)c);
                 Mix(ref h, (ulong)remnantExpiry[c]);
+            }
+            // Water field expiry, docs/TECH-TREE.md 물 지대 규칙: the same sparse
+            // walk as the debris above, and empty in a match with no 물 슬라임.
+            for (int c = 0; c < GridCells; c++)
+            {
+                if (waterFieldExpiry[c] == 0) continue;
+                Mix(ref h, (ulong)c);
+                Mix(ref h, (ulong)waterFieldExpiry[c]);
             }
             for (int i = 0; i < entities.Count; i++)
             {
@@ -1267,6 +1514,16 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.ArrivalPoint.Y.Raw);
                 Mix(ref h, e.HasArrivalPoint ? 1UL : 0UL);
                 Mix(ref h, e.Fleeing ? 1UL : 0UL);
+                Mix(ref h, (ulong)e.ResearchIndex);
+                Mix(ref h, (ulong)e.ResearchTicksLeft);
+                Mix(ref h, (ulong)e.SlowTicksLeft);
+                Mix(ref h, (ulong)e.BurnTicksLeft);
+                Mix(ref h, (ulong)e.ExpireTick);
+                Mix(ref h, (ulong)e.AbilityCooldown);
+                Mix(ref h, (ulong)e.AbilityTicksLeft);
+                Mix(ref h, (ulong)e.AbilityPoint.X.Raw);
+                Mix(ref h, (ulong)e.AbilityPoint.Y.Raw);
+                Mix(ref h, e.Deployed ? 1UL : 0UL);
 
                 List<int> path = paths[i];
                 Mix(ref h, (ulong)path.Count);

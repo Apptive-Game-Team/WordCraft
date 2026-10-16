@@ -46,27 +46,28 @@ namespace WordCraft.Sim
     /// worker is a Worker and then a Unit, so neither ever sees it. PopulationCap
     /// and TierOf read Role off buildings only, for the same reason.
     ///
-    /// WarlordSpawnSystem reads Kind and Role through IsWarlord, which also asks
-    /// the faction. 세계수 정령 is not 지옥불, so this answers false before and
-    /// after. The order matters anyway: growth runs before it, so a body that
+    /// SpawnerSystem reads Kind, Role and Slot through the spawner table, which is
+    /// keyed by faction. 세계수 정령 has no row there, so this answers false before
+    /// and after. The order matters anyway: growth runs before it, so a body that
     /// became a Signature this tick would be armed for this tick's spawn pass, and
     /// the faction test is what makes that a fact about 지옥불 rather than luck.
     ///
-    /// CombatSystem is where the swap is visible, and 공격 불가 rests on exactly
-    /// one clause of it: CanAttack admits Kind == Unit and a finished Defense
-    /// building, and a growing body is a Worker until the tick it lands. That is
-    /// the whole enforcement. Armed would also answer no, because the worker row
-    /// carries no weapon, but it is not what is holding the rule — arming that row
-    /// changes nothing about a growing body, which was checked rather than assumed.
-    /// The consequence is worth stating: there is no growth-specific line here to
-    /// delete, so the harness cannot make 공격 불가 fail on its own. What it can do
-    /// is refuse to let the assertion be vacuous, by standing the same enemy at the
-    /// same distance and requiring it to bleed one reload after the growth lands.
+    /// CombatSystem is where the swap is visible, and 공격 불가 rests on one
+    /// clause of it: CanAttack refuses a body for which IsGrowing answers true.
+    /// For a growing worker that clause is belt on top of braces, because
+    /// CanAttack also admits only Kind == Unit and a finished Defense building,
+    /// and a growing worker is a Worker until the tick it lands; Armed answers no
+    /// as well, the worker row carrying no weapon. For a unit that grows
+    /// (docs/TECH-TREE.md M6, 잎날 정령 → 폭풍 기수) the clause is the whole
+    /// enforcement: the body is a Unit on an armed row for the entire growth.
+    /// Deleting it is what MechanicsChecks.AGrowingUnitHoldsItsFire catches, and
+    /// that check also refuses to be vacuous by requiring the same enemy to bleed
+    /// one reload after the growth lands.
     /// On the completion tick the body is a Unit on its new row, and it fights that
     /// tick, exactly as a 자손 emitted this tick fights this tick and a 징발 that
-    /// lands this tick shoots this tick. VolleyBonus reads Kind and Role to
-    /// count 물 슬라임 archers and answers zero here for the same faction reason
-    /// IsWarlord does. AcquireTarget reads Kind only to skip resource nodes: a
+    /// lands this tick shoots this tick. VolleyBonus reads Kind, Role and Slot
+    /// to count 물 슬라임 archers and answers zero here for the same faction
+    /// reason IsWarlord does. AcquireTarget reads Kind only to skip resource nodes: a
     /// growing worker is a legal target throughout, which is the whole of 성장 중
     /// 죽으면 그냥 죽는다.
     ///
@@ -145,25 +146,32 @@ namespace WordCraft.Sim
         /// completes: growth adds no body. The peer had this one already and will
         /// have exactly it afterwards, so there is no supply to be over.
         ///
-        /// Neither is the tech tier. A tier is what a production building opens,
-        /// and 세계수 정령's answer to production is that it does not produce: the
-        /// document prices growth in workers and ticks and says nothing about
-        /// buildings, and a tier gate here would be a rule the document does not
-        /// have and no player could see.
+        /// The tech tier and the prerequisite are, the same two questions a
+        /// Produce asks of the entry it names, per docs/TECH-TREE.md 기술 단계.
+        /// 고목 수호자 is a tier-2 body that needs a 풀씨 둥지 standing, and the
+        /// document adds tier-3 growth targets (거대 덩쿨, 번개새 무리) that
+        /// without the gate could grow on the first tick of a match.
         /// </summary>
         private void TryGrow(int peer, int id, Role role, int slot)
         {
             Entity w = entities[id];
-            // A worker, not an army. 일꾼이 자란다 is the mechanic, and refusing
-            // rather than reinterpreting keeps a 고목 수호자 from being ordered to
-            // grow into a second one.
-            if (w.Kind != EntityKind.Worker) return;
 
             // The table is the faction test, the roster test and the price in one
             // question. Five factions out of six have no row here at all, and the
             // entry a 세계수 정령 player can name is the entry the table lists.
             GrowthCost cost = FactionData.Growth(factions[peer], role, slot);
             if (!cost.Grown) return;
+            // And the body has to be the entry the row grows from, docs/TECH-TREE.md
+            // M6: a 풀씨 정령 for the five worker rows, 잎날 정령 for 폭풍 기수,
+            // 번개 정령 for 번개새 무리, 덩쿨 정령 for 거대 덩쿨. Refusing rather than
+            // reinterpreting keeps a 고목 수호자 from being ordered to grow into a
+            // second one, and a worker from skipping a stage. The kind goes with the
+            // entry: a worker row is a Worker, every other row a Unit.
+            EntityKind from = cost.FromRole == Role.Worker ? EntityKind.Worker : EntityKind.Unit;
+            if (w.Kind != from || w.Role != cost.FromRole || w.Slot != cost.FromSlot) return;
+            // After the table, so a Grow naming something nobody grows into is
+            // refused for that and not for the tier it happens to sit at.
+            if (!MeetsTierAndPrerequisite(peer, role, slot)) return;
             if (resources[peer] < cost.Resources) return;
 
             // Taken in full, up front, and never given back. That is what makes the
@@ -182,9 +190,35 @@ namespace WordCraft.Sim
 
             w.MorphRole = role;
             w.MorphSlot = slot;
-            w.MorphTicksLeft = cost.Ticks;
+            w.MorphTicksLeft = GrowthTicksFor(peer, role, slot);
             entities[id] = w;
         }
+
+        /// <summary>
+        /// 성장 가속: how many ticks a growth into this entry takes this peer, the
+        /// table's number less a quarter of it once researched. 덩쿨 정령 40 → 30,
+        /// 고목 수호자 60 → 45. Integer and exact for both rows the table has.
+        ///
+        /// Asked twice per growth: once when the clock is set, and every tick by
+        /// the ramp, which needs the whole length to know how far along the body
+        /// is. A level landing between the two is the one case where they differ,
+        /// and GrowStep's floor is what it costs.
+        /// </summary>
+        public int GrowthTicksFor(int peer, Role role, int slot)
+        {
+            if (peer < 0 || peer >= MaxPeers) return 0;
+            int ticks = FactionData.Growth(factions[peer], role, slot).Ticks;
+            return UpgradeLevelOf(peer, UpgradeEffect.GrowthTime) > 0 ? ticks - ticks / 4 : ticks;
+        }
+
+        /// <summary>
+        /// 성장 체력: how many times faster the hp ramp climbs, 1 or 2. Twice as
+        /// fast is a ramp that reaches the target at the halfway tick and holds
+        /// there: the growth still takes as long, but the body is at full
+        /// strength for the second half of it.
+        /// </summary>
+        public int GrowthRampFor(int peer) =>
+            UpgradeLevelOf(peer, UpgradeEffect.GrowthHpRamp) > 0 ? 2 : 1;
 
         /// <summary>
         /// Runs beside the other two worker loops and immediately after them,
@@ -203,14 +237,33 @@ namespace WordCraft.Sim
         /// </summary>
         private void GrowthSystem()
         {
+            // 과생장 is asked per growing body, so its sources are gathered once.
+            CollectAuraSources();
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
                 if (!e.Alive || !IsGrowing(e)) continue;
 
                 GrowStep(ref e);
+                // 과생장, docs/TECH-TREE.md: on the ticks its period divides, a
+                // body an allied 도깨비불 reaches takes one more step of the same
+                // function, so the hp ramp and the swap run exactly as they
+                // would have. Once however many reach, and never past the end.
+                if (IsGrowing(e) && Overgrown(e)) GrowStep(ref e);
                 entities[i] = e;
             }
+        }
+
+        /// <summary>Whether a 과생장 source of this body's owner reaches it on this tick.</summary>
+        private bool Overgrown(Entity e)
+        {
+            for (int r = 0; r < FactionData.AbilityRowCount; r++)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(r);
+                if (row.Kind != AbilityKind.GrowthAura || Tick % row.Period != 0) continue;
+                if (AlliedAuraReaches(r, e, e.Owner)) return true;
+            }
+            return false;
         }
 
         /// <summary>
@@ -240,14 +293,27 @@ namespace WordCraft.Sim
         {
             UnitStats from = RosterStats(e);
             UnitStats s = FactionData.Stats(factions[e.Owner], e.MorphRole, e.MorphSlot);
-            int total = FactionData.Growth(factions[e.Owner], e.MorphRole, e.MorphSlot).Ticks;
+            int total = GrowthTicksFor(e.Owner, e.MorphRole, e.MorphSlot);
+            int ramp = GrowthRampFor(e.Owner);
 
             e.MorphTicksLeft--;
+            // How much of the line is still to climb, in ticks of the whole. With
+            // ramp 1 it is the ticks left; with 성장 체력 it runs out at the
+            // halfway tick and stays at zero.
+            int behind = ramp * e.MorphTicksLeft - (ramp - 1) * total;
+            if (behind < 0) behind = 0;
             // Integer division, truncating toward zero, which C# defines and both
             // runtimes therefore do the same way. The last tick multiplies by a
             // remaining count of zero, so the line lands on the target exactly
             // rather than near it.
-            int ceiling = s.Hp - ((s.Hp - from.Hp) * e.MorphTicksLeft) / total;
+            int ceiling = s.Hp - ((s.Hp - from.Hp) * behind) / total;
+            // Never back down the line. Unresearched, the line only climbs and
+            // this changes nothing. It is for 성장 가속 landing mid-growth: the
+            // clock was set against the longer total, so for a few ticks it
+            // reads further from the end than the new total allows, and the
+            // formula would hand back a lower ceiling — a body losing hp to its
+            // own owner's research.
+            if (ceiling < e.MaxHp && s.Hp >= from.Hp) ceiling = e.MaxHp;
             e.Hp += ceiling - e.MaxHp;
             e.MaxHp = ceiling;
             // Both rows in the growth table stand above a worker, so the line only
@@ -270,6 +336,11 @@ namespace WordCraft.Sim
             // rather than leaving a third of it implied by arithmetic above.
             e.MaxHp = s.Hp;
             e.Speed = s.Speed;
+            // The ability clocks belong to the row grown out of, so the new row starts with none.
+            e.AbilityCooldown = 0;
+            e.AbilityTicksLeft = 0;
+            e.AbilityPoint = FixVec2.Zero;
+            e.Deployed = false;
             // Hp arrives through the ramp rather than being handed over here, which
             // is what makes the ramp mean anything: a body shot while it grew comes
             // up short, and one nobody touched comes up full. The clamp is for a
@@ -285,6 +356,88 @@ namespace WordCraft.Sim
 
             ClearGrowth(ref e);
         }
+
+        /// <summary>
+        /// 씨앗 귀환: a 세계수 정령 unit that dies within reach of its owner's 씨앗
+        /// 요람 comes back as a 풀씨 정령 on that 요람's queue, free. docs/TECH-TREE.md
+        /// 씨앗 귀환 row and M10; FactionData.freeQueues is the table.
+        ///
+        /// Called from Kill, after the dead body's population has been given back,
+        /// so the population cap is asked of the peer as it stands without that
+        /// body. The rules, in the order they are asked:
+        ///
+        /// - Units only. A worker is the body the 요람 gives back, and a building
+        ///   is not a 전투 유닛.
+        /// - The nearest finished, living free-queue building of the dead body's
+        ///   owner whose radius reaches the body, measured with WithinRange from the
+        ///   building's position. Nearest is the least squared distance, a tie going
+        ///   to the lower id: the scan is by ascending id and only a strictly
+        ///   nearer building replaces the one held, as AcquireTarget does.
+        /// - That one building or none. A full nearest 요람 drops the body rather
+        ///   than passing it to the next one, so a death has one place it can go.
+        /// - Dropped when that queue holds MaxQueue already or the peer is at its
+        ///   population cap, the two refusals a Produce has that are not about money.
+        ///
+        /// Writing straight into the building is safe for the reason
+        /// ReleaseOffspringSlot's write into the parent is: the only Kill is in
+        /// CombatSystem, a 씨앗 요람 is no Defense building so it is never the
+        /// attacker that loop writes back, and it is not the body that died.
+        /// </summary>
+        private void ReturnSeed(Entity dead)
+        {
+            if (dead.Kind != EntityKind.Unit) return;
+            int peer = dead.Owner;
+            if (peer < 0 || peer >= MaxPeers) return;
+
+            int best = -1;
+            Fix bestSqr = Fix.Zero;
+            FreeQueueRow give = default;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity b = entities[i];
+                if (!b.Alive || b.Kind != EntityKind.Building || b.Owner != peer || b.BuildTicksLeft > 0) continue;
+                FreeQueueRow row = FactionData.FreeQueue(factions[peer], b.Role, b.Slot);
+                if (!row.Free) continue;
+                if (!WithinRange(dead.Position, b.Position, FreeQueueRadiusFor(peer, row))) continue;
+                Fix d = (b.Position - dead.Position).SqrMagnitude;
+                if (best < 0 || d < bestSqr)
+                {
+                    best = i;
+                    bestSqr = d;
+                    give = row;
+                }
+            }
+            if (best < 0) return;
+
+            Entity cradle = entities[best];
+            if (cradle.QueueCount >= MaxQueue) return;
+            if (population[peer] >= PopulationCap(peer)) return;
+            // Nothing else can be on this queue: FactionData refuses at type load
+            // a free-queue building that any entry is produced at, so the entry on
+            // it is always the one the row gives.
+
+            cradle.QueueCount++;
+            cradle.ProduceRole = give.GiveRole;
+            cradle.ProduceSlot = give.GiveSlot;
+            entities[best] = cradle;
+        }
+
+        /// <summary>
+        /// 씨앗 요람 반경: how far a free-queue building reaches for this peer, the
+        /// row's radius or its researched radius.
+        /// </summary>
+        public Fix FreeQueueRadiusFor(int peer, FreeQueueRow row) =>
+            Fix.FromInt(row.RadiusEffect != UpgradeEffect.None && UpgradeLevelOf(peer, row.RadiusEffect) > 0
+                ? row.RadiusResearched
+                : row.Radius);
+
+        /// <summary>
+        /// True for a building whose queue is free: a 씨앗 요람. The queue was never
+        /// paid for, so CancelProduction on it is refused rather than refunded.
+        /// </summary>
+        public bool HasFreeQueue(Entity b) =>
+            b.Kind == EntityKind.Building && b.Owner >= 0 && b.Owner < MaxPeers &&
+            FactionData.FreeQueue(factions[b.Owner], b.Role, b.Slot).Free;
 
         /// <summary>
         /// Puts a body back in the not-growing state. Static and by ref for the

@@ -61,6 +61,7 @@ Fill this document during project initialization. Agents must verify commands ag
 |---|---|
 | Install dependencies | none; the .NET SDK is the only requirement |
 | Run locally | `dotnet run --project Host -- selfcheck` |
+| Arena faction win rates (36 pairings) | `dotnet run -c Release --project Host -- arena` |
 | Format | TODO |
 | Lint | `dotnet run --project Replay` includes the forbidden-construct scan over `Sim` |
 | Type-check | `dotnet build` |
@@ -69,6 +70,12 @@ Fill this document during project initialization. Agents must verify commands ag
 | Build | `dotnet build` (root `WordCraft.sln`) |
 | View determinism | `Unity -batchmode -quit -projectPath Client -executeMethod WordCraft.View.ViewSelfCheck.Run` |
 | Screenshots | `Unity -batchmode -quit -projectPath Client -executeMethod WordCraft.View.ViewShots.Run -shotsOutput shots` (needs a GPU, so no `-nographics`) |
+
+Host arena accepts `-a <faction> -b <faction>` to run a selected pair and
+`-games <count>` to repeat it. Faction `a` occupies peer 0 on even game indexes
+and peer 1 on odd game indexes. `Sim/` currently makes no draws from
+`World.Random`, so `-seed` and the seed offset by game index change only the
+hashed RNG state; side alternation is the only game variation.
 
 ## Constraints
 

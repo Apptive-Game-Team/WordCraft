@@ -89,7 +89,7 @@ namespace WordCraft.Sim
         /// reason" and a push is a reason; a growing body cannot move either.
         /// Both still push others: a held unit is a rock the rest flow round.
         /// </summary>
-        private static bool Pushable(Entity e) => e.Mode != OrderMode.Hold && !IsGrowing(e);
+        private bool Pushable(Entity e) => e.Mode != OrderMode.Hold && !IsGrowing(e) && !Anchored(e);
 
         private void SeparationSystem()
         {

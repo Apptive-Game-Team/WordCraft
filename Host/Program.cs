@@ -19,6 +19,8 @@ namespace WordCraft.Host
     ///   dotnet run --project Host -- watch &lt;ip&gt; [port] [ticks]
     ///   dotnet run --project Host -- replay &lt;path&gt;
     ///   dotnet run --project Host -- compare &lt;path&gt; &lt;path&gt;
+    ///   dotnet run --project Host -- arena [-games N] [-ticks T] [-seed S] [-a &lt;faction&gt;] [-b &lt;faction&gt;]
+    ///   In arena, a is peer 0 on even games and peer 1 on odd games.
     /// </summary>
     internal static class Program
     {
@@ -39,6 +41,7 @@ namespace WordCraft.Host
         {
             string mode = args.Length > 0 ? args[0] : "selfcheck";
             if (mode == "selfcheck") return SelfCheck.Run();
+            if (mode == "arena") return Arena.Run(args);
             if (mode == "replay") return RunReplay(args);
             if (mode == "compare") return RunCompare(args);
             if (mode == "watch") return RunWatch(args);
@@ -50,7 +53,9 @@ namespace WordCraft.Host
                                   " | host [port] [ticks] [-faction <name>] [-opponent <name>] [-save <path>] [-watch <port>]" +
                                   " | join <ip> [port] [ticks] [-faction <name>] [-opponent <name>] [-save <path>] [-watch <port>]" +
                                   " | watch <ip> [port] [ticks]" +
-                                  " | replay <path> | compare <path> <path>");
+                                  " | replay <path> | compare <path> <path>" +
+                                  " | arena [-games N] [-ticks T] [-seed S] [-a <faction>] [-b <faction>]");
+                Console.WriteLine("arena: a is peer 0 on even games and peer 1 on odd games");
                 return 2;
             }
 

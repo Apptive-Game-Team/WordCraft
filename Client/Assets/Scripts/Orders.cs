@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using WordCraft.Net;
 using WordCraft.Sim;
@@ -16,6 +17,8 @@ namespace WordCraft.View
     ///   left click         completes an armed command, Esc cancels it
     ///   build key          opens the submenu; a second key picks the building
     ///   arrive key         names 차원 유랑종's 도착 지점; sends nothing by itself
+    ///   more key           turns the production or research list to its next page; sends nothing
+    ///   research cell      Research to the one representative 기술 건물, row in Arg
     /// </summary>
     public sealed class Orders : MonoBehaviour
     {
@@ -61,6 +64,17 @@ namespace WordCraft.View
         /// </summary>
         public bool HasArrivalPoint { get; private set; }
 
+        /// <summary>
+        /// Which page of the production or research list the building card shows. View state
+        /// like <see cref="BuildMenuOpen"/>: nothing about it reaches the
+        /// simulation, and it goes back to 0 whenever the selection changes, so a
+        /// new building always opens on its first entries.
+        /// </summary>
+        private int Page { get; set; }
+
+        /// <summary>The selection Page was last valid for, id by id. See SyncPage.</summary>
+        private readonly List<int> pageSelection = new List<int>();
+
         private MatchRunner runner;
         private Selection selection;
         private Camera cam;
@@ -95,6 +109,69 @@ namespace WordCraft.View
 
         /// <summary>The card the current selection shows. The HUD draws it, the keys fire it.</summary>
         public CardKind Kind() => BuildMenuOpen ? CardKind.BuildMenu : SelectionKind();
+
+        /// <summary>
+        /// The card the keys fire and the HUD draws, built from one place so the
+        /// two cannot be handed different pages.
+        /// </summary>
+        public CardSlot[] Card()
+        {
+            // The HUD can draw a frame before Start has found the runner.
+            if (runner == null || selection == null)
+            {
+                return CommandCard.Of(CardKind.None, null, 0, Role.None, 0, 0);
+            }
+            SyncPage();
+            return CommandCard.Of(Kind(), runner.World, runner.LocalPeer, LeadRole(), LeadSlot(), Page);
+        }
+
+        /// <summary>
+        /// The role of the entity the card speaks for, Role.None when nothing
+        /// qualifies. Only the building card reads it (Tech lists research and has
+        /// its own title); the entity is the same one Kind() ranks, so title and
+        /// cells are about one building.
+        /// </summary>
+        public Role LeadRole()
+        {
+            if (runner == null || selection == null) return Role.None;
+            int id = CommandCard.Representative(runner.World, selection.Selected, runner.LocalPeer);
+            return id < 0 ? Role.None : runner.World.GetEntity(id).Role;
+        }
+
+        /// <summary>
+        /// The roster entry of the same entity, 0 when nothing qualifies. The
+        /// building card lists what this one building entry makes or researches,
+        /// so a 석조 병영 and a 마법 탑 show different cards.
+        /// </summary>
+        public int LeadSlot()
+        {
+            if (runner == null || selection == null) return 0;
+            int id = CommandCard.Representative(runner.World, selection.Selected, runner.LocalPeer);
+            return id < 0 ? 0 : runner.World.GetEntity(id).Slot;
+        }
+
+        /// <summary>
+        /// Drops Page to 0 when the selection is not the one it was turned on. Run
+        /// by whoever reads the card first each frame (Update or the HUD), so a
+        /// frame never draws a new building at the old one's page.
+        ///
+        /// Compared id by id against a copy, in order, not by representative alone:
+        /// "the selection changed" means the player picked something else, and a
+        /// representative alone would miss swapping one building for another of the
+        /// same kind. Exact rather than hashed, because a collision would keep a
+        /// stale page.
+        /// </summary>
+        private void SyncPage()
+        {
+            IReadOnlyList<int> now = selection.Selected;
+            bool same = now.Count == pageSelection.Count;
+            for (int i = 0; same && i < now.Count; i++) same = now[i] == pageSelection[i];
+            if (same) return;
+
+            pageSelection.Clear();
+            for (int i = 0; i < now.Count; i++) pageSelection.Add(now[i]);
+            Page = 0;
+        }
 
         private CardKind SelectionKind()
         {
@@ -134,7 +211,7 @@ namespace WordCraft.View
             // names a point nothing will ever read.
             if (Aiming && !Aims()) Aiming = false;
 
-            CardSlot[] card = CommandCard.Of(Kind(), runner.World.FactionOf(runner.LocalPeer));
+            CardSlot[] card = Card();
             for (int i = 0; i < CommandCard.Cells; i++)
             {
                 if (Input.GetKeyDown(CommandCard.Keys[i])) Run(card[i]);
@@ -235,6 +312,22 @@ namespace WordCraft.View
                 return;
             }
 
+            if (slot.More)
+            {
+                // Wraps, so the last page's More is the way back to the first and
+                // the player never has to find another key for it. Nothing is
+                // sent: the page is this component's own.
+                Page = ProductionMenu.NextPage(Page,
+                    CommandCard.PageCount(runner.World.FactionOf(runner.LocalPeer), LeadRole(), LeadSlot()));
+                return;
+            }
+
+            if (slot.Type == CommandType.Research)
+            {
+                Research(slot);
+                return;
+            }
+
             if (slot.Type == CommandType.None) return;
 
             // The card draws this cell dead for the five factions that cannot
@@ -284,6 +377,27 @@ namespace WordCraft.View
                 ? ArrivalPoint
                 : FixVec2.Zero;
             ToSelection(slot.Type, target, arg);
+        }
+
+        /// <summary>
+        /// Research, to exactly one building: the representative, the same body
+        /// the card was drawn for. Not to the selection the way Cancel goes. Naming
+        /// every selected 기술 건물 would start the row on the first and have the
+        /// simulation refuse it on the rest (a peer buys one level of a row at a
+        /// time), which is a command on the wire for nothing. Arg is the row of the
+        /// upgrade table, which is what the card cell carries in Slot.
+        ///
+        /// A maxed cell is refused here for the reason a dead 징발 cell is: the
+        /// card draws it on a Void face, and the key has to mean what the button
+        /// does. Tier and resources are not asked. The simulation is what decides
+        /// those, which is the rule the build menu follows.
+        /// </summary>
+        private void Research(CardSlot slot)
+        {
+            if (slot.Maxed) return;
+            int id = CommandCard.Representative(runner.World, selection.Selected, runner.LocalPeer);
+            if (id < 0 || runner.World.GetEntity(id).Role != Role.Tech) return;
+            Issue(CommandType.Research, id, FixVec2.Zero, slot.Slot);
         }
 
         /// <summary>

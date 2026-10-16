@@ -43,6 +43,34 @@ namespace WordCraft.Sim
         /// one rather than the first.
         /// </summary>
         Grow = 13,
+
+        /// <summary>
+        /// Starts one level of an upgrade. Names the 기술 건물 doing the research
+        /// in EntityId and the row of the owner's upgrade table in Arg, a plain
+        /// index rather than a packed roster entry: an upgrade belongs to a
+        /// faction, not to a role.
+        ///
+        /// Arg and not a field of its own, for the reason Grow gives: Command is
+        /// serialized field by field in Net and in the replay file, and a new
+        /// field would read back as zero everywhere but the sender — row 0, 공격력,
+        /// on every other peer, whatever the sender asked for. The type itself
+        /// travels as one byte, so 14 crosses both wires unchanged.
+        /// </summary>
+        Research = 14,
+
+        /// <summary>
+        /// Uses an active ability, docs/TECH-TREE.md 능력 공통 규칙 액티브 명령.
+        /// Names the caster in EntityId, the row of the owner's ability table in
+        /// Arg (a plain index, as Research's is), and the point it is aimed at in
+        /// Target. A row that takes no point ignores Target.
+        ///
+        /// No field of its own for the point or the row, for the reason Grow
+        /// and Research give: Command is serialized field by field in Net and
+        /// in the replay file, and a new field would read back as zero on every
+        /// peer but the sender. EntityId, Arg and Target already cross both
+        /// wires, and the type travels as one byte, so 15 crosses unchanged.
+        /// </summary>
+        Cast = 15,
     }
 
     /// <summary>

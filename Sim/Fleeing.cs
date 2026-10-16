@@ -24,10 +24,12 @@ namespace WordCraft.Sim
     /// exactly why it is the same on both peers and why moving either system past
     /// the other would move it.
     ///
-    /// The threat can die. Deaths happen in CombatSystem, which runs immediately
-    /// before this one, so a body killed on tick T is not fled from on tick T. The
-    /// carrier can die in the same pass, and the loop below skips it for the same
-    /// reason. Both boundaries fall out of the order rather than out of a test.
+    /// The threat can die. Deaths happen in ExpirySystem, CombatSystem,
+    /// StatusSystem and BurstSystem, all of which run before this one, and
+    /// BurstSystem, the last of them, runs immediately before it, so a body killed
+    /// on tick T is not fled from on tick T. The carrier can die in the same tick,
+    /// and the loop below skips it for the same reason. Both boundaries fall out
+    /// of the order rather than out of a test.
     ///
     /// The threat can move — it is usually walking straight at the carrier. It
     /// moves in MoveSystem, which runs after this, so the positions read here are
@@ -38,7 +40,7 @@ namespace WordCraft.Sim
     /// moment, and the only field it could live in is a field nobody has to have.
     ///
     /// A threat can arrive rather than approach. ProductionSystem and
-    /// WarlordSpawnSystem both run before combat and therefore before this, so a
+    /// SpawnerSystem both run before combat and therefore before this, so a
     /// body that stood up on tick T is fled from on tick T — the same boundary an
     /// offspring's first shot already gets.
     ///
@@ -50,7 +52,7 @@ namespace WordCraft.Sim
     /// Nothing else about the carrier can change at all, and it is worth saying
     /// rather than assuming. Owner moves only through 인간 징발, which transfers a
     /// neutral 꼬마돌 and nothing else; Role and Slot move only through 세계수 정령
-    /// 성장, which is one faction's workers. Neither can reach a 차원 유랑종 body,
+    /// 성장, which is one faction's bodies. Neither can reach a 차원 유랑종 body,
     /// so a 경계 운반자 is a 경계 운반자 for its whole life.
     ///
     /// And the thing this must not do is choose. It picks the nearest threat, and
