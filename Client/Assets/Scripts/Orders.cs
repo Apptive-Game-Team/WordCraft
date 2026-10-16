@@ -248,6 +248,13 @@ namespace WordCraft.View
             if ((Pending != CommandType.None || Aiming) && Input.GetMouseButtonDown(0))
             {
                 if (Hud.OverUi(Input.mousePosition)) return;
+
+                // A click that misses the field (the sky) names no point. Every other
+                // order falls back to the camera's frame, which is harmless for a walk
+                // and wrong for a Cast: the player would fire at a spot they never
+                // pointed at. The cast stays armed for the next click.
+                if (Pending == CommandType.Cast && !Field.Pointer(cam, Input.mousePosition, out _)) return;
+
                 if (Aiming) Aim(MouseWorld());
                 else Fire(MouseWorld());
                 return;
@@ -468,22 +475,27 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// The row, named by every selected body of ours that holds it, one Cast
-        /// each. Not to the representative alone the way Research goes: every body
-        /// has a cooldown and a position of its own, and sending only the one that
-        /// leads would leave the others idle. The document marks no ability as
-        /// one-body-only, so there is no exception list here. The simulation
+        /// The row, named by every selected body of ours that
+        /// <see cref="AbilityMenu.Receives"/>, one Cast each. Not to the
+        /// representative alone the way Research goes: every body has a cooldown
+        /// and a position of its own, and sending only the one that leads would
+        /// leave the others idle. Two kinds are the exception, and the rule for
+        /// both is in AbilityMenu.Receives: 굳기 goes to the representative alone,
+        /// and 전개 to the bodies in the representative's state. The simulation
         /// refuses the casters that cannot (cooldown, range, cost), each on its
         /// own, and a refused Cast changes nothing.
         /// </summary>
         private void CastEach(int index, AbilityRow row, FixVec2 target)
         {
             World world = runner.World;
+            int lead = LeadId();
+            if (lead < 0) return;
+            Entity representative = world.GetEntity(lead);
             for (int i = 0; i < selection.Selected.Count; i++)
             {
                 int id = selection.Selected[i];
                 Entity e = world.GetEntity(id);
-                if (e.Owner != runner.LocalPeer || !AbilityMenu.Holds(e, row)) continue;
+                if (e.Owner != runner.LocalPeer || !AbilityMenu.Receives(representative, e, row)) continue;
                 Issue(CommandType.Cast, id, target, index);
             }
         }
