@@ -13,11 +13,97 @@ namespace WordCraft.Replay
         internal static void Check()
         {
             CompositionTables();
+            LiveSoloAcceptance();
             FundedFactionsUseComposition();
             AllFactionsPlayDeterministically();
             AreaCastsNeedACluster();
             VisibleAirPrioritizesAntiAir();
             SpecialActivesAreUsed();
+        }
+
+        private static void LiveSoloAcceptance()
+        {
+            string failures = "";
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                Faction faction = (Faction)f;
+                World w = MatchScenario.Build(0xC0FFEE, Faction.WaterSlimes, faction);
+                w.SetPeerAi(1, true);
+                var roles = new bool[4];
+                var entries = new HashSet<int>();
+                int grows = 0, arrivals = 0, casts = 0, capRun = 0, longestCap = 0;
+                bool compositionWitness = false;
+                for (int tick = 0; tick < 2000 && !w.MatchOver; tick++)
+                {
+                    // A defending opponent gathers with its starting workers,
+                    // buys basic fighters and holds at home. Nothing is injected.
+                    // Its defended cluster gives area actives a real target.
+                    var orders = new List<Command>();
+                    for (int id = 0; id < w.EntityCount; id++)
+                    {
+                        Entity enemy = w.GetEntity(id);
+                        if (enemy.Alive && enemy.Owner == 0 && enemy.Kind == EntityKind.Unit)
+                            orders.Add(new Command(w.Tick, 0, 1000000 + w.Tick * 1000 + id, CommandType.HoldPosition, id, FixVec2.Zero));
+                        if (!enemy.Alive || enemy.Owner != 0) continue;
+                        if (enemy.Kind == EntityKind.Worker && enemy.GatherNodeId < 0)
+                        {
+                            int nearest = -1;
+                            Fix distance = Fix.Zero;
+                            for (int node = 0; node < w.EntityCount; node++)
+                            {
+                                Entity resource = w.GetEntity(node);
+                                if (!resource.Alive || resource.Kind != EntityKind.ResourceNode || resource.Resource <= 0) continue;
+                                Fix d = (resource.Position - enemy.Position).SqrMagnitude;
+                                if (nearest < 0 || d < distance) { nearest = node; distance = d; }
+                            }
+                            if (nearest >= 0) orders.Add(new Command(w.Tick, 0, 2000000 + id, CommandType.Gather, id, FixVec2.Zero, nearest));
+                        }
+                        if (enemy.Kind == EntityKind.Building && enemy.Role == Role.Base && enemy.QueueCount == 0)
+                            orders.Add(new Command(w.Tick, 0, 3000000 + id, CommandType.Produce, id, FixVec2.Zero, Command.RosterArg(Role.Melee, 0)));
+                    }
+                    var before = new Entity[w.EntityCount];
+                    for (int id = 0; id < before.Length; id++) before[id] = w.GetEntity(id);
+                    w.Step(orders);
+                    capRun = w.GetPopulation(1) >= w.PopulationCap(1) ? capRun + 1 : 0;
+                    longestCap = Math.Max(longestCap, capRun);
+                    foreach (Command cmd in w.LastTickCommands)
+                    {
+                        if (cmd.PeerId != 1) continue;
+                        Entity e = cmd.EntityId >= 0 ? w.GetEntity(cmd.EntityId) : default;
+                        if (cmd.Type == CommandType.Grow && e.MorphTicksLeft > 0) grows++;
+                        if (cmd.Type == CommandType.Produce && e.HasArrivalPoint) arrivals++;
+                        if (cmd.Type == CommandType.Cast && cmd.EntityId < before.Length)
+                        {
+                            Entity previous = before[cmd.EntityId];
+                            AbilityRow ability = FactionData.Ability(faction, cmd.Arg);
+                            if (e.AbilityCooldown > previous.AbilityCooldown || e.AbilityTicksLeft > previous.AbilityTicksLeft ||
+                                e.Deployed != previous.Deployed || (ability.Kind == AbilityKind.Harden && previous.Alive && !e.Alive)) casts++;
+                        }
+                    }
+                    var currentRoles = new bool[4];
+                    var currentEntries = new HashSet<int>();
+                    for (int id = 0; id < w.EntityCount; id++)
+                    {
+                        Entity e = w.GetEntity(id);
+                        if (!e.Alive || e.Owner != 1 || e.Kind != EntityKind.Unit) continue;
+                        roles[(int)World.AiRoleOf(faction, e.Role, e.Slot)] = true;
+                        entries.Add(Command.RosterArg(e.Role, e.Slot));
+                        currentRoles[(int)World.AiRoleOf(faction, e.Role, e.Slot)] = true;
+                        currentEntries.Add(Command.RosterArg(e.Role, e.Slot));
+                    }
+                    // Humans have no melee entries: their three-body witness
+                    // instead requires distinct ranged/support roster entries.
+                    compositionWitness |= currentEntries.Count >= 3 && currentRoles[2] && currentRoles[3] &&
+                        (faction == Faction.Humans || currentRoles[1]);
+                }
+                Console.WriteLine($"AI solo {faction}: ticks={w.Tick} entries={entries.Count} simultaneous={compositionWitness} melee={roles[1]} ranged={roles[2]} support={roles[3]} grow={grows} arrival={arrivals} cast={casts} cap={longestCap}");
+                if (!compositionWitness) failures += faction + " simultaneous composition; ";
+                if (faction == Faction.TreeSpirits && grows == 0) failures += "tree growth; ";
+                if (faction == Faction.Driftworlds && arrivals == 0) failures += "drift arrival; ";
+                if (faction != Faction.Driftworlds && casts == 0) failures += faction + " active; ";
+                if (longestCap > 100) failures += faction + " supply; ";
+            }
+            Require(failures.Length == 0, failures);
         }
 
         private static void FundedFactionsUseComposition()

@@ -928,8 +928,10 @@ namespace WordCraft.Sim
         /// AbilityCooldown on the tick the order runs. 40 completes faction AI:
         /// composition, growth, arrival points and active casts change the
         /// generated commands, so solo replays require the matching policy.
+        /// 41 fixes live AI research, missing frontline replacement, support
+        /// reinforcement and mirrored building placement; commands change again.
         /// </summary>
-        public const uint ContentVersion = 40;
+        public const uint ContentVersion = 41;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
