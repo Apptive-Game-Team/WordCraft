@@ -82,7 +82,9 @@ namespace WordCraft.View
                 camera.useOcclusionCulling = false;
                 camera.renderingPath = RenderingPath.Forward;
                 // The bodies face +z: view from +z and their left, at the field's elevated angle.
-                Quaternion angle = Quaternion.Euler(23f, 150f, 0f);
+                // Human entrances face -z; creatures and defensive weapons face +z.
+                bool entrance = faction == Faction.Humans && kind == EntityKind.Building && role != Role.Defense;
+                Quaternion angle = Quaternion.Euler(23f, entrance ? 30f : 150f, 0f);
                 camera.transform.rotation = angle;
                 float radius = Mathf.Max(0.2f, bounds.extents.magnitude);
                 camera.transform.position = bounds.center - camera.transform.forward * (radius * 3f + 2f);

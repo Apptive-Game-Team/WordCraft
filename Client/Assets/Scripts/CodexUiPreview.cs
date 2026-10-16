@@ -24,7 +24,8 @@ namespace WordCraft.View
             while (!UnityEngine.Rendering.SplashScreen.isFinished) yield return null;
             if (!CodexPanel.IsOpen) CodexPanel.Toggle();
             CodexPanel panel = CodexPanel.Instance;
-            for (int index = 0; index < 3; index++)
+            bool refined = Array.IndexOf(Environment.GetCommandLineArgs(), "-codexRefined") >= 0;
+            for (int index = 0; index < (refined ? 7 : 3); index++)
             {
                 if (index == 0)
                 {
@@ -38,11 +39,19 @@ namespace WordCraft.View
                     panel.Filter = 1;
                     panel.Select(Faction.WaterSlimes, Role.Signature, 0);
                 }
-                else
+                else if (index == 2)
                 {
                     panel.Search = "";
                     panel.Filter = 2;
                     panel.Select(Faction.Humans, Role.Tech, 0);
+                }
+                else
+                {
+                    panel.Search = "";
+                    panel.Filter = 1;
+                    Faction faction = index == 3 ? Faction.TreeSpirits : index == 4 ? Faction.RockGolems :
+                        index == 5 ? Faction.Hellfire : Faction.Humans;
+                    panel.Select(faction, index == 6 ? Role.Signature : Role.Melee, index == 5 ? 1 : 0);
                 }
                 for (int frame = 0; frame < 12; frame++) yield return new WaitForEndOfFrame();
                 ScreenCapture.CaptureScreenshot(output + "-" + index + ".png");
