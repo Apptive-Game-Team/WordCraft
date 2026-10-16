@@ -24,6 +24,7 @@ dotnet run --project Replay
 
 Prints `OK: all determinism checks passed`, or the first failing invariant.
 Run this after any change under `Sim/`.
+The separation timing check only prints its numbers and a warning by default; `dotnet run --project Replay -- --perf` makes it fail the run.
 
 ## Build
 

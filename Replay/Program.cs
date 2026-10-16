@@ -15,8 +15,9 @@ namespace WordCraft.Replay
         private const ulong Seed = 0xC0FFEE;
         private const int Ticks = 600; // 30 seconds at 20 Hz
 
-        private static int Main()
+        private static int Main(string[] args)
         {
+            SeparationChecks.EnforcePerformance = Array.IndexOf(args, "--perf") >= 0;
             try
             {
                 FixedPointSanity();

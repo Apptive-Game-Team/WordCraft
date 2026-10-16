@@ -24,6 +24,15 @@ namespace WordCraft.Replay
         /// <summary>Ticks every fixture is run for. Long enough for a stack of ten to settle.</summary>
         private const int SettleTicks = 200;
 
+        /// <summary>Set by Program from `--perf`: the timing check fails the run instead of warning.</summary>
+        public static bool EnforcePerformance;
+
+        /// <summary>Largest packed tick, as a multiple of the spread tick.</summary>
+        private const double MaxPackedToSpreadRatio = 2.0;
+
+        /// <summary>Added to that limit so a very fast spread tick does not make it vanishingly small.</summary>
+        private const double PackedFloorMilliseconds = 0.2;
+
         public static void Check()
         {
             EveryWalkerHasAFootprint();
@@ -243,39 +252,53 @@ namespace WordCraft.Replay
         /// Two hundred melee units, the population hard cap, packed onto ten
         /// cells so every one of them has a full neighbourhood to test against,
         /// against the same two hundred spread two cells apart so none of them
-        /// has anyone in reach. The difference is what separation costs, and it
-        /// has to stay under a millisecond a tick.
+        /// has anyone in reach. The packed tick may cost at most twice the spread
+        /// tick plus a small floor.
         ///
-        /// The difference rather than the packed tick itself, because the rest
-        /// of Step is not this issue's: target acquisition alone is a scan of
-        /// every entity per unit, and under a Debug build that puts the spread
-        /// tick near a millisecond before a single body is pushed. Wall-clock,
-        /// the best of three runs each, so this is the one check in the harness
-        /// that a slow enough machine can fail; the budget is several times what
-        /// the pass takes under Debug on a laptop and twenty times under Release.
+        /// The spread tick as the yardstick rather than the packed tick alone,
+        /// because the rest of Step is not this issue's: target acquisition alone
+        /// is a scan of every entity per unit, and under a Debug build that puts
+        /// the spread tick near a millisecond before a single body is pushed.
+        ///
+        /// A ratio rather than a difference in milliseconds, because this is
+        /// wall-clock and a loaded machine (another dotnet run, a Unity batch)
+        /// stretches both runs together: the difference went from 0.3 ms idle to
+        /// 1.0-1.7 ms loaded and failed a fixed 1.0 ms budget, while the ratio
+        /// stays put. The best of five runs each, the measure least moved by
+        /// whatever else the machine was doing. The numbers print on every run.
+        ///
+        /// Even so, a timing is not an invariant, so it fails the run only under
+        /// `-- --perf`. Without the flag a bust prints a warning and the run goes
+        /// on, which keeps "OK" meaning that determinism holds on any machine.
         /// </summary>
         private static void TwoHundredBodiesStepInsideTheBudget()
         {
-            double packed = BestOfThree(spacing: Fix.Ratio(1, 5));
-            double spread = BestOfThree(spacing: Fix.FromInt(2));
+            double packed = BestOfFive(spacing: Fix.Ratio(1, 5));
+            double spread = BestOfFive(spacing: Fix.FromInt(2));
             double cost = packed - spread;
+            double limit = spread * MaxPackedToSpreadRatio + PackedFloorMilliseconds;
             Console.WriteLine("separation: " + World.PopulationHardCap + " bodies, " +
                               packed.ToString("F3") + " ms per tick packed, " +
                               spread.ToString("F3") + " ms spread, " +
-                              cost.ToString("F3") + " ms for the pass");
-            Check(cost < 1.0, "separation over " + World.PopulationHardCap + " packed bodies took " + cost.ToString("F3") + " ms a tick");
+                              cost.ToString("F3") + " ms for the pass, limit " +
+                              limit.ToString("F3") + " ms packed");
+            if (packed < limit) return;
+            string message = "separation over " + World.PopulationHardCap + " packed bodies took " +
+                             packed.ToString("F3") + " ms a tick against " + spread.ToString("F3") +
+                             " ms spread, over the " + limit.ToString("F3") + " ms limit";
+            if (EnforcePerformance) Check(false, message);
+            Console.WriteLine("warning: " + message + " (run with -- --perf to fail on this)");
         }
 
         /// <summary>
         /// Milliseconds per tick over SettleTicks ticks, after a warm-up, with
         /// the cap's worth of melee units on a 25 by 8 lattice at the given
-        /// spacing. The fastest of three, which is the measure least moved by
-        /// whatever else the machine was doing.
+        /// spacing. The fastest of five.
         /// </summary>
-        private static double BestOfThree(Fix spacing)
+        private static double BestOfFive(Fix spacing)
         {
             double best = double.MaxValue;
-            for (int run = 0; run < 3; run++)
+            for (int run = 0; run < 5; run++)
             {
                 World world = Flat();
                 for (int n = 0; n < World.PopulationHardCap; n++)
