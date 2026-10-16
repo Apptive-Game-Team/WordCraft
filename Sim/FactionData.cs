@@ -930,8 +930,10 @@ namespace WordCraft.Sim
         /// generated commands, so solo replays require the matching policy.
         /// 41 fixes live AI research, missing frontline replacement, support
         /// reinforcement and mirrored building placement; commands change again.
+        /// 42 balances six unit rows after the complete AI: opening values,
+        /// frontline durability and the tier-3 tide caster's production budget.
         /// </summary>
-        public const uint ContentVersion = 41;
+        public const uint ContentVersion = 42;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -1081,6 +1083,9 @@ namespace WordCraft.Sim
         /// </summary>
         private static readonly (Faction Faction, Role Role, int Slot, UnitStats Stats)[] statOverrides =
         {
+            // #221: the opening leafblade survives long enough to support growth.
+            (Faction.TreeSpirits, Role.Melee, 0,
+                Fighter(Walks, 120, 0, Fix.Ratio(1, 4), 7, 2, 15, false, true)),
             // 세계수 정령 고목 수호자, the melee half of 성장. Numbers from
             // docs/FACTION-MECHANICS.md, which names hp and damage and calls it
             // 근접. The shared melee reach, rate and speed are written out here
@@ -1088,7 +1093,7 @@ namespace WordCraft.Sim
             // speed: what a body a player spent a worker on walks and swings at is
             // a decision, and this row is the one place a reader looks for it.
             //
-            // Entry 1 of the slot. 잎날 정령 holds entry 0 and keeps the shared row,
+            // Entry 1 of the slot. 잎날 정령 holds entry 0 with its own balance row,
             // which is what 세계수 정령 produces from a building; entry 1 is what a
             // 풀씨 정령 grows into and nothing can buy. That split is the same one
             // 지옥불's ranged slot has between 자손 and 균열 파수병, and it is the
@@ -1368,17 +1373,17 @@ namespace WordCraft.Sim
             // keeps the shared 200, because no document gives it a number.
             (Faction.Humans, Role.Production, 0, new UnitStats { Hp = 220 }),
 
-            // 인간 공수 특공대. 체력 90, 사거리 5, 피해 7, per
+            // 인간 공수 특공대. #221: 체력 150, 사거리 5, 피해 9, per
             // docs/FACTION-MECHANICS.md. Still reaches both layers: docs/TECH-TREE.md
             // proposes it ground-only and leaves that an open decision, and this
             // row does not take it.
             (Faction.Humans, Role.Ranged, 0,
                 new UnitStats
                 {
-                    Hp = 90,
+                    Hp = 150,
                     Speed = Fix.Ratio(1, 4),
                     Footprint = BodyRadius,
-                    Damage = 7,
+                    Damage = 9,
                     Range = Fix.FromInt(5),
                     AttackTicks = 18,
                     HitsAir = true,
@@ -1637,6 +1642,8 @@ namespace WordCraft.Sim
         /// </summary>
         private static readonly (Faction Faction, Role Role, int Slot, ProductionCost Cost)[] productionOverrides =
         {
+            // #221: price the tier-3 chain caster independently of the basic melee.
+            (Faction.TreeSpirits, Role.Ranged, 0, Produce(60, 40)),
             // 세계수 정령's two 성장 products. Off the production list altogether,
             // for the reason 자손 and the Towerback are: 일꾼이 자란다 is the whole
             // of the faction, and a price on either of these would be a second way
@@ -1669,14 +1676,16 @@ namespace WordCraft.Sim
             (Faction.Hellfire, Role.Ranged, 0, new ProductionCost()),
 
             // 물 슬라임, per docs/FACTION-MECHANICS.md 물 슬라임 표. 거품 정령
-            // 35자원 30틱, 물결 궁수 55자원 45틱.
+            // 35자원 30틱, 물결 궁수 65자원 45틱 (#221).
             (Faction.WaterSlimes, Role.Melee, 0, Produce(35, 30)),
-            (Faction.WaterSlimes, Role.Ranged, 0, Produce(55, 45)),
+            (Faction.WaterSlimes, Role.Ranged, 0, Produce(65, 45)),
+            // #221: a tier-3 area caster must not inherit the 20-resource basic row.
+            (Faction.WaterSlimes, Role.Ranged, 1, Produce(100, 80)),
 
             // 돌 골렘 부족, per docs/FACTION-MECHANICS.md 돌 골렘 표. 꼬마돌
-            // 40자원 35틱, 이끼바위 골렘 80자원 70틱, 바위 술사 70자원 60틱.
+            // 40자원 35틱, 이끼바위 골렘 50자원 70틱 (#221), 바위 술사 70자원 60틱.
             (Faction.RockGolems, Role.Worker, 0, Produce(40, 35)),
-            (Faction.RockGolems, Role.Melee, 0, Produce(80, 70)),
+            (Faction.RockGolems, Role.Melee, 0, Produce(50, 70)),
             (Faction.RockGolems, Role.Ranged, 0, Produce(70, 60)),
 
             // 차원 유랑종. The faction that does not make units but lets them cross,
@@ -1712,9 +1721,9 @@ namespace WordCraft.Sim
             (Faction.Humans, Role.Signature, 0, new ProductionCost()),
 
             // 인간, per docs/FACTION-MECHANICS.md 인간 표. 수습 마법생 45자원 35틱,
-            // 공수 특공대 65자원 55틱.
+            // 공수 특공대 60자원 55틱 (#221).
             (Faction.Humans, Role.Worker, 0, Produce(45, 35)),
-            (Faction.Humans, Role.Ranged, 0, Produce(65, 55)),
+            (Faction.Humans, Role.Ranged, 0, Produce(60, 55)),
 
             // 세계수 정령, docs/TECH-TREE.md 묶음 3.
             (Faction.TreeSpirits, Role.Melee, 2, new ProductionCost()), // 찌릿쥐

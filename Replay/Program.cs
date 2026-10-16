@@ -20,6 +20,12 @@ namespace WordCraft.Replay
             SeparationChecks.EnforcePerformance = Array.IndexOf(args, "--perf") >= 0;
             try
             {
+                if (Array.IndexOf(args, "--balance") >= 0)
+                {
+                    BalanceChecks.Check();
+                    Console.WriteLine("OK: balance checks passed");
+                    return 0;
+                }
                 if (Array.IndexOf(args, "--ai") >= 0)
                 {
                     AiChecks.Check();
@@ -146,6 +152,7 @@ namespace WordCraft.Replay
                 CastChecks.Check();
                 AbilityMenuChecks.Check();
                 AiChecks.Check();
+                BalanceChecks.Check();
                 SimAssemblyIsClean();
             }
             catch (Exception ex)
@@ -694,7 +701,7 @@ namespace WordCraft.Replay
             // nothing else and the assertions stay about the tier rule.
             world.SpawnBuilding(0, Role.Tech, At(30, 30), complete: true); // 2
             world.Step(Produce(TechWorks, 0, 1, Role.Ranged));
-            Check(world.GetResources(0) == banked - World.ProduceCost, "the tech building did not open tier 3");
+            Check(world.GetResources(0) == banked - FactionData.Production(world.FactionOf(0), Role.Ranged, 0).Resources, "the tech building did not open tier 3");
             Check(world.GetEntity(TechWorks).QueueCount == 1, "the tech building did not open tier 3");
 
             // Destroyed by an enemy squad rather than a test hook, so the rule is
@@ -4935,7 +4942,9 @@ namespace WordCraft.Replay
             return target.MaxHp - target.Hp;
         }
 
-        private const int MirrorTicks = 800;
+        // Match the live composition acceptance window: the complete AI invests
+        // in research/support before every faction's first lethal engagement.
+        private const int MirrorTicks = 2000;
 
         /// <summary>
         /// Every faction against itself, played by the simulation on both sides,

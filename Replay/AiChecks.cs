@@ -38,29 +38,7 @@ namespace WordCraft.Replay
                     // A defending opponent gathers with its starting workers,
                     // buys basic fighters and holds at home. Nothing is injected.
                     // Its defended cluster gives area actives a real target.
-                    var orders = new List<Command>();
-                    for (int id = 0; id < w.EntityCount; id++)
-                    {
-                        Entity enemy = w.GetEntity(id);
-                        if (enemy.Alive && enemy.Owner == 0 && enemy.Kind == EntityKind.Unit)
-                            orders.Add(new Command(w.Tick, 0, 1000000 + w.Tick * 1000 + id, CommandType.HoldPosition, id, FixVec2.Zero));
-                        if (!enemy.Alive || enemy.Owner != 0) continue;
-                        if (enemy.Kind == EntityKind.Worker && enemy.GatherNodeId < 0)
-                        {
-                            int nearest = -1;
-                            Fix distance = Fix.Zero;
-                            for (int node = 0; node < w.EntityCount; node++)
-                            {
-                                Entity resource = w.GetEntity(node);
-                                if (!resource.Alive || resource.Kind != EntityKind.ResourceNode || resource.Resource <= 0) continue;
-                                Fix d = (resource.Position - enemy.Position).SqrMagnitude;
-                                if (nearest < 0 || d < distance) { nearest = node; distance = d; }
-                            }
-                            if (nearest >= 0) orders.Add(new Command(w.Tick, 0, 2000000 + id, CommandType.Gather, id, FixVec2.Zero, nearest));
-                        }
-                        if (enemy.Kind == EntityKind.Building && enemy.Role == Role.Base && enemy.QueueCount == 0)
-                            orders.Add(new Command(w.Tick, 0, 3000000 + id, CommandType.Produce, id, FixVec2.Zero, Command.RosterArg(Role.Melee, 0)));
-                    }
+                    var orders = DefensiveOrders(w);
                     var before = new Entity[w.EntityCount];
                     for (int id = 0; id < before.Length; id++) before[id] = w.GetEntity(id);
                     w.Step(orders);
@@ -104,6 +82,35 @@ namespace WordCraft.Replay
                 if (longestCap > 100) failures += faction + " supply; ";
             }
             Require(failures.Length == 0, failures);
+        }
+
+        // A normal-economy defender shared by live roster and composition checks.
+        internal static List<Command> DefensiveOrders(World w)
+        {
+            var orders = new List<Command>();
+            for (int id = 0; id < w.EntityCount; id++)
+            {
+                Entity enemy = w.GetEntity(id);
+                if (enemy.Alive && enemy.Owner == 0 && enemy.Kind == EntityKind.Unit)
+                    orders.Add(new Command(w.Tick, 0, 1000000 + w.Tick * 1000 + id, CommandType.HoldPosition, id, FixVec2.Zero));
+                if (!enemy.Alive || enemy.Owner != 0) continue;
+                if (enemy.Kind == EntityKind.Worker && enemy.GatherNodeId < 0)
+                {
+                    int nearest = -1;
+                    Fix distance = Fix.Zero;
+                    for (int node = 0; node < w.EntityCount; node++)
+                    {
+                        Entity resource = w.GetEntity(node);
+                        if (!resource.Alive || resource.Kind != EntityKind.ResourceNode || resource.Resource <= 0) continue;
+                        Fix d = (resource.Position - enemy.Position).SqrMagnitude;
+                        if (nearest < 0 || d < distance) { nearest = node; distance = d; }
+                    }
+                    if (nearest >= 0) orders.Add(new Command(w.Tick, 0, 2000000 + id, CommandType.Gather, id, FixVec2.Zero, nearest));
+                }
+                if (enemy.Kind == EntityKind.Building && enemy.Role == Role.Base && enemy.QueueCount == 0)
+                    orders.Add(new Command(w.Tick, 0, 3000000 + id, CommandType.Produce, id, FixVec2.Zero, Command.RosterArg(Role.Melee, 0)));
+            }
+            return orders;
         }
 
         private static void FundedFactionsUseComposition()

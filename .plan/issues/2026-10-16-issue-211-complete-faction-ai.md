@@ -2,7 +2,7 @@
 
 - Date: 2026-10-16
 - GitHub Issue: #211
-- Status: Live acceptance verified in v41; integrated arena validation continues in #221
+- Status: Live acceptance verified in v42; integrated 144-game arena passed in #221
 
 ## Goal
 Complete the existing AI ladder with faction composition, growth, arrival targeting and active abilities; verify real combat and deterministic matches.
@@ -52,3 +52,5 @@ Reuse reviewed portions of origin/feat/211. Command-only AI, fixed-point math, s
 - Growth: Tree 2; arrival: Drift 6; actual casts: Tree 2, Hell 1, Water 17,
   Rock 1, Humans 3; longest supply-cap stall: 0 ticks for every faction.
 - Full AI-vs-AI balance and completion are validated separately by #221.
+- v42 recheck: all live conditions still pass; Water actual casts 13, other witnesses unchanged.
+- #221 arena: 140/144 finish, 4 draws, faction win rates 41.67–58.33%, seat gap 2.78pp; every twin hash matches.

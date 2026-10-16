@@ -288,12 +288,13 @@ namespace WordCraft.Host
             var link = new FaultyLink(0x5EED, dropPercent: 0, duplicatePercent: 0, baseDelayMs: 20, jitterMs: 10);
             var a = new Peer(0, link.A, cfg, -1, 0);
             var b = new Peer(1, link.B, cfg, corruptEntity: 3, corruptHp: 99);
+            int expectedHp = a.World.GetEntity(3).Hp;
 
             Drive(link, a, b, 0, () => Stopped(a) && a.Session.ReportComplete, 120000);
 
             string reason = a.Session.StopReason ?? "";
             Check(reason.Contains("desync at tick " + cfg.HashInterval), "wrong desync tick: " + reason);
-            Check(reason.Contains("entity 3 field Hp local=100 remote=99"), "divergence not located: " + reason);
+            Check(reason.Contains("entity 3 field Hp local=" + expectedHp + " remote=99"), "divergence not located: " + reason);
             Check(a.World.Tick <= cfg.HashInterval + 8, "halted too late, at tick " + a.World.Tick);
         }
 
