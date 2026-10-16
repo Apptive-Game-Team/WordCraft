@@ -125,8 +125,8 @@ namespace WordCraft.View
         // 물 지대·한시 소환·폭발·광역·전개 (issue #212).
 
         /// <summary>A water field cell's alpha, and what it has faded to on the tick before it lapses.</summary>
-        private const float FieldAlpha = 0.38f;
-        private const float FieldAlphaLast = 0.12f;
+        private const float FieldAlpha = 0.48f;
+        private const float FieldAlphaLast = 0.15f;
 
         /// <summary>
         /// The last ticks of a field, over which it fades. Under the 41 ticks a

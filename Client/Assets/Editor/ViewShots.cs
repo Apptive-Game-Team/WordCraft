@@ -1582,7 +1582,7 @@ namespace WordCraft.View
             world.SetExpireTickForScenario(fire, lapses);
             int life = world.LifetimeFor(0, FactionData.Stats(faction, Role.Melee, 2));
             world.SetExpireTickForScenario(stone, world.Tick + life / 2);
-            Workers(world, at + new Vector2(1.6f, 0.4f));
+            Workers(world, at + new Vector2(1.5f, -0.8f));
 
             var scene = new CastScene { World = world, Focus = at + new Vector2(-0.5f, 0f), TicksPerFrame = 3, Cells = 10f };
             scene.Log = Orders(world.Tick);
@@ -1606,12 +1606,12 @@ namespace WordCraft.View
             Workers(world, point);
 
             int cast = world.Tick + CastLead;
-            var scene = new CastScene { World = world, Focus = StatusAt + new Vector2(0f, 0f), TicksPerFrame = 6, Picked = new[] { cannon } };
+            var scene = new CastScene { World = world, Focus = StatusAt + new Vector2(0f, 0f), TicksPerFrame = 5, Picked = new[] { cannon } };
             scene.Log = Orders(cast,
                 new Command(cast, 0, 1, CommandType.Cast, caster, MatchRunner.ToSim(point), bolt),
                 new Command(cast, 0, 2, CommandType.Cast, cannon, FixVec2.Zero, deploy));
             Hold(scene.Log, world.Tick, caster, cannon);
-            scene.Moment = cast + 6;
+            scene.Moment = cast + 5;
             return scene;
         }
 
