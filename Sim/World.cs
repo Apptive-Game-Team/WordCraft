@@ -274,6 +274,26 @@ namespace WordCraft.Sim
         /// clock to wait behind.
         /// </summary>
         public int ResearchTicksLeft;
+
+        // 상태 이상, docs/TECH-TREE.md 묶음 5. Both live on the body that suffers
+        // them and nowhere else: the shooter keeps no list of whom it slowed or
+        // set alight, so a shooter that dies is a body dying and nothing more.
+        // A new hit refreshes to the longer of what is left and the new
+        // duration and never adds, so neither number grows past one hit's worth.
+
+        /// <summary>
+        /// Ticks of 휘감기 left. StatusSystem takes one off every tick before
+        /// MoveSystem reads it, and a body walks at half speed on every tick it
+        /// is still above zero after that.
+        /// </summary>
+        public int SlowTicksLeft;
+
+        /// <summary>
+        /// Ticks of 화염탄 burn left. StatusSystem takes one off every tick, and
+        /// on every tick the result is a multiple of World.BurnPeriod, zero
+        /// included, the body takes World.BurnDamage: six hits from sixty.
+        /// </summary>
+        public int BurnTicksLeft;
     }
 
     /// <summary>
@@ -480,6 +500,10 @@ namespace WordCraft.Sim
             // the growth line above: the clock goes with the body, and nothing
             // here pays anything back.
             ClearResearch(ref e);
+            // A corpse carries no status clock, so nothing a second way of
+            // killing something forgets can keep counting on it.
+            e.SlowTicksLeft = 0;
+            e.BurnTicksLeft = 0;
         }
 
         /// <summary>
@@ -789,6 +813,7 @@ namespace WordCraft.Sim
                 ResearchSystem();
                 SpawnerSystem();
                 CombatSystem();
+                StatusSystem();
                 FleeSystem();
                 MoveSystem();
                 VictorySystem();
@@ -1157,6 +1182,8 @@ namespace WordCraft.Sim
 
         private void MoveSystem()
         {
+            // 덩굴 지대 is read per step, so its sources are gathered once.
+            CollectAuraSources();
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
@@ -1170,8 +1197,9 @@ namespace WordCraft.Sim
                 FixVec2 goal = e.PathIndex < path.Count ? CellCenter(path[e.PathIndex]) : e.Target;
 
                 // Researched speed is read here and nowhere else that moves a
-                // body; e.Speed stays the hashed value. See World.SpeedFor.
-                Fix speed = SpeedFor(e);
+                // body; e.Speed stays the hashed value. See World.SpeedFor. The
+                // slow of 휘감기 and 덩굴 지대 rides on top, in MoveSpeedFor.
+                Fix speed = MoveSpeedFor(e);
                 FixVec2 delta = goal - e.Position;
                 bool arrives = delta.Magnitude <= speed;
                 FixVec2 next = arrives ? goal : e.Position + delta.Normalized() * speed;
@@ -1386,6 +1414,8 @@ namespace WordCraft.Sim
                 Mix(ref h, e.Fleeing ? 1UL : 0UL);
                 Mix(ref h, (ulong)e.ResearchIndex);
                 Mix(ref h, (ulong)e.ResearchTicksLeft);
+                Mix(ref h, (ulong)e.SlowTicksLeft);
+                Mix(ref h, (ulong)e.BurnTicksLeft);
 
                 List<int> path = paths[i];
                 Mix(ref h, (ulong)path.Count);

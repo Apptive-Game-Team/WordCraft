@@ -237,14 +237,33 @@ namespace WordCraft.Sim
         /// </summary>
         private void GrowthSystem()
         {
+            // 과생장 is asked per growing body, so its sources are gathered once.
+            CollectAuraSources();
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
                 if (!e.Alive || !IsGrowing(e)) continue;
 
                 GrowStep(ref e);
+                // 과생장, docs/TECH-TREE.md: on the ticks its period divides, a
+                // body an allied 도깨비불 reaches takes one more step of the same
+                // function, so the hp ramp and the swap run exactly as they
+                // would have. Once however many reach, and never past the end.
+                if (IsGrowing(e) && Overgrown(e)) GrowStep(ref e);
                 entities[i] = e;
             }
+        }
+
+        /// <summary>Whether a 과생장 source of this body's owner reaches it on this tick.</summary>
+        private bool Overgrown(Entity e)
+        {
+            for (int r = 0; r < FactionData.AbilityRowCount; r++)
+            {
+                AbilityRow row = FactionData.AbilityRowAt(r);
+                if (row.Kind != AbilityKind.GrowthAura || Tick % row.Period != 0) continue;
+                if (AlliedAuraReaches(r, e, e.Owner)) return true;
+            }
+            return false;
         }
 
         /// <summary>

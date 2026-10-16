@@ -489,11 +489,25 @@ namespace WordCraft.Replay
             Research(Faction.Humans, "마도 기수 속도", 100, 160, 3, UpgradeEffect.ArcaneRiderSpeed, Role.Tech, 0, Role.None, 0),
             Research(Faction.Humans, "결속 강화", 125, 200, 2, UpgradeEffect.BindingRange, Role.Tech, 2, Role.None, 0),
             Research(Faction.Humans, "결속 갑주", 125, 200, 2, UpgradeEffect.BindingArmor, Role.Tech, 2, Role.None, 0),
+            // 묶음 5 (#200): read off the ability table. Each faction's rows land
+            // behind its own, in the order docs/TECH-TREE.md 연구 행 배치 lists them.
+            Research(Faction.TreeSpirits, "휘감기 지속", 100, 160, 3, UpgradeEffect.EntangleDuration, Role.Tech, 0, Role.None, 0),
+            Research(Faction.TreeSpirits, "연쇄 번개", 150, 200, 3, UpgradeEffect.ChainLightning, Role.Tech, 1, Role.None, 0),
+            Research(Faction.Hellfire, "화염탄", 100, 160, 2, UpgradeEffect.FireShot, Role.Tech, 1, Role.None, 0),
+            Research(Faction.Hellfire, "피 냄새", 100, 160, 2, UpgradeEffect.BloodScent, Role.Tech, 1, Role.None, 0),
+            Research(Faction.Hellfire, "화상 오라 강화", 100, 160, 2, UpgradeEffect.BurnAuraDamage, Role.Tech, 1, Role.None, 0),
+            Research(Faction.Hellfire, "집결 반경", 75, 120, 2, UpgradeEffect.RallyRadius, Role.Tech, 1, Role.Defense, 1),
+            Research(Faction.WaterSlimes, "회복의 비 강화", 100, 160, 3, UpgradeEffect.HealingRainAmount, Role.Tech, 0, Role.None, 0),
+            Research(Faction.WaterSlimes, "거품 벽", 100, 160, 2, UpgradeEffect.BubbleWall, Role.Tech, 1, Role.None, 0),
+            Research(Faction.RockGolems, "이끼 재생 강화", 100, 160, 2, UpgradeEffect.MossRegrowthAmount, Role.Tech, 1, Role.None, 0),
+            Research(Faction.Humans, "연쇄 방전", 125, 200, 2, UpgradeEffect.ChainDischarge, Role.Tech, 1, Role.None, 0),
+            Research(Faction.Humans, "증폭 반경", 100, 160, 2, UpgradeEffect.AmplifyRadius, Role.Tech, 1, Role.None, 0),
+            Research(Faction.Humans, "표식 강화", 100, 160, 2, UpgradeEffect.MarkAmount, Role.Tech, 1, Role.None, 0),
         };
 
         private static void TheResearchRowsAreTheDocumentedOnes()
         {
-            int[] counts = { 9, 8, 7, 6, 9, 8 };
+            int[] counts = { 11, 12, 9, 7, 9, 11 };
             for (int f = 0; f < FactionData.FactionCount; f++)
             {
                 var faction = (Faction)f;
