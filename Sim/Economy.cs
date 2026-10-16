@@ -215,16 +215,27 @@ namespace WordCraft.Sim
                 if (!e.Alive || e.Kind != EntityKind.Building || e.BuildTicksLeft <= 0) continue;
 
                 e.BuildTicksLeft--;
-                // Integer ramp so hp never depends on a division that rounds
-                // differently anywhere. The divisor is this building's own total,
-                // or a cheap building would finish its hp on someone else's clock.
-                // Its own entry's total: two entries of one slot are timed apart the
-                // moment an override row says so, and a divisor taken at the role
-                // would ramp 전기 타워 against 대포's clock and land it on the wrong
-                // hp every tick of its construction.
-                e.Hp = e.MaxHp -
-                    (e.MaxHp * e.BuildTicksLeft) / FactionData.BuildTicks(factions[e.Owner], e.Role, e.Slot);
-                if (e.Hp < 1) e.Hp = 1;
+                // The ramp adds this tick's share instead of rewriting hp from
+                // progress, so damage a site has taken stays taken and a site under
+                // fire can be razed before it finishes (issue #191). The share is
+                // the difference of two integer divisions on the tick number, so
+                // the remainders add up exactly with no state of their own and
+                // never depend on a division that rounds differently anywhere.
+                //
+                // The ramp climbs from the 1 hp a site is spawned with to MaxHp, so
+                // it is MaxHp - 1 that is spread over the clock: an undamaged site
+                // ends on exactly MaxHp, and one that took d damage ends on
+                // MaxHp - d.
+                //
+                // The divisor is this building's own total, or a cheap building
+                // would finish its hp on someone else's clock. Its own entry's
+                // total: two entries of one slot are timed apart the moment an
+                // override row says so, and a divisor taken at the role would ramp
+                // 전기 타워 against 대포's clock and land it on the wrong hp.
+                int total = FactionData.BuildTicks(factions[e.Owner], e.Role, e.Slot);
+                int elapsed = total - e.BuildTicksLeft;
+                int climb = e.MaxHp - 1;
+                e.Hp += (climb * elapsed) / total - (climb * (elapsed - 1)) / total;
                 entities[i] = e;
             }
         }

@@ -359,9 +359,15 @@ namespace WordCraft.Sim
         /// one entry's reach, rate, speed or armor, and second production
         /// buildings for five existing entries. A peer on 32 refuses a Build of a
         /// 석조 병영 that a peer on 33 charges 120 for, and the banks differ by 120
-        /// on the tick the order is given.
+        /// on the tick the order is given. 34 is two rules the map and the clock
+        /// read: a building under construction keeps the damage it takes instead
+        /// of having its hp rewritten from progress every tick, and the two
+        /// opening fighters are the faction's first named, armed roster
+        /// entries instead of Melee 0 and Ranged 0. A peer on 33 starts 인간
+        /// with a nameless body that a peer on 34 replaces, and a site shot at
+        /// stands at different hp on the next tick.
         /// </summary>
-        public const uint ContentVersion = 33;
+        public const uint ContentVersion = 34;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -2546,6 +2552,54 @@ namespace WordCraft.Sim
                 if (extras[i].Faction == faction && extras[i].Role == role) count++;
             }
             return count;
+        }
+
+        private static readonly Role[] OpeningMeleeFirst = { Role.Melee, Role.Ranged, Role.Signature };
+        private static readonly Role[] OpeningRangedFirst = { Role.Ranged, Role.Melee, Role.Signature };
+
+        /// <summary>
+        /// The body the map places for one of the two opening fighters of this
+        /// faction, asked of the roster instead of assumed to be entry 0 of Melee
+        /// (issue #154). Index 0 is the melee-first opener and index 1 the
+        /// ranged-first one. Each takes the first entry of its role order that
+        /// the faction fields and that carries a weapon, walking Melee, Ranged,
+        /// Signature for index 0 and Ranged, Melee, Signature for index 1,
+        /// lowest slot first within a role.
+        ///
+        /// Named and armed are the two skips. A blank row, which is what 인간's
+        /// melee entry 0 is, has no name and no art, and an unarmed row such as
+        /// 지옥불 군단장 would start the match with a body that never fights.
+        ///
+        /// Whether a building produces the row is deliberately not asked. The
+        /// only unproduced row that is also first in its role is 지옥불 자손,
+        /// Ranged entry 0, which is free and spawned rather than produced and is
+        /// the ranged body 지옥불 has always opened with. Skipping it would hand
+        /// 지옥불 a 균열 파수병 instead and move an opening the roster already
+        /// spells out. Every other unproduced armed row sits behind a produced
+        /// entry 0 of its role, so a produced-only rule and this one answer the
+        /// same for the five other factions.
+        ///
+        /// 세계수 정령 and 지옥불 resolve to Melee 0 and Ranged 0, the two rows the
+        /// map spawned before this existed, so ScriptedLog's entity ids keep
+        /// their bodies. Nothing here is state: a pure function of the faction
+        /// and the index, the same on every peer. A faction with no armed named
+        /// entry at all answers Melee 0, a real row rather than a dead one, and
+        /// the harness is what asserts that never happens.
+        /// </summary>
+        public static (Role Role, int Slot) OpeningFighter(Faction faction, int index)
+        {
+            Role[] order = index == 0 ? OpeningMeleeFirst : OpeningRangedFirst;
+            for (int r = 0; r < order.Length; r++)
+            {
+                int count = SlotCount(faction, order[r]);
+                for (int s = 0; s < count; s++)
+                {
+                    if (!Has(faction, order[r], s)) continue;
+                    if (!Stats(faction, order[r], s).HasWeapon) continue;
+                    return (order[r], s);
+                }
+            }
+            return (Role.Melee, 0);
         }
 
         /// <summary>View-only metadata. Nothing in the simulation reads it, so it is not hashed.</summary>
