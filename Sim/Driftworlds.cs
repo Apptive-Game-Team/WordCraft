@@ -94,11 +94,65 @@ namespace WordCraft.Sim
         public const int CarrierSlot = 0;
 
         /// <summary>
+        /// The slot 틈새 사수 occupies, and which entry of it: the one body the
+        /// production table times at the 통로's own clock, and so the one 도착
+        /// 가속 speeds up.
+        /// </summary>
+        public const Role MarksmanRole = Role.Ranged;
+
+        /// <summary>
+        /// Entry 0, for the reason PassageSlot is. The three 멸종 슬라임 sit behind
+        /// entries of the melee and ranged slots and are not this body.
+        /// </summary>
+        public const int MarksmanSlot = 0;
+
+        /// <summary>
         /// 반경 6칸, per docs/FACTION-MECHANICS.md, and the same number for the
         /// 굴절 기둥 and the 경계 운반자 both — the document gives them one radius,
         /// and one that walks is the only difference between them.
         /// </summary>
         public static readonly Fix ArrivalRadius = Fix.FromInt(6);
+
+        /// <summary>The radius once 도착 반경 is researched.</summary>
+        public static readonly Fix ArrivalRadiusResearched = Fix.FromInt(8);
+
+        /// <summary>
+        /// 도착 가속: the 통로's own clock once researched. The unresearched clock is
+        /// FactionData.PassageArrivalTicks, which is where the table prices it.
+        /// </summary>
+        public const int ArrivalTicksResearched = 40;
+
+        /// <summary>
+        /// 도착 반경: the arrival radius this peer's anchors lend. Asked by both of
+        /// the mechanic's checks through ArrivalValid, so a level that lands while
+        /// a body is crossing widens the second check and never narrows it.
+        /// </summary>
+        public Fix ArrivalRadiusFor(int peer) =>
+            UpgradeLevelOf(peer, UpgradeEffect.ArrivalRadius) > 0 ? ArrivalRadiusResearched : ArrivalRadius;
+
+        /// <summary>
+        /// 도착 가속: the 통로's clock, 도착 | 통로에서 60틱 in the document's table,
+        /// for this peer.
+        /// </summary>
+        public int ArrivalTicksFor(int peer) =>
+            UpgradeLevelOf(peer, UpgradeEffect.ArrivalTicks) > 0 ? ArrivalTicksResearched : FactionData.PassageArrivalTicks;
+
+        /// <summary>
+        /// How long the body at the head of this building's queue takes. The
+        /// table's clock for everything, except 틈새 사수 coming out of a 통로: it
+        /// crosses at the 통로's own clock, ArrivalTicksFor, which is the number
+        /// 도착 가속 moves. Named by role and entry, the way the pillar and the
+        /// carrier are, so a body priced at 60 ticks for some other reason is
+        /// never sped up by accident.
+        /// </summary>
+        private int ProduceTicksOf(Entity b)
+        {
+            if (IsPassage(b) && b.ProduceRole == MarksmanRole && b.ProduceSlot == MarksmanSlot)
+            {
+                return ArrivalTicksFor(b.Owner);
+            }
+            return FactionData.Production(factions[b.Owner], b.ProduceRole, b.ProduceSlot).Ticks;
+        }
 
         /// <summary>
         /// True for a standing 통로 and nothing else. Faction, kind, role and entry
@@ -198,11 +252,12 @@ namespace WordCraft.Sim
             if (point.X < Fix.Zero || point.Y < Fix.Zero) return false;
             if (point.X >= Fix.FromInt(GridSize) || point.Y >= Fix.FromInt(GridSize)) return false;
 
+            Fix radius = ArrivalRadiusFor(peer);
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity e = entities[i];
                 if (!ProvidesArrival(e, peer)) continue;
-                if (WithinRange(point, e.Position, ArrivalRadius)) return true;
+                if (WithinRange(point, e.Position, radius)) return true;
             }
             return false;
         }

@@ -86,7 +86,14 @@ namespace WordCraft.Sim
                 if (node >= 0) AiIssue(peer, CommandType.Gather, i, FixVec2.Zero, node);
             }
 
-            // 2. Production. Every finished building of its own with an empty queue
+            // 2. Research, ahead of production. The ladder spends every coin it
+            //    has on bodies every think, so research asked after production
+            //    would only ever see an empty bank. Its orders are applied in the
+            //    order they were issued, so the price is taken first and the
+            //    production orders behind it are refused for what is left.
+            AiResearch(peer);
+
+            // 3. Production. Every finished building of its own with an empty queue
             //    gets an order, so nothing that can build anything sits still.
             int workers = AiCountWorkers(peer);
             for (int i = 0; i < entities.Count; i++)
@@ -109,7 +116,7 @@ namespace WordCraft.Sim
                 if (want == Role.Worker) workers++;
             }
 
-            // 3. Supply before the cap, not after it. A cap reached is production
+            // 4. Supply before the cap, not after it. A cap reached is production
             //    stopped, and a supply building takes 50 ticks to stand up.
             if (population[peer] + AiSupplyLead >= PopulationCap(peer) &&
                 PopulationCap(peer) < PopulationHardCap &&
@@ -118,12 +125,53 @@ namespace WordCraft.Sim
                 AiBuild(peer, Role.Supply);
             }
 
-            // 4. Somewhere else to build from, so losing the base is not losing the
+            // 5. Somewhere else to build from, so losing the base is not losing the
             //    match on the spot.
             if (!AiHolds(peer, Role.Production, unfinishedOnly: false)) AiBuild(peer, Role.Production);
 
-            // 5. Attack with what it has.
+            // 6. A 기술 건물, once there is a finished production building to open
+            //    tier 2 for it. CanBuild is what says so, and it also says no
+            //    until the bank holds the price, so this costs nothing to ask.
+            if (!AiHolds(peer, Role.Tech, unfinishedOnly: false)) AiBuild(peer, Role.Tech);
+
+            // 7. Attack with what it has.
             AiAttack(peer);
+        }
+
+        /// <summary>
+        /// Every finished 기술 건물 of its own that is not already researching
+        /// starts the lowest-index row it can start and afford, where afford
+        /// means the bank holds more than that level costs. Index order is the
+        /// whole of the plan: 공격력, then 방어력, then the two rows that are its
+        /// faction's own. A row it cannot pay for yet is skipped, not waited on:
+        /// with 75 banked it buys 방어력 level 1 for 50 rather than hold out for
+        /// 공격력 level 2 at 100, so the levels climb unevenly.
+        ///
+        /// Strictly more than the price, not equal to it, so the order never
+        /// empties the bank to the last coin.
+        /// </summary>
+        // ponytail: index order and nothing else. It researches 방어력 against an
+        // opponent with no weapons and 도착 반경 with no 굴절 기둥 standing. Give
+        // it a reason to pick a row the day the ladder is meant to be a plan.
+        private void AiResearch(int peer)
+        {
+            int rows = FactionData.UpgradeCount(factions[peer]);
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity b = entities[i];
+                if (!b.Alive || b.Owner != peer || b.Kind != EntityKind.Building) continue;
+                if (b.Role != Role.Tech || b.BuildTicksLeft > 0 || b.ResearchIndex >= 0) continue;
+
+                for (int row = 0; row < rows; row++)
+                {
+                    if (!CanResearch(peer, i, row) || resources[peer] <= ResearchCost(peer, row)) continue;
+                    AiIssue(peer, CommandType.Research, i, FixVec2.Zero, row);
+                    // One building, one order per think. A second 기술 건물 asked
+                    // in the same think would see the same bank and the same free
+                    // row, and Apply would refuse whichever came second.
+                    return;
+                }
+            }
         }
 
         /// <summary>

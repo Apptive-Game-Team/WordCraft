@@ -13,6 +13,18 @@ namespace WordCraft.Sim
         /// <summary>Most damage the massed bonus can ever add, per docs/FACTION-MECHANICS.md.</summary>
         public const int VolleyMaxBonus = 4;
 
+        /// <summary>The radius once 밀집 반경 is researched.</summary>
+        public static readonly Fix VolleyRadiusResearched = Fix.FromInt(4);
+
+        /// <summary>The cap once 밀집 강화 is researched.</summary>
+        public const int VolleyMaxBonusResearched = 6;
+
+        /// <summary>
+        /// What 골렘 사거리 and 대포 사거리 add to the reach of the bodies they
+        /// name, in cells.
+        /// </summary>
+        public static readonly Fix RangeUpgrade = Fix.FromInt(1);
+
         private void CombatSystem()
         {
             // Attackers act in ascending id order and damage lands immediately, so
@@ -55,12 +67,15 @@ namespace WordCraft.Sim
                 UnitStats s = RosterStats(a);
 
                 Entity t = entities[a.TargetId];
-                if (WithinRange(a.Position, t.Position, s.Range))
+                if (WithinRange(a.Position, t.Position, RangeOf(a)))
                 {
                     if (a.AttackCooldown == 0)
                     {
                         a.AttackCooldown = s.AttackTicks;
-                        t.Hp -= s.Damage + VolleyBonus(a);
+                        // 공격력 belongs to the shooter's owner and 방어력 to the
+                        // target's. A neutral target has no owner, so no level.
+                        t.Hp -= DamageAfterArmor(s.Damage + VolleyBonus(a), AttackBonus(a.Owner),
+                            TargetArmor(t), ArmorBonus(t.Owner));
                         if (t.Hp <= 0) Kill(ref t);
                         entities[t.Id] = t;
                     }
@@ -94,6 +109,33 @@ namespace WordCraft.Sim
         }
 
         /// <summary>
+        /// What one hit takes off: the weapon and every bonus behind it, less the
+        /// target's armor and every bonus behind that, and never less than one.
+        ///
+        /// The floor is the rule that keeps armor a discount rather than an
+        /// immunity. Without it three levels of 방어력 on a body hit by a weapon
+        /// of three would make that weapon do nothing at all, and a fight between
+        /// the two would never end — a stalemate that hashes the same on both
+        /// peers and that nobody can play out of.
+        ///
+        /// Public and static so the harness can pin the floor directly: no roster
+        /// row today is light enough for researched armor to reach it in a fight.
+        /// </summary>
+        public static int DamageAfterArmor(int damage, int attackBonus, int armor, int armorBonus)
+        {
+            int dealt = damage + attackBonus - (armor + armorBonus);
+            return dealt < 1 ? 1 : dealt;
+        }
+
+        /// <summary>
+        /// The armor the target's own roster row carries. A neutral body has no
+        /// faction to look a row up in, so it has none, which is the same answer
+        /// Flies and Armed give a body with no owner.
+        /// </summary>
+        private int TargetArmor(Entity t) =>
+            t.Owner >= 0 && t.Owner < MaxPeers ? RosterStats(t).Armor : 0;
+
+        /// <summary>
         /// 물 슬라임 일제 사격: +1 damage for every other allied archer standing
         /// within VolleyRadius, up to VolleyMaxBonus. Formation is firepower.
         ///
@@ -115,6 +157,8 @@ namespace WordCraft.Sim
             // about order, but the loop that produces it is not allowed to become
             // one that does, and the cap makes it care: stopping early has to stop
             // on the same archer everywhere.
+            Fix radius = VolleyRadiusFor(archer.Owner);
+            int cap = VolleyMaxBonusFor(archer.Owner);
             int allies = 0;
             for (int i = 0; i < entities.Count; i++)
             {
@@ -122,10 +166,48 @@ namespace WordCraft.Sim
                 if (!o.Alive || o.Id == archer.Id) continue;
                 if (o.Owner != archer.Owner) continue;
                 if (o.Kind != EntityKind.Unit || o.Role != Role.Ranged) continue;
-                if (!WithinRange(o.Position, archer.Position, VolleyRadius)) continue;
-                if (++allies == VolleyMaxBonus) break;
+                if (!WithinRange(o.Position, archer.Position, radius)) continue;
+                if (++allies == cap) break;
             }
             return allies;
+        }
+
+        /// <summary>밀집 반경: how far an allied archer counts from, for this peer.</summary>
+        public Fix VolleyRadiusFor(int peer) =>
+            UpgradeLevelOf(peer, UpgradeEffect.VolleyRadius) > 0 ? VolleyRadiusResearched : VolleyRadius;
+
+        /// <summary>밀집 강화: the most the massed bonus adds, for this peer.</summary>
+        public int VolleyMaxBonusFor(int peer) =>
+            UpgradeLevelOf(peer, UpgradeEffect.VolleyCap) > 0 ? VolleyMaxBonusResearched : VolleyMaxBonus;
+
+        /// <summary>
+        /// How far this body's weapon reaches right now: its roster row's Range,
+        /// and a cell more for the two rows a range upgrade names once their owner
+        /// has it — 돌 골렘's melee bodies under 골렘 사거리, 인간 대포 under 대포
+        /// 사거리. The one place a weapon's reach is read, so the shot and anything
+        /// that later asks how far a body can hit cannot disagree.
+        ///
+        /// 골렘 사거리 covers every entry of the melee slot, which is one entry
+        /// today. 대포 사거리 covers entry 0 of the defense slot and not the 전기
+        /// 타워 and 돌 포탑 behind it, for the reason buildOverrides is keyed by
+        /// entry: the upgrade is named after one building.
+        /// </summary>
+        public Fix RangeOf(Entity e)
+        {
+            if (e.Owner < 0 || e.Owner >= MaxPeers) return Fix.Zero;
+            Fix range = RosterStats(e).Range;
+            Faction faction = factions[e.Owner];
+            if (faction == Faction.RockGolems && e.Kind == EntityKind.Unit && e.Role == Role.Melee &&
+                UpgradeLevelOf(e.Owner, UpgradeEffect.GolemMeleeRange) > 0)
+            {
+                return range + RangeUpgrade;
+            }
+            if (faction == Faction.Humans && e.Kind == EntityKind.Building && e.Role == Role.Defense &&
+                e.Slot == 0 && UpgradeLevelOf(e.Owner, UpgradeEffect.CannonRange) > 0)
+            {
+                return range + RangeUpgrade;
+            }
+            return range;
         }
 
         /// <summary>
