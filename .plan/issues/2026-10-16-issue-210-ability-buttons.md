@@ -2,7 +2,7 @@
 
 - Date: 2026-10-16
 - GitHub Issue: #210
-- Status: In progress (draft PR, #214 와 #207 위에 쌓음)
+- Status: Implemented (draft PR, #214 와 #207 위에 쌓음)
 
 ## Goal
 
@@ -61,3 +61,16 @@
 ## 검증
 
 `dotnet build`(경고 0), `dotnet run --project Replay`, Unity `ViewSelfCheck`.
+
+## 결과
+
+- `AbilityMenu` 는 `Replay.csproj` 에 `Compile Include` 한 줄이 필요했다(쓰기 범위 목록에는 없었지만
+  `Replay` 가 컴파일하려면 있어야 한다).
+- 문서에 "하나만" 보내라고 적은 능력이 없다. `docs/TECH-TREE.md` 의 능력 표와 능력 공통 규칙을 모두
+  읽었고 대표에게만 보내라는 말은 없다. 그래서 `Cast` 는 같은 행을 가진 선택 유닛 모두에게 나가고
+  예외 목록은 두지 않았다.
+- 쿨다운 중인 칸은 죽은 면이 아니다. 대표의 쿨다운이 선택 전체의 것은 아니라서다.
+- 오토캐스트는 `AbilityMenu.IsAutocast` 가 문서 표의 종류 열을 따라 질풍, 굴러 들이받기, 잔해 수리,
+  수리 넷으로 정한다. `AbilityMenuChecks` 가 그 넷과 표를 맞춰 본다.
+- 일부러 깨 본 검사 아홉 개가 모두 실패했다(이름 순서는 `AbilityMenuChecks.Check` 순서).
+- 그림으로는 확인하지 못했다. `ViewShots.Run` 은 이 작업의 쓰기 범위 밖(#212)이다.
