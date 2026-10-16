@@ -932,8 +932,12 @@ namespace WordCraft.Sim
         /// reinforcement and mirrored building placement; commands change again.
         /// 42 balances six unit rows after the complete AI: opening values,
         /// frontline durability and the tier-3 tide caster's production budget.
+        /// 43 hashes explicit resource rally targets and sends newly produced
+        /// workers into gathering; older peers would only move to the point.
+        /// 44 hashes AI difficulty and wave cooldowns; Easy/Normal change
+        /// economy and offense pacing while the default Hard policy is retained.
         /// </summary>
-        public const uint ContentVersion = 42;
+        public const uint ContentVersion = 44;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;

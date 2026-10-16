@@ -97,7 +97,7 @@ namespace WordCraft.View
     /// <summary>
     /// The command card layout, and the only place it is decided.
     ///
-    /// Position is the shortcut. Cell n always carries Keys[n], the key is drawn
+    /// Position gives the default shortcut; Attack overrides its cell with A. The key is drawn
     /// on the button, and a command keeps its cell for a given selection kind, so
     /// the hand learns the position and stops looking at the screen. Retuning the
     /// feel means editing the two tables below and nothing else.
@@ -126,6 +126,10 @@ namespace WordCraft.View
             KeyCode.V, KeyCode.B, KeyCode.N, KeyCode.M,
         };
 
+        /// <summary>Attack uses the conventional A key without moving production shortcuts.</summary>
+        public static KeyCode Shortcut(CardSlot slot, int cell) =>
+            slot.Type == CommandType.Attack ? KeyCode.A : Keys[cell];
+
         // The column convention every card below obeys, so a cell means the same
         // thing whatever is selected. Columns 0-2 are the old 3x3 and keep their
         // meaning; column 3 (cells 3, 7, 11) is new and stays empty on every card
@@ -134,7 +138,7 @@ namespace WordCraft.View
         //   cell 0  (R)  point at the ground   Move, or where produced units walk to
         //   cell 1  (T)  cancel                Stop, or take one off the queue
         //   cell 2  (Y)  stand and shoot       Hold; on a building, the rest of row 0
-        //   cell 4  (F)  name a victim
+        //   cell 4  (A for Attack, otherwise F)  choose an attack target or position
         //   cell 5  (G)  walk and shoot
         //   cells 8-10 (V B N), and on a building all of rows 1 and 2
         //                what this thing makes
@@ -152,7 +156,7 @@ namespace WordCraft.View
         /// <summary>
         /// 징발 goes in cell 4 because cell 4 is where naming a body lives — it is
         /// Attack on the fighter card, and a Capture is the same gesture at the
-        /// same key on the one card that has no Attack. The worker card had six
+        /// default F key on the card that has no Attack. The worker card had six
         /// free cells before this and has five after, so nothing was displaced and
         /// nothing had to be paged; the card is only tight on the produce card,
         /// where 차원 유랑종 already fills six of ProductionMenu.Cells.
@@ -337,6 +341,26 @@ namespace WordCraft.View
             building[2] = new CardSlot { Label = "Arrive", Aim = true };
 
             Faction faction = world.FactionOf(peer);
+            // ProductionMenu intentionally lists military roles only. Keep the
+            // worker on the spare top-row key so adding it cannot shift existing
+            // fighter pages or disappear behind a later page.
+            ProductionCost workerCost = FactionData.Production(faction, Role.Worker, 0);
+            if (workerCost.Produced && FactionData.Has(faction, Role.Worker, 0) &&
+                FactionData.IsProducedAt(faction, Role.Worker, 0, lead, leadSlot))
+            {
+                string workerName = FactionData.Name(faction, Role.Worker, 0);
+                building[3] = new CardSlot
+                {
+                    Label = workerName + "\n" + workerCost.Resources,
+                    Description = workerName + " 생산 · " + workerCost.Resources + " 마나 · " +
+                        (workerCost.Ticks / (float)World.TicksPerSecond).ToString("0.#") + "초\n" +
+                        "완공된 " + FactionData.Name(faction, lead, leadSlot) + " 필요 · 인구 여유 필요" +
+                        (world.GetResources(peer) < workerCost.Resources ? " · 마나 부족" : ""),
+                    Type = CommandType.Produce,
+                    Produce = Role.Worker,
+                    Slot = 0,
+                };
+            }
             int count, pages;
             int first, length;
             List<ProductionMenu.Entry> produced = null;

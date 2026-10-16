@@ -248,7 +248,7 @@ namespace WordCraft.View
             CardSlot[] card = Card();
             for (int i = 0; i < CommandCard.Cells; i++)
             {
-                if (Input.GetKeyDown(CommandCard.Keys[i])) Run(card[i]);
+                if (Input.GetKeyDown(CommandCard.Shortcut(card[i], i))) Run(card[i]);
             }
 
             if (Input.GetKeyDown(KeyCode.Escape)) Cancel();
@@ -598,14 +598,21 @@ namespace WordCraft.View
             if (type == CommandType.Attack)
             {
                 int hit = runner.EntityAt(point, PickRadius, mineOnly: false);
-                // The simulation refuses an Attack that names nothing hostile, so a
-                // click on empty ground drops the order rather than inventing a
-                // substitute target each peer would pick for itself.
-                if (hit < 0 || runner.World.GetEntity(hit).Owner == runner.LocalPeer) return;
-                ToSelection(CommandType.Attack, FixVec2.Zero, hit);
+                Entity aimed = hit >= 0 ? runner.World.GetEntity(hit) : default;
+                if (hit >= 0 && aimed.Alive && aimed.Kind != EntityKind.ResourceNode && aimed.Owner != runner.LocalPeer)
+                    ToSelection(CommandType.Attack, FixVec2.Zero, hit);
+                else
+                    ToSelection(CommandType.AttackMove, MatchRunner.ToSim(point), 0);
                 return;
             }
 
+            if (type == CommandType.SetRallyPoint)
+            {
+                int hit = runner.EntityAt(point, PickRadius, mineOnly: false);
+                bool node = hit >= 0 && runner.World.GetEntity(hit).Kind == EntityKind.ResourceNode;
+                ToSelection(type, node ? runner.World.GetEntity(hit).Position : MatchRunner.ToSim(point), node ? hit + 1 : 0);
+                return;
+            }
             ToSelection(type, MatchRunner.ToSim(point), 0);
         }
 
@@ -705,7 +712,11 @@ namespace WordCraft.View
                 Entity e = world.GetEntity(id);
                 if (!e.Alive || e.Owner != runner.LocalPeer) continue;
 
-                if (node && e.Kind == EntityKind.Worker)
+                if (IsProducer(e, world.FactionOf(runner.LocalPeer)))
+                {
+                    Issue(CommandType.SetRallyPoint, id, target, node ? hit + 1 : 0);
+                }
+                else if (node && e.Kind == EntityKind.Worker)
                 {
                     Issue(CommandType.Gather, id, FixVec2.Zero, hit);
                 }
@@ -730,6 +741,16 @@ namespace WordCraft.View
                     Issue(CommandType.SetRallyPoint, id, target);
                 }
             }
+        }
+
+        /// <summary>Uses the roster rather than current tech or queue availability.</summary>
+        private static bool IsProducer(Entity entity, Faction faction)
+        {
+            if (entity.Kind != EntityKind.Building) return false;
+            for (int role = 0; role < FactionData.RoleCount; role++)
+                for (int slot = 0; slot < FactionData.SlotCount(faction, (Role)role); slot++)
+                    if (FactionData.IsProducedAt(faction, (Role)role, slot, entity.Role, entity.Slot)) return true;
+            return false;
         }
 
         /// <summary>

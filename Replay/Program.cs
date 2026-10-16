@@ -20,6 +20,17 @@ namespace WordCraft.Replay
             SeparationChecks.EnforcePerformance = Array.IndexOf(args, "--perf") >= 0;
             try
             {
+                if (Array.IndexOf(args, "--difficulty") >= 0)
+                {
+                    AiDifficultyChecks.Check();
+                    return 0;
+                }
+                if (Array.IndexOf(args, "--golden") >= 0)
+                {
+                    ClientLogMatchesGoldenHash();
+                    Console.WriteLine("OK: client golden hash matches");
+                    return 0;
+                }
                 if (Array.IndexOf(args, "--balance") >= 0)
                 {
                     BalanceChecks.Check();
@@ -90,6 +101,7 @@ namespace WordCraft.Replay
                 StopCancelsWhatIsRunning();
                 HoldPositionNeverChases();
                 ProducedUnitsWalkToTheRallyPoint();
+                ResourceRallyChecks.Check();
                 CancellingProductionRefundsInFull();
                 ProducedWorkersCanGather();
                 RosterSlotsAreAddressable();
@@ -152,6 +164,7 @@ namespace WordCraft.Replay
                 CastChecks.Check();
                 AbilityMenuChecks.Check();
                 AiChecks.Check();
+                AiDifficultyChecks.Check();
                 BalanceChecks.Check();
                 SimAssemblyIsClean();
             }

@@ -220,9 +220,10 @@ namespace WordCraft.View
         private void Controls()
         {
             float scroll = Input.GetAxis("Mouse ScrollWheel");
-            if (!Mathf.Approximately(scroll, 0f)) Zoom(scroll);
+            bool overUi = Hud.OverUi(Input.mousePosition);
+            if (!overUi && !Mathf.Approximately(scroll, 0f)) Zoom(scroll);
 
-            if (Input.GetMouseButtonDown(2) && Field.Pointer(cam, Input.mousePosition, out dragGrabbed))
+            if (!overUi && Input.GetMouseButtonDown(2) && Field.Pointer(cam, Input.mousePosition, out dragGrabbed))
             {
                 dragging = true;
                 dragHeight = Field.Height(dragGrabbed);
@@ -288,7 +289,7 @@ namespace WordCraft.View
 
         /// <summary>
         /// One saved viewpoint. Z and X because the command card owns RTY/FGH/VBN,
-        /// the camera owns WASD and QE, the control groups own the digits, and the
+        /// the camera owns arrows, WSD and QE; A is attack. Control groups own digits, and the
         /// bottom-left pair is what a left hand resting on WASD can still reach.
         /// </summary>
         private void Bookmarks()
