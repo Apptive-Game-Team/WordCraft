@@ -328,6 +328,28 @@ namespace WordCraft.Sim
         /// holds at most one.
         /// </summary>
         public int AbilityTicksLeft;
+
+        // 액티브, docs/TECH-TREE.md 묶음 8. Both on the caster and nowhere
+        // else, the one-sidedness every field above has: a delayed hit or a
+        // zone lives in the caster's clock and point, so a caster that dies
+        // takes the hit or the zone with it and Kill clearing two fields is all
+        // that ending it takes.
+
+        /// <summary>
+        /// Where the caster's point active is aimed: the Target of the Cast that
+        /// set it, as it was on the tick of the order. Read by AbilitySystem
+        /// while AbilityTicksLeft runs, for 유성우, 간헐천, 낙뢰 and the two zones.
+        /// Hashed: two peers that disagreed here would drop one meteor on two
+        /// different armies.
+        /// </summary>
+        public FixVec2 AbilityPoint;
+
+        /// <summary>
+        /// Whether this 견인 대포 stands deployed: no walking, the deployed reach,
+        /// and a splash. False on every other body. Flipped by AbilitySystem on
+        /// the tick a 전개 transition's clock reaches 0, never by the Cast itself.
+        /// </summary>
+        public bool Deployed;
     }
 
     /// <summary>
@@ -547,6 +569,11 @@ namespace WordCraft.Sim
             // Nor carries an ability clock: a roll or a cooldown ends with the body.
             e.AbilityCooldown = 0;
             e.AbilityTicksLeft = 0;
+            // A meteor, a geyser or a bolt the body had aimed never falls, and
+            // a zone it held ends, per docs/TECH-TREE.md 동점과 경계: the point
+            // goes with the clock.
+            e.AbilityPoint = FixVec2.Zero;
+            e.Deployed = false;
         }
 
         /// <summary>
@@ -937,6 +964,8 @@ namespace WordCraft.Sim
                 {
                     if (!OwnedAndAlive(c.EntityId, c.PeerId)) return;
                     Entity e = entities[c.EntityId];
+                    // 전개 중 이동 명령도 거부, and mid-transition too.
+                    if (Anchored(e)) return;
                     ClearOrders(ref e);
                     entities[c.EntityId] = e;
                     SetDestination(c.EntityId, c.Target);
@@ -960,8 +989,9 @@ namespace WordCraft.Sim
                     e.TargetId = c.Arg;
                     entities[c.EntityId] = e;
                     // Walk into range. A turret has no walk to give, and its Target
-                    // is hashed state, so it takes the order without moving.
-                    if (e.Speed.Raw != 0) SetDestination(c.EntityId, victim.Position);
+                    // is hashed state, so it takes the order without moving. Nor
+                    // does a deployed 견인 대포, which shoots from where it stands.
+                    if (e.Speed.Raw != 0 && !e.Deployed) SetDestination(c.EntityId, victim.Position);
                     break;
                 }
 
@@ -972,7 +1002,7 @@ namespace WordCraft.Sim
                     // Has to walk and has to shoot. On anything else this order is a
                     // plain Move wearing another name, and accepting it would leave
                     // an entity in a mode whose systems never touch it.
-                    if (e.Speed.Raw == 0 || !CanAttack(e)) return;
+                    if (e.Speed.Raw == 0 || !CanAttack(e) || Anchored(e)) return;
                     ClearOrders(ref e);
                     e.Mode = OrderMode.AttackMove;
                     e.OrderPoint = c.Target;
@@ -1167,6 +1197,12 @@ namespace WordCraft.Sim
                     // outside the table fails there like any other refusal.
                     TryResearch(c.PeerId, c.EntityId, c.Arg);
                     break;
+
+                case CommandType.Cast:
+                    // Arg is the row of the owner's ability table and Target the
+                    // point. Every rule lives in CastRefusal. See Sim/Casts.cs.
+                    TryCast(c);
+                    break;
             }
         }
 
@@ -1242,6 +1278,8 @@ namespace WordCraft.Sim
                 // written. Enforced here as well as in CombatSystem because this
                 // is the only line that decides whether an entity moves at all.
                 if (e.Mode == OrderMode.Hold) continue;
+                // 전개: a deployed 견인 대포 and one mid-transition stand still.
+                if (Anchored(e)) continue;
 
                 List<int> path = paths[i];
                 FixVec2 goal = e.PathIndex < path.Count ? CellCenter(path[e.PathIndex]) : e.Target;
@@ -1306,6 +1344,12 @@ namespace WordCraft.Sim
             int to = CellOf(q);
             int fx = from % GridSize, fy = from / GridSize;
             int tx = to % GridSize, ty = to / GridSize;
+            // A step inside the cell the body already stands on is always
+            // taken. The only way a walker stands on a blocked cell is debris
+            // laid under it, by 굳기 (docs/TECH-TREE.md 묶음 8: 그 몸은 나가는
+            // 걸음만 할 수 있다) or by a golem falling beside it, and a body at a
+            // cell's centre needs several such steps to reach the edge it leaves by.
+            if (from == to) return true;
             if (!StepPassable(from, to, air)) return false;
             // Same cell, an orthogonal neighbour, or a step longer than a cell,
             // which no roster Speed takes today; for that last one the two ends
@@ -1477,6 +1521,9 @@ namespace WordCraft.Sim
                 Mix(ref h, (ulong)e.ExpireTick);
                 Mix(ref h, (ulong)e.AbilityCooldown);
                 Mix(ref h, (ulong)e.AbilityTicksLeft);
+                Mix(ref h, (ulong)e.AbilityPoint.X.Raw);
+                Mix(ref h, (ulong)e.AbilityPoint.Y.Raw);
+                Mix(ref h, e.Deployed ? 1UL : 0UL);
 
                 List<int> path = paths[i];
                 Mix(ref h, (ulong)path.Count);

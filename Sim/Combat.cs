@@ -99,12 +99,14 @@ namespace WordCraft.Sim
                         ChainFrom(a, t.Id, hitAt, dealt);
                         SplashFrom(a, t.Id, hitAt, dealt, ActiveAbility(a, AbilityKind.SplashOnHit));
                         SplashFrom(a, t.Id, hitAt, dealt, thrown);
+                        // 전개: a deployed 견인 대포 splashes on the ground round its target.
+                        if (a.Deployed) SplashFrom(a, t.Id, hitAt, dealt, DeployRow(a));
                         // 질풍: every attack sets the clock back to its full length.
                         int gale = ActiveAbility(a, AbilityKind.GaleAfterAttack);
                         if (gale >= 0) a.AbilityTicksLeft = AbilityTicks(a.Owner, FactionData.AbilityRowAt(gale));
                     }
                 }
-                else if (a.Kind != EntityKind.Building && a.Mode != OrderMode.Hold && a.Speed.Raw != 0 &&
+                else if (a.Kind != EntityKind.Building && a.Mode != OrderMode.Hold && a.Speed.Raw != 0 && !a.Deployed &&
                          (a.Mode == OrderMode.AttackMove || PathDone(i)))
                 {
                     // A holder is left out for the same reason a building is: Target
@@ -305,7 +307,31 @@ namespace WordCraft.Sim
         /// </summary>
         public Fix RangeFor(Entity e)
         {
+            Fix range = UnstormedRangeFor(e);
+            // 모래폭풍, docs/TECH-TREE.md 묶음 8: inside a hostile zone a body
+            // reaches no further than the zone's amount. Last, so it caps every
+            // bonus above; a reach already under it is left alone.
+            if (range.Raw == 0) return range;
+            int storm = SandStormReach(e);
+            return storm >= 0 && range > Fix.FromInt(storm) ? Fix.FromInt(storm) : range;
+        }
+
+        /// <summary>RangeFor before a 모래폭풍 caps it: the roster, the research, 전개, 정조준 and 물기둥 분수.</summary>
+        private Fix UnstormedRangeFor(Entity e)
+        {
             if (e.Owner < 0 || e.Owner >= MaxPeers) return Fix.Zero;
+            // 전개, docs/TECH-TREE.md 묶음 8: deployed, the 견인 대포 reaches the row's
+            // amount, and a cell more once 대포 사거리 lands. The research is named
+            // after the 대포 building, but a deployed cannon is the same gun.
+            if (e.Deployed)
+            {
+                int deploy = DeployRow(e);
+                if (deploy >= 0)
+                {
+                    Fix deployed = Fix.FromInt(AbilityAmount(e.Owner, FactionData.AbilityRowAt(deploy)));
+                    return UpgradeLevelOf(e.Owner, UpgradeEffect.CannonRange) > 0 ? deployed + RangeUpgrade : deployed;
+                }
+            }
             Fix range = EntryUpgraded(e, UpgradedStat.Range, out Fix researched) ? researched : RosterStats(e).Range;
             Faction faction = factions[e.Owner];
             if (faction == Faction.RockGolems && e.Kind == EntityKind.Unit && e.Role == Role.Melee &&
@@ -337,9 +363,13 @@ namespace WordCraft.Sim
         /// first — so 지옥불 군단장 cannot be walked into the front line by the
         /// simulation or ordered there by a player. Admitted here it would acquire
         /// a target, close on it, and stand in weapon range firing nothing.
+        ///
+        /// Nor does a 견인 대포 mid-transition, docs/TECH-TREE.md 전개: 전환
+        /// 중에는 쏘지도 걷지도 않는다. Deployed or not, it fires again on the
+        /// tick the transition ends.
         /// </summary>
         private bool CanAttack(Entity e) =>
-            Armed(e) && !IsGrowing(e) &&
+            Armed(e) && !IsGrowing(e) && !Transitioning(e) &&
             (e.Kind == EntityKind.Unit ||
              (e.Kind == EntityKind.Building && e.Role == Role.Defense && e.BuildTicksLeft == 0));
 

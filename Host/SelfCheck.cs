@@ -101,9 +101,24 @@ namespace WordCraft.Host
             var a = new Peer(0, link.A, new MatchConfig { LocalFaction = Faction.WaterSlimes }, -1, 0);
             var b = new Peer(1, link.B, new MatchConfig { LocalFaction = Faction.RockGolems }, -1, 0);
 
+            // One Cast over the same link: peer 0's 물방울 생존자 lays 물 지대
+            // 깔기, a 기본 active with no cost and no point, so it is accepted
+            // wherever the worker stands. CommandType travels as one byte and
+            // the row index in Arg, so a Cast that crossed the wire whole lays
+            // the same field on both peers; one that lost Arg would name row 0
+            // and be refused on both, and the check below would see no field.
+            int caster = FirstWorker(a.World, 0);
+            int layField = AbilityIndex(Faction.WaterSlimes, AbilityKind.LayField);
+            bool cast = false;
             Drive(link, a, b, 0,
                 () => Stopped(a) || Stopped(b) || (a.Session.Tick >= Ticks && b.Session.Tick >= Ticks),
-                600000);
+                600000,
+                _ =>
+                {
+                    if (cast || a.Session.Tick < 30) return;
+                    a.Session.Issue(CommandType.Cast, caster, FixVec2.Zero, layField);
+                    cast = true;
+                });
 
             Check(!Stopped(a), "peer 0 stopped: " + a.Session.StopReason);
             Check(!Stopped(b), "peer 1 stopped: " + b.Session.StopReason);
@@ -129,6 +144,39 @@ namespace WordCraft.Host
 
             Check(a.World.FactionOf(0) == Faction.WaterSlimes && a.World.FactionOf(1) == Faction.RockGolems,
                 "the handshake did not carry each peer's own choice");
+
+            int fieldA = 0, fieldB = 0;
+            for (int cell = 0; cell < World.GridCells; cell++)
+            {
+                if (a.World.WaterFieldExpiry(cell) > 0) fieldA++;
+                if (b.World.WaterFieldExpiry(cell) > 0) fieldB++;
+            }
+            Check(fieldA > 0, "the Cast never laid a water field: it was lost or refused on the wire");
+            Check(fieldA == fieldB, "peers disagree on the water field the Cast laid: " + fieldA + " cells against " + fieldB);
+            // The two peers stop on whichever tick each reached last, so the
+            // cooldown is compared as the tick it runs out on.
+            int coolA = a.World.GetEntity(caster).AbilityCooldown, coolB = b.World.GetEntity(caster).AbilityCooldown;
+            Check(coolA > 0 && coolB > 0 && a.World.Tick + coolA == b.World.Tick + coolB,
+                "peers disagree on when the caster's cooldown runs out: " + (a.World.Tick + coolA) + " against " + (b.World.Tick + coolB));
+        }
+
+        private static int FirstWorker(World world, int peer)
+        {
+            for (int id = 0; id < world.EntityCount; id++)
+            {
+                Entity e = world.GetEntity(id);
+                if (e.Owner == peer && e.Kind == EntityKind.Worker) return id;
+            }
+            throw new Exception("peer " + peer + " has no worker");
+        }
+
+        private static int AbilityIndex(Faction faction, AbilityKind kind)
+        {
+            for (int i = 0; i < FactionData.AbilityCount(faction); i++)
+            {
+                if (FactionData.Ability(faction, i).Kind == kind) return i;
+            }
+            throw new Exception(faction + " holds no " + kind);
         }
 
         /// <summary>

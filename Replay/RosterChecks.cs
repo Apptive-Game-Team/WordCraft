@@ -517,11 +517,21 @@ namespace WordCraft.Replay
             Research(Faction.RockGolems, "잔해 투척 강화", 100, 160, 2, UpgradeEffect.RemnantThrowDamage, Role.Tech, 1, Role.None, 0),
             Research(Faction.Driftworlds, "정조준", 125, 200, 3, UpgradeEffect.SteadyAim, Role.Tech, 0, Role.None, 0),
             Research(Faction.Humans, "수리 강화", 100, 160, 3, UpgradeEffect.RepairAmount, Role.Tech, 0, Role.None, 0),
+            // 묶음 8 (#209): the actives Cast uses.
+            Research(Faction.TreeSpirits, "칼바람 회오리", 150, 200, 3, UpgradeEffect.RazorGale, Role.Tech, 1, Role.None, 0),
+            Research(Faction.Hellfire, "유성우", 150, 200, 3, UpgradeEffect.MeteorShower, Role.Tech, 0, Role.None, 0),
+            Research(Faction.WaterSlimes, "해일 부름", 150, 200, 3, UpgradeEffect.TideCall, Role.Tech, 0, Role.None, 0),
+            Research(Faction.WaterSlimes, "물 지대 지속", 100, 160, 3, UpgradeEffect.WaterFieldDuration, Role.Tech, 0, Role.None, 0),
+            Research(Faction.RockGolems, "굳기 지속", 100, 160, 3, UpgradeEffect.HardenDuration, Role.Tech, 0, Role.None, 0),
+            Research(Faction.RockGolems, "깨우기 비용", 100, 160, 3, UpgradeEffect.AwakenCost, Role.Tech, 0, Role.None, 0),
+            Research(Faction.RockGolems, "모래폭풍 반경", 100, 160, 3, UpgradeEffect.SandStormRadius, Role.Tech, 0, Role.None, 0),
+            Research(Faction.Humans, "전개 장치", 150, 200, 3, UpgradeEffect.Deploy, Role.Tech, 0, Role.None, 0),
+            Research(Faction.Humans, "낙뢰", 150, 200, 2, UpgradeEffect.LightningDrop, Role.Tech, 1, Role.None, 0),
         };
 
         private static void TheResearchRowsAreTheDocumentedOnes()
         {
-            int[] counts = { 13, 12, 11, 10, 13, 12 };
+            int[] counts = { 14, 13, 13, 13, 13, 14 };
             for (int f = 0; f < FactionData.FactionCount; f++)
             {
                 var faction = (Faction)f;

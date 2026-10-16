@@ -421,6 +421,27 @@ namespace WordCraft.Sim
 
         // 인간 마법 문명: 수리 4 → 6.
         RepairAmount = 61,
+
+        // docs/TECH-TREE.md 연구 행 배치, 묶음 8: the actives Cast uses.
+
+        // 세계수 정령: 바람 정령 칼바람 회오리 해금.
+        RazorGale = 62,
+
+        // 지옥불 군단: 운석 술사 유성우 해금.
+        MeteorShower = 63,
+
+        // 물 슬라임: 해일 인도자 해일 부름 해금, 물 지대 깔기 300 → 450틱.
+        TideCall = 64,
+        WaterFieldDuration = 65,
+
+        // 돌 골렘 부족: 굳기 잔해 600 → 900틱, 깨우기 자원 40 → 25, 모래폭풍 반경 3 → 4칸.
+        HardenDuration = 66,
+        AwakenCost = 67,
+        SandStormRadius = 68,
+
+        // 인간 마법 문명: 견인 대포 전개 해금, 마도사 낙뢰 해금.
+        Deploy = 69,
+        LightningDrop = 70,
     }
 
     /// <summary>
@@ -615,6 +636,74 @@ namespace WordCraft.Sim
         /// Ticks is put back to lapse Ticks from now.
         /// </summary>
         RemnantHold = 27,
+
+        // docs/TECH-TREE.md 묶음 8: the actives a Cast uses. Every one of them
+        // is aimed at a point within CastRange or at nothing; none names a body.
+
+        /// <summary>
+        /// 칼바람 회오리: a zone at the point for Ticks. Every tick the clock is
+        /// counted down to a multiple of Period (0 included), hostile Targets
+        /// within Radius of the point take Amount fixed.
+        /// </summary>
+        StrikeZone = 28,
+
+        /// <summary>
+        /// 유성우, 간헐천, 낙뢰: Ticks after the cast, a burst of Amount fixed on
+        /// hostile Targets within Radius of the point, landed by BurstSystem.
+        /// </summary>
+        DelayedStrike = 29,
+
+        /// <summary>
+        /// 해일 부름: at once, a burst of Amount fixed on hostile Targets within
+        /// Radius of the point, and a water field on the 3×3 cells round it
+        /// lapsing Ticks from now.
+        /// </summary>
+        TideStrike = 30,
+
+        /// <summary>물 지대 깔기: at once, a water field Radius cells either side of the caster's cell, lapsing Ticks from now.</summary>
+        LayField = 31,
+
+        /// <summary>굳기: the caster dies, and its cell and the four beside it take debris lapsing Ticks from now.</summary>
+        Harden = 32,
+
+        /// <summary>깨우기: consumes the debris on the point's cell and stands a 깨어난 바위 at its centre.</summary>
+        Awaken = 33,
+
+        /// <summary>
+        /// 모래폭풍: a zone at the point for Ticks. Hostile Targets within Radius
+        /// reach at most Amount cells and walk at World.SlowFactor.
+        /// </summary>
+        SandZone = 34,
+
+        /// <summary>
+        /// 전개: Ticks of transition, then Entity.Deployed flips. Deployed, the
+        /// body does not walk, reaches Amount cells and splashes half its hit on
+        /// Targets within Radius.
+        /// </summary>
+        Deploy = 35,
+    }
+
+    /// <summary>
+    /// What a Cast of a row is aimed at, docs/TECH-TREE.md 능력 공통 규칙:
+    /// nothing, or a point. Two point rows also ask what lies on the point's
+    /// cell when the order is given, and never again after.
+    /// </summary>
+    public enum CastTarget
+    {
+        /// <summary>Not an active: no Cast names this row.</summary>
+        None = 0,
+
+        /// <summary>Target is ignored.</summary>
+        NoTarget = 1,
+
+        /// <summary>A point within CastRange of the caster.</summary>
+        Point = 2,
+
+        /// <summary>간헐천: a point within CastRange whose cell carries a water field.</summary>
+        WaterFieldCell = 3,
+
+        /// <summary>깨우기: a point within CastRange whose cell carries debris.</summary>
+        RemnantCell = 4,
     }
 
     /// <summary>
@@ -692,6 +781,18 @@ namespace WordCraft.Sim
         public int BoostedRadius;
         public int BoostedAmount;
         public int BoostedTicks;
+
+        /// <summary>What a Cast of this row is aimed at. None on every row that is not an active.</summary>
+        public CastTarget CastTarget;
+
+        /// <summary>How far from the caster a Cast may aim, in cells. Zero on a row that takes no point.</summary>
+        public int CastRange;
+
+        /// <summary>Resources a Cast takes. Zero on every active but 깨우기.</summary>
+        public int Cost;
+
+        /// <summary>The cost once the boost research lands, or 0 when the boost leaves it alone.</summary>
+        public int BoostedCost;
 
         // What Unlock and Boost are written as. The static constructor turns
         // them into indexes and refuses one the faction cannot research.
@@ -780,9 +881,12 @@ namespace WordCraft.Sim
         /// 38 is docs/TECH-TREE.md 묶음 7: autocasts, area hits and the water
         /// field. A 용암 투석 악마 shot splashes half its damage 2 cells round, so
         /// a peer on 37 and a peer on 38 disagree about the hp of every body
-        /// standing beside the one it hits.
+        /// standing beside the one it hits. 39 is docs/TECH-TREE.md 묶음 8: the
+        /// Cast command and ten actives. A peer on 38 ignores a Cast that a
+        /// peer on 39 answers with a water field, and the two disagree about
+        /// AbilityCooldown on the tick the order runs.
         /// </summary>
-        public const uint ContentVersion = 38;
+        public const uint ContentVersion = 39;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -1896,9 +2000,11 @@ namespace WordCraft.Sim
         /// 반경) on top of its eight. Still twelve after 묶음 6 (#202): 세계수 정령
         /// grows to twelve with 과부하 강화 and 차원 유랑종 to twelve with 소환 수명,
         /// 층위 고정 반경 and 화염 분출 강화. Thirteen since 묶음 7 (#203): 질풍 is
-        /// 세계수 정령's thirteenth row and 정조준 차원 유랑종's.
+        /// 세계수 정령's thirteenth row and 정조준 차원 유랑종's. Fourteen since 묶음 8
+        /// (#209): 칼바람 회오리 is 세계수 정령's fourteenth row, and 전개 장치 and
+        /// 낙뢰 take 인간 to fourteen.
         /// </summary>
-        public const int MaxUpgrades = 13;
+        public const int MaxUpgrades = 14;
 
         /// <summary>
         /// What level 1 of 공격력 and 방어력 costs and how long a level takes. The
@@ -2050,6 +2156,18 @@ namespace WordCraft.Sim
             (Faction.RockGolems, ResearchRow("잔해 투척 강화", 100, 160, 2, UpgradeEffect.RemnantThrowDamage, (Role.Tech, 1), NoBuilding)),
             (Faction.Driftworlds, ResearchRow("정조준", 125, 200, 3, UpgradeEffect.SteadyAim, (Role.Tech, 0), NoBuilding)),
             (Faction.Humans, ResearchRow("수리 강화", 100, 160, 3, UpgradeEffect.RepairAmount, (Role.Tech, 0), NoBuilding)),
+
+            // docs/TECH-TREE.md 묶음 8 (#209): the actives, in the order 연구 행
+            // 배치 lists them.
+            (Faction.TreeSpirits, ResearchRow("칼바람 회오리", 150, 200, 3, UpgradeEffect.RazorGale, (Role.Tech, 1), NoBuilding)),
+            (Faction.Hellfire, ResearchRow("유성우", 150, 200, 3, UpgradeEffect.MeteorShower, (Role.Tech, 0), NoBuilding)),
+            (Faction.WaterSlimes, ResearchRow("해일 부름", 150, 200, 3, UpgradeEffect.TideCall, (Role.Tech, 0), NoBuilding)),
+            (Faction.WaterSlimes, ResearchRow("물 지대 지속", 100, 160, 3, UpgradeEffect.WaterFieldDuration, (Role.Tech, 0), NoBuilding)),
+            (Faction.RockGolems, ResearchRow("굳기 지속", 100, 160, 3, UpgradeEffect.HardenDuration, (Role.Tech, 0), NoBuilding)),
+            (Faction.RockGolems, ResearchRow("깨우기 비용", 100, 160, 3, UpgradeEffect.AwakenCost, (Role.Tech, 0), NoBuilding)),
+            (Faction.RockGolems, ResearchRow("모래폭풍 반경", 100, 160, 3, UpgradeEffect.SandStormRadius, (Role.Tech, 0), NoBuilding)),
+            (Faction.Humans, ResearchRow("전개 장치", 150, 200, 3, UpgradeEffect.Deploy, (Role.Tech, 0), NoBuilding)),
+            (Faction.Humans, ResearchRow("낙뢰", 150, 200, 2, UpgradeEffect.LightningDrop, (Role.Tech, 1), NoBuilding)),
         };
 
         /// <summary>
@@ -2230,6 +2348,9 @@ namespace WordCraft.Sim
             // 질풍: 폭풍 기수, 공격할 때마다 10틱 동안 속도 × 2. 묶음 7 (#203).
             Ability("질풍", Faction.TreeSpirits, Role.Melee, 3, AbilityKind.GaleAfterAttack, AbilityTargets.None,
                 UpgradeEffect.Gale, amount: 2, ticks: 10),
+            // 칼바람 회오리: 바람 정령, 6칸 안 지점, 반경 2칸 적 지상·공중 몸에 10틱마다 고정 3, 60틱. 쿨다운 400. 묶음 8 (#209).
+            Cast("칼바람 회오리", Faction.TreeSpirits, Role.Signature, 0, AbilityKind.StrikeZone, AbilityTargets.Bodies,
+                UpgradeEffect.RazorGale, CastTarget.Point, range: 6, cooldown: 400, radius: 2, amount: 3, ticks: 60, period: 10),
 
             // 지옥불 군단
             // 화상 오라: 용암 갑각 악마, 2칸 적 지상, 20틱마다 고정 2. 화상 오라 강화 3.
@@ -2247,6 +2368,9 @@ namespace WordCraft.Sim
             // 용암 폭발: 용암 투석 악마, 명중 시 2칸 광역, 절반 피해, 지상만. 묶음 7.
             Ability("용암 폭발", Faction.Hellfire, Role.Ranged, 2, AbilityKind.SplashOnHit, AbilityTargets.Ground,
                 UpgradeEffect.None, radius: 2),
+            // 유성우: 운석 술사, 8칸 안 지점, 40틱 뒤 반경 2칸 적 지상·공중·건물에 고정 30. 쿨다운 600. 묶음 8.
+            Cast("유성우", Faction.Hellfire, Role.Signature, 2, AbilityKind.DelayedStrike, AbilityTargets.Everything,
+                UpgradeEffect.MeteorShower, CastTarget.Point, range: 8, cooldown: 600, radius: 2, amount: 30, ticks: 40),
 
             // 물 슬라임
             // 물막이: 물막이 슬라임, 2칸 아군 Role.Ranged 유닛 방어 +1.
@@ -2270,6 +2394,17 @@ namespace WordCraft.Sim
             // 고정 물 지대: 솟는 샘, 40틱마다 중심 5×5 셀 80틱. 묶음 7.
             Ability("고정 물 지대", Faction.WaterSlimes, Role.Defense, 1, AbilityKind.FieldEmitter, AbilityTargets.None,
                 UpgradeEffect.None, radius: 2, ticks: 80, period: 40),
+            // 물 지대 깔기: 물방울 생존자, 자기 셀 중심 3×3 셀 300틱. 쿨다운 400. 물 지대 지속 450틱. 묶음 8.
+            Cast("물 지대 깔기", Faction.WaterSlimes, Role.Worker, 0, AbilityKind.LayField, AbilityTargets.None,
+                UpgradeEffect.None, CastTarget.NoTarget, cooldown: 400, radius: 1, ticks: 300,
+                boost: UpgradeEffect.WaterFieldDuration, boostedTicks: 450),
+            // 해일 부름: 해일 인도자, 7칸 안 지점, 반경 2칸 적 지상(몸과 건물)에 고정 20, 지점 3×3 셀 물 지대 300틱. 쿨다운 500. 묶음 8.
+            // "적 지상" read as 낙뢰's is: everything on the ground, buildings included.
+            Cast("해일 부름", Faction.WaterSlimes, Role.Ranged, 1, AbilityKind.TideStrike, AbilityTargets.Ground,
+                UpgradeEffect.TideCall, CastTarget.Point, range: 7, cooldown: 500, radius: 2, amount: 20, ticks: 300),
+            // 간헐천: 간헐천 술사, 8칸 안 물 지대 셀, 20틱 뒤 반경 2칸 적 지상·공중 몸에 고정 25. 쿨다운 300. 묶음 8.
+            Cast("간헐천", Faction.WaterSlimes, Role.Signature, 2, AbilityKind.DelayedStrike, AbilityTargets.Bodies,
+                UpgradeEffect.None, CastTarget.WaterFieldCell, range: 8, cooldown: 300, radius: 2, amount: 25, ticks: 20),
 
             // 돌 골렘 부족
             // 이끼 재생: 이끼 포자 무리, 3칸 아군 유닛, 20틱마다 +3. 이끼 재생 강화 5.
@@ -2287,6 +2422,18 @@ namespace WordCraft.Sim
             // 잔해 만료 연장: 잠듦의 고리, 20틱마다 9×9 셀의 잔해 만료를 Tick + 40까지. 묶음 7.
             Ability("잔해 만료 연장", Faction.RockGolems, Role.Defense, 2, AbilityKind.RemnantHold, AbilityTargets.None,
                 UpgradeEffect.None, radius: 4, ticks: 40, period: 20),
+            // 굳기: 성벽 골렘, 자신이 죽고 자기 셀과 상하좌우 4셀에 잔해 600틱. 굳기 지속 900틱. 묶음 8.
+            Cast("굳기", Faction.RockGolems, Role.Melee, 2, AbilityKind.Harden, AbilityTargets.None,
+                UpgradeEffect.None, CastTarget.NoTarget, ticks: 600,
+                boost: UpgradeEffect.HardenDuration, boostedTicks: 900),
+            // 깨우기: 이끼 현자, 6칸 안 잔해 셀, 자원 40, 잔해를 소비하고 셀 중심에 깨어난 바위. 쿨다운 200. 깨우기 비용 25. 묶음 8.
+            Cast("깨우기", Faction.RockGolems, Role.Signature, 1, AbilityKind.Awaken, AbilityTargets.None,
+                UpgradeEffect.None, CastTarget.RemnantCell, range: 6, cooldown: 200, cost: 40,
+                boost: UpgradeEffect.AwakenCost, boostedCost: 25),
+            // 모래폭풍: 모래 술사, 7칸 안 지점, 반경 3칸 100틱, 안의 적 몸 사거리 최대 3, 속도 × 1/2. 쿨다운 500. 모래폭풍 반경 4칸. 묶음 8.
+            Cast("모래폭풍", Faction.RockGolems, Role.Ranged, 3, AbilityKind.SandZone, AbilityTargets.Bodies,
+                UpgradeEffect.None, CastTarget.Point, range: 7, cooldown: 500, radius: 3, amount: 3, ticks: 100,
+                boost: UpgradeEffect.SandStormRadius, boostedRadius: 4),
 
             // 차원 유랑종
             // 굳은 몸: 멸종한 바위 슬라임, 걷지 않는 동안 방어 +3.
@@ -2324,6 +2471,12 @@ namespace WordCraft.Sim
             // 폭격: 마도 폭격선, 명중 시 2칸 광역, 절반 피해, 지상만. 묶음 7.
             Ability("폭격", Faction.Humans, Role.Ranged, 5, AbilityKind.SplashOnHit, AbilityTargets.Ground,
                 UpgradeEffect.None, radius: 2),
+            // 낙뢰: 마도사, 8칸 안 지점, 30틱 뒤 반경 2칸 적 지상 유닛·건물에 고정 22. 쿨다운 400. 묶음 8.
+            Cast("낙뢰", Faction.Humans, Role.Ranged, 2, AbilityKind.DelayedStrike, AbilityTargets.Ground,
+                UpgradeEffect.LightningDrop, CastTarget.Point, range: 8, cooldown: 400, radius: 2, amount: 22, ticks: 30),
+            // 전개: 견인 대포, 목표 없음, 전환 40틱. 전개 중 속도 0, 사거리 10, 반경 1칸 광역(지상). 묶음 8.
+            Cast("전개", Faction.Humans, Role.Ranged, 4, AbilityKind.Deploy, AbilityTargets.Ground,
+                UpgradeEffect.Deploy, CastTarget.NoTarget, radius: 1, amount: 10, ticks: 40),
         };
 
         private static AbilityRow Ability(string name, Faction faction, Role role, int slot, AbilityKind kind,
@@ -2340,6 +2493,26 @@ namespace WordCraft.Sim
                 Radius = radius, Amount = amount, Ticks = ticks, Period = period, Limit = limit, Cooldown = cooldown,
                 BoostedRadius = boostedRadius, BoostedAmount = boostedAmount, BoostedTicks = boostedTicks,
             };
+
+        /// <summary>
+        /// An active: an ability row a Cast names, docs/TECH-TREE.md 묶음 8. The
+        /// same row as Ability writes, with what it is aimed at, how far, and what
+        /// it costs.
+        /// </summary>
+        private static AbilityRow Cast(string name, Faction faction, Role role, int slot, AbilityKind kind,
+            AbilityTargets targets, UpgradeEffect unlock, CastTarget target, int range = 0, int cooldown = 0,
+            int cost = 0, int radius = 0, int amount = 0, int ticks = 0, int period = 0,
+            UpgradeEffect boost = UpgradeEffect.None, int boostedRadius = 0, int boostedTicks = 0, int boostedCost = 0)
+        {
+            AbilityRow row = Ability(name, faction, role, slot, kind, targets, unlock, radius: radius, amount: amount,
+                ticks: ticks, period: period, boost: boost, boostedRadius: boostedRadius, boostedTicks: boostedTicks,
+                cooldown: cooldown);
+            row.CastTarget = target;
+            row.CastRange = range;
+            row.Cost = cost;
+            row.BoostedCost = boostedCost;
+            return row;
+        }
 
         /// <summary>
         /// The most hops any chain row takes. Sizes the hit list ChainOnHit keeps
@@ -2365,11 +2538,40 @@ namespace WordCraft.Sim
         /// </summary>
         public static bool IsStateful(AbilityKind kind) =>
             kind == AbilityKind.GaleAfterAttack || kind == AbilityKind.RollCharge ||
-            kind == AbilityKind.RemnantRepair || kind == AbilityKind.SteadyAim;
+            kind == AbilityKind.RemnantRepair || kind == AbilityKind.SteadyAim ||
+            (IsCast(kind) && kind != AbilityKind.Harden);
 
-        /// <summary>The kinds that wait on AbilityCooldown, and so the only rows that carry a Cooldown.</summary>
+        /// <summary>
+        /// The kinds that wait on AbilityCooldown, and so the only rows that carry
+        /// a Cooldown: the two autocasts and every active but 굳기, which ends its
+        /// caster, and 전개, which waits on its own transition instead.
+        /// </summary>
         public static bool HasCooldown(AbilityKind kind) =>
-            kind == AbilityKind.RollCharge || kind == AbilityKind.RemnantRepair;
+            kind == AbilityKind.RollCharge || kind == AbilityKind.RemnantRepair ||
+            (IsCast(kind) && kind != AbilityKind.Harden && kind != AbilityKind.Deploy);
+
+        /// <summary>The kinds a Cast names: the actives of docs/TECH-TREE.md 묶음 8.</summary>
+        public static bool IsCast(AbilityKind kind) =>
+            kind >= AbilityKind.StrikeZone && kind <= AbilityKind.Deploy;
+
+        /// <summary>
+        /// The actives that run a clock in AbilityTicksLeft after the Cast: the
+        /// delays, the zones and the transition. The instant ones are done inside
+        /// Apply and leave the clock alone.
+        /// </summary>
+        public static bool CastRunsClock(AbilityKind kind) =>
+            kind == AbilityKind.StrikeZone || kind == AbilityKind.DelayedStrike ||
+            kind == AbilityKind.SandZone || kind == AbilityKind.Deploy;
+
+        // One bit per AbilityKind, per faction: whether any row of the faction
+        // holds the kind. Filled by ResolveAbilities. World asks it of a body
+        // before it scans for a 모래폭풍 or a 전개 row, so a match with neither
+        // faction in it pays one mask test and no scan.
+        private static readonly ulong[] kindMasks = new ulong[FactionCount];
+
+        /// <summary>Whether any row of this faction's ability table is of this kind.</summary>
+        public static bool FactionHolds(Faction faction, AbilityKind kind) =>
+            (kindMasks[(int)faction] & (1UL << (int)kind)) != 0;
 
         /// <summary>
         /// The one row with state this entry holds, or -1. An entry holds at
@@ -2687,9 +2889,12 @@ namespace WordCraft.Sim
                     (HasCooldown(row.Kind) ? "waits on one" : "never counts one down"));
                 abilities[i].Unlock = UpgradeIndexOf(row.Faction, row.UnlockEffect, where);
                 abilities[i].Boost = UpgradeIndexOf(row.Faction, row.BoostEffect, where);
+                Require((int)row.Kind < 64, where + " has a kind past the mask");
+                kindMasks[(int)row.Faction] |= 1UL << (int)row.Kind;
                 Require((row.BoostEffect == UpgradeEffect.None) ==
-                        (row.BoostedRadius == 0 && row.BoostedAmount == 0 && row.BoostedTicks == 0),
+                        (row.BoostedRadius == 0 && row.BoostedAmount == 0 && row.BoostedTicks == 0 && row.BoostedCost == 0),
                     where + " has a boost that changes nothing, or a boosted number nothing raises");
+                RequireCast(row, where);
                 // An aura, a chain and 거품 벽 reach out from the holder, so each
                 // needs a radius; an aura also says whom it reaches.
                 // A burst goes off around where its holder stood, so it needs
@@ -2715,7 +2920,8 @@ namespace WordCraft.Sim
                 // 층위 고정 puts a clock back one tick by definition.
                 // A splash halves the shot it follows, 급류 walks at a World
                 // constant, and a field or a debris hold writes cells, not hp.
-                bool amountless = row.Kind == AbilityKind.GrowthAura || row.Kind == AbilityKind.SlowAura ||
+                // An active says what it needs in RequireCast.
+                bool amountless = IsCast(row.Kind) || row.Kind == AbilityKind.GrowthAura || row.Kind == AbilityKind.SlowAura ||
                                   row.Kind == AbilityKind.ChainOnHit || row.Kind == AbilityKind.SlowOnHit ||
                                   row.Kind == AbilityKind.BurnOnHit || row.Kind == AbilityKind.ExpiryAura ||
                                   row.Kind == AbilityKind.SplashOnHit || row.Kind == AbilityKind.FieldSpeed ||
@@ -2735,10 +2941,13 @@ namespace WordCraft.Sim
                     row.Kind == AbilityKind.ExpiryAura || row.Kind == AbilityKind.Repair || cells)
                     Require(row.Period > 0, where + " has no period");
                 // A body that holds a ticking or cooling ability walks or shoots
-                // with it, so it has to be a unit on the field; a field or a debris
-                // hold is laid from where its holder stands, either kind.
+                // with it, so it has to be a body on the field; a field or a debris
+                // hold is laid from where its holder stands, either kind. A worker
+                // counts since 묶음 8: 물방울 생존자 lays its field with a Cast and
+                // waits on the cooldown like any other caster.
                 if (IsStateful(row.Kind))
-                    Require(!IsBuilding(row.Role) && row.Role != Role.Worker, where + " is held by no combat body");
+                    Require(!IsBuilding(row.Role) && (row.Role != Role.Worker || IsCast(row.Kind)),
+                        where + " is held by no combat body");
                 for (int j = 0; j < i; j++)
                 {
                     Require(abilities[j].Faction != row.Faction || abilities[j].Role != row.Role ||
@@ -2749,6 +2958,47 @@ namespace WordCraft.Sim
                         where + " gives " + row.Faction + " " + row.Role + " " + row.Slot + " a second ability with state");
                 }
             }
+        }
+
+        /// <summary>
+        /// docs/TECH-TREE.md 묶음 8: what an active needs to be cast, and what a
+        /// row that is not an active may not carry. Every active is aimed at
+        /// nothing or at a point; a point row reaches some way (CastRange), and
+        /// one that hits an area has a radius, an amount and the bodies it hits.
+        /// The cooldown is HasCooldown's question, asked by the caller.
+        /// </summary>
+        private static void RequireCast(AbilityRow row, string where)
+        {
+            bool cast = IsCast(row.Kind);
+            Require(cast == (row.CastTarget != CastTarget.None), where + (cast
+                ? " is an active that says nothing about what it is aimed at"
+                : " is aimed by a Cast but is not an active"));
+            if (!cast)
+            {
+                Require(row.CastRange == 0 && row.Cost == 0 && row.BoostedCost == 0,
+                    where + " has a cast range or a cost and no Cast");
+                return;
+            }
+            bool point = row.CastTarget != CastTarget.NoTarget;
+            Require(point == (row.CastRange > 0),
+                where + (point ? " is aimed at a point no distance away" : " has a cast range and no point"));
+            bool area = row.Kind == AbilityKind.StrikeZone || row.Kind == AbilityKind.DelayedStrike ||
+                        row.Kind == AbilityKind.TideStrike || row.Kind == AbilityKind.SandZone;
+            if (area)
+            {
+                Require(row.Radius > 0, where + " hits an area of no radius");
+                Require(row.Targets != AbilityTargets.None, where + " hits an area and names no targets");
+                Require(row.Amount > 0, where + " has no amount");
+            }
+            if (row.Kind == AbilityKind.StrikeZone) Require(row.Period > 0, where + " has no period");
+            if (row.Kind == AbilityKind.LayField) Require(row.Radius > 0, where + " lays no cells");
+            if (row.Kind == AbilityKind.Deploy)
+                Require(row.Amount > 0 && row.Radius > 0 && row.Targets != AbilityTargets.None,
+                    where + " deploys to no reach or no splash");
+            if (row.Kind != AbilityKind.Awaken) Require(row.Ticks > 0, where + " lasts no ticks");
+            Require((row.Kind == AbilityKind.Awaken) == (row.CastTarget == CastTarget.RemnantCell),
+                where + " wakes debris it is not aimed at, or is aimed at debris it does not wake");
+            Require(row.Cost >= 0 && row.BoostedCost >= 0, where + " pays resources back");
         }
 
         /// <summary>The index of this faction's upgrade row with this effect, -1 for None; refuses a missing row.</summary>

@@ -53,8 +53,14 @@ namespace WordCraft.Sim
                     case AbilityKind.SteadyAim: CountStillTicks(i, row); break;
                     case AbilityKind.RollCharge: Roll(i, row); break;
                     case AbilityKind.RemnantRepair: RepairFromRemnant(i, row); break;
+                    // 묶음 8: the clocks a Cast set. See Sim/Casts.cs.
+                    case AbilityKind.StrikeZone: RunStrikeZone(i, row); break;
+                    case AbilityKind.DelayedStrike: RunDelayedStrike(i, row); break;
+                    case AbilityKind.SandZone: CountDownCast(i, out _); break;
+                    case AbilityKind.Deploy: RunDeploy(i); break;
                 }
             }
+            castsThisTick.Clear();
             RepairDevices();
             EmitWaterFields();
             HoldRemnants();
