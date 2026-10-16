@@ -2,7 +2,7 @@
 
 - Date: 2026-10-16
 - GitHub Issue: #216
-- Status: In progress
+- Status: Implemented, awaiting review
 
 ## Goal
 
@@ -19,15 +19,15 @@
 
 ## Approach (Checklist)
 
-- [ ] **Step 1: 측정** — best-of-three 를 best-of-five 로 바꾼다. 비교는 차이의
+- [x] **Step 1: 측정** — best-of-three 를 best-of-five 로 바꾼다. 비교는 차이의
       절대값이 아니라 비율로 한다: packed 틱 시간이 spread 틱 시간의 2 배에
       0.2 ms 바닥을 더한 값보다 작아야 한다. 부하는 두 측정을 같이 늘리므로 비율이
       덜 흔들린다.
-- [ ] **Step 2: opt-in gate** — 수치는 매 실행에 출력한다. 상한을 넘으면 기본 실행은
+- [x] **Step 2: opt-in gate** — 수치는 매 실행에 출력한다. 상한을 넘으면 기본 실행은
       경고 한 줄만 출력하고, `dotnet run --project Replay -- --perf` 일 때만 실패한다.
       `Program.Main` 이 인자를 받아 `SeparationChecks.EnforcePerformance` 에 넣는다.
-- [ ] **Step 3: 문서** — `CLAUDE.md` Check 절에 한 줄.
-- [ ] **Step 4: 검증** — 부하 상태 10회, `--perf` 3회.
+- [x] **Step 3: 문서** — `CLAUDE.md` Check 절에 한 줄.
+- [x] **Step 4: 검증** — 부하 상태 10회, `--perf` 3회.
 
 ## Risks
 
