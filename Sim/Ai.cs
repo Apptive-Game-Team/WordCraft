@@ -205,15 +205,26 @@ namespace WordCraft.Sim
         /// for the tier-3 entry it opened.
         ///
         /// The bank is asked here, unlike anywhere else on the ladder, because the
-        /// highest tier is also where the most expensive bodies are. 지옥불 군단장
-        /// is 220 and the opponent rarely banks that much: asking for it regardless
-        /// would be refused every think, and the production building would sit
-        /// idle for the rest of the match.
+        /// highest tier is also where the most expensive bodies are. 인간's 공수
+        /// 특공대 is 65 and a bank short of that cannot pay for it: asking for it
+        /// regardless would be refused every think, and the production building
+        /// would sit idle until the bank caught up.
+        ///
+        /// An entry whose row carries no weapon is never taken, and that is
+        /// asked before the bank. AiIsFreeFighter never sends an unarmed body, so
+        /// a ladder that bought one at the highest tier spent the rest of the
+        /// match on bodies that never attack: 인간 at T3 bought seven 마도 정찰기
+        /// in an arena game against 세계수 정령 and sent none of them. The same
+        /// rule keeps it off 지옥불 군단장 and 경계 운반자.
         /// </summary>
         // ponytail: still a fixed preference with no memory. It wants the highest
         // tier it can afford and never weighs one body against what it is walking
         // into, because there is nothing here that looks at the opponent at all.
         // Give it a reason to prefer one the day the ladder is meant to be a plan.
+        // ponytail: 지옥불 군단장 and 경계 운반자 are skipped for carrying no
+        // weapon, although the 자손 one spawns and the arrival radius the other
+        // lends would matter to a match. Teach the ladder what an unarmed body is
+        // worth in 묶음 9 of docs/TECH-TREE.md.
         private bool AiFighterAt(int peer, int buildingId, out Role role, out int slot)
         {
             Faction faction = factions[peer];
@@ -227,6 +238,7 @@ namespace WordCraft.Sim
                 for (int s = 0; s < count; s++)
                 {
                     if (!CanProduce(peer, buildingId, candidate, s)) continue;
+                    if (!FactionData.Stats(faction, candidate, s).HasWeapon) continue;
                     if (FactionData.Production(faction, candidate, s).Resources > resources[peer]) continue;
                     int tier = FactionData.Tier(faction, candidate, s);
                     // Strictly higher, so the first entry at a tier keeps it.

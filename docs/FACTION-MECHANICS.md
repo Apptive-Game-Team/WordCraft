@@ -13,6 +13,10 @@
 **모든 수치는 틱과 정수다.** 20틱 = 1초. 아래 숫자는 기존 `World` 상수를 기준선으로
 잡은 출발값이고, 균형이 아니라 안정성이 요구 조건이다.
 
+아래 진영 표의 자원·틱·체력·피해·사거리·속도는 #179부터 `Sim/FactionData.cs`와 같다.
+`docs/TECH-TREE.md`가 `†`로 적었던 행과 공중·지상 전용 플래그는 `Replay/RosterNumbersChecks.cs`가
+대조한다.
+
 기존 기준선: 일꾼 체력 60, 유닛 체력 100, 건물 체력 400, 채집 20틱, 운반량 10,
 건설 50자원·60틱, 생산 20자원·40틱, 공격 주기 15틱·피해 7, 속도 1/4칸/틱.
 
@@ -312,9 +316,9 @@ UI가 생길 때까지 생산 자체를 못 한다. 점이 정하는 것은 주�
 경쟁 지점이 생긴다.
 
 **아트 상황이 정반대다.** 다섯 진영은 건물이 없어서 컨셉을 새로 썼는데, 인간은
-건물이 이미 다 있고 일꾼만 없다. `ManaWell`, `Tower`, `Cannon`, `ElectricTower`,
-`RockTurret`, `Towerback`, `ChickenCommando`가 전부 존재한다. 앵커
-`HumanMagicTower.png`와 `ApprenticeMage.png`도 있다.
+건물이 이미 다 있었다. `ManaWell`, `Tower`, `Cannon`, `ElectricTower`,
+`RockTurret`, `Workshop`, `Towerback`, `ChickenCommando`, 일꾼 `ApprenticeMage`가 전부
+존재한다. 앵커 `HumanMagicTower.png`도 있다.
 
 **시뮬레이션 작업.** 중립 소유자(`Owner = -1`)는 자원 노드에 이미 있다. 포획은
 일꾼의 채집 루프와 같은 형태의 타이머이고, 완료 시 엔티티의 `Owner`와 `Kind`가
@@ -359,12 +363,13 @@ UI가 생길 때까지 생산 자체를 못 한다. 점이 정하는 것은 주�
 
 ## 공중
 
-지옥불 군단장, 군단장의 자손, 구름 용이 공중 유닛이다. 공중이 규칙이 되려면 어떤
+지옥불 군단장, 군단장의 자손, 구름 용, 바람 정령이 공중 유닛이다. 바람 정령은
+`docs/FACTIONS.md`와 `docs/TECH-TREE.md`를 따라 #179에서 더했다. 공중이 규칙이 되려면 어떤
 공격이 공중에 닿는지가 정의돼야 한다.
 
 - 근접 유닛은 공중에 닿지 않는다.
 - 원거리 유닛은 별도 표기가 없으면 지상·공중 모두 공격한다.
-- 대포는 지상 전용, `Towerback`은 공중 전용이다.
+- 대포, 용암 아가리, 굴림바위 언덕은 지상 전용, `Towerback`은 공중 전용이다.
 - 공중 유닛은 지형과 잔해를 무시하고 이동한다.
 
 이 규칙이 돌 골렘의 잔해와 인간의 포획을 서로 맞물리게 한다. 잔해로 지상을 막아도
@@ -374,12 +379,12 @@ UI가 생길 때까지 생산 자체를 못 한다. 점이 정하는 것은 주�
 있는지를 로스터 데이터로 들고, 둘 다 진영·역할에 붙어 있어 해시되지 않는다.
 `sharedStats`가 근접만 `HitsAir`를 빼놓아 "원거리는 별도 표기 없으면 지·공 모두"를
 기본값으로 표현한다. `Combat.CanHit`이 공격 판정·타겟 획득 양쪽에서 이걸 확인하고,
-`World.Flies`가 진영·역할에서 `Air`를 읽어 `IsPassable`에 넘긴다. 대포가 지상
-전용이고 `Towerback`이 공중 전용이라는 네 번째 줄도 들어왔다 — `statOverrides`가
-인간 대포 행에서 `HitsAir`를 빼고 Towerback 행에서 `HitsGround`를 빼는 것으로
-각각 한쪽을 끈다. `Replay/Program.cs`의 `EveryWeaponReachesSomething`이 이 둘을
-이름으로 지목해 예외로 고정하고, 무기를 가진 다른 모든 행은 근접이 공중을 못
-때리는 것 말고는 지상과 공중 둘 다에 닿아야 한다고 단언한다.
+`World.Flies`가 진영·역할에서 `Air`를 읽어 `IsPassable`에 넘긴다. 지상 전용과
+공중 전용 줄도 들어왔다. `statOverrides`가 대포·용암 아가리·굴림바위 언덕 행에서
+`HitsAir`를 빼고 Towerback 행에서 `HitsGround`를 빼는 것으로 각각 한쪽을 끈다.
+`Replay/Program.cs`의 `EveryWeaponReachesSomething`이 이 넷을 이름으로 지목해 예외로
+고정하고, 무기를 가진 다른 모든 행은 근접이 공중을 못 때리는 것 말고는 지상과 공중
+둘 다에 닿아야 한다고 단언한다.
 
 ## 건설 가격
 

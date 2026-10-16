@@ -71,10 +71,10 @@ WordCraft의 여섯 진영, 유닛, 건물 정본 문서다. 세계관 사실은
 | 건물 | 역할 | 아트 |
 |---|---|---|
 | 생명의 나무 | 본진 | `LifeTree` |
-| 묘목 | 인구 | 신규 필요 |
+| 묘목 | 인구 | `Sapling` |
 | 풀씨 둥지 | 생산 | `SeedNest` |
-| 뿌리 회당 | 기술 | 신규 필요 |
-| 정령 뇌우목 | 방어 | 신규 필요 |
+| 뿌리 회당 | 기술 | `RootHall` |
+| 정령 뇌우목 | 방어 | `SpiritStormtree` |
 | 회복 토템 | 지원 | `HealingTotem` |
 
 능력: `VineToss`, `ChainLightning`, `Overgrowth`, `ShockOverload`, `RazorGale`
@@ -105,18 +105,18 @@ WordCraft의 여섯 진영, 유닛, 건물 정본 문서다. 세계관 사실은
 | 잿불 악마 | T1 | 일꾼, 약한 전투 가능 | `EmberSpiritSwarm` |
 | 화염 악마 | T1 | 근접 | `FireSpirit` |
 | 용암 갑각 악마 | T2 | 중장 근접, 주변 화상 | `MagmaSpirit` 3상태 |
-| 용암 주먹 | T2 | 공격 기관, 독립 생물 아님 | `MagmaFist` |
+| 용암 주먹 | T2 | 공격 기관, 독립 생물 아님 | 신규 필요 (`MagmaFist`, 스프라이트 없음) |
 | 균열 파수병 | T2 | 지상 원거리 | `RiftWarden` |
 | 군단장의 자손 | T3 | 공중 원거리, 무료 | `FireChildSpirit` |
 | 지옥불 군단장 | T3 | 공중 비전투 | `FireLordSpirit` |
 
 | 건물 | 역할 | 아트 |
 |---|---|---|
-| 균열 제단 | 본진 | 신규 필요 |
-| 갈라진 틈 | 인구 | 신규 필요 |
-| 악마 산란장 | 생산 | 신규 필요 |
-| 용암 도가니 | 기술 | 신규 필요 |
-| 용암 아가리 | 방어, 지상 전용 | 신규 필요 |
+| 균열 제단 | 본진 | `RiftAltar` |
+| 갈라진 틈 | 인구 | `WideningFissure` |
+| 악마 산란장 | 생산 | `SpawningPit` |
+| 용암 도가니 | 기술 | `LavaCrucible` |
+| 용암 아가리 | 방어, 지상 전용 | `LavaMaw` |
 
 능력: `MeteorShower`, `FireShot`, `MagmaExplosion`, `Crater`
 
@@ -157,11 +157,11 @@ WordCraft의 여섯 진영, 유닛, 건물 정본 문서다. 세계관 사실은
 
 | 건물 | 역할 | 아트 |
 |---|---|---|
-| 수맥 웅덩이 | 본진 | 신규 필요 |
-| 물웅덩이 | 인구 | 신규 필요 |
+| 수맥 웅덩이 | 본진 | `SpringheadPool` |
+| 물웅덩이 | 인구 | `StillPool` |
 | 거품 생성기 | 생산 | `BubbleGenerator` |
-| 조수 제단 | 기술 | 신규 필요 |
-| 물기둥 분수 | 방어 | 신규 필요 |
+| 조수 제단 | 기술 | `TideAltar` |
+| 물기둥 분수 | 방어 | `GeyserColumn` |
 
 능력: `TideCall`, `WaterExplosion`, `WaterField`
 
@@ -194,16 +194,16 @@ WordCraft의 여섯 진영, 유닛, 건물 정본 문서다. 세계관 사실은
 | 이끼바위 골렘 | T1 | 근접 탱커 | `RockGolem` · `RockGolem2` |
 | 바위 술사 | T2 | 원거리, 잔해 활용 | `RockMage` |
 | 구르는 바위 | T2 | 돌진 | `RockRolling` |
-| 고대 골렘 | T3 | 공성, 사망 시 잔해 3칸 | 신규 필요 |
+| 고대 골렘 | T3 | 공성, 사망 시 잔해 3칸 | `AncientGolem` |
 | 바위 잔해 | — | 지형, 유닛 아님 | `RockRemnant` |
 
 | 건물 | 역할 | 아트 |
 |---|---|---|
-| 이끼바위 성소 | 본진 | 신규 필요 |
-| 선돌 | 인구 | 신규 필요 |
-| 각성 바위 | 생산 | 신규 필요 |
-| 고대 이끼돌 | 기술 | 신규 필요 |
-| 굴림바위 언덕 | 방어, 지상 전용 | 신규 필요 |
+| 이끼바위 성소 | 본진 | `MossrockSanctum` |
+| 선돌 | 인구 | `StandingStone` |
+| 각성 바위 | 생산 | `WakingStone` |
+| 고대 이끼돌 | 기술 | `ElderMossstone` |
+| 굴림바위 언덕 | 방어, 지상 전용 | `RollingHill` |
 
 능력: `SandStorm`, `RockDrop`, `Crater`
 
@@ -248,11 +248,11 @@ WordCraft의 여섯 진영, 유닛, 건물 정본 문서다. 세계관 사실은
 
 | 건물 | 역할 | 아트 |
 |---|---|---|
-| 정박한 세계 | 본진 | 신규 필요 |
-| 계류 닻 | 인구 | 신규 필요 |
-| 통로 | 생산 | 신규 필요 |
-| 굴절 기둥 | 방어, 도착 지점 반경 6칸 | 신규 필요 |
-| 층위 관측대 | 기술, 멸종 종 소환 해금 | 신규 필요 |
+| 정박한 세계 | 본진 | `AnchoredWorld` |
+| 계류 닻 | 인구 | `MooringClaw` |
+| 통로 | 생산 | `Passage` |
+| 굴절 기둥 | 방어, 도착 지점 반경 6칸 | `RefractingPillar` |
+| 층위 관측대 | 기술, 멸종 종 소환 해금 | `StrataObservatory` |
 
 `DimensionToad`는 원문에서 직접 공격하지 않는 개체다. 전투 유닛으로 바꾸지 않고
 통로를 여는 원래 능력을 RTS 규칙으로 옮긴다.
