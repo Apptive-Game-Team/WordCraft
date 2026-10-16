@@ -786,13 +786,19 @@ namespace WordCraft.View
             float top = area.y + UiStyle.Micro + UiStyle.S1;
             float step = UiStyle.CardCellSize + UiStyle.S1;
             string hover = null;
+            Texture hoverPortrait = null;
 
             for (int i = 0; i < CommandCard.Cells; i++)
             {
                 var cell = new Rect(area.x + i % CommandCard.Cols * step,
                     top + i / CommandCard.Cols * step,
                     UiStyle.CardCellSize, UiStyle.CardCellSize);
-                if (cell.Contains(Event.current.mousePosition)) hover = card[i].Description;
+                Texture portrait = CardPortrait.For(faction, card[i]);
+                if (cell.Contains(Event.current.mousePosition))
+                {
+                    hover = CardDetails.Text(runner.World, runner.LocalPeer, card[i]);
+                    hoverPortrait = portrait;
+                }
 
                 if (card[i].Type == CommandType.None && !card[i].Aim && !card[i].More)
                 {
@@ -838,7 +844,8 @@ namespace WordCraft.View
                         ? orders.Pending == CommandType.Cast && orders.CastIndex == card[i].Slot
                         : !card[i].More && orders.Pending == card[i].Type;
 
-                if (UiStyle.CardCell(cell, CommandCard.Shortcut(card[i], i).ToString(), card[i].Label, armed, live))
+                if (UiStyle.CardCell(cell, CommandCard.Shortcut(card[i], i).ToString(),
+                    portrait != null ? CardPortrait.CostLabel(card[i]) : card[i].Label, armed, live, portrait))
                 {
                     orders.Run(card[i]);
                 }
@@ -854,10 +861,7 @@ namespace WordCraft.View
             }
             if (!string.IsNullOrEmpty(hover))
             {
-                var detail = new Rect(Mathf.Max(UiStyle.S2, area.xMax - 420f), area.y - 66f, 420f, 60f);
-                UiStyle.PanelBox(detail, UiStyle.Panel);
-                UiStyle.Note(new Rect(detail.x + UiStyle.S2, detail.y + UiStyle.S2,
-                    detail.width - UiStyle.S2 * 2f, detail.height - UiStyle.S2 * 2f), hover);
+                UiStyle.CardTooltip(area, hover, hoverPortrait);
             }
         }
 

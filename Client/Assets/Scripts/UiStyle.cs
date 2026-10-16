@@ -612,7 +612,7 @@ namespace WordCraft.View
         /// learning; armed inverts the whole cell, keycap included, so the state is
         /// visible from the edge of vision.
         /// </summary>
-        public static bool CardCell(Rect area, string key, string label, bool armed, bool enabled = true)
+        public static bool CardCell(Rect area, string key, string label, bool armed, bool enabled = true, Texture portrait = null)
         {
             Build();
             bool clicked = false;
@@ -628,6 +628,16 @@ namespace WordCraft.View
                 GUI.Label(area, GUIContent.none, buttonOff);
             }
 
+            if (portrait != null)
+            {
+                Color previous = GUI.color;
+                GUI.color = enabled ? Color.white : new Color(0.65f, 0.65f, 0.65f, 1f);
+                GUI.DrawTexture(new Rect(area.x + S1, area.y + 2f, area.width - S2, area.height - 15f),
+                    portrait, ScaleMode.ScaleToFit, true);
+                GUI.color = previous;
+                Fill(new Rect(area.x + 1f, area.yMax - 15f, area.width - 2f, 14f), Void);
+            }
+
             var cap = new Rect(area.x + S1, area.y + S1, KeyCap, KeyCap);
             // The well needs a face under it to be a well. Void on a Void cell is
             // nothing at all, so a dead cell borrows the same Raised the empty
@@ -636,10 +646,33 @@ namespace WordCraft.View
             keycap.normal.textColor = armed ? Accent : enabled ? InkDim : InkMute;
             GUI.Label(cap, key, keycap);
 
-            cell.normal.textColor = armed ? OnAccent : enabled ? Ink : InkMute;
-            GUI.Label(new Rect(area.x + S1, area.y + KeyCap, area.width - S2, area.height - KeyCap - S1),
+            cell.normal.textColor = portrait != null ? (enabled ? Ink : InkMute) : armed ? OnAccent : enabled ? Ink : InkMute;
+            GUI.Label(portrait != null
+                ? new Rect(area.x + 2f, area.yMax - 15f, area.width - 4f, 14f)
+                : new Rect(area.x + S1, area.y + KeyCap, area.width - S2, area.height - KeyCap - S1),
                 label, cell);
             return clicked;
+        }
+
+        /// <summary>A wrapping detail card above the command grid, clamped to the viewport.</summary>
+        public static Rect CardTooltip(Rect anchor, string text, Texture portrait)
+        {
+            Build();
+            var style = new GUIStyle(micro) { wordWrap = true, fontSize = Body };
+            style.normal.textColor = Ink;
+            float width = Mathf.Min(360f, Screen.width - S2 * 2f);
+            float inset = portrait != null ? 76f : 0f;
+            float contentWidth = Mathf.Max(1f, width - S2 * 2f - inset);
+            float height = Mathf.Max(portrait != null ? 76f : 0f,
+                style.CalcHeight(new GUIContent(text), contentWidth)) + S2 * 2f;
+            height = Mathf.Min(height, Screen.height - S2 * 2f);
+            var rect = new Rect(Mathf.Clamp(anchor.xMax - width, S2, Mathf.Max(S2, Screen.width - width - S2)),
+                Mathf.Clamp(anchor.y - height - S2, S2, Mathf.Max(S2, Screen.height - height - S2)), width, height);
+            PanelBox(rect, Panel);
+            if (portrait != null)
+                GUI.DrawTexture(new Rect(rect.x + S2, rect.y + S2, 68f, 68f), portrait, ScaleMode.ScaleToFit, true);
+            GUI.Label(new Rect(rect.x + S2 + inset, rect.y + S2, contentWidth, rect.height - S2 * 2f), text, style);
+            return rect;
         }
 
         /// <summary>An unusable cell. A hole in the card, not a button that does nothing.</summary>
