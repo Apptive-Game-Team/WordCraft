@@ -219,6 +219,21 @@ namespace WordCraft.View
         /// <summary>The issue's 1.5 percent: how much smaller a slowed body's hull stands.</summary>
         private const float SlowShrink = 0.015f;
 
+        /// <summary>
+        /// A summon in its last moments (issue #212): how far toward paper white
+        /// its blink washes it at the peak, and how many times a second. The issue
+        /// names 0.3; four a second is quicker than a hit's flash fades, so the
+        /// two never read as one.
+        /// </summary>
+        private const float ExpiryWash = 0.3f;
+        private const float ExpiryBlinkRate = 4f;
+
+        // 전개 (issue #212): how far a deployed body sinks and spreads, as a
+        // share of its size, and how far its top part settles onto it.
+        private const float DeploySink = 0.12f;
+        private const float DeploySpread = 0.12f;
+        private const float DeploySettle = 0.2f;
+
         /// <summary>The swell and lean of a building as a unit it made comes out.</summary>
         private const float DeliverSeconds = 0.45f;
         private const float DeliverSwell = 0.1f;
@@ -292,7 +307,9 @@ namespace WordCraft.View
         private float spin;
         private float nextMote;
         private int motes;
-        private bool burning, slowed;
+        private bool burning, slowed, expiring;
+        /// <summary>0 standing ready to walk to 1 deployed, set by <see cref="Deploy"/>.</summary>
+        private float deploy;
         private float nextEmber;
         private int embers;
         private float deliverAt = float.NegativeInfinity;
@@ -591,6 +608,7 @@ namespace WordCraft.View
             // waits for the tracer that killed it.
             burning = false;
             slowed = false;
+            expiring = false;
         }
 
         /// <summary>
@@ -658,6 +676,20 @@ namespace WordCraft.View
         /// stands <see cref="SlowShrink"/> smaller, as if held down (issue #206).
         /// </summary>
         public void Slowed(bool on) => slowed = on;
+
+        /// <summary>
+        /// Whether a summon is in its last ticks (issue #212): it blinks toward
+        /// paper white, <see cref="ExpiryWash"/> at the peak.
+        /// </summary>
+        public void Expiring(bool on) => expiring = on;
+
+        /// <summary>
+        /// How far into 전개 the body is (issue #212), 0 ready to walk to 1
+        /// deployed, read off the transition clock by the caller: the hull sinks
+        /// and spreads and its top part — the crown, or the arm of a body that
+        /// has none, as a 견인 대포's barrel is — settles down onto it.
+        /// </summary>
+        public void Deploy(float settle) => deploy = Mathf.Clamp01(settle);
 
         /// <summary>
         /// A unit just came out of this building toward <paramref name="yawDegrees"/>:
@@ -982,15 +1014,25 @@ namespace WordCraft.View
                 float flash = Mathf.Clamp01(1f - hit / 0.45f);
                 washToward = 0.45f * flash * flash;
             }
-            Look(BodyPalette.HitFlash, washToward, 1f);
+            Look(BodyPalette.HitFlash, Mathf.Max(washToward, Blink(now)), 1f);
 
             if (slowed && !dying) scale *= 1f - SlowShrink;
+
+            // 전개: down onto the ground and out, and the top settled onto it.
+            offset.y -= DeploySink * size * deploy;
+            scale = Vector3.Scale(scale, new Vector3(1f + DeploySpread * deploy, 1f - DeploySpread * deploy, 1f + DeploySpread * deploy));
+            Vector3 settle = Vector3.down * (DeploySettle * size * deploy);
 
             hull.localPosition = hullRest + offset;
             hull.localRotation = Quaternion.Euler(pitch, twist, roll);
             hull.localScale = scale;
 
-            if (arm != null) arm.localRotation = Quaternion.Euler(armPitch + breath * 3f * idle, 0f, 0f);
+            if (arm != null)
+            {
+                arm.localRotation = Quaternion.Euler(armPitch + breath * 3f * idle, 0f, 0f);
+                if (crown == null) arm.localPosition = armRest + settle;
+            }
+            if (crown != null) crown.localPosition = crownRest + crownLift + settle;
 
             Limbs(now, phase, gait, size);
         }
@@ -1060,7 +1102,7 @@ namespace WordCraft.View
                 float flash = Mathf.Clamp01(1f - hit / 0.45f);
                 washToward = 0.35f * flash * flash;
             }
-            Look(BodyPalette.HitFlash, washToward, 1f);
+            Look(BodyPalette.HitFlash, Mathf.Max(washToward, Blink(now)), 1f);
 
             // A shot is a kick at once and an easing return, like a unit's recoil.
             float attack = Phase(attackStarted, AttackSeconds, now);
@@ -1577,6 +1619,17 @@ namespace WordCraft.View
             enabled = false;
         }
 
+        /// <summary>
+        /// The wash of a summon's last-ticks blink at <paramref name="now"/>: a
+        /// smooth on and off between none and <see cref="ExpiryWash"/>, or none.
+        /// </summary>
+        private float Blink(float now)
+        {
+            if (!expiring || dying) return 0f;
+            float wave = 0.5f + 0.5f * Mathf.Sin(now * ExpiryBlinkRate * 2f * Mathf.PI + seed);
+            return ExpiryWash * wave;
+        }
+
         /// <summary>The yaw part of a crown's rotation, so the fire pitch of one frame never leaks into the next.</summary>
         private static float CurrentYaw(Quaternion rotation)
         {
@@ -1592,7 +1645,7 @@ namespace WordCraft.View
             hull.localPosition = hullRest;
             hull.localRotation = Quaternion.identity;
             hull.localScale = Vector3.one;
-            if (arm != null) arm.localRotation = Quaternion.identity;
+            if (arm != null) { arm.localPosition = armRest; arm.localRotation = Quaternion.identity; }
             if (limbLeft != null) { limbLeft.localPosition = limbLeftRest; limbLeft.localRotation = Quaternion.identity; }
             if (limbRight != null) { limbRight.localPosition = limbRightRest; limbRight.localRotation = Quaternion.identity; }
             if (crown != null) crown.localPosition = crownRest + crownLift;
