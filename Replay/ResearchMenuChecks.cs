@@ -31,6 +31,7 @@ namespace WordCraft.Replay
         {
             EveryFactionListsItsRowsInOrder();
             NoFactionNeedsTooManyPages();
+            EachResearchBuildingListsItsOwnRows();
             CellsSayTheLevelAndThePriceTheSimulationTakes();
             ProgressRunsFromEmptyToFull();
             AResearchCancelledByTheCardIsRefundedAndStops();
@@ -65,9 +66,42 @@ namespace WordCraft.Replay
         }
 
         /// <summary>
-        /// The research list pages exactly as the production list does, and a list
-        /// that would need more than ProductionMenu.MaxPages is a failure here for
-        /// the reason it is there: the card is due a redesign.
+        /// A research building's card lists the rows researched in it and no
+        /// other, since docs/TECH-TREE.md 묶음 3 (#180) put rows on second and
+        /// third research buildings: every row is on exactly one building's list,
+        /// the building its ResearchAt names, and that list fits MaxPages. With
+        /// MaxUpgrades at 8 the whole table of the widest faction is one page, and
+        /// a split list can only be shorter.
+        /// </summary>
+        private static void EachResearchBuildingListsItsOwnRows()
+        {
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                var faction = (Faction)f;
+                Check(ProductionMenu.Pages(ResearchMenu.For(faction).Count) == 1,
+                    faction + "'s " + ResearchMenu.For(faction).Count + " research rows do not fit one page");
+                int listed = 0;
+                for (int s = 0; s < FactionData.SlotCount(faction, Role.Tech); s++)
+                {
+                    List<ResearchMenu.Entry> entries = ResearchMenu.For(faction, Role.Tech, s);
+                    Check(ProductionMenu.Pages(entries.Count) <= ProductionMenu.MaxPages,
+                        faction + " Tech " + s + " needs more than " + ProductionMenu.MaxPages + " research pages");
+                    foreach (ResearchMenu.Entry entry in entries)
+                    {
+                        Check(FactionData.Upgrade(faction, entry.Index).ResearchAt == (Role.Tech, s),
+                            faction + " Tech " + s + " lists " + entry.Name + ", which is researched elsewhere");
+                        listed++;
+                    }
+                }
+                Check(listed == ResearchMenu.For(faction).Count,
+                    faction + " research buildings list " + listed + " rows of " + ResearchMenu.For(faction).Count);
+            }
+        }
+
+        /// <summary>
+        /// The research list pages with the production list's arithmetic, and a
+        /// list that would need more than ProductionMenu.MaxPages is a failure
+        /// here for the reason it is there: the card is due a redesign.
         /// </summary>
         private static void NoFactionNeedsTooManyPages()
         {
@@ -75,9 +109,7 @@ namespace WordCraft.Replay
             {
                 var faction = (Faction)f;
                 int count = ResearchMenu.For(faction).Count;
-                int pages = ResearchMenu.Pages(faction);
-                Check(pages == ProductionMenu.Pages(count),
-                    faction + ": the research list pages differently from the production list");
+                int pages = ProductionMenu.Pages(count);
                 Check(pages <= ProductionMenu.MaxPages,
                     faction + " needs " + count + " research cells, which is " + pages +
                     " pages of " + ProductionMenu.PageSize + "; the card pages at most " + ProductionMenu.MaxPages);

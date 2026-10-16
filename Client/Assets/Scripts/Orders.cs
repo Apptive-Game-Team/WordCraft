@@ -119,10 +119,10 @@ namespace WordCraft.View
             // The HUD can draw a frame before Start has found the runner.
             if (runner == null || selection == null)
             {
-                return CommandCard.Of(CardKind.None, null, 0, Role.None, 0);
+                return CommandCard.Of(CardKind.None, null, 0, Role.None, 0, 0);
             }
             SyncPage();
-            return CommandCard.Of(Kind(), runner.World, runner.LocalPeer, LeadRole(), Page);
+            return CommandCard.Of(Kind(), runner.World, runner.LocalPeer, LeadRole(), LeadSlot(), Page);
         }
 
         /// <summary>
@@ -136,6 +136,18 @@ namespace WordCraft.View
             if (runner == null || selection == null) return Role.None;
             int id = CommandCard.Representative(runner.World, selection.Selected, runner.LocalPeer);
             return id < 0 ? Role.None : runner.World.GetEntity(id).Role;
+        }
+
+        /// <summary>
+        /// The roster entry of the same entity, 0 when nothing qualifies. The
+        /// building card lists what this one building entry makes or researches,
+        /// so a 석조 병영 and a 마법 탑 show different cards.
+        /// </summary>
+        public int LeadSlot()
+        {
+            if (runner == null || selection == null) return 0;
+            int id = CommandCard.Representative(runner.World, selection.Selected, runner.LocalPeer);
+            return id < 0 ? 0 : runner.World.GetEntity(id).Slot;
         }
 
         /// <summary>
@@ -306,7 +318,7 @@ namespace WordCraft.View
                 // the player never has to find another key for it. Nothing is
                 // sent: the page is this component's own.
                 Page = ProductionMenu.NextPage(Page,
-                    CommandCard.PageCount(runner.World.FactionOf(runner.LocalPeer), LeadRole()));
+                    CommandCard.PageCount(runner.World.FactionOf(runner.LocalPeer), LeadRole(), LeadSlot()));
                 return;
             }
 

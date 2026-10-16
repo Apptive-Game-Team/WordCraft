@@ -201,6 +201,60 @@ namespace WordCraft.Sim
         // 인간 마법 문명
         CaptureTicks = 13,
         CannonRange = 14,
+
+        // docs/TECH-TREE.md 연구 행 배치, 묶음 3: one roster entry's reach,
+        // rate, speed or armor. Which entry and what value is the
+        // entryUpgrades table in FactionData, read by World.RangeFor,
+        // AttackTicksFor, SpeedFor and ArmorFor.
+
+        // 세계수 정령
+        VineRange = 15,
+        GiantVineRange = 16,
+        ThunderBirdAttackTicks = 17,
+        LeafbladeSpeed = 18,
+
+        // 지옥불 군단
+        LavaCatapultRange = 19,
+        AshWingAttackTicks = 20,
+        HardenedCarapace = 21,
+
+        // 물 슬라임
+        ArcherRange = 22,
+        SpitterRange = 23,
+        WaterCannonRange = 24,
+
+        // 돌 골렘 부족
+        SlingerRange = 25,
+        FloatingStoneRange = 26,
+
+        // 차원 유랑종
+        StormShardAttackTicks = 27,
+        VineShardRange = 28,
+        RiftBatteryRange = 29,
+        FleeSpeed = 30,
+
+        // 인간 마법 문명
+        CrossbowRange = 31,
+        ArcaneRiderSpeed = 32,
+        BindingRange = 33,
+        BindingArmor = 34,
+    }
+
+    /// <summary>
+    /// Which number of one roster entry a row of the entry upgrade table
+    /// replaces. Range, AttackTicks and Speed give the researched value
+    /// outright, the way docs/TECH-TREE.md writes them (사거리 5 → 6); Armor
+    /// is added to the row's own armor (방어 +2). FleeSpeed is the speed of a
+    /// body that is fleeing and only then: 도주 가속.
+    /// </summary>
+    public enum UpgradedStat
+    {
+        None = 0,
+        Range = 1,
+        AttackTicks = 2,
+        Speed = 3,
+        Armor = 4,
+        FleeSpeed = 5,
     }
 
     /// <summary>
@@ -300,9 +354,14 @@ namespace WordCraft.Sim
         /// 아가리 and 굴림바위 언덕 stop reaching the air, and 마도 정찰기 loses its
         /// weapon. A peer on 31 sells a 용암 갑각 악마 for 20 that a peer on 32
         /// charges 90 for, and the banks differ by 70 on the tick the order is
-        /// given.
+        /// given. 33 is the tech tree's rows: sixty-five entries docs/TECH-TREE.md
+        /// 묶음 3 adds behind the existing ones, twenty research rows that change
+        /// one entry's reach, rate, speed or armor, and second production
+        /// buildings for five existing entries. A peer on 32 refuses a Build of a
+        /// 석조 병영 that a peer on 33 charges 120 for, and the banks differ by 120
+        /// on the tick the order is given.
         /// </summary>
-        public const uint ContentVersion = 32;
+        public const uint ContentVersion = 33;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -376,6 +435,50 @@ namespace WordCraft.Sim
         /// already knows how to ask about.
         /// </summary>
         public static readonly Fix BodyRadius = Fix.Ratio(3, 8);
+
+        // The four shapes a docs/TECH-TREE.md 묶음 3 row takes, so that a row
+        // reads as the document's columns in the document's order: 체력, 방어,
+        // 속도, then 피해, 사거리, 주기 and 대공/대지 for a body that carries a
+        // weapon. Footprint is BodyRadius on anything with a speed and zero on
+        // anything without one, per docs/TECH-TREE.md 읽는 법, so it is never
+        // a column a row can get wrong.
+        private const bool Walks = false;
+        private const bool Flies = true;
+
+        private static UnitStats Fighter(bool air, int hp, int armor, Fix speed,
+            int damage, int range, int attackTicks, bool hitsAir, bool hitsGround) =>
+            new UnitStats
+            {
+                Hp = hp,
+                Armor = armor,
+                Speed = speed,
+                Footprint = speed.Raw != 0 ? BodyRadius : Fix.Zero,
+                Damage = damage,
+                Range = Fix.FromInt(range),
+                AttackTicks = attackTicks,
+                Air = air,
+                HitsAir = hitsAir,
+                HitsGround = hitsGround,
+            };
+
+        /// <summary>A body with no weapon: 비전투 in the document's 역할 column.</summary>
+        private static UnitStats Support(bool air, int hp, int armor, Fix speed) =>
+            new UnitStats { Hp = hp, Armor = armor, Speed = speed, Footprint = BodyRadius, Air = air };
+
+        /// <summary>A building that shoots: the 기능 column's 피해, 사거리, 주기 and reach.</summary>
+        private static UnitStats Turret(int hp, int damage, int range, int attackTicks, bool hitsAir, bool hitsGround) =>
+            new UnitStats
+            {
+                Hp = hp,
+                Damage = damage,
+                Range = Fix.FromInt(range),
+                AttackTicks = attackTicks,
+                HitsAir = hitsAir,
+                HitsGround = hitsGround,
+            };
+
+        /// <summary>A building that does not shoot: hp and nothing else.</summary>
+        private static UnitStats Structure(int hp) => new UnitStats { Hp = hp };
 
         private static readonly UnitStats[] sharedStats =
         {
@@ -583,7 +686,7 @@ namespace WordCraft.Sim
 
             // 돌 골렘 이끼바위 골렘. 체력 300, 근접, 피해 9, 속도 1/6칸/틱, per
             // docs/FACTION-MECHANICS.md. The shared melee reach and rate are kept
-            // and written out; 골렘 사거리 adds to the reach in World.RangeOf.
+            // and written out; 골렘 사거리 adds to the reach in World.RangeFor.
             (Faction.RockGolems, Role.Melee, 0,
                 new UnitStats
                 {
@@ -753,6 +856,134 @@ namespace WordCraft.Sim
             // this row does not take it. Entry 1 of the slot, behind Towerback.
             (Faction.Humans, Role.Signature, 1,
                 new UnitStats { Hp = 130, Speed = Fix.Ratio(3, 8), Footprint = BodyRadius }),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            // Fighter: 이동, 체력, 방어, 속도, 피해, 사거리, 주기, 대공, 대지. Support: 이동, 체력, 방어, 속도.
+            // 찌릿쥐
+            (Faction.TreeSpirits, Role.Melee, 2, Fighter(Walks, 45, 0, Fix.Ratio(3, 8), 5, 2, 10, false, true)),
+            // 폭풍 기수
+            (Faction.TreeSpirits, Role.Melee, 3, Fighter(Walks, 160, 1, Fix.Ratio(3, 8), 11, 2, 15, false, true)),
+            // 번개새 무리
+            (Faction.TreeSpirits, Role.Ranged, 2, Fighter(Flies, 120, 0, Fix.Ratio(3, 8), 4, 4, 10, true, true)),
+            // 거대 덩쿨
+            (Faction.TreeSpirits, Role.Ranged, 3, Fighter(Walks, 350, 2, Fix.Zero, 20, 9, 40, false, true)),
+            // 도깨비불
+            (Faction.TreeSpirits, Role.Signature, 1, Support(Flies, 60, 0, Fix.Ratio(3, 8))),
+            // 덩굴 군집
+            (Faction.TreeSpirits, Role.Signature, 2, Support(Walks, 150, 1, Fix.Ratio(1, 8))),
+            // 씨앗 요람
+            (Faction.TreeSpirits, Role.Production, 1, Structure(300)),
+            // 회복 토템
+            (Faction.TreeSpirits, Role.Defense, 1, Structure(250)),
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            // Fighter: 이동, 체력, 방어, 속도, 피해, 사거리, 주기, 대공, 대지. Support: 이동, 체력, 방어, 속도.
+            // 화염 악마
+            (Faction.Hellfire, Role.Melee, 1, Fighter(Walks, 140, 1, Fix.Ratio(1, 4), 9, 2, 15, false, true)),
+            // 균열 사냥개
+            (Faction.Hellfire, Role.Melee, 2, Fighter(Walks, 110, 0, Fix.Ratio(3, 8), 8, 2, 12, false, true)),
+            // 잿불 새끼
+            (Faction.Hellfire, Role.Melee, 3, Fighter(Walks, 45, 0, Fix.Ratio(1, 4), 5, 2, 15, false, true)),
+            // 용암 투석 악마
+            (Faction.Hellfire, Role.Ranged, 2, Fighter(Walks, 200, 2, Fix.Ratio(1, 6), 16, 9, 45, false, true)),
+            // 재날개 악마
+            (Faction.Hellfire, Role.Ranged, 3, Fighter(Flies, 140, 1, Fix.Ratio(3, 8), 9, 6, 15, true, false)),
+            // 산란 악마
+            (Faction.Hellfire, Role.Signature, 1, Fighter(Walks, 320, 2, Fix.Ratio(1, 6), 6, 2, 20, false, true)),
+            // 운석 술사
+            (Faction.Hellfire, Role.Signature, 2, Support(Walks, 160, 1, Fix.Ratio(1, 4))),
+            // 큰 균열
+            (Faction.Hellfire, Role.Production, 1, Structure(450)),
+            // 집결의 횃불
+            (Faction.Hellfire, Role.Defense, 1, Structure(200)),
+            // 화염 첨탑
+            (Faction.Hellfire, Role.Defense, 2, Turret(260, 12, 7, 20, true, false)),
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            // Fighter: 이동, 체력, 방어, 속도, 피해, 사거리, 주기, 대공, 대지. Support: 이동, 체력, 방어, 속도.
+            // 물막이 슬라임
+            (Faction.WaterSlimes, Role.Melee, 1, Fighter(Walks, 240, 2, Fix.Ratio(1, 5), 5, 2, 18, false, true)),
+            // 급류 슬라임
+            (Faction.WaterSlimes, Role.Melee, 2, Fighter(Walks, 100, 0, Fix.Ratio(5, 16), 7, 2, 12, false, true)),
+            // 침 뱉는 슬라임
+            (Faction.WaterSlimes, Role.Ranged, 2, Fighter(Walks, 45, 0, Fix.Ratio(1, 4), 4, 4, 15, true, true)),
+            // 물대포 슬라임
+            (Faction.WaterSlimes, Role.Ranged, 3, Fighter(Walks, 160, 1, Fix.Ratio(1, 6), 14, 8, 40, false, true)),
+            // 비구름
+            (Faction.WaterSlimes, Role.Signature, 1, Support(Flies, 90, 0, Fix.Ratio(1, 4))),
+            // 간헐천 술사
+            (Faction.WaterSlimes, Role.Signature, 2, Support(Walks, 100, 0, Fix.Ratio(1, 4))),
+            // 샘물 운반자
+            (Faction.WaterSlimes, Role.Signature, 3, Support(Walks, 140, 1, Fix.Ratio(1, 5))),
+            // 구름 둥지
+            (Faction.WaterSlimes, Role.Production, 1, Structure(350)),
+            // 솟는 샘
+            (Faction.WaterSlimes, Role.Defense, 1, Structure(220)),
+            // 거품 장벽
+            (Faction.WaterSlimes, Role.Defense, 2, Structure(500)),
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            // Fighter: 이동, 체력, 방어, 속도, 피해, 사거리, 주기, 대공, 대지. Support: 이동, 체력, 방어, 속도.
+            // 구르는 바위
+            (Faction.RockGolems, Role.Melee, 1, Fighter(Walks, 180, 2, Fix.Ratio(1, 4), 10, 2, 20, false, true)),
+            // 성벽 골렘
+            (Faction.RockGolems, Role.Melee, 2, Fighter(Walks, 200, 2, Fix.Ratio(1, 6), 6, 2, 20, false, true)),
+            // 깨어난 바위
+            (Faction.RockGolems, Role.Melee, 3, Fighter(Walks, 150, 1, Fix.Ratio(1, 5), 8, 2, 15, false, true)),
+            // 돌팔매 꼬마돌
+            (Faction.RockGolems, Role.Ranged, 1, Fighter(Walks, 70, 0, Fix.Ratio(1, 4), 5, 5, 18, true, true)),
+            // 부유석 파수
+            (Faction.RockGolems, Role.Ranged, 2, Fighter(Flies, 220, 2, Fix.Ratio(1, 6), 10, 6, 22, true, true)),
+            // 모래 술사
+            (Faction.RockGolems, Role.Ranged, 3, Fighter(Walks, 110, 0, Fix.Ratio(1, 4), 5, 5, 20, true, true)),
+            // 이끼 현자
+            (Faction.RockGolems, Role.Signature, 1, Support(Walks, 140, 1, Fix.Ratio(1, 5))),
+            // 이끼 포자 무리
+            (Faction.RockGolems, Role.Signature, 2, Support(Flies, 80, 0, Fix.Ratio(1, 4))),
+            // 각성의 원
+            (Faction.RockGolems, Role.Production, 1, Structure(500)),
+            // 부유석 첨탑
+            (Faction.RockGolems, Role.Defense, 1, Turret(320, 12, 7, 20, true, false)),
+            // 잠듦의 고리
+            (Faction.RockGolems, Role.Defense, 2, Structure(300)),
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            // Fighter: 이동, 체력, 방어, 속도, 피해, 사거리, 주기, 대공, 대지. Support: 이동, 체력, 방어, 속도.
+            // 덩쿨편
+            (Faction.Driftworlds, Role.Ranged, 2, Fighter(Walks, 80, 0, Fix.Ratio(1, 4), 6, 5, 18, true, true)),
+            // 멸종한 바람 슬라임
+            (Faction.Driftworlds, Role.Ranged, 3, Fighter(Flies, 90, 0, Fix.Ratio(3, 8), 7, 5, 15, true, true)),
+            // 떠도는 섬
+            (Faction.Driftworlds, Role.Signature, 1, Support(Flies, 260, 2, Fix.Ratio(1, 6))),
+            // 층위 관측자
+            (Faction.Driftworlds, Role.Signature, 2, Support(Walks, 110, 0, Fix.Ratio(1, 4))),
+            // 멸종한 자연 슬라임
+            (Faction.Driftworlds, Role.Signature, 3, Support(Walks, 100, 0, Fix.Ratio(1, 4))),
+            // 위상 닻
+            (Faction.Driftworlds, Role.Defense, 1, Structure(80)),
+            // 틈새 포대
+            (Faction.Driftworlds, Role.Defense, 2, Turret(260, 12, 7, 20, true, true)),
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            // Fighter: 이동, 체력, 방어, 속도, 피해, 사거리, 주기, 대공, 대지. Support: 이동, 체력, 방어, 속도.
+            // 석궁 사수
+            (Faction.Humans, Role.Ranged, 1, Fighter(Walks, 70, 0, Fix.Ratio(1, 4), 6, 5, 18, false, true)),
+            // 마도사
+            (Faction.Humans, Role.Ranged, 2, Fighter(Walks, 80, 0, Fix.Ratio(1, 4), 8, 6, 22, false, true)),
+            // 석조 보행 포대
+            (Faction.Humans, Role.Ranged, 3, Fighter(Walks, 260, 3, Fix.Ratio(1, 6), 11, 6, 22, false, true)),
+            // 견인 대포
+            (Faction.Humans, Role.Ranged, 4, Fighter(Walks, 180, 1, Fix.Ratio(1, 6), 15, 7, 40, false, true)),
+            // 마도 폭격선
+            (Faction.Humans, Role.Ranged, 5, Fighter(Flies, 200, 1, Fix.Ratio(1, 4), 14, 4, 40, false, true)),
+            // 마도 기수
+            (Faction.Humans, Role.Ranged, 6, Fighter(Walks, 110, 1, Fix.Ratio(3, 8), 6, 4, 14, false, true)),
+            // 공방 기술자
+            (Faction.Humans, Role.Signature, 2, Support(Walks, 80, 0, Fix.Ratio(1, 4))),
+            // 마나 증폭기
+            (Faction.Humans, Role.Signature, 3, Support(Walks, 150, 1, Fix.Ratio(1, 5))),
+            // 마도 공창
+            (Faction.Humans, Role.Production, 2, Structure(450)),
         };
 
         /// <summary>
@@ -914,6 +1145,59 @@ namespace WordCraft.Sim
             // 공수 특공대 65자원 55틱.
             (Faction.Humans, Role.Worker, 0, Produce(45, 35)),
             (Faction.Humans, Role.Ranged, 0, Produce(65, 55)),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            (Faction.TreeSpirits, Role.Melee, 2, new ProductionCost()), // 찌릿쥐
+            (Faction.TreeSpirits, Role.Melee, 3, new ProductionCost()), // 폭풍 기수
+            (Faction.TreeSpirits, Role.Ranged, 2, new ProductionCost()), // 번개새 무리
+            (Faction.TreeSpirits, Role.Ranged, 3, new ProductionCost()), // 거대 덩쿨
+            (Faction.TreeSpirits, Role.Signature, 1, new ProductionCost()), // 도깨비불
+            (Faction.TreeSpirits, Role.Signature, 2, new ProductionCost()), // 덩굴 군집
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            (Faction.Hellfire, Role.Melee, 1, Produce(50, 50)), // 화염 악마
+            (Faction.Hellfire, Role.Melee, 2, Produce(60, 50)), // 균열 사냥개
+            (Faction.Hellfire, Role.Melee, 3, new ProductionCost()), // 잿불 새끼
+            (Faction.Hellfire, Role.Ranged, 2, Produce(150, 120)), // 용암 투석 악마
+            (Faction.Hellfire, Role.Ranged, 3, Produce(110, 90)), // 재날개 악마
+            (Faction.Hellfire, Role.Signature, 1, Produce(160, 120)), // 산란 악마
+            (Faction.Hellfire, Role.Signature, 2, Produce(180, 130)), // 운석 술사
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            (Faction.WaterSlimes, Role.Melee, 1, Produce(70, 60)), // 물막이 슬라임
+            (Faction.WaterSlimes, Role.Melee, 2, Produce(50, 40)), // 급류 슬라임
+            (Faction.WaterSlimes, Role.Ranged, 2, Produce(25, 25)), // 침 뱉는 슬라임
+            (Faction.WaterSlimes, Role.Ranged, 3, Produce(130, 110)), // 물대포 슬라임
+            (Faction.WaterSlimes, Role.Signature, 1, Produce(75, 60)), // 비구름
+            (Faction.WaterSlimes, Role.Signature, 2, Produce(120, 100)), // 간헐천 술사
+            (Faction.WaterSlimes, Role.Signature, 3, Produce(80, 70)), // 샘물 운반자
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            (Faction.RockGolems, Role.Melee, 1, Produce(75, 60)), // 구르는 바위
+            (Faction.RockGolems, Role.Melee, 2, Produce(60, 50)), // 성벽 골렘
+            (Faction.RockGolems, Role.Melee, 3, new ProductionCost()), // 깨어난 바위
+            (Faction.RockGolems, Role.Ranged, 1, Produce(35, 35)), // 돌팔매 꼬마돌
+            (Faction.RockGolems, Role.Ranged, 2, Produce(140, 120)), // 부유석 파수
+            (Faction.RockGolems, Role.Ranged, 3, Produce(130, 110)), // 모래 술사
+            (Faction.RockGolems, Role.Signature, 1, Produce(150, 120)), // 이끼 현자
+            (Faction.RockGolems, Role.Signature, 2, Produce(70, 60)), // 이끼 포자 무리
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            (Faction.Driftworlds, Role.Ranged, 2, Produce(55, 50)), // 덩쿨편
+            (Faction.Driftworlds, Role.Ranged, 3, Produce(45, 30)), // 멸종한 바람 슬라임
+            (Faction.Driftworlds, Role.Signature, 1, Produce(200, 140)), // 떠도는 섬
+            (Faction.Driftworlds, Role.Signature, 2, Produce(120, 100)), // 층위 관측자
+            (Faction.Driftworlds, Role.Signature, 3, Produce(40, 30)), // 멸종한 자연 슬라임
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            (Faction.Humans, Role.Ranged, 1, Produce(40, 35)), // 석궁 사수
+            (Faction.Humans, Role.Ranged, 2, Produce(90, 70)), // 마도사
+            (Faction.Humans, Role.Ranged, 3, Produce(120, 90)), // 석조 보행 포대
+            (Faction.Humans, Role.Ranged, 4, Produce(150, 120)), // 견인 대포
+            (Faction.Humans, Role.Ranged, 5, Produce(160, 120)), // 마도 폭격선
+            (Faction.Humans, Role.Ranged, 6, Produce(70, 55)), // 마도 기수
+            (Faction.Humans, Role.Signature, 2, Produce(60, 50)), // 공방 기술자
+            (Faction.Humans, Role.Signature, 3, Produce(110, 90)), // 마나 증폭기
         };
 
         private static ProductionCost Produce(int resources, int ticks) =>
@@ -937,6 +1221,14 @@ namespace WordCraft.Sim
             (Faction.TreeSpirits, Role.Ranged, 1, Grow(30, 40)),
             // 고목 수호자. 50자원, 60틱.
             (Faction.TreeSpirits, Role.Melee, 1, Grow(50, 60)),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            // 찌릿쥐. 15자원, 20틱.
+            (Faction.TreeSpirits, Role.Melee, 2, Grow(15, 20)),
+            // 도깨비불. 40자원, 50틱.
+            (Faction.TreeSpirits, Role.Signature, 1, Grow(40, 50)),
+            // 덩굴 군집. 45자원, 60틱.
+            (Faction.TreeSpirits, Role.Signature, 2, Grow(45, 60)),
         };
 
         private static GrowthCost Grow(int resources, int ticks) =>
@@ -975,10 +1267,12 @@ namespace WordCraft.Sim
 
         /// <summary>
         /// The most rows any faction's upgrade table holds. Sizes the per-peer
-        /// level array World hashes, so a faction given a fifth row has to move
-        /// this too, and the harness refuses a table that outgrows it.
+        /// level array World hashes, so a faction given a ninth row has to move
+        /// this too, and the type load refuses a table that outgrows it. Eight
+        /// since docs/TECH-TREE.md 묶음 3: 세계수 정령, 차원 유랑종 and 인간 hold
+        /// eight rows each.
         /// </summary>
-        public const int MaxUpgrades = 4;
+        public const int MaxUpgrades = 8;
 
         /// <summary>
         /// What level 1 of 공격력 and 방어력 costs and how long a level takes. The
@@ -1001,15 +1295,18 @@ namespace WordCraft.Sim
         public const int UniqueUpgradeTicks = 200;
 
         /// <summary>
-        /// Every faction's research, in index order: 공격력, 방어력, then the two
-        /// rows that are the faction's own. Keyed by faction and walked in
-        /// declaration order, never through a keyed collection, for the reason
-        /// <see cref="growthTargets"/> is. Numbers are the starting values issue
-        /// #164 names, written down in docs/FACTION-MECHANICS.md 업그레이드.
+        /// Every faction's research, in index order: 공격력, 방어력, the two rows
+        /// that are the faction's own, then the docs/TECH-TREE.md 묶음 3 rows
+        /// appended behind them. Keyed by faction and walked in declaration
+        /// order, never through a keyed collection, for the reason
+        /// <see cref="growthTargets"/> is. The first four rows carry the starting
+        /// values issue #164 names, written down in docs/FACTION-MECHANICS.md
+        /// 업그레이드; the 묶음 3 rows carry the document's own prices.
         ///
-        /// Tier 3 on every row, which is what a finished 기술 건물 already is:
-        /// TierOf answers 3 the moment one stands. The column is there so a row
-        /// that is meant to open later can say so in one number, and the command
+        /// The Tier column is 2 or 3. The first four rows are tier 3, which a
+        /// finished 기술 건물 already is. A 묶음 3 row researched in a building
+        /// that opens no tier says its tier here: 잎날 속도 at the 광란의 토템 opens
+        /// at tier 2, 번개새 공격 주기 at the 바람 토템 at tier 3, and the command
         /// checks it in the order Produce checks its own tier.
         /// </summary>
         private static readonly (Faction Faction, UpgradeRow Row)[] upgrades =
@@ -1055,11 +1352,44 @@ namespace WordCraft.Sim
             (Faction.Humans, UniqueRow("포획 가속", UpgradeEffect.CaptureTicks)),
             // 대포 사거리 +1.
             (Faction.Humans, UniqueRow("대포 사거리", UpgradeEffect.CannonRange)),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            (Faction.TreeSpirits, ResearchRow("덩쿨 사거리", 100, 160, 3, UpgradeEffect.VineRange, (Role.Tech, 0), NoBuilding)),
+            (Faction.TreeSpirits, ResearchRow("거대 덩쿨 사거리", 150, 200, 3, UpgradeEffect.GiantVineRange, (Role.Tech, 0), NoBuilding)),
+            (Faction.TreeSpirits, ResearchRow("번개새 공격 주기", 100, 160, 3, UpgradeEffect.ThunderBirdAttackTicks, (Role.Tech, 1), NoBuilding)),
+            (Faction.TreeSpirits, ResearchRow("잎날 속도", 100, 160, 2, UpgradeEffect.LeafbladeSpeed, (Role.Tech, 2), NoBuilding)),
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            (Faction.Hellfire, ResearchRow("용암 투석 사거리", 150, 200, 3, UpgradeEffect.LavaCatapultRange, (Role.Tech, 0), NoBuilding)),
+            (Faction.Hellfire, ResearchRow("재날개 공격 주기", 100, 160, 3, UpgradeEffect.AshWingAttackTicks, (Role.Tech, 0), NoBuilding)),
+            (Faction.Hellfire, ResearchRow("갑각 경화", 150, 200, 3, UpgradeEffect.HardenedCarapace, (Role.Tech, 1), (Role.Tech, 0))),
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            (Faction.WaterSlimes, ResearchRow("물결 궁수 사거리", 125, 200, 2, UpgradeEffect.ArcherRange, (Role.Tech, 1), NoBuilding)),
+            (Faction.WaterSlimes, ResearchRow("침 사거리", 75, 120, 2, UpgradeEffect.SpitterRange, (Role.Tech, 1), NoBuilding)),
+            (Faction.WaterSlimes, ResearchRow("물대포 사거리", 150, 200, 3, UpgradeEffect.WaterCannonRange, (Role.Tech, 1), NoBuilding)),
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            (Faction.RockGolems, ResearchRow("돌팔매 사거리", 75, 120, 2, UpgradeEffect.SlingerRange, (Role.Tech, 1), NoBuilding)),
+            (Faction.RockGolems, ResearchRow("부유석 사거리", 150, 200, 3, UpgradeEffect.FloatingStoneRange, (Role.Tech, 1), NoBuilding)),
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            (Faction.Driftworlds, ResearchRow("폭풍편 공격 주기", 100, 160, 2, UpgradeEffect.StormShardAttackTicks, (Role.Tech, 1), NoBuilding)),
+            (Faction.Driftworlds, ResearchRow("덩쿨편 사거리", 75, 120, 2, UpgradeEffect.VineShardRange, (Role.Tech, 1), NoBuilding)),
+            (Faction.Driftworlds, ResearchRow("틈새 포대 사거리", 100, 160, 2, UpgradeEffect.RiftBatteryRange, (Role.Tech, 1), NoBuilding)),
+            (Faction.Driftworlds, ResearchRow("도주 가속", 100, 160, 2, UpgradeEffect.FleeSpeed, (Role.Tech, 1), NoBuilding)),
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            (Faction.Humans, ResearchRow("석궁 사거리", 75, 120, 3, UpgradeEffect.CrossbowRange, (Role.Tech, 0), NoBuilding)),
+            (Faction.Humans, ResearchRow("마도 기수 속도", 100, 160, 3, UpgradeEffect.ArcaneRiderSpeed, (Role.Tech, 0), NoBuilding)),
+            (Faction.Humans, ResearchRow("결속 강화", 125, 200, 2, UpgradeEffect.BindingRange, (Role.Tech, 2), NoBuilding)),
+            (Faction.Humans, ResearchRow("결속 갑주", 125, 200, 2, UpgradeEffect.BindingArmor, (Role.Tech, 2), NoBuilding)),
         };
 
         /// <summary>
-        /// Where every row on the table today is researched: the 기술 건물, entry
-        /// 0 of the Tech slot, per docs/TECH-TREE.md 업그레이드 (연구 건물 열).
+        /// Where the four #164 rows of every faction are researched: the 기술
+        /// 건물, entry 0 of the Tech slot, per docs/TECH-TREE.md 업그레이드
+        /// (연구 건물 열). The 묶음 3 rows name their own building in ResearchRow.
         ///
         /// A property rather than a readonly field, and that is load-bearing: the
         /// upgrade table above is a field initializer that calls StatRow, and
@@ -1099,6 +1429,104 @@ namespace WordCraft.Sim
                 ResearchAt = TechBuilding,
                 Requires = NoBuilding,
             };
+
+        /// <summary>
+        /// One row of docs/TECH-TREE.md 업그레이드 written out whole: price, clock,
+        /// tier, the building that researches it and the one it requires. One
+        /// level, as every row past the first two is. The rows that use this are
+        /// the ones the document prices one by one, so there is no shared price to
+        /// start from.
+        /// </summary>
+        private static UpgradeRow ResearchRow(string name, int resources, int ticks, int tier,
+            UpgradeEffect effect, (Role Role, int Slot) at, (Role Role, int Slot) requires) =>
+            new UpgradeRow
+            {
+                Name = name,
+                Resources = resources,
+                Ticks = ticks,
+                MaxLevel = 1,
+                Tier = tier,
+                Effect = effect,
+                ResearchAt = at,
+                Requires = requires,
+            };
+
+        /// <summary>
+        /// What the 묶음 3 research rows change, per roster entry: the entry, the
+        /// row that changes it, which number, and the researched value. A table
+        /// rather than a case per row in the four lookups, so that adding a row
+        /// is one line here and the lookups do not change. Walked in declaration
+        /// order, never through a keyed collection, for the reason
+        /// <see cref="growthTargets"/> is.
+        ///
+        /// One row can name two entries — 갑각 경화 hardens 용암 갑각 악마 and 산란
+        /// 악마 both — and one entry can carry two rows, as Towerback does under
+        /// 결속 강화 and 결속 갑주. What a row may not do is give one entry two
+        /// values for the same number, and the type load refuses it.
+        /// </summary>
+        private static readonly (Faction Faction, Role Role, int Slot, UpgradeEffect Effect, UpgradedStat Stat, Fix Value)[] entryUpgrades =
+        {
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            // 덩쿨 정령 사거리 5 → 6.
+            (Faction.TreeSpirits, Role.Ranged, 1, UpgradeEffect.VineRange, UpgradedStat.Range, Fix.FromInt(6)),
+            // 거대 덩쿨 사거리 9 → 11.
+            (Faction.TreeSpirits, Role.Ranged, 3, UpgradeEffect.GiantVineRange, UpgradedStat.Range, Fix.FromInt(11)),
+            // 번개새 무리 주기 10 → 8틱.
+            (Faction.TreeSpirits, Role.Ranged, 2, UpgradeEffect.ThunderBirdAttackTicks, UpgradedStat.AttackTicks, Fix.FromInt(8)),
+            // 잎날 정령 속도 1/4 → 5/16.
+            (Faction.TreeSpirits, Role.Melee, 0, UpgradeEffect.LeafbladeSpeed, UpgradedStat.Speed, Fix.Ratio(5, 16)),
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            // 용암 투석 악마 사거리 9 → 10.
+            (Faction.Hellfire, Role.Ranged, 2, UpgradeEffect.LavaCatapultRange, UpgradedStat.Range, Fix.FromInt(10)),
+            // 재날개 악마 주기 15 → 12틱.
+            (Faction.Hellfire, Role.Ranged, 3, UpgradeEffect.AshWingAttackTicks, UpgradedStat.AttackTicks, Fix.FromInt(12)),
+            // 용암 갑각 악마 방어 +2.
+            (Faction.Hellfire, Role.Melee, 0, UpgradeEffect.HardenedCarapace, UpgradedStat.Armor, Fix.FromInt(2)),
+            // 산란 악마 방어 +2.
+            (Faction.Hellfire, Role.Signature, 1, UpgradeEffect.HardenedCarapace, UpgradedStat.Armor, Fix.FromInt(2)),
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            // 물결 궁수 사거리 6 → 7.
+            (Faction.WaterSlimes, Role.Ranged, 0, UpgradeEffect.ArcherRange, UpgradedStat.Range, Fix.FromInt(7)),
+            // 침 뱉는 슬라임 사거리 4 → 5.
+            (Faction.WaterSlimes, Role.Ranged, 2, UpgradeEffect.SpitterRange, UpgradedStat.Range, Fix.FromInt(5)),
+            // 물대포 슬라임 사거리 8 → 9.
+            (Faction.WaterSlimes, Role.Ranged, 3, UpgradeEffect.WaterCannonRange, UpgradedStat.Range, Fix.FromInt(9)),
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            // 돌팔매 꼬마돌 사거리 5 → 6.
+            (Faction.RockGolems, Role.Ranged, 1, UpgradeEffect.SlingerRange, UpgradedStat.Range, Fix.FromInt(6)),
+            // 부유석 파수 사거리 6 → 7.
+            (Faction.RockGolems, Role.Ranged, 2, UpgradeEffect.FloatingStoneRange, UpgradedStat.Range, Fix.FromInt(7)),
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            // 폭풍편 주기 15 → 12틱.
+            (Faction.Driftworlds, Role.Melee, 0, UpgradeEffect.StormShardAttackTicks, UpgradedStat.AttackTicks, Fix.FromInt(12)),
+            // 덩쿨편 사거리 5 → 6.
+            (Faction.Driftworlds, Role.Ranged, 2, UpgradeEffect.VineShardRange, UpgradedStat.Range, Fix.FromInt(6)),
+            // 틈새 포대 사거리 7 → 8.
+            (Faction.Driftworlds, Role.Defense, 2, UpgradeEffect.RiftBatteryRange, UpgradedStat.Range, Fix.FromInt(8)),
+            // 경계 운반자 도주 중 속도 3/8 → 1/2.
+            (Faction.Driftworlds, Role.Signature, 0, UpgradeEffect.FleeSpeed, UpgradedStat.FleeSpeed, Fix.Ratio(1, 2)),
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            // 석궁 사수 사거리 5 → 6.
+            (Faction.Humans, Role.Ranged, 1, UpgradeEffect.CrossbowRange, UpgradedStat.Range, Fix.FromInt(6)),
+            // 마도 기수 속도 3/8 → 1/2.
+            (Faction.Humans, Role.Ranged, 6, UpgradeEffect.ArcaneRiderSpeed, UpgradedStat.Speed, Fix.Ratio(1, 2)),
+            // Towerback 사거리 6 → 8.
+            (Faction.Humans, Role.Signature, 0, UpgradeEffect.BindingRange, UpgradedStat.Range, Fix.FromInt(8)),
+            // Towerback 방어 +2.
+            (Faction.Humans, Role.Signature, 0, UpgradeEffect.BindingArmor, UpgradedStat.Armor, Fix.FromInt(2)),
+        };
+
+        /// <summary>How many rows the entry upgrade table holds, for the harness.</summary>
+        public static int EntryUpgradeCount => entryUpgrades.Length;
+
+        /// <summary>One row of the entry upgrade table, in declaration order.</summary>
+        public static (Faction Faction, Role Role, int Slot, UpgradeEffect Effect, UpgradedStat Stat, Fix Value) EntryUpgrade(int index) =>
+            entryUpgrades[index];
 
         /// <summary>How many rows this faction's upgrade table holds.</summary>
         public static int UpgradeCount(Faction faction)
@@ -1249,6 +1677,35 @@ namespace WordCraft.Sim
                 RequireBuilding(faction, row.ResearchAt, "upgrades");
                 if (row.Requires.Role != Role.None) RequireBuilding(faction, row.Requires, "upgrades");
             }
+
+            for (int f = 0; f < FactionCount; f++)
+            {
+                Require(UpgradeCount((Faction)f) <= MaxUpgrades,
+                    "upgrades gives " + (Faction)f + " more rows than MaxUpgrades");
+            }
+
+            // Every entry upgrade names an entry the roster fields and a row its
+            // faction's table holds, and no entry is given two values for one
+            // number: the lookups take the first match, so a second one would be
+            // a row that silently does nothing.
+            for (int i = 0; i < entryUpgrades.Length; i++)
+            {
+                var (faction, role, slot, effect, stat, _) = entryUpgrades[i];
+                RequireFielded(faction, role, slot, "entryUpgrades");
+                Require(stat != UpgradedStat.None, "entryUpgrades row " + i + " changes nothing");
+                bool listed = false;
+                for (int u = 0; u < UpgradeCount(faction); u++)
+                {
+                    if (Upgrade(faction, u).Effect == effect) listed = true;
+                }
+                Require(listed, "entryUpgrades names " + effect + ", which " + faction + " cannot research");
+                for (int j = 0; j < i; j++)
+                {
+                    var other = entryUpgrades[j];
+                    Require(other.Faction != faction || other.Role != role || other.Slot != slot || other.Stat != stat,
+                        "entryUpgrades gives " + faction + " " + role + " " + slot + " two " + stat + " values");
+                }
+            }
         }
 
         private static void Require(bool holds, string what)
@@ -1334,10 +1791,87 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, Role.Melee, "멸종한 바위 슬라임", "ExtinctRockSlime"),
             (Faction.Driftworlds, Role.Ranged, "멸종한 번개 슬라임", "ExtinctLightningSlime"),
             // 인간 마법 문명. Three defensive structures, the only faction with more
-            // than one. 마도 정찰기 is the last slot in the roster still short of art.
+            // than one. 마도 정찰기's art is ArcaneScout in .art/TECH-TREE-ART.md.
             (Faction.Humans, Role.Defense, "전기 타워", "ElectricTower"),
             (Faction.Humans, Role.Defense, "돌 포탑", "RockTurret"),
-            (Faction.Humans, Role.Signature, "마도 정찰기", ""),
+            (Faction.Humans, Role.Signature, "마도 정찰기", "ArcaneScout"),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            (Faction.TreeSpirits, Role.Production, "씨앗 요람", "SeedCradle"),
+            (Faction.TreeSpirits, Role.Defense, "회복 토템", "HealingTotem"),
+            (Faction.TreeSpirits, Role.Melee, "찌릿쥐", "ZapMouse"),
+            (Faction.TreeSpirits, Role.Melee, "폭풍 기수", "StormRider"),
+            (Faction.TreeSpirits, Role.Ranged, "번개새 무리", "ThunderBirdSwarm"),
+            (Faction.TreeSpirits, Role.Ranged, "거대 덩쿨", "GiantVine"),
+            (Faction.TreeSpirits, Role.Signature, "도깨비불", "WillOWisp"),
+            (Faction.TreeSpirits, Role.Signature, "덩굴 군집", "VineColony"),
+            (Faction.TreeSpirits, Role.Tech, "바람 토템", "WindTotem"),
+            (Faction.TreeSpirits, Role.Tech, "광란의 토템", "FrenzyTotem"),
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            (Faction.Hellfire, Role.Production, "큰 균열", "GrandRift"),
+            (Faction.Hellfire, Role.Defense, "집결의 횃불", "RallyingTorch"),
+            (Faction.Hellfire, Role.Defense, "화염 첨탑", "FlameSpire"),
+            (Faction.Hellfire, Role.Melee, "화염 악마", "FireSpirit"),
+            (Faction.Hellfire, Role.Melee, "균열 사냥개", "RiftHound"),
+            (Faction.Hellfire, Role.Melee, "잿불 새끼", "EmberWhelp"),
+            (Faction.Hellfire, Role.Ranged, "용암 투석 악마", "LavaCatapultDemon"),
+            (Faction.Hellfire, Role.Ranged, "재날개 악마", "AshWingDemon"),
+            (Faction.Hellfire, Role.Signature, "산란 악마", "BroodDemon"),
+            (Faction.Hellfire, Role.Signature, "운석 술사", "MeteorInvoker"),
+            (Faction.Hellfire, Role.Tech, "재 분화구", "AshCaldera"),
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            (Faction.WaterSlimes, Role.Production, "구름 둥지", "CloudNest"),
+            (Faction.WaterSlimes, Role.Defense, "솟는 샘", "RisingSpring"),
+            (Faction.WaterSlimes, Role.Defense, "거품 장벽", "BubbleMound"),
+            (Faction.WaterSlimes, Role.Melee, "물막이 슬라임", "WaterScreenSlime"),
+            (Faction.WaterSlimes, Role.Melee, "급류 슬라임", "RiptideSlime"),
+            (Faction.WaterSlimes, Role.Ranged, "침 뱉는 슬라임", "WaterSlimeAttackSpit"),
+            (Faction.WaterSlimes, Role.Ranged, "물대포 슬라임", "WaterCannonSlime"),
+            (Faction.WaterSlimes, Role.Signature, "비구름", "RainCloud"),
+            (Faction.WaterSlimes, Role.Signature, "간헐천 술사", "GeyserMage"),
+            (Faction.WaterSlimes, Role.Signature, "샘물 운반자", "SpringCarrier"),
+            (Faction.WaterSlimes, Role.Tech, "물결 수련장", "WaveTrainingPool"),
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            (Faction.RockGolems, Role.Production, "각성의 원", "AwakeningCircle"),
+            (Faction.RockGolems, Role.Defense, "부유석 첨탑", "HoverstoneSpire"),
+            (Faction.RockGolems, Role.Defense, "잠듦의 고리", "DormancyRing"),
+            (Faction.RockGolems, Role.Melee, "구르는 바위", "RockRolling"),
+            (Faction.RockGolems, Role.Melee, "성벽 골렘", "WallGolem"),
+            (Faction.RockGolems, Role.Melee, "깨어난 바위", "AwakenedStone"),
+            (Faction.RockGolems, Role.Ranged, "돌팔매 꼬마돌", "PebbleSlinger"),
+            (Faction.RockGolems, Role.Ranged, "부유석 파수", "FloatingStoneSentinel"),
+            (Faction.RockGolems, Role.Ranged, "모래 술사", "SandShaper"),
+            (Faction.RockGolems, Role.Signature, "이끼 현자", "MossSage"),
+            (Faction.RockGolems, Role.Signature, "이끼 포자 무리", "MossSporeCluster"),
+            (Faction.RockGolems, Role.Tech, "이끼 정원", "MossGarden"),
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            (Faction.Driftworlds, Role.Production, "깊은 통로", "DeepPassage"),
+            (Faction.Driftworlds, Role.Defense, "위상 닻", "PhaseAnchor"),
+            (Faction.Driftworlds, Role.Defense, "틈새 포대", "RiftBattery"),
+            (Faction.Driftworlds, Role.Ranged, "덩쿨편", "VineShard"),
+            (Faction.Driftworlds, Role.Ranged, "멸종한 바람 슬라임", "ExtinctWindSlime"),
+            (Faction.Driftworlds, Role.Signature, "떠도는 섬", "WanderingIsland"),
+            (Faction.Driftworlds, Role.Signature, "층위 관측자", "StrataObserver"),
+            (Faction.Driftworlds, Role.Signature, "멸종한 자연 슬라임", "ExtinctNatureSlime"),
+            (Faction.Driftworlds, Role.Tech, "외피 연마장", "ShellPolishingYard"),
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            (Faction.Humans, Role.Production, "석조 병영", "StoneBarracks"),
+            (Faction.Humans, Role.Production, "마도 공창", "ArcaneFoundry"),
+            (Faction.Humans, Role.Ranged, "석궁 사수", "CrossbowMarksman"),
+            (Faction.Humans, Role.Ranged, "마도사", "ArcaneMage"),
+            (Faction.Humans, Role.Ranged, "석조 보행 포대", "StoneWalkerBattery"),
+            (Faction.Humans, Role.Ranged, "견인 대포", "TowedCannon"),
+            (Faction.Humans, Role.Ranged, "마도 폭격선", "ArcaneBomber"),
+            (Faction.Humans, Role.Ranged, "마도 기수", "ArcaneRider"),
+            (Faction.Humans, Role.Signature, "공방 기술자", "WorkshopEngineer"),
+            (Faction.Humans, Role.Signature, "마나 증폭기", "ManaAmplifier"),
+            (Faction.Humans, Role.Tech, "마도 학당", "ArcaneAcademy"),
+            (Faction.Humans, Role.Tech, "결속대", "BindingPlatform"),
         };
 
         /// <summary>
@@ -1418,6 +1952,61 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, Role.Ranged, 0, 3),
             (Faction.Driftworlds, Role.Ranged, 1, 3),
             (Faction.Driftworlds, Role.Signature, 0, 2),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            (Faction.TreeSpirits, Role.Production, 1, 3), // 씨앗 요람
+            (Faction.TreeSpirits, Role.Defense, 1, 2), // 회복 토템
+            (Faction.TreeSpirits, Role.Melee, 3, 2), // 폭풍 기수
+            (Faction.TreeSpirits, Role.Ranged, 2, 3), // 번개새 무리
+            (Faction.TreeSpirits, Role.Ranged, 3, 3), // 거대 덩쿨
+            (Faction.TreeSpirits, Role.Signature, 1, 2), // 도깨비불
+            (Faction.TreeSpirits, Role.Signature, 2, 2), // 덩굴 군집
+            (Faction.TreeSpirits, Role.Tech, 1, 3), // 바람 토템
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            (Faction.Hellfire, Role.Production, 1, 3), // 큰 균열
+            (Faction.Hellfire, Role.Defense, 1, 2), // 집결의 횃불
+            (Faction.Hellfire, Role.Defense, 2, 2), // 화염 첨탑
+            (Faction.Hellfire, Role.Melee, 2, 2), // 균열 사냥개
+            (Faction.Hellfire, Role.Melee, 3, 2), // 잿불 새끼
+            (Faction.Hellfire, Role.Ranged, 2, 3), // 용암 투석 악마
+            (Faction.Hellfire, Role.Ranged, 3, 3), // 재날개 악마
+            (Faction.Hellfire, Role.Signature, 1, 2), // 산란 악마
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            (Faction.WaterSlimes, Role.Production, 1, 2), // 구름 둥지
+            (Faction.WaterSlimes, Role.Defense, 1, 2), // 솟는 샘
+            (Faction.WaterSlimes, Role.Melee, 1, 2), // 물막이 슬라임
+            (Faction.WaterSlimes, Role.Melee, 2, 2), // 급류 슬라임
+            (Faction.WaterSlimes, Role.Ranged, 2, 1), // 침 뱉는 슬라임
+            (Faction.WaterSlimes, Role.Ranged, 3, 3), // 물대포 슬라임
+            (Faction.WaterSlimes, Role.Signature, 1, 2), // 비구름
+            (Faction.WaterSlimes, Role.Signature, 3, 2), // 샘물 운반자
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            (Faction.RockGolems, Role.Production, 1, 3), // 각성의 원
+            (Faction.RockGolems, Role.Defense, 1, 2), // 부유석 첨탑
+            (Faction.RockGolems, Role.Defense, 2, 3), // 잠듦의 고리
+            (Faction.RockGolems, Role.Melee, 1, 2), // 구르는 바위
+            (Faction.RockGolems, Role.Melee, 2, 2), // 성벽 골렘
+            (Faction.RockGolems, Role.Melee, 3, 3), // 깨어난 바위
+            (Faction.RockGolems, Role.Ranged, 1, 1), // 돌팔매 꼬마돌
+            (Faction.RockGolems, Role.Ranged, 2, 3), // 부유석 파수
+            (Faction.RockGolems, Role.Ranged, 3, 3), // 모래 술사
+            (Faction.RockGolems, Role.Signature, 2, 2), // 이끼 포자 무리
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            (Faction.Driftworlds, Role.Production, 1, 3), // 깊은 통로
+            (Faction.Driftworlds, Role.Defense, 1, 2), // 위상 닻
+            (Faction.Driftworlds, Role.Defense, 2, 2), // 틈새 포대
+            (Faction.Driftworlds, Role.Ranged, 3, 3), // 멸종한 바람 슬라임
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            (Faction.Humans, Role.Production, 2, 2), // 마도 공창
+            (Faction.Humans, Role.Ranged, 1, 1), // 석궁 사수
+            (Faction.Humans, Role.Ranged, 4, 3), // 견인 대포
+            (Faction.Humans, Role.Ranged, 5, 3), // 마도 폭격선
+            (Faction.Humans, Role.Signature, 2, 2), // 공방 기술자
         };
 
         /// <summary>
@@ -1438,11 +2027,6 @@ namespace WordCraft.Sim
         /// Keyed by Faction, Role and Slot, and walked in declaration order, never
         /// through a keyed collection, for the reason <see cref="growthTargets"/> is.
         /// </summary>
-        // ponytail: two rows below stand in for buildings 묶음 3 adds. 바람 정령's
-        // prerequisite is the 바람 토템 (Tech 1) and 마도 정찰기's is the 마도 공창
-        // (Production 2), and neither is in the roster yet, so a row naming one
-        // would fail at type load. Both name Tech 0 until then; swap them when
-        // the buildings arrive.
         private static readonly (Faction Faction, Role Role, int Slot, (Role Role, int Slot) Needs)[] prerequisites =
         {
             // Every faction's 기술 건물 needs its production building: T2, and
@@ -1458,8 +2042,8 @@ namespace WordCraft.Sim
             // 뿌리 회당.
             (Faction.TreeSpirits, Role.Melee, 1, (Role.Production, 0)),
             (Faction.TreeSpirits, Role.Ranged, 0, (Role.Tech, 0)),
-            // 바람 정령: 뿌리 회당 for now, 바람 토템 in 묶음 3.
-            (Faction.TreeSpirits, Role.Signature, 0, (Role.Tech, 0)),
+            // 바람 정령 needs the 바람 토템.
+            (Faction.TreeSpirits, Role.Signature, 0, (Role.Tech, 1)),
 
             // 지옥불 군단장 needs the 용암 도가니.
             (Faction.Hellfire, Role.Signature, 0, (Role.Tech, 0)),
@@ -1477,10 +2061,52 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, Role.Ranged, 0, (Role.Tech, 0)),
             (Faction.Driftworlds, Role.Ranged, 1, (Role.Tech, 0)),
 
-            // 인간 마도 정찰기: 공방 for now. It comes out of the 마법 탑 until the
-            // 마도 공창 it is listed under exists, and this keeps it behind tier 3's
-            // building in the meantime.
-            (Faction.Humans, Role.Signature, 1, (Role.Tech, 0)),
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            (Faction.TreeSpirits, Role.Production, 1, (Role.Tech, 0)), // 씨앗 요람
+            (Faction.TreeSpirits, Role.Defense, 1, (Role.Production, 0)), // 회복 토템
+            (Faction.TreeSpirits, Role.Melee, 3, (Role.Tech, 2)), // 폭풍 기수
+            (Faction.TreeSpirits, Role.Ranged, 2, (Role.Tech, 1)), // 번개새 무리
+            (Faction.TreeSpirits, Role.Ranged, 3, (Role.Tech, 0)), // 거대 덩쿨
+            (Faction.TreeSpirits, Role.Signature, 1, (Role.Defense, 1)), // 도깨비불
+            (Faction.TreeSpirits, Role.Signature, 2, (Role.Production, 0)), // 덩굴 군집
+            (Faction.TreeSpirits, Role.Tech, 1, (Role.Tech, 0)), // 바람 토템
+            (Faction.TreeSpirits, Role.Tech, 2, (Role.Production, 0)), // 광란의 토템
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            (Faction.Hellfire, Role.Production, 1, (Role.Tech, 0)), // 큰 균열
+            (Faction.Hellfire, Role.Defense, 1, (Role.Production, 0)), // 집결의 횃불
+            (Faction.Hellfire, Role.Defense, 2, (Role.Production, 0)), // 화염 첨탑
+            (Faction.Hellfire, Role.Signature, 1, (Role.Tech, 1)), // 산란 악마
+            (Faction.Hellfire, Role.Tech, 1, (Role.Production, 0)), // 재 분화구
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            (Faction.WaterSlimes, Role.Production, 1, (Role.Production, 0)), // 구름 둥지
+            (Faction.WaterSlimes, Role.Defense, 1, (Role.Production, 0)), // 솟는 샘
+            (Faction.WaterSlimes, Role.Ranged, 3, (Role.Tech, 1)), // 물대포 슬라임
+            (Faction.WaterSlimes, Role.Signature, 2, (Role.Tech, 0)), // 간헐천 술사
+            (Faction.WaterSlimes, Role.Tech, 1, (Role.Production, 0)), // 물결 수련장
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            (Faction.RockGolems, Role.Production, 1, (Role.Tech, 0)), // 각성의 원
+            (Faction.RockGolems, Role.Defense, 1, (Role.Production, 0)), // 부유석 첨탑
+            (Faction.RockGolems, Role.Defense, 2, (Role.Tech, 0)), // 잠듦의 고리
+            (Faction.RockGolems, Role.Ranged, 2, (Role.Tech, 1)), // 부유석 파수
+            (Faction.RockGolems, Role.Signature, 2, (Role.Tech, 1)), // 이끼 포자 무리
+            (Faction.RockGolems, Role.Tech, 1, (Role.Production, 0)), // 이끼 정원
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            (Faction.Driftworlds, Role.Production, 1, (Role.Tech, 0)), // 깊은 통로
+            (Faction.Driftworlds, Role.Defense, 1, (Role.Production, 0)), // 위상 닻
+            (Faction.Driftworlds, Role.Defense, 2, (Role.Production, 0)), // 틈새 포대
+            (Faction.Driftworlds, Role.Ranged, 3, (Role.Tech, 0)), // 멸종한 바람 슬라임
+            (Faction.Driftworlds, Role.Signature, 3, (Role.Tech, 0)), // 멸종한 자연 슬라임
+            (Faction.Driftworlds, Role.Tech, 1, (Role.Production, 0)), // 외피 연마장
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            (Faction.Humans, Role.Production, 2, (Role.Production, 0)), // 마도 공창
+            (Faction.Humans, Role.Ranged, 2, (Role.Tech, 1)), // 마도사
+            (Faction.Humans, Role.Tech, 1, (Role.Production, 0)), // 마도 학당
+            (Faction.Humans, Role.Tech, 2, (Role.Production, 0)), // 결속대
         };
 
         /// <summary>
@@ -1497,17 +2123,13 @@ namespace WordCraft.Sim
         /// for every entry not listed here, so writing it out sixty times would be
         /// sixty rows that are meant to stay identical.
         ///
-        /// The four rows below are the four existing entries the document puts on
-        /// the base as well as on the production building. Second is NoBuilding
-        /// where an entry has only one.
+        /// The first four rows are the existing entries the document puts on the
+        /// base as well as on the production building. The 묶음 3 rows after them
+        /// name the second production buildings that batch added: 지옥불 군단장,
+        /// 구름 용 and 고대 골렘 also come out of the 큰 균열, the 구름 둥지 and
+        /// the 각성의 원, 공수 특공대 out of the 석조 병영, and 마도 정찰기 out of
+        /// the 마도 공창 alone. Second is NoBuilding where an entry has only one.
         /// </summary>
-        // ponytail: docs/TECH-TREE.md also lists 지옥불 군단장, 구름 용 and 고대 골렘
-        // under a second production building (큰 균열, 구름 둥지, 각성의 원), 공수
-        // 특공대 under 석조 병영, and 마도 정찰기 under 마도 공창 alone. None of those
-        // buildings is in the roster yet, so each of these entries stays on its
-        // production building 0 until 묶음 3 adds the building; add the producer
-        // with it. 마도 정찰기 on the 마법 탑 is a placeholder of that kind: move it
-        // to the 마도 공창 alone then, and its prerequisite with it.
         private static readonly (Faction Faction, Role Role, int Slot, (Role Role, int Slot) First, (Role Role, int Slot) Second)[] producerOverrides =
         {
             // 세계수 정령 풀씨 정령: 생명의 나무 and 풀씨 둥지.
@@ -1518,6 +2140,39 @@ namespace WordCraft.Sim
             (Faction.RockGolems, Role.Melee, 0, (Role.Base, 0), (Role.Production, 0)),
             // 차원 유랑종 폭풍편: 정박한 세계 and 통로.
             (Faction.Driftworlds, Role.Melee, 0, (Role.Base, 0), (Role.Production, 0)),
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            (Faction.Hellfire, Role.Signature, 0, (Role.Production, 0), (Role.Production, 1)), // 지옥불 군단장
+            (Faction.Hellfire, Role.Melee, 1, (Role.Base, 0), (Role.Production, 0)), // 화염 악마
+            (Faction.Hellfire, Role.Ranged, 2, (Role.Production, 1), NoBuilding), // 용암 투석 악마
+            (Faction.Hellfire, Role.Ranged, 3, (Role.Production, 1), NoBuilding), // 재날개 악마
+            (Faction.Hellfire, Role.Signature, 2, (Role.Production, 1), NoBuilding), // 운석 술사
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            (Faction.WaterSlimes, Role.Signature, 0, (Role.Production, 0), (Role.Production, 1)), // 구름 용
+            (Faction.WaterSlimes, Role.Ranged, 2, (Role.Base, 0), (Role.Production, 0)), // 침 뱉는 슬라임
+            (Faction.WaterSlimes, Role.Signature, 1, (Role.Production, 1), NoBuilding), // 비구름
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            (Faction.RockGolems, Role.Signature, 0, (Role.Production, 0), (Role.Production, 1)), // 고대 골렘
+            (Faction.RockGolems, Role.Ranged, 1, (Role.Base, 0), (Role.Production, 0)), // 돌팔매 꼬마돌
+            (Faction.RockGolems, Role.Ranged, 2, (Role.Production, 1), NoBuilding), // 부유석 파수
+            (Faction.RockGolems, Role.Ranged, 3, (Role.Production, 1), NoBuilding), // 모래 술사
+            (Faction.RockGolems, Role.Signature, 1, (Role.Production, 1), NoBuilding), // 이끼 현자
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            (Faction.Driftworlds, Role.Signature, 1, (Role.Production, 1), NoBuilding), // 떠도는 섬
+            (Faction.Driftworlds, Role.Signature, 2, (Role.Production, 1), NoBuilding), // 층위 관측자
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            (Faction.Humans, Role.Ranged, 0, (Role.Production, 0), (Role.Production, 1)), // 공수 특공대
+            (Faction.Humans, Role.Signature, 1, (Role.Production, 2), NoBuilding), // 마도 정찰기
+            (Faction.Humans, Role.Ranged, 1, (Role.Base, 0), (Role.Production, 1)), // 석궁 사수
+            (Faction.Humans, Role.Ranged, 3, (Role.Production, 2), NoBuilding), // 석조 보행 포대
+            (Faction.Humans, Role.Ranged, 4, (Role.Production, 2), NoBuilding), // 견인 대포
+            (Faction.Humans, Role.Ranged, 5, (Role.Production, 2), NoBuilding), // 마도 폭격선
+            (Faction.Humans, Role.Ranged, 6, (Role.Production, 1), NoBuilding), // 마도 기수
+            (Faction.Humans, Role.Signature, 3, (Role.Production, 2), NoBuilding), // 마나 증폭기
         };
 
         /// <summary>
@@ -1616,6 +2271,39 @@ namespace WordCraft.Sim
             // the defense slot; 전기 타워 and 돌 포탑 behind it keep the shared row,
             // which is the whole reason this table is keyed by entry.
             (Faction.Humans, Role.Defense, 0, 55, 50),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 3.
+            (Faction.TreeSpirits, Role.Tech, 1, 150, 100), // 바람 토템
+            (Faction.TreeSpirits, Role.Tech, 2, 125, 80), // 광란의 토템
+
+            // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
+            (Faction.Hellfire, Role.Production, 1, 250, 140), // 큰 균열
+            (Faction.Hellfire, Role.Defense, 1, 90, 50), // 집결의 횃불
+            (Faction.Hellfire, Role.Defense, 2, 110, 70), // 화염 첨탑
+            (Faction.Hellfire, Role.Tech, 1, 150, 100), // 재 분화구
+
+            // 물 슬라임, docs/TECH-TREE.md 묶음 3.
+            (Faction.WaterSlimes, Role.Defense, 1, 80, 50), // 솟는 샘
+            (Faction.WaterSlimes, Role.Defense, 2, 50, 40), // 거품 장벽
+            (Faction.WaterSlimes, Role.Tech, 1, 150, 100), // 물결 수련장
+
+            // 돌 골렘 부족, docs/TECH-TREE.md 묶음 3.
+            (Faction.RockGolems, Role.Production, 1, 200, 120), // 각성의 원
+            (Faction.RockGolems, Role.Defense, 1, 110, 70), // 부유석 첨탑
+            (Faction.RockGolems, Role.Defense, 2, 120, 80), // 잠듦의 고리
+            (Faction.RockGolems, Role.Tech, 1, 150, 100), // 이끼 정원
+
+            // 차원 유랑종, docs/TECH-TREE.md 묶음 3.
+            (Faction.Driftworlds, Role.Production, 1, 220, 130), // 깊은 통로
+            (Faction.Driftworlds, Role.Defense, 1, 40, 30), // 위상 닻
+            (Faction.Driftworlds, Role.Defense, 2, 120, 70), // 틈새 포대
+            (Faction.Driftworlds, Role.Tech, 1, 150, 100), // 외피 연마장
+
+            // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
+            (Faction.Humans, Role.Production, 1, 120, 80), // 석조 병영
+            (Faction.Humans, Role.Production, 2, 180, 120), // 마도 공창
+            (Faction.Humans, Role.Tech, 1, 150, 100), // 마도 학당
+            (Faction.Humans, Role.Tech, 2, 100, 80), // 결속대
         };
 
         /// <summary>

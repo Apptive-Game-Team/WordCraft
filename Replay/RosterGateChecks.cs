@@ -104,9 +104,13 @@ namespace WordCraft.Replay
                     ", docs/TECH-TREE.md says " + tier);
             }
 
+            // The buildings that were there before 묶음 3 open at their role's
+            // tier. The ones 묶음 3 added each have a 선행 column of their own,
+            // and RosterChecks pins those row by row.
             ForEveryEntry((faction, role, slot) =>
             {
                 if (!FactionData.IsBuilding(role)) return;
+                if (RosterChecks.IsNewRow(faction, role, slot)) return;
                 int expected = role == Role.Tech ? 2 : 1;
                 Check(FactionData.Tier(faction, role, slot) == expected,
                     Where(faction, role, slot) + " opens at tier " + FactionData.Tier(faction, role, slot));
@@ -196,7 +200,9 @@ namespace WordCraft.Replay
             for (int f = 0; f < FactionData.FactionCount; f++)
             {
                 var faction = (Faction)f;
-                for (int i = 0; i < FactionData.UpgradeCount(faction); i++)
+                // The four rows of #164. The 묶음 3 rows behind them name their
+                // own research building, and RosterChecks pins those.
+                for (int i = 0; i < 4; i++)
                 {
                     UpgradeRow row = FactionData.Upgrade(faction, i);
                     Check(row.ResearchAt.Role == Role.Tech && row.ResearchAt.Slot == 0,

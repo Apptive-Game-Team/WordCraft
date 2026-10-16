@@ -60,11 +60,24 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// How many pages the research list takes. Same arithmetic as the
-        /// production list's: the research cells are the same eight and More turns
-        /// them the same way (ProductionMenu.Pages).
+        /// The rows of <see cref="For(Faction)"/> that one building entry
+        /// researches: those whose ResearchAt names it, the test the simulation's
+        /// own CanResearch takes. docs/TECH-TREE.md 묶음 3 moves rows onto second
+        /// and third research buildings (바람 토템, 재 분화구, 결속대 and the
+        /// rest), and their card lists what they run rather than every row.
         /// </summary>
-        public static int Pages(Faction faction) => ProductionMenu.Pages(For(faction).Count);
+        public static List<Entry> For(Faction faction, Role buildingRole, int buildingSlot)
+        {
+            List<Entry> all = For(faction);
+            var entries = new List<Entry>();
+            for (int i = 0; i < all.Count; i++)
+            {
+                UpgradeRow row = FactionData.Upgrade(faction, all[i].Index);
+                if (row.ResearchAt.Role == buildingRole && row.ResearchAt.Slot == buildingSlot) entries.Add(all[i]);
+            }
+            return entries;
+        }
+
 
         /// <summary>
         /// True when this peer has bought every level of the row. Asked of the

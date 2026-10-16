@@ -51,16 +51,44 @@ namespace WordCraft.Host
             return 0;
         }
 
-        /// <summary>Two completed games with alternating sides produce the same result line on a second run.</summary>
+        /// <summary>
+        /// Two games with alternating sides both complete, are both counted, and
+        /// produce the same result line on a second run.
+        /// </summary>
         private static void ArenaIsReproducible()
         {
-            // 2000, not 1200: 용암 갑각 악마 at 90자원 80틱 lengthens the Driftworlds vs Hellfire game.
-            const int ArenaTicks = 2000;
+            // 6000, the arena's own default cap, so both games are played to the
+            // end. The check is about reproducibility and about both completed
+            // games being counted; it must not depend on how fast this pair
+            // finishes, which every roster change moves (1200 → 2000 for #179's
+            // 용암 갑각 악마, and past 2000 for #180's rows).
+            const int ArenaTicks = 6000;
             string first = Arena.ResultLine(Faction.Driftworlds, Faction.Hellfire, 2, ArenaTicks, 0xC0FFEE);
             string second = Arena.ResultLine(Faction.Driftworlds, Faction.Hellfire, 2, ArenaTicks, 0xC0FFEE);
             Check(first == second, "arena pair result changed between runs: " + first + " / " + second);
-            Check(first.Contains("a wins   0, b wins   2, draws   0"),
-                "arena did not count both completed games for Hellfire after alternating sides: " + first);
+            // Both games played out and counted, and each win credited to the
+            // faction in the winning seat. The pair alternates seats: game 0
+            // seats 차원 유랑종 as peer 0, game 1 seats 지옥불 there, on the next
+            // seed. Each game is replayed here with its seats written out, so a
+            // pair line that credited the seat rather than the faction disagrees
+            // with it whenever the two games are won from different seats. Which
+            // faction wins is the roster's business and is not pinned.
+            const ulong seed = 0xC0FFEE;
+            int driftWins = 0, hellfireWins = 0;
+            for (int game = 0; game < 2; game++)
+            {
+                Faction peer0 = game == 0 ? Faction.Driftworlds : Faction.Hellfire;
+                Faction peer1 = game == 0 ? Faction.Hellfire : Faction.Driftworlds;
+                int winner = Arena.GameWinner(peer0, peer1, ArenaTicks, unchecked(seed + (ulong)game));
+                Check(winner >= 0, "arena game " + game + " did not finish inside " + ArenaTicks + " ticks");
+                Faction won = winner == 0 ? peer0 : peer1;
+                if (won == Faction.Driftworlds) driftWins++;
+                else hellfireWins++;
+            }
+            string expected = "a wins " + driftWins.ToString().PadLeft(3) + ", b wins " +
+                              hellfireWins.ToString().PadLeft(3) + ", draws   0";
+            Check(first.Contains(expected),
+                "arena did not credit both games to the winning faction: expected \"" + expected + "\" in " + first);
         }
 
         /// <summary>Drop, duplicate, reorder, and delay, yet identical hashes every tick.</summary>

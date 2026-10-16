@@ -127,6 +127,7 @@ namespace WordCraft.Replay
                 ResearchMenuChecks.Check();
                 RosterGateChecks.Check();
                 RosterNumbersChecks.Check();
+                RosterChecks.Check();
                 SimAssemblyIsClean();
             }
             catch (Exception ex)
@@ -614,9 +615,11 @@ namespace WordCraft.Replay
         /// refused again once it falls. What it does not do is unbuild the unit it
         /// already opened, which is the half of the rule easy to get wrong.
         ///
-        /// Ordered at the production building, which is where a 세계수 정령
-        /// signature unit comes out; it opens tier 2 on its own, so the first
-        /// refusal is the tier-3 rule and not the tier-2 one.
+        /// Ordered at the production building, which is where 세계수 정령's 번개
+        /// 정령 comes out; it opens tier 2 on its own, so the first refusal is the
+        /// tier-3 rule and not the tier-2 one. 번개 정령 rather than 바람 정령,
+        /// because 바람 정령 also needs the 바람 토템 and a refusal for that would
+        /// be a refusal this check is not about.
         /// </summary>
         private static void TechTiersGateProduction()
         {
@@ -626,14 +629,14 @@ namespace WordCraft.Replay
             world.GrantResources(0, 1000);
 
             int banked = world.GetResources(0);
-            world.Step(Produce(TechWorks, 0, 0, Role.Signature));
+            world.Step(Produce(TechWorks, 0, 0, Role.Ranged));
             Check(world.GetResources(0) == banked, "tier 3 spent resources with no tech building");
             Check(world.GetEntity(TechWorks).QueueCount == 0, "tier 3 queued with no tech building");
 
             // Far from the base, so the squad that comes for it later reaches
             // nothing else and the assertions stay about the tier rule.
             world.SpawnBuilding(0, Role.Tech, At(30, 30), complete: true); // 2
-            world.Step(Produce(TechWorks, 0, 1, Role.Signature));
+            world.Step(Produce(TechWorks, 0, 1, Role.Ranged));
             Check(world.GetResources(0) == banked - World.ProduceCost, "the tech building did not open tier 3");
             Check(world.GetEntity(TechWorks).QueueCount == 1, "the tech building did not open tier 3");
 
@@ -645,12 +648,12 @@ namespace WordCraft.Replay
             for (int t = 0; t < 400 && world.GetEntity(TechBuilding).Alive; t++) world.Step(idle);
             Check(!world.GetEntity(TechBuilding).Alive, "the squad never destroyed the tech building");
 
-            Check(world.GetEntity(TechUnit).Role == Role.Signature, "the queued tier 3 unit never appeared");
+            Check(world.GetEntity(TechUnit).Role == Role.Ranged, "the queued tier 3 unit never appeared");
             Check(world.GetEntity(TechUnit).Alive, "losing the tech building unbuilt a finished unit");
 
             banked = world.GetResources(0);
             int queued = world.GetEntity(TechWorks).QueueCount;
-            world.Step(Produce(TechWorks, 0, 2, Role.Signature));
+            world.Step(Produce(TechWorks, 0, 2, Role.Ranged));
             Check(world.GetResources(0) == banked, "tier 3 spent resources after the tech building fell");
             Check(world.GetEntity(TechWorks).QueueCount == queued, "tier 3 queued after the tech building fell");
         }
@@ -1481,7 +1484,8 @@ namespace WordCraft.Replay
             (faction == Faction.Hellfire && role == World.WarlordRole && slot == 0) ||
             (faction == World.PassageFaction && role == World.CarrierRole &&
              slot == World.CarrierSlot) ||
-            IsScout(faction, role, slot);
+            IsScout(faction, role, slot) ||
+            RosterChecks.IsDocumentedUnarmed(faction, role, slot);
 
         /// <summary>
         /// 인간 마도 정찰기, entry 1 of the signature slot behind Towerback. A
@@ -1584,9 +1588,10 @@ namespace WordCraft.Replay
         /// </summary>
         private static void EveryUnarmedSlotIsWorthSomethingElse()
         {
-            Check(NonCombatantCount() == 3,
+            int expected = 3 + RosterChecks.DocumentedUnarmedCount;
+            Check(NonCombatantCount() == expected,
                 "the roster hands this check " + NonCombatantCount() + " non-combatants, " +
-                "expected 3: IsNonCombatant has grown a name, or names a slot no faction fields");
+                "expected " + expected + ": IsNonCombatant has grown a name, or names a slot no faction fields");
 
             for (int f = 0; f < FactionData.FactionCount; f++)
             {
@@ -1597,6 +1602,12 @@ namespace WordCraft.Replay
                     {
                         if (!FactionData.Has(faction, role, s)) continue;
                         if (!IsNonCombatant(faction, role, s)) continue;
+                        // The rows docs/TECH-TREE.md 묶음 3 leaves unarmed — 비전투
+                        // units and 무기 없음 buildings — have their mechanic in
+                        // 묶음 4 to 8 (도착 반경, 치유, 오라, 시전). Until then each is
+                        // a body worth nothing, the way 마도 정찰기 is until 표식;
+                        // the line goes for each row as its mechanic lands.
+                        if (RosterChecks.IsDocumentedUnarmed(faction, role, s)) continue;
 
                         string name = FactionData.Name(faction, role, s);
                         Check(!FactionData.IsBuilding(role),
@@ -2157,6 +2168,10 @@ namespace WordCraft.Replay
                         string where = faction + "." + role + "[" + s + "]";
                         Check(stats.HitsAir || stats.HitsGround,
                             "a weapon that reaches neither layer at " + where);
+                        // A 묶음 3 row's reach is the document's 대공/대지 column,
+                        // pinned row by row in RosterChecks; the rule below is the
+                        // one the rows before it keep.
+                        if (RosterChecks.IsNewRow(faction, role, s)) continue;
 
                         // 대포, 용암 아가리 and 굴림바위 언덕 are the armed rows
                         // that give up the air, per docs/FACTIONS.md 공중 규칙,
@@ -2549,10 +2564,10 @@ namespace WordCraft.Replay
             world.SetPeerFaction(0, Faction.Humans);
             world.SpawnBuilding(0, Role.Base, At(5, 5), complete: true);  // 0
             world.SpawnBuilding(0, Role.Tech, At(9, 5), complete: true);  // 1, so tier 3 is open
-            // 2, the 마법 탑 마도 정찰기 comes out of. Both orders go to it, so the
+            // 2, the 마도 공창 마도 정찰기 comes out of. Both orders go to it, so the
             // Towerback is refused for being off the list and not for the building.
             const int works = 2;
-            world.SpawnBuilding(0, Role.Production, At(5, 9), complete: true);
+            world.SpawnBuilding(0, Role.Production, 2, At(5, 9), complete: true);
             world.GrantResources(0, 1000);
 
             int banked = world.GetResources(0);
@@ -3831,13 +3846,13 @@ namespace WordCraft.Replay
                 "the produced unit is drawn as " + FactionData.Sprite(faction, warden.Role, warden.Slot));
         }
 
-        // A faction whose ranged list holds exactly one entry, so entry 1 of it is
-        // an entry nobody wrote rather than one that is merely off the list.
+        // 돌 골렘 부족's ranged list, asked one entry past its end, so the entry is
+        // one nobody wrote rather than one that is merely off the list.
         //
-        // 돌 골렘 부족 rather than 세계수 정령, which held the part until 성장 gave
-        // it a second ranged entry. The guard below is what said so, and moving the
-        // fixture is the answer it was asking for: an entry nobody wrote has to be
-        // an entry nobody wrote, and 덩쿨 정령 is now somebody's.
+        // Past the end rather than entry 1. The fixture held entry 1 of a
+        // one-entry list until docs/TECH-TREE.md 묶음 3 gave every faction four
+        // ranged entries or more; the end of the list is the same question asked
+        // where the list ends now.
         private const int ThinBase = 0;
         private const int ThinWorks = 1;
 
@@ -3853,8 +3868,9 @@ namespace WordCraft.Replay
         /// </summary>
         private static void ProduceRefusesAnEntryTheFactionDoesNotField()
         {
-            Check(FactionData.SlotCount(Faction.RockGolems, Role.Ranged) == 1,
-                "돌 골렘 부족 grew a second ranged entry, so this check no longer refuses anything");
+            int end = FactionData.SlotCount(Faction.RockGolems, Role.Ranged);
+            Check(!FactionData.Has(Faction.RockGolems, Role.Ranged, end),
+                "돌 골렘 부족 fields its ranged entry " + end + ", so this check no longer refuses anything");
 
             var world = new World(Seed);
             world.SetPeerFaction(0, Faction.RockGolems);
@@ -3866,10 +3882,10 @@ namespace WordCraft.Replay
             int seq = 0;
 
             // One past the end, and one far past it. The far one is not the same
-            // test: an off-by-one that admitted entry 1 would still refuse entry 9,
-            // and a handler that read the entry number as part of the role would
-            // fold a large one back onto a legal role instead of refusing it.
-            foreach (int slot in new[] { 1, 9 })
+            // test: an off-by-one that admitted the first would still refuse the
+            // second, and a handler that read the entry number as part of the role
+            // would fold a large one back onto a legal role instead of refusing it.
+            foreach (int slot in new[] { end, end + 8 })
             {
                 int banked = world.GetResources(0);
                 int standing = world.EntityCount;
@@ -4306,8 +4322,11 @@ namespace WordCraft.Replay
         /// </summary>
         private static void BuildRefusesABuildingEntryTheFactionDoesNotField()
         {
-            Check(FactionData.SlotCount(Faction.TreeSpirits, Role.Defense) == 1,
-                "세계수 정령 grew a second defense building, so this check no longer refuses anything");
+            // One past the end of the list, which docs/TECH-TREE.md 묶음 3 moved
+            // from entry 1 to entry 2 when it added 회복 토템.
+            int end = FactionData.SlotCount(Faction.TreeSpirits, Role.Defense);
+            Check(!FactionData.Has(Faction.TreeSpirits, Role.Defense, end),
+                "세계수 정령 fields defense entry " + end + ", so this check no longer refuses anything");
 
             var world = new World(Seed);
             world.SetPeerFaction(0, Faction.TreeSpirits);
@@ -4316,10 +4335,10 @@ namespace WordCraft.Replay
 
             int seq = 0;
             // One past the end, and one far past it. The far one is not the same
-            // test: an off-by-one that admitted entry 1 would still refuse entry 9,
-            // and a handler that folded the entry number back into the role would
-            // land a large one on a legal role instead of refusing it.
-            foreach (int slot in new[] { 1, 9 })
+            // test: an off-by-one that admitted the first would still refuse the
+            // second, and a handler that folded the entry number back into the role
+            // would land a large one on a legal role instead of refusing it.
+            foreach (int slot in new[] { end, end + 8 })
             {
                 int banked = world.GetResources(0);
                 int standing = world.EntityCount;

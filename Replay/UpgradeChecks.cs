@@ -65,7 +65,9 @@ namespace WordCraft.Replay
             {
                 var faction = (Faction)f;
                 int count = FactionData.UpgradeCount(faction);
-                Check(count == 4, faction + " has " + count + " upgrade rows, not four");
+                // Four rows from #164, and the 묶음 3 rows behind them, which
+                // RosterChecks pins one by one.
+                Check(count >= 4, faction + " has " + count + " upgrade rows, fewer than four");
                 Check(count <= FactionData.MaxUpgrades, faction + " outgrows MaxUpgrades");
 
                 UpgradeRow attack = FactionData.Upgrade(faction, 0);
@@ -93,7 +95,7 @@ namespace WordCraft.Replay
                 Check(FactionData.Upgrade(faction, count).MaxLevel == 0, faction + ": a row past the end can be researched");
                 Check(FactionData.Upgrade(faction, -1).MaxLevel == 0, faction + ": row -1 can be researched");
             }
-            Check(seen.Count == 12, "the six factions own " + seen.Count + " rows, not twelve");
+            Check(seen.Count == 32, "the six factions own " + seen.Count + " rows, not 32 (twelve from #164, twenty from 묶음 3)");
         }
 
         // ---------------------------------------------------------------------
@@ -319,11 +321,11 @@ namespace WordCraft.Replay
             world.VolleyMaxBonusFor(peer),
             world.VolleyRadiusFor(peer).ToInt(),
             world.RemnantTicksFor(peer),
-            world.RangeOf(world.GetEntity(golem)).ToInt(),
+            world.RangeFor(world.GetEntity(golem)).ToInt(),
             world.ArrivalRadiusFor(peer).ToInt(),
             world.ArrivalTicksFor(peer),
             world.CaptureTicksFor(peer),
-            world.RangeOf(world.GetEntity(cannon)).ToInt(),
+            world.RangeFor(world.GetEntity(cannon)).ToInt(),
         };
 
         /// <summary>What each reading becomes once its own row is researched.</summary>
@@ -359,7 +361,10 @@ namespace WordCraft.Replay
             for (int f = 0; f < FactionData.FactionCount; f++)
             {
                 var faction = (Faction)f;
-                for (int index = 2; index < FactionData.UpgradeCount(faction); index++)
+                // Rows 2 and 3, the faction's own two from #164. The 묶음 3
+                // rows behind them are researched elsewhere than the 기술 건물
+                // this world holds, and RosterChecks moves them one by one.
+                for (int index = 2; index < 4; index++)
                 {
                     UpgradeEffect effect = FactionData.Upgrade(faction, index).Effect;
                     World world = TechWorld(faction, out int tech);

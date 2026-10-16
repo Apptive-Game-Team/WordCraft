@@ -180,22 +180,23 @@ namespace WordCraft.View
         /// Cells long. The HUD and the keys both get it through Orders.Card, so
         /// what a key fires is always what the button under it says. Page is the
         /// production or research list's page and means nothing to any other card.
-        /// Lead is the role of the entity the card speaks for, which only the
-        /// building card reads: a Tech building lists research where every other
-        /// building lists production.
+        /// Lead and leadSlot are the role and entry of the entity the card speaks
+        /// for, which only the building card reads: a Tech building lists research
+        /// where every other building lists production, and each building entry
+        /// lists only what it makes or researches.
         ///
         /// The world and the peer are here because a research cell says the level
         /// the peer has reached and the price of the next one, and those are
         /// simulation state. Both are unread by every other card, so a caller with
         /// no match yet may pass null for the world with CardKind.None.
         /// </summary>
-        public static CardSlot[] Of(CardKind kind, World world, int peer, Role lead, int page)
+        public static CardSlot[] Of(CardKind kind, World world, int peer, Role lead, int leadSlot, int page)
         {
             switch (kind)
             {
                 case CardKind.Fighter: return fighter;
                 case CardKind.Worker: return worker;
-                case CardKind.Building: return Building(world, peer, lead, page);
+                case CardKind.Building: return Building(world, peer, lead, leadSlot, page);
                 case CardKind.BuildMenu: return buildMenu;
                 default: return none;
             }
@@ -203,9 +204,12 @@ namespace WordCraft.View
 
         /// <summary>
         /// What this building lists in rows 1 and 2, one cell per entry: for most
-        /// buildings what this faction can produce, named and priced, and for a
-        /// Tech building (<paramref name="lead"/>) the faction's upgrades, with the
-        /// level reached and the price of the next. Which entries those are comes
+        /// buildings what this building entry produces, named and priced, and for
+        /// a Tech building (<paramref name="lead"/>) the upgrades researched in
+        /// that entry, with the level reached and the price of the next. Per
+        /// building entry since docs/TECH-TREE.md 묶음 3 (#180) spread each
+        /// faction's ten or more producible entries and up to eight research rows
+        /// over two or three buildings. Which entries those are comes
         /// from <see cref="ProductionMenu"/> and <see cref="ResearchMenu"/>, kept
         /// Unity-free so their one interesting question — does every faction's
         /// list still fit the card — runs headless in Replay. This method only
@@ -220,8 +224,9 @@ namespace WordCraft.View
         ///
         /// Rows 1 and 2 (<see cref="ProductionMenu.Cells"/>, eight) are the whole
         /// budget, column 3 included: the card was widened to four columns so a
-        /// roster past six entries still has a button each. 차원 유랑종 fills six
-        /// today, every other faction three; every faction has four upgrades.
+        /// roster past six entries still has a button each. Since 묶음 3 three
+        /// buildings list more than eight entries or come close: 물 슬라임 거품
+        /// 생성기 10, 차원 유랑종 통로 9, 돌 골렘 각성 바위 7.
         ///
         /// A list longer than eight is paged, and the research list pages the same
         /// way the production list does. Each page lists seven entries and cell 11
@@ -242,7 +247,7 @@ namespace WordCraft.View
         /// appeared only for 차원 유랑종 would move nothing today and everything the
         /// day row 0 grows a fourth entry.
         /// </summary>
-        public static CardSlot[] Building(World world, int peer, Role lead, int page)
+        public static CardSlot[] Building(World world, int peer, Role lead, int leadSlot, int page)
         {
             for (int i = 0; i < Cells; i++) building[i] = Empty;
             building[0] = Cmd("Rally", CommandType.SetRallyPoint);
@@ -257,12 +262,12 @@ namespace WordCraft.View
             List<ResearchMenu.Entry> researched = null;
             if (lead == Role.Tech)
             {
-                researched = ResearchMenu.For(faction);
+                researched = ResearchMenu.For(faction, lead, leadSlot);
                 count = researched.Count;
             }
             else
             {
-                produced = ProductionMenu.For(faction);
+                produced = ProductionMenu.For(faction, lead, leadSlot);
                 count = produced.Count;
             }
             pages = ProductionMenu.Pages(count);
@@ -309,8 +314,10 @@ namespace WordCraft.View
         /// it to know where More wraps; the card itself only needs the count to
         /// decide whether it has a More at all.
         /// </summary>
-        public static int PageCount(Faction faction, Role lead) =>
-            lead == Role.Tech ? ResearchMenu.Pages(faction) : ProductionMenu.Pages(ProductionMenu.For(faction).Count);
+        public static int PageCount(Faction faction, Role lead, int leadSlot) =>
+            ProductionMenu.Pages(lead == Role.Tech
+                ? ResearchMenu.For(faction, lead, leadSlot).Count
+                : ProductionMenu.For(faction, lead, leadSlot).Count);
 
         /// <summary>
         /// What the card is for, drawn over it so the player is never guessing. A
