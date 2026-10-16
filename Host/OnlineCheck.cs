@@ -50,12 +50,12 @@ namespace WordCraft.Host
                 using var linkA = await RelayTransport.ConnectAsync(endpoint.Uri, aToken, timeout.Token);
                 using var linkB = await RelayTransport.ConnectAsync(endpoint.Uri, bToken, timeout.Token);
                 ulong seed = ulong.Parse(a.Seed);
-                World wa = MatchScenario.Build(seed, Faction.TreeSpirits, Faction.Humans);
+                World wa = MatchScenario.Build(seed, Faction.TreeSpirits, Faction.Hellfire);
                 World wb = MatchScenario.Build(seed, Faction.TreeSpirits, Faction.Humans);
                 var sa = new LockstepSession(wa, linkA, new MatchConfig
-                { Seed = seed, LocalFaction = Faction.TreeSpirits, RemoteFaction = Faction.Humans, TimeoutMs = 10000 }, 0);
+                { Seed = seed, LocalFaction = Faction.TreeSpirits, TimeoutMs = 10000 }, 0, MatchScenario.Build);
                 var sb = new LockstepSession(wb, linkB, new MatchConfig
-                { Seed = seed, LocalFaction = Faction.Humans, RemoteFaction = Faction.TreeSpirits, TimeoutMs = 10000 }, 1);
+                { Seed = seed, LocalFaction = Faction.Humans, TimeoutMs = 10000 }, 1, MatchScenario.Build);
                 var clock = Stopwatch.StartNew();
                 const int ticks = 400;
                 bool issued = false;
@@ -64,11 +64,13 @@ namespace WordCraft.Host
                     timeout.Token.ThrowIfCancellationRequested();
                     long now = clock.ElapsedMilliseconds;
                     sa.Update(now); sb.Update(now);
+                    wa = sa.World; wb = sb.World;
                     if (linkA.Failure != null || linkB.Failure != null) throw new Exception(linkA.Failure ?? linkB.Failure);
                     if (sa.State == SessionState.Stopped || sb.State == SessionState.Stopped)
                         throw new Exception(sa.StopReason ?? sb.StopReason);
                     if (!issued && sa.State == SessionState.Running && sb.State == SessionState.Running)
                     {
+                        if (wa.Hash() != wb.Hash()) throw new Exception("Negotiated starting worlds differ.");
                         for (int i = 0; i < wa.EntityCount; i++)
                         {
                             Entity e = wa.GetEntity(i);
