@@ -177,13 +177,18 @@ namespace WordCraft.View
             int hit = Field.Pointer(cam, screen, out Vector2 under)
                 ? runner.EntityAt(under, PickRadius, mineOnly: true)
                 : -1;
+            ApplyClick(hit, doubleClick, shift);
+        }
+
+        private void ApplyClick(int hit, bool doubleClick, bool shift)
+        {
             if (hit < 0)
             {
                 if (!shift) selected.Clear();
                 return;
             }
 
-            if (doubleClick)
+            if (doubleClick && runner.World.GetEntity(hit).Kind != EntityKind.Building)
             {
                 SelectVisibleKind(runner.World.GetEntity(hit), shift);
                 return;

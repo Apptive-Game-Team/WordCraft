@@ -17,12 +17,14 @@ namespace WordCraft.View
         Worker = 2,
         Building = 3,
         BuildMenu = 4,
+        GrowMenu = 5,
     }
 
     /// <summary>One cell of the card. Type None is an empty cell.</summary>
     public struct CardSlot
     {
         public string Label;
+        public string Description;
         public CommandType Type;
 
         /// <summary>
@@ -34,7 +36,7 @@ namespace WordCraft.View
 
         /// <summary>
         /// Which entry of <see cref="Produce"/>'s roster list this cell orders.
-        /// Produce reads it; Build still names entry 0 only (#111 opens that).
+        /// Produce and Build both read it.
         /// Research reads it as something else entirely: the row of the faction's
         /// upgrade table, which is the whole Arg of that command and has no role
         /// beside it. Zero on every cell that is neither, which packs to the same
@@ -179,13 +181,6 @@ namespace WordCraft.View
         };
 
         /// <summary>
-        /// The build submenu. Filled when the menu opens, because which buildings a
-        /// faction lists is roster data and Of() has only the kind to go on. One
-        /// array, so the card the keys fire is the card the HUD draws.
-        /// </summary>
-        private static readonly CardSlot[] buildMenu = new CardSlot[Cells];
-
-        /// <summary>
         /// Filled per faction, like the build submenu. A cell reading "Melee" says
         /// nothing about what walks out of the building; the roster name and the
         /// price do, and they are the two things a player decides on.
@@ -229,7 +224,8 @@ namespace WordCraft.View
                 case CardKind.Fighter: return Unit(fighter, fighterCard, AbilityMenu.FighterCells, world, peer, leadId, page);
                 case CardKind.Worker: return Unit(worker, workerCard, AbilityMenu.WorkerCells, world, peer, leadId, page);
                 case CardKind.Building: return Building(world, peer, lead, leadSlot, page);
-                case CardKind.BuildMenu: return buildMenu;
+                case CardKind.BuildMenu: return ReadyMenu(world, peer, BuildMenu(world.FactionOf(peer), page));
+                case CardKind.GrowMenu: return GrowthMenu(world, peer, lead, leadSlot, page);
                 default: return none;
             }
         }
@@ -256,6 +252,8 @@ namespace WordCraft.View
             if (world == null || leadId < 0) return card;
 
             Entity caster = world.GetEntity(leadId);
+            if (GrowthEntries(world.FactionOf(peer), caster.Role, caster.Slot).Count > 0)
+                card[6] = Cmd("Grow", CommandType.Grow);
             IReadOnlyList<AbilityMenu.Entry> actives = AbilityMenu.For(world.FactionOf(peer), caster.Role, caster.Slot);
             int pages = AbilityMenu.Pages(actives.Count, cells.Length);
             int shown = AbilityMenu.PageRange(actives.Count, cells.Length, page, out int first, out int length);
@@ -400,6 +398,8 @@ namespace WordCraft.View
         /// </summary>
         public static int PageCount(CardKind kind, Faction faction, Role lead, int leadSlot)
         {
+            if (kind == CardKind.BuildMenu) return ProductionMenu.Pages(BuildEntries(faction).Count);
+            if (kind == CardKind.GrowMenu) return ProductionMenu.Pages(GrowthEntries(faction, lead, leadSlot).Count);
             if (kind == CardKind.Fighter || kind == CardKind.Worker)
             {
                 return AbilityMenu.Pages(AbilityMenu.For(faction, lead, leadSlot).Count,
@@ -423,51 +423,86 @@ namespace WordCraft.View
                 case CardKind.Worker: return "worker";
                 case CardKind.Building: return lead == Role.Tech ? "research" : "produce";
                 case CardKind.BuildMenu: return "build  ·  esc to cancel";
+                case CardKind.GrowMenu: return "grow  ·  esc to cancel";
                 default: return "";
             }
         }
 
-        /// <summary>
-        /// Lays the submenu out for this faction and returns it. Bottom two rows,
-        /// keeping the top row where the worker card's own commands live, so the
-        /// submenu reads as an extension of the card rather than a new screen.
-        ///
-        /// Four to a row, so the five building roles take cells 4-8: four on row 1
-        /// and the fifth at the start of row 2. Eight cells are free and five are
-        /// used, which is why this menu has no page.
-        /// </summary>
-        // ponytail: every building the faction lists is shown live, whether or not
-        // the peer can afford it or has the tier for it; the simulation refuses the
-        // rest silently. Grey a cell against resources and TierOf the day players
-        // start learning the menu by being refused.
-        public static CardSlot[] BuildMenu(Faction faction)
-        {
-            for (int i = 0; i < Cells; i++) buildMenu[i] = Empty;
+        /// <summary>Every listed building entry, in role/slot order, across paged command cards.</summary>
+        private static string CompactName(string name) => name.Length <= 4 ? name : name.Substring(0, 3) + "…";
 
-            int cell = Cols; // row 1, under the worker's Move and Stop
-            for (int i = 0; i < buildings.Length && cell < Cells; i++)
+        public static List<CardSlot> BuildEntries(Faction faction)
+        {
+            var entries = new List<CardSlot>();
+            foreach (Role role in buildings)
+                for (int slot = 0; slot < FactionData.SlotCount(faction, role); slot++)
+                    if (FactionData.Has(faction, role, slot))
+                        entries.Add(new CardSlot {
+                            Label = CompactName(FactionData.Name(faction, role, slot)) + "\n" + FactionData.BuildCost(faction, role, slot),
+                            Description = FactionData.Name(faction, role, slot) + " · " + FactionData.BuildCost(faction, role, slot) + " mana · " + (FactionData.BuildTicks(faction, role, slot) / (float)World.TicksPerSecond).ToString("0.#") + "s",
+                            Type = CommandType.Build, Produce = role, Slot = slot
+                        });
+            return entries;
+        }
+
+        public static List<CardSlot> GrowthEntries(Faction faction, Role source, int sourceSlot)
+        {
+            var entries = new List<CardSlot>();
+            for (int i = 0; i < FactionData.GrowthTargetCount; i++)
             {
-                Role role = buildings[i];
-                if (!FactionData.Has(faction, role)) continue;
-                buildMenu[cell++] = new CardSlot
-                {
-                    // The price on the button, because a build menu that hides what
-                    // a thing costs is a menu the player has to learn by failing.
-                    //
-                    // The faction's own price, and entry 0's, which is the entry a
-                    // Build names (see CardSlot.Slot). #147 gave the roster its
-                    // first building prices that differ by faction — 굴절 기둥
-                    // 70, 인간 대포 55, 인간 마법 탑 60 — so the shared row this
-                    // read before is now a number the 차원 유랑종 and 인간 players
-                    // are never charged. The faction-free FactionData.BuildCost is
-                    // gone rather than merely unused here, so the next cell that
-                    // wants a price cannot reach for it by accident.
-                    Label = role + "\n" + FactionData.BuildCost(faction, role),
-                    Type = CommandType.Build,
-                    Produce = role,
-                };
+                var row = FactionData.GrowthTarget(i);
+                if (row.Faction != faction || row.Cost.FromRole != source || row.Cost.FromSlot != sourceSlot) continue;
+                entries.Add(new CardSlot { Type = CommandType.Grow, Produce = row.Role, Slot = row.Slot });
             }
-            return buildMenu;
+            return entries;
+        }
+
+        public static CardSlot[] BuildMenu(Faction faction, int page = 0) => MenuPage(BuildEntries(faction), page);
+
+        public static CardSlot[] GrowthMenu(World world, int peer, Role source, int sourceSlot, int page)
+        {
+            Faction faction = world.FactionOf(peer);
+            List<CardSlot> entries = GrowthEntries(faction, source, sourceSlot);
+            for (int i = 0; i < entries.Count; i++)
+            {
+                CardSlot entry = entries[i];
+                GrowthCost cost = FactionData.Growth(faction, entry.Produce, entry.Slot);
+                entry.Label = CompactName(FactionData.Name(faction, entry.Produce, entry.Slot)) + "\n" + cost.Resources;
+                entry.Description = FactionData.Name(faction, entry.Produce, entry.Slot) + " · " + cost.Resources + " mana · " +
+                    (world.GrowthTicksFor(peer, entry.Produce, entry.Slot) / (float)World.TicksPerSecond).ToString("0.#") + "s";
+                entries[i] = entry;
+            }
+            return ReadyMenu(world, peer, MenuPage(entries, page));
+        }
+
+        public static CardSlot[] ReadyMenu(World world, int peer, CardSlot[] card)
+        {
+            Faction faction = world.FactionOf(peer);
+            for (int i = 0; i < card.Length; i++)
+            {
+                if (card[i].Type != CommandType.Build && card[i].Type != CommandType.Grow) continue;
+                Role role = card[i].Produce;
+                int slot = card[i].Slot;
+                int tier = FactionData.Tier(faction, role, slot);
+                var needs = FactionData.Prerequisite(faction, role, slot);
+                bool ready = world.TierOf(peer) >= tier && (needs.Role == Role.None || world.HasStanding(peer, needs.Role, needs.Slot));
+                int cost = card[i].Type == CommandType.Build ? FactionData.BuildCost(faction, role, slot) : FactionData.Growth(faction, role, slot).Resources;
+                card[i].Description += "\nRequires T" + tier + (needs.Role == Role.None ? "" : " · " + FactionData.Name(faction, needs.Role, needs.Slot));
+                if (!ready) card[i].Description += " · LOCKED";
+                else if (world.GetResources(peer) < cost) card[i].Description += " · Not enough mana";
+                card[i].Locked = !ready || world.GetResources(peer) < cost;
+            }
+            return card;
+        }
+
+        public static CardSlot[] MenuPage(List<CardSlot> entries, int page)
+        {
+            var card = new CardSlot[Cells];
+            int shown = ProductionMenu.PageRange(entries.Count, page, out int first, out int length);
+            for (int i = 0; i < length; i++) card[Cols + i] = entries[first + i];
+            int pages = ProductionMenu.Pages(entries.Count);
+            if (pages > 1) card[11] = new CardSlot { More = true, Label = "More\n" + (shown + 1) + "/" + pages };
+            return card;
         }
 
         public static CardKind KindOf(Entity e)

@@ -34,6 +34,8 @@ namespace WordCraft.View
             MinimapHidesUnseenChanges();
             BlastRingsDoNotAllocateShards();
             CancelledApproachesNeverBurst();
+            PlayerRosterControlsCheck.Run((ok, why) => Check(ok, why));
+            SoloPauseChecks.Check((ok, why) => Check(ok, why));
 
             ulong final = FinalHash();
             Debug.Log("final hash after " + ScriptedLog.Ticks + " ticks: 0x" + final.ToString("X16"));
