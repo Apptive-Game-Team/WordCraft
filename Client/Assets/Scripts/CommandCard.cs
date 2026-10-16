@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using WordCraft.Sim;
@@ -72,6 +73,23 @@ namespace WordCraft.View
         /// the rule the build menu follows.
         /// </summary>
         public bool Maxed;
+
+        /// <summary>
+        /// True on a Cast cell whose unlock research the peer has not bought. The
+        /// cell stays on the card, drawn on a Void face like a maxed research row
+        /// (Hud.Card), and Orders.Run refuses it so the key means what the button
+        /// does. Cast reads Slot as the row of the faction's ability table, which
+        /// is the whole Arg of that command.
+        /// </summary>
+        public bool Locked;
+
+        /// <summary>
+        /// How much of a Cast cell's wait is left, 1 for all of it and 0 for none
+        /// (AbilityMenu.Remaining). Drawn as a Meter under the cell. The cell is
+        /// not dead while it counts down: the representative's clock is not the
+        /// whole selection's, and refusing a Cast is the simulation's job.
+        /// </summary>
+        public float Cooldown;
     }
 
     /// <summary>
@@ -109,7 +127,8 @@ namespace WordCraft.View
         // The column convention every card below obeys, so a cell means the same
         // thing whatever is selected. Columns 0-2 are the old 3x3 and keep their
         // meaning; column 3 (cells 3, 7, 11) is new and stays empty on every card
-        // except where a card says otherwise.
+        // except where a card says otherwise. On the two unit cards it is where
+        // the body's actives go (Unit below), and so is the free part of row 2.
         //   cell 0  (R)  point at the ground   Move, or where produced units walk to
         //   cell 1  (T)  cancel                Stop, or take one off the queue
         //   cell 2  (Y)  stand and shoot       Hold; on a building, the rest of row 0
@@ -176,6 +195,15 @@ namespace WordCraft.View
         private static readonly CardSlot[] none = new CardSlot[Cells];
 
         /// <summary>
+        /// The fighter and worker tables above with the representative's actives
+        /// laid over their free cells. Filled per call, like the building card,
+        /// because which abilities a body holds is roster data and the cooldown is
+        /// its own state. The tables stay as they were drawn.
+        /// </summary>
+        private static readonly CardSlot[] fighterCard = new CardSlot[Cells];
+        private static readonly CardSlot[] workerCard = new CardSlot[Cells];
+
+        /// <summary>
         /// The card for this selection kind, laid out for this faction. Always
         /// Cells long. The HUD and the keys both get it through Orders.Card, so
         /// what a key fires is always what the button under it says. Page is the
@@ -185,21 +213,76 @@ namespace WordCraft.View
         /// where every other building lists production, and each building entry
         /// lists only what it makes or researches.
         ///
+        /// LeadId is the entity itself, which only the two unit cards read: an
+        /// ability cell shows that body's cooldown, and a roster entry alone is
+        /// not a body. -1 when nothing qualifies.
+        ///
         /// The world and the peer are here because a research cell says the level
         /// the peer has reached and the price of the next one, and those are
         /// simulation state. Both are unread by every other card, so a caller with
         /// no match yet may pass null for the world with CardKind.None.
         /// </summary>
-        public static CardSlot[] Of(CardKind kind, World world, int peer, Role lead, int leadSlot, int page)
+        public static CardSlot[] Of(CardKind kind, World world, int peer, int leadId, Role lead, int leadSlot, int page)
         {
             switch (kind)
             {
-                case CardKind.Fighter: return fighter;
-                case CardKind.Worker: return worker;
+                case CardKind.Fighter: return Unit(fighter, fighterCard, AbilityMenu.FighterCells, world, peer, leadId, page);
+                case CardKind.Worker: return Unit(worker, workerCard, AbilityMenu.WorkerCells, world, peer, leadId, page);
                 case CardKind.Building: return Building(world, peer, lead, leadSlot, page);
                 case CardKind.BuildMenu: return buildMenu;
                 default: return none;
             }
+        }
+
+        /// <summary>
+        /// A unit card with its representative's actives laid into the cells
+        /// <see cref="AbilityMenu"/> names, in table order: the fourth column
+        /// first, then row 2. A body that holds none gets the table as drawn, so
+        /// every faction's Move, Stop and Attack stay where they were.
+        ///
+        /// A body holding more actives than the cells take pages them the way the
+        /// production list does: cell 11 becomes More and the other ability cells
+        /// hold the page. No body does
+        /// today (each holds one), and Replay/AbilityMenuChecks.cs fails the day
+        /// one would need more than AbilityMenu.MaxPages.
+        ///
+        /// Every cell is a live Cast cell except the one the peer has not
+        /// unlocked. The cost is on the label, and a shortfall is left to the
+        /// simulation to refuse, the rule the build menu follows.
+        /// </summary>
+        private static CardSlot[] Unit(CardSlot[] basis, CardSlot[] card, int[] cells, World world, int peer, int leadId, int page)
+        {
+            Array.Copy(basis, card, Cells);
+            if (world == null || leadId < 0) return card;
+
+            Entity caster = world.GetEntity(leadId);
+            IReadOnlyList<AbilityMenu.Entry> actives = AbilityMenu.For(world.FactionOf(peer), caster.Role, caster.Slot);
+            int pages = AbilityMenu.Pages(actives.Count, cells.Length);
+            int shown = AbilityMenu.PageRange(actives.Count, cells.Length, page, out int first, out int length);
+
+            // A paging list gives up cell 11 to More, the cell the building card
+            // puts it on, and fills the other cells in order. A list that fits
+            // uses all of them, so the first three keep U J M.
+            int cell = 0;
+            for (int i = 0; i < length; i++)
+            {
+                if (pages > 1 && cells[cell] == AbilityMenu.MoreCell) cell++;
+                AbilityMenu.Entry active = actives[first + i];
+                card[cells[cell++]] = new CardSlot
+                {
+                    Label = AbilityMenu.Label(world, peer, caster, active),
+                    Type = CommandType.Cast,
+                    Slot = active.Index,
+                    Locked = AbilityMenu.Locked(world, peer, active.Row),
+                    Cooldown = AbilityMenu.Remaining(caster, active.Row),
+                };
+            }
+
+            if (pages > 1)
+            {
+                card[AbilityMenu.MoreCell] = new CardSlot { Label = "More\n" + (shown + 1) + "/" + pages, More = true };
+            }
+            return card;
         }
 
         /// <summary>
@@ -309,15 +392,23 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// How many pages the list this building shows takes: the faction's
-        /// research for a Tech building, its production for any other. Orders reads
-        /// it to know where More wraps; the card itself only needs the count to
-        /// decide whether it has a More at all.
+        /// How many pages the list this card shows takes: the actives the body
+        /// holds for a unit card, the faction's research for a Tech building, its
+        /// production for any other building. Orders reads it to know where More
+        /// wraps; the card itself only needs the count to decide whether it has a
+        /// More at all.
         /// </summary>
-        public static int PageCount(Faction faction, Role lead, int leadSlot) =>
-            ProductionMenu.Pages(lead == Role.Tech
+        public static int PageCount(CardKind kind, Faction faction, Role lead, int leadSlot)
+        {
+            if (kind == CardKind.Fighter || kind == CardKind.Worker)
+            {
+                return AbilityMenu.Pages(AbilityMenu.For(faction, lead, leadSlot).Count,
+                    (kind == CardKind.Worker ? AbilityMenu.WorkerCells : AbilityMenu.FighterCells).Length);
+            }
+            return ProductionMenu.Pages(lead == Role.Tech
                 ? ResearchMenu.For(faction, lead, leadSlot).Count
                 : ProductionMenu.For(faction, lead, leadSlot).Count);
+        }
 
         /// <summary>
         /// What the card is for, drawn over it so the player is never guessing. A
