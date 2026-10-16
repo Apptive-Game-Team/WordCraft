@@ -160,6 +160,104 @@ namespace WordCraft.Sim
         /// rather than by a faction test written somewhere else.
         /// </summary>
         public bool Grown;
+
+        /// <summary>
+        /// The entry a body has to be to grow into this one, docs/TECH-TREE.md
+        /// M6: (Worker, 0) for the rows a 풀씨 정령 grows into, a unit entry for
+        /// 폭풍 기수, 번개새 무리 and 거대 덩쿨.
+        /// </summary>
+        public Role FromRole;
+        public int FromSlot;
+    }
+
+    /// <summary>
+    /// One roster entry that emits free bodies on a clock: docs/TECH-TREE.md
+    /// 데이터 모델 확장 M8. What it emits, how often, how many it keeps alive,
+    /// and which research rows move the clock and the cap. Default on the
+    /// struct has Spawns false, so an entry nobody wrote emits nothing.
+    ///
+    /// Static, like every table in FactionData. What a spawner has done so far
+    /// is the state it already carries — SpawnCooldown, OffspringCount, and
+    /// each child's ParentId — so a second spawner costs no hashed field.
+    /// </summary>
+    public struct SpawnerRow
+    {
+        public Faction Faction;
+        public Role Role;
+        public int Slot;
+
+        /// <summary>The entry each emission is, owned by the spawner's owner.</summary>
+        public Role ChildRole;
+        public int ChildSlot;
+
+        /// <summary>Whole ticks between one emission and the next.</summary>
+        public int Ticks;
+
+        /// <summary>Most children of one spawner alive at once.</summary>
+        public int Cap;
+
+        /// <summary>The research row that shortens Ticks, or None.</summary>
+        public UpgradeEffect TicksEffect;
+        public int TicksResearched;
+
+        /// <summary>The research row that raises Cap, or None.</summary>
+        public UpgradeEffect CapEffect;
+        public int CapResearched;
+
+        /// <summary>Whether this is a row at all. False on the default struct.</summary>
+        public bool Spawns;
+    }
+
+    /// <summary>
+    /// One roster entry that takes part in 차원 유랑종 도착: docs/TECH-TREE.md
+    /// 데이터 모델 확장 M9. A 통로 is a building whose queue arrives at a point
+    /// (Passage); an anchor is a building or a body that lends a radius around
+    /// itself (Radius, in whole cells, 0 for none). Default on the struct is
+    /// neither, so an entry nobody wrote takes no part.
+    /// </summary>
+    public struct ArrivalRow
+    {
+        public Faction Faction;
+        public Role Role;
+        public int Slot;
+
+        /// <summary>Whether this building keeps an arrival point for its queue.</summary>
+        public bool Passage;
+
+        /// <summary>The radius this entry lends, in whole cells. 0 lends none.</summary>
+        public int Radius;
+
+        /// <summary>The research row that widens Radius, or None.</summary>
+        public UpgradeEffect RadiusEffect;
+        public int RadiusResearched;
+    }
+
+    /// <summary>
+    /// A building whose queue is filled for free by deaths around it rather than
+    /// by Produce: docs/TECH-TREE.md M10 FreeQueue, 세계수 정령 씨앗 요람. When one
+    /// of its owner's units dies within Radius, one Give body joins its queue at
+    /// no cost. A queue that was never paid for is never refunded, so
+    /// CancelProduction is refused on it. Default on the struct has Free false.
+    /// </summary>
+    public struct FreeQueueRow
+    {
+        public Faction Faction;
+        public Role Role;
+        public int Slot;
+
+        /// <summary>The entry each death puts on the queue.</summary>
+        public Role GiveRole;
+        public int GiveSlot;
+
+        /// <summary>How far from the building a death still counts, in whole cells.</summary>
+        public int Radius;
+
+        /// <summary>The research row that widens Radius, or None.</summary>
+        public UpgradeEffect RadiusEffect;
+        public int RadiusResearched;
+
+        /// <summary>Whether this is a row at all. False on the default struct.</summary>
+        public bool Free;
     }
 
     /// <summary>
@@ -238,6 +336,19 @@ namespace WordCraft.Sim
         ArcaneRiderSpeed = 32,
         BindingRange = 33,
         BindingArmor = 34,
+
+        // docs/TECH-TREE.md 연구 행 배치, 묶음 4: one number of a mechanic
+        // table row. Which row and what value is the table itself
+        // (FactionData.spawners, arrivals, freeQueues).
+
+        // 지옥불 군단: 잿불 새끼 상한 3 → 4.
+        BroodCap = 35,
+
+        // 차원 유랑종: 위상 닻 도착 반경 3 → 4칸.
+        PhaseAnchorRadius = 36,
+
+        // 세계수 정령: 씨앗 요람 반경 8 → 12칸.
+        SeedCradleRadius = 37,
     }
 
     /// <summary>
@@ -365,9 +476,13 @@ namespace WordCraft.Sim
         /// opening fighters are the faction's first named, armed roster
         /// entries instead of Melee 0 and Ranged 0. A peer on 33 starts 인간
         /// with a nameless body that a peer on 34 replaces, and a site shot at
-        /// stands at different hp on the next tick.
+        /// stands at different hp on the next tick. 35 is docs/TECH-TREE.md 묶음
+        /// 4: growth, spawners, arrival anchors, the 씨앗 요람 queue and debris
+        /// read tables instead of entry 0 constants, and three research rows land.
+        /// A peer on 34 refuses a Grow from 잎날 정령 into 폭풍 기수 that a peer on
+        /// 35 charges 60 for, and the banks differ by 60 on the tick it is given.
         /// </summary>
-        public const uint ContentVersion = 34;
+        public const uint ContentVersion = 35;
 
         public const int FactionCount = 6;
         public const int RoleCount = 10;
@@ -618,7 +733,7 @@ namespace WordCraft.Sim
 
             // 지옥불 군단장의 자손. Airborne, shorter reach and lighter hit than the
             // shared ranged row. Free and spawned rather than produced, which is
-            // what productionOverrides below says and World.WarlordSpawnSystem does.
+            // what productionOverrides below says and World.SpawnerSystem does.
             // Entry 0 only: 균열 파수병 is entry 1 and holds the ground on the
             // shared ranged row, which is the whole reason this key names a slot.
             (Faction.Hellfire, Role.Ranged, 0,
@@ -1210,8 +1325,8 @@ namespace WordCraft.Sim
             new ProductionCost { Resources = resources, Ticks = ticks, Produced = true };
 
         /// <summary>
-        /// 세계수 정령 성장: every roster entry a worker of some faction may grow
-        /// into, and what it costs. A whole table rather than a shared row and a
+        /// 세계수 정령 성장: every roster entry a body of some faction may grow
+        /// into, what it grows from, and what it costs. A whole table rather than a shared row and a
         /// list of overrides, because growth is not a thing every faction does a
         /// little differently — it is a thing one faction does at all. A shared row
         /// would have to say "no" fifty-eight times to say "yes" twice.
@@ -1224,21 +1339,29 @@ namespace WordCraft.Sim
         private static readonly (Faction Faction, Role Role, int Slot, GrowthCost Cost)[] growthTargets =
         {
             // 덩쿨 정령. 30자원, 40틱.
-            (Faction.TreeSpirits, Role.Ranged, 1, Grow(30, 40)),
+            (Faction.TreeSpirits, Role.Ranged, 1, Grow(30, 40, Role.Worker, 0)),
             // 고목 수호자. 50자원, 60틱.
-            (Faction.TreeSpirits, Role.Melee, 1, Grow(50, 60)),
+            (Faction.TreeSpirits, Role.Melee, 1, Grow(50, 60, Role.Worker, 0)),
 
             // 세계수 정령, docs/TECH-TREE.md 묶음 3.
             // 찌릿쥐. 15자원, 20틱.
-            (Faction.TreeSpirits, Role.Melee, 2, Grow(15, 20)),
+            (Faction.TreeSpirits, Role.Melee, 2, Grow(15, 20, Role.Worker, 0)),
             // 도깨비불. 40자원, 50틱.
-            (Faction.TreeSpirits, Role.Signature, 1, Grow(40, 50)),
+            (Faction.TreeSpirits, Role.Signature, 1, Grow(40, 50, Role.Worker, 0)),
             // 덩굴 군집. 45자원, 60틱.
-            (Faction.TreeSpirits, Role.Signature, 2, Grow(45, 60)),
+            (Faction.TreeSpirits, Role.Signature, 2, Grow(45, 60, Role.Worker, 0)),
+
+            // 세계수 정령, docs/TECH-TREE.md 묶음 4 (M6): a unit growing into a unit.
+            // 잎날 정령 → 폭풍 기수. 60자원, 60틱.
+            (Faction.TreeSpirits, Role.Melee, 3, Grow(60, 60, Role.Melee, 0)),
+            // 번개 정령 → 번개새 무리. 60자원, 50틱.
+            (Faction.TreeSpirits, Role.Ranged, 2, Grow(60, 50, Role.Ranged, 0)),
+            // 덩쿨 정령 → 거대 덩쿨. 100자원, 120틱. Speed 0, so it roots where it grew.
+            (Faction.TreeSpirits, Role.Ranged, 3, Grow(100, 120, Role.Ranged, 1)),
         };
 
-        private static GrowthCost Grow(int resources, int ticks) =>
-            new GrowthCost { Resources = resources, Ticks = ticks, Grown = true };
+        private static GrowthCost Grow(int resources, int ticks, Role fromRole, int fromSlot) =>
+            new GrowthCost { Resources = resources, Ticks = ticks, Grown = true, FromRole = fromRole, FromSlot = fromSlot };
 
         /// <summary>
         /// What growing into one entry costs and how long it takes. An entry no
@@ -1272,13 +1395,180 @@ namespace WordCraft.Sim
             growthTargets[index];
 
         /// <summary>
+        /// Every roster entry that emits free bodies on a clock, docs/TECH-TREE.md
+        /// M8. 지옥불 군단장 carries the numbers it has always had — 100 ticks and
+        /// five 자손, the two World constants — and 산란 악마 is the second row:
+        /// a 잿불 새끼 every 120 ticks, three alive. Walked in declaration order,
+        /// never through a keyed collection, for the reason
+        /// <see cref="growthTargets"/> is.
+        ///
+        /// Each row names its own research. 군단 확장 and 산란 가속 move the
+        /// warlord's row and nothing else; 산란 상한 moves the 산란 악마's cap.
+        /// </summary>
+        private static readonly SpawnerRow[] spawners =
+        {
+            // 지옥불 군단장 → 자손. 100틱, 5기. 연구: 70틱, 7기.
+            Spawner(Faction.Hellfire, Role.Signature, 0, Role.Ranged, 0,
+                World.WarlordSpawnTicks, World.WarlordOffspring,
+                UpgradeEffect.OffspringPeriod, World.WarlordSpawnTicksResearched,
+                UpgradeEffect.OffspringCap, World.WarlordOffspringResearched),
+            // 산란 악마 → 잿불 새끼. 120틱, 3기. 연구: 산란 상한 4기.
+            Spawner(Faction.Hellfire, Role.Signature, 1, Role.Melee, 3,
+                120, 3,
+                UpgradeEffect.None, 0,
+                UpgradeEffect.BroodCap, 4),
+        };
+
+        private static SpawnerRow Spawner(Faction faction, Role role, int slot, Role childRole, int childSlot,
+            int ticks, int cap, UpgradeEffect ticksEffect, int ticksResearched, UpgradeEffect capEffect, int capResearched) =>
+            new SpawnerRow
+            {
+                Faction = faction, Role = role, Slot = slot,
+                ChildRole = childRole, ChildSlot = childSlot,
+                Ticks = ticks, Cap = cap,
+                TicksEffect = ticksEffect, TicksResearched = ticksResearched,
+                CapEffect = capEffect, CapResearched = capResearched,
+                Spawns = true,
+            };
+
+        /// <summary>
+        /// The spawner row of one entry, or a default row with Spawns false. A
+        /// linear scan in declaration order.
+        /// </summary>
+        public static SpawnerRow Spawner(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < spawners.Length; i++)
+            {
+                SpawnerRow row = spawners[i];
+                if (row.Faction == faction && row.Role == role && row.Slot == slot) return row;
+            }
+            return new SpawnerRow();
+        }
+
+        /// <summary>
+        /// Every roster entry that is a 통로 or an anchor, docs/TECH-TREE.md M9 and
+        /// 도착 규칙. 통로 and 깊은 통로 keep an arrival point; 굴절 기둥 and 경계
+        /// 운반자 lend 6 cells (8 under 도착 반경, the #164 row, which reaches these
+        /// two and no other), 위상 닻 3 (4 under its own row), 떠도는 섬 4, and 틈새
+        /// 포대 is written down at 0 so the table says it lends nothing. Walked in
+        /// declaration order, for the reason <see cref="growthTargets"/> is.
+        /// </summary>
+        private static readonly ArrivalRow[] arrivals =
+        {
+            // 통로
+            Arrival(Faction.Driftworlds, Role.Production, 0, true, 0, UpgradeEffect.None, 0),
+            // 깊은 통로
+            Arrival(Faction.Driftworlds, Role.Production, 1, true, 0, UpgradeEffect.None, 0),
+            // 굴절 기둥. 6칸, 도착 반경 8칸.
+            Arrival(Faction.Driftworlds, Role.Defense, 0, false, 6, UpgradeEffect.ArrivalRadius, 8),
+            // 경계 운반자. 이동식 6칸, 도착 반경 8칸.
+            Arrival(Faction.Driftworlds, Role.Signature, 0, false, 6, UpgradeEffect.ArrivalRadius, 8),
+            // 위상 닻. 3칸, 위상 닻 반경 4칸.
+            Arrival(Faction.Driftworlds, Role.Defense, 1, false, 3, UpgradeEffect.PhaseAnchorRadius, 4),
+            // 떠도는 섬. 공중 4칸.
+            Arrival(Faction.Driftworlds, Role.Signature, 1, false, 4, UpgradeEffect.None, 0),
+            // 틈새 포대. 도착 반경 없음.
+            Arrival(Faction.Driftworlds, Role.Defense, 2, false, 0, UpgradeEffect.None, 0),
+        };
+
+        private static ArrivalRow Arrival(Faction faction, Role role, int slot, bool passage, int radius,
+            UpgradeEffect radiusEffect, int radiusResearched) =>
+            new ArrivalRow
+            {
+                Faction = faction, Role = role, Slot = slot,
+                Passage = passage, Radius = radius,
+                RadiusEffect = radiusEffect, RadiusResearched = radiusResearched,
+            };
+
+        /// <summary>
+        /// The arrival row of one entry, or a default row that is neither a 통로
+        /// nor an anchor. A linear scan in declaration order.
+        /// </summary>
+        public static ArrivalRow Arrival(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < arrivals.Length; i++)
+            {
+                ArrivalRow row = arrivals[i];
+                if (row.Faction == faction && row.Role == role && row.Slot == slot) return row;
+            }
+            return new ArrivalRow();
+        }
+
+        /// <summary>
+        /// Every building with a free queue, docs/TECH-TREE.md M10 and 씨앗 귀환:
+        /// 씨앗 요람 gives back a 풀씨 정령 for a 세계수 정령 unit that dies within 8
+        /// cells, 12 under 씨앗 요람 반경. The body comes off the queue on 풀씨 정령's own production clock
+        /// (30 ticks), the number the document's 씨앗 귀환 row gives. Walked in
+        /// declaration order, for the reason <see cref="growthTargets"/> is.
+        /// </summary>
+        private static readonly FreeQueueRow[] freeQueues =
+        {
+            // 씨앗 요람 → 풀씨 정령. 반경 8칸.
+            new FreeQueueRow
+            {
+                Faction = Faction.TreeSpirits, Role = Role.Production, Slot = 1,
+                GiveRole = Role.Worker, GiveSlot = 0,
+                Radius = 8, RadiusEffect = UpgradeEffect.SeedCradleRadius, RadiusResearched = 12,
+                Free = true,
+            },
+        };
+
+        /// <summary>
+        /// The free queue row of one building entry, or a default row with Free
+        /// false. A linear scan in declaration order.
+        /// </summary>
+        public static FreeQueueRow FreeQueue(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < freeQueues.Length; i++)
+            {
+                FreeQueueRow row = freeQueues[i];
+                if (row.Faction == faction && row.Role == role && row.Slot == slot) return row;
+            }
+            return new FreeQueueRow();
+        }
+
+        /// <summary>
+        /// The cells a fallen 돌 골렘 unit leaves debris on, as offsets from the cell
+        /// it fell on, for the entries that leave more than that one cell:
+        /// docs/TECH-TREE.md 잔해 규칙. 고대 골렘 blocks its own cell and the cells
+        /// either side of it on x (거대 잔해, 3칸). Every other entry is
+        /// <see cref="OneRemnantCell"/>. Walked in declaration order.
+        /// </summary>
+        private static readonly (Faction Faction, Role Role, int Slot, (int Dx, int Dy)[] Cells)[] remnantShapes =
+        {
+            // 고대 골렘: 자기 셀과 x−1, x+1.
+            (Faction.RockGolems, Role.Signature, 0, new[] { (-1, 0), (0, 0), (1, 0) }),
+        };
+
+        private static readonly (int Dx, int Dy)[] OneRemnantCell = { (0, 0) };
+
+        /// <summary>How many cells this entry's debris covers.</summary>
+        public static int RemnantCellCount(Faction faction, Role role, int slot) =>
+            RemnantShape(faction, role, slot).Length;
+
+        /// <summary>One cell of this entry's debris, as an offset from the cell it fell on.</summary>
+        public static (int Dx, int Dy) RemnantCell(Faction faction, Role role, int slot, int index) =>
+            RemnantShape(faction, role, slot)[index];
+
+        private static (int Dx, int Dy)[] RemnantShape(Faction faction, Role role, int slot)
+        {
+            for (int i = 0; i < remnantShapes.Length; i++)
+            {
+                var row = remnantShapes[i];
+                if (row.Faction == faction && row.Role == role && row.Slot == slot) return row.Cells;
+            }
+            return OneRemnantCell;
+        }
+
+        /// <summary>
         /// The most rows any faction's upgrade table holds. Sizes the per-peer
         /// level array World hashes, so a faction given a ninth row has to move
         /// this too, and the type load refuses a table that outgrows it. Eight
         /// since docs/TECH-TREE.md 묶음 3: 세계수 정령, 차원 유랑종 and 인간 hold
-        /// eight rows each.
+        /// eight rows each. Nine since 묶음 4 (#197): 씨앗 요람 반경 and 위상 닻
+        /// 반경 are the ninth rows of 세계수 정령 and 차원 유랑종.
         /// </summary>
-        public const int MaxUpgrades = 8;
+        public const int MaxUpgrades = 9;
 
         /// <summary>
         /// What level 1 of 공격력 and 방어력 costs and how long a level takes. The
@@ -1364,11 +1654,16 @@ namespace WordCraft.Sim
             (Faction.TreeSpirits, ResearchRow("거대 덩쿨 사거리", 150, 200, 3, UpgradeEffect.GiantVineRange, (Role.Tech, 0), NoBuilding)),
             (Faction.TreeSpirits, ResearchRow("번개새 공격 주기", 100, 160, 3, UpgradeEffect.ThunderBirdAttackTicks, (Role.Tech, 1), NoBuilding)),
             (Faction.TreeSpirits, ResearchRow("잎날 속도", 100, 160, 2, UpgradeEffect.LeafbladeSpeed, (Role.Tech, 2), NoBuilding)),
+            // docs/TECH-TREE.md 묶음 4. 씨앗 귀환 반경 8 → 12칸, read off the free
+            // queue table. Needs a 씨앗 요람 standing.
+            (Faction.TreeSpirits, ResearchRow("씨앗 요람 반경", 100, 160, 3, UpgradeEffect.SeedCradleRadius, (Role.Tech, 0), (Role.Production, 1))),
 
             // 지옥불 군단, docs/TECH-TREE.md 묶음 3.
             (Faction.Hellfire, ResearchRow("용암 투석 사거리", 150, 200, 3, UpgradeEffect.LavaCatapultRange, (Role.Tech, 0), NoBuilding)),
             (Faction.Hellfire, ResearchRow("재날개 공격 주기", 100, 160, 3, UpgradeEffect.AshWingAttackTicks, (Role.Tech, 0), NoBuilding)),
             (Faction.Hellfire, ResearchRow("갑각 경화", 150, 200, 3, UpgradeEffect.HardenedCarapace, (Role.Tech, 1), (Role.Tech, 0))),
+            // docs/TECH-TREE.md 묶음 4. 잿불 새끼 상한 3 → 4, read off the spawner table.
+            (Faction.Hellfire, ResearchRow("산란 상한", 100, 160, 2, UpgradeEffect.BroodCap, (Role.Tech, 1), NoBuilding)),
 
             // 물 슬라임, docs/TECH-TREE.md 묶음 3.
             (Faction.WaterSlimes, ResearchRow("물결 궁수 사거리", 125, 200, 2, UpgradeEffect.ArcherRange, (Role.Tech, 1), NoBuilding)),
@@ -1384,6 +1679,8 @@ namespace WordCraft.Sim
             (Faction.Driftworlds, ResearchRow("덩쿨편 사거리", 75, 120, 2, UpgradeEffect.VineShardRange, (Role.Tech, 1), NoBuilding)),
             (Faction.Driftworlds, ResearchRow("틈새 포대 사거리", 100, 160, 2, UpgradeEffect.RiftBatteryRange, (Role.Tech, 1), NoBuilding)),
             (Faction.Driftworlds, ResearchRow("도주 가속", 100, 160, 2, UpgradeEffect.FleeSpeed, (Role.Tech, 1), NoBuilding)),
+            // docs/TECH-TREE.md 묶음 4. 위상 닻 도착 반경 3 → 4칸, read off the arrival table.
+            (Faction.Driftworlds, ResearchRow("위상 닻 반경", 100, 160, 2, UpgradeEffect.PhaseAnchorRadius, (Role.Tech, 1), NoBuilding)),
 
             // 인간 마법 문명, docs/TECH-TREE.md 묶음 3.
             (Faction.Humans, ResearchRow("석궁 사거리", 75, 120, 3, UpgradeEffect.CrossbowRange, (Role.Tech, 0), NoBuilding)),
@@ -1712,6 +2009,114 @@ namespace WordCraft.Sim
                         "entryUpgrades gives " + faction + " " + role + " " + slot + " two " + stat + " values");
                 }
             }
+
+            RequireMechanicTables();
+        }
+
+        /// <summary>
+        /// The mechanic tables of docs/TECH-TREE.md 묶음 4, checked the way the
+        /// tech tree tables above are: every entry they name is fielded, and every
+        /// research row they read is one the faction can research. Called from the
+        /// static constructor.
+        /// </summary>
+        private static void RequireMechanicTables()
+        {
+            for (int i = 0; i < spawners.Length; i++)
+            {
+                SpawnerRow row = spawners[i];
+                RequireFielded(row.Faction, row.Role, row.Slot, "spawners");
+                RequireFielded(row.Faction, row.ChildRole, row.ChildSlot, "spawners");
+                Require(!IsBuilding(row.Role) && !IsBuilding(row.ChildRole), "spawners row " + i + " names a building");
+                Require(row.Ticks > 0 && row.Cap > 0, "spawners row " + i + " never emits");
+                RequireResearchable(row.Faction, row.TicksEffect, "spawners");
+                RequireResearchable(row.Faction, row.CapEffect, "spawners");
+                for (int j = 0; j < i; j++)
+                {
+                    Require(spawners[j].Faction != row.Faction || spawners[j].Role != row.Role || spawners[j].Slot != row.Slot,
+                        "spawners lists " + row.Faction + " " + row.Role + " " + row.Slot + " twice");
+                }
+            }
+            RequireArrivals();
+            RequireGrowthSources();
+            RequireFreeQueues();
+            for (int i = 0; i < remnantShapes.Length; i++)
+            {
+                var row = remnantShapes[i];
+                RequireFielded(row.Faction, row.Role, row.Slot, "remnantShapes");
+                Require(!IsBuilding(row.Role) && row.Cells.Length > 0, "remnantShapes row " + i + " drops nothing");
+            }
+        }
+
+        private static void RequireGrowthSources()
+        {
+            for (int i = 0; i < growthTargets.Length; i++)
+            {
+                var (faction, role, slot, cost) = growthTargets[i];
+                RequireFielded(faction, role, slot, "growthTargets");
+                RequireFielded(faction, cost.FromRole, cost.FromSlot, "growthTargets");
+                Require(!IsBuilding(role) && !IsBuilding(cost.FromRole), "growthTargets row " + i + " names a building");
+                Require(cost.FromRole != role || cost.FromSlot != slot, "growthTargets row " + i + " grows into itself");
+                // A spawner's clock is armed in SpawnUnit, which a growth never
+                // passes through, so a body that grew into one would never emit.
+                Require(!Spawner(faction, role, slot).Spawns, "growthTargets row " + i + " grows into a spawner");
+            }
+        }
+
+        private static void RequireFreeQueues()
+        {
+            for (int i = 0; i < freeQueues.Length; i++)
+            {
+                FreeQueueRow row = freeQueues[i];
+                RequireFielded(row.Faction, row.Role, row.Slot, "freeQueues");
+                RequireFielded(row.Faction, row.GiveRole, row.GiveSlot, "freeQueues");
+                Require(IsBuilding(row.Role) && !IsBuilding(row.GiveRole), "freeQueues row " + i + " is not a building giving a body");
+                Require(Production(row.Faction, row.GiveRole, row.GiveSlot).Ticks > 0, "freeQueues row " + i + " gives an untimed body");
+                Require(row.Radius > 0, "freeQueues row " + i + " has no radius");
+                // Nothing may be produced at a free-queue building: its queue holds
+                // only the free body, so a cancel never has a paid order to refund
+                // and ReturnSeed never meets a queue of another entry.
+                for (int r = 0; r < RoleCount; r++)
+                {
+                    var role = (Role)r;
+                    if (IsBuilding(role)) continue;
+                    for (int slot = 0; slot < SlotCount(row.Faction, role); slot++)
+                    {
+                        Require(!IsProducedAt(row.Faction, role, slot, row.Role, row.Slot),
+                            "freeQueues row " + i + " is a building " + role + " " + slot + " is produced at");
+                    }
+                }
+                RequireResearchable(row.Faction, row.RadiusEffect, "freeQueues");
+            }
+        }
+
+        private static void RequireArrivals()
+        {
+            for (int i = 0; i < arrivals.Length; i++)
+            {
+                ArrivalRow row = arrivals[i];
+                RequireFielded(row.Faction, row.Role, row.Slot, "arrivals");
+                Require(!row.Passage || IsBuilding(row.Role), "arrivals makes a body a 통로 at row " + i);
+                Require(!row.Passage || row.Radius == 0, "arrivals row " + i + " is a 통로 and an anchor");
+                Require(row.Radius >= 0 && (row.RadiusEffect == UpgradeEffect.None || row.RadiusResearched > row.Radius),
+                    "arrivals row " + i + " has a radius research that does not widen it");
+                RequireResearchable(row.Faction, row.RadiusEffect, "arrivals");
+                for (int j = 0; j < i; j++)
+                {
+                    Require(arrivals[j].Faction != row.Faction || arrivals[j].Role != row.Role || arrivals[j].Slot != row.Slot,
+                        "arrivals lists " + row.Faction + " " + row.Role + " " + row.Slot + " twice");
+                }
+            }
+        }
+
+        private static void RequireResearchable(Faction faction, UpgradeEffect effect, string table)
+        {
+            if (effect == UpgradeEffect.None) return;
+            bool listed = false;
+            for (int u = 0; u < UpgradeCount(faction); u++)
+            {
+                if (Upgrade(faction, u).Effect == effect) listed = true;
+            }
+            Require(listed, table + " names " + effect + ", which " + faction + " cannot research");
         }
 
         private static void Require(bool holds, string what)

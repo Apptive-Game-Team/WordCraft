@@ -62,6 +62,20 @@
 덩쿨 정령은 T1이고 선행 건물이 없다. `MorphTicksLeft`·
 `MorphRole`·`MorphSlot`이 전부 `World.Hash()`에 들어간다.
 
+**구현됨. 유닛 성장과 씨앗 요람(#197).** `growthTargets` 행마다 출발 항목(`FromRole`·
+`FromSlot`)이 있다. 기존 다섯 행은 풀씨 정령에서 자라고, 폭풍 기수(60자원, 60틱)는 잎날
+정령에서, 번개새 무리(60자원, 50틱)는 번개 정령에서, 거대 덩쿨(100자원, 120틱)은 덩쿨
+정령에서 자란다. `TryGrow`는 `Kind == Worker` 대신 몸이 그 출발 항목인지 묻는다. 성장 중인
+유닛은 `CanAttack`이 막는다. 일꾼은 종류 때문에 원래 공격하지 못했고, 유닛은 성장 내내
+`Unit`이라 이 줄이 필요하다. 거대 덩쿨은 속도 0이라 자란 자리에 서 있다.
+
+씨앗 요람은 `FactionData.freeQueues`의 행이다. 세계수 정령 유닛(`Kind == Unit`)이 죽으면
+`Kill`이 그 주인의 완공된 씨앗 요람 가운데 반경 8칸(씨앗 요람 반경 연구 뒤 12칸) 안에서 가장
+가까운 것(같으면 낮은 id)의 대기열에 풀씨 정령 1기를 무료로 넣는다. 사망한 몸의 인구를 먼저
+돌려준 뒤 묻는다. 그 요람의 대기열이 5이거나 인구 상한이면 넣지 않고, 다음 요람으로 넘기지도
+않는다. 풀씨 정령은 생산 시계대로 30틱 뒤 나온다. 요람의 `CancelProduction`은 거부한다.
+새 해시 필드는 없다(`QueueCount`·`ProduceRole`·`ProduceSlot`).
+
 ---
 
 ## 지옥불 군단 — 군단장
@@ -89,11 +103,18 @@
 
 **구현됨. 공중·비전투와 주기 소환 둘 다.** `FactionData.statOverrides`의 지옥불
 군단장 행이 `Air = true`이고 피해·사거리·공격 주기를 아예 주지 않아 "비전투"를
-스탯만으로 표현한다. `World.WarlordSpawnSystem`이 매 틱 엔티티 id 오름차순으로
+스탯만으로 표현한다. `World.SpawnerSystem`(묶음 4 전 이름 `WarlordSpawnSystem`)이 매 틱 엔티티 id 오름차순으로
 군단장을 훑어 `SpawnCooldown`을 내리고 `WarlordSpawnTicks`(100)마다 자손을 하나
 낸다. `WarlordOffspring`(5)이 상한이고, 자손 사망은 `ReleaseOffspringSlot`이
 부모의 `OffspringCount`를 낮춰 다음 주기에 다시 채운다. `SpawnCooldown`·
 `OffspringCount`·`ParentId`가 전부 `World.Hash()`에 들어간다.
+
+**구현됨. spawner 표(#197).** `SpawnerSystem`은 `FactionData.spawners`를 읽는다. 군단장
+행은 100틱, 5기(군단 확장 뒤 7기, 산란 가속 뒤 70틱)를 그대로 들고, 산란 악마 행은 120틱마다
+잿불 새끼 1기, 최대 3기(산란 상한 연구 뒤 4기)다. 군단장 연구 둘은 군단장 행에만 걸린다. 두
+행이 같은 규칙을 쓴다. 상한에서도 주기는 다시 시작하고, 인구는 세지만 상한은 묻지 않으며,
+자식이 죽으면 `ReleaseOffspringSlot`이 부모의 수를 줄인다. 같은 `SpawnCooldown`·
+`OffspringCount`·`ParentId`를 쓰므로 새 해시 필드는 없다.
 
 ---
 
@@ -154,6 +175,11 @@
 `RemnantTicks`는 400. `IsPassable(cell, air)`가 지상 이동일 때만 이 배열을 검사하고
 공중이면 무조건 통과시킨다. `Hash()`는 만료 틱이 남아 있는 셀만 섞어 빈 격자
 전체를 훑지 않는다.
+
+**구현됨. `max` 쓰기와 고대 골렘(#197).** `DropRemnant`는 셀마다 `max(기존 만료, 새 만료)`를
+쓴다. 잔해 지속 연구가 있으면 400틱과 600틱이 섞이므로 덮어쓰기는 긴 잔해를 짧은 잔해가
+줄인다. 열린 지형 셀만, 맵 안만 쓴다. 고대 골렘은 자기 셀과 x−1, x+1 셀, 3칸에 잔해를
+남긴다(`FactionData.remnantShapes`). 다른 돌 골렘 유닛은 자기 셀 하나다. 새 해시 필드는 없다.
 
 ---
 
@@ -222,7 +248,7 @@
 `IsPassage`에 있어야 하는 이유는 시뮬레이션 밖에도 호출자가 있어서다 —
 `ArrivalOrder.Aims`가 아직 짓고 있는 통로에 조준을 제안하고 `Hud`가 거기에 줄을
 그리던 것이 이 조항이 닫은 간극이다. `ArrivalRadius`는 6칸이고 기둥과 운반자가 같은
-값을 쓴다.
+값을 쓴다. 묶음 4(#197)부터 반경은 항목마다 다르다(아래).
 
 **유효성이 두 순간 모두 요구된다.** 명령 시점에 무효였던 점은 몸이 건너는 동안
 세워진 기둥이 구해주지 않는다. 판정은 그때 내려졌고, 남는 것은 `HasArrivalPoint`
@@ -252,6 +278,19 @@ UI가 생길 때까지 생산 자체를 못 한다. 점이 정하는 것은 주�
 지정된 점으로 가고, 각자 자기 틱에 다시 검사받는다. 통로가 아닌 건물은 점을 아예
 보관하지 않는다(`AimArrival`의 `IsPassage` 가드). `ArrivalPoint`와
 `HasArrivalPoint`가 `World.Hash()`에 들어간다.
+
+**구현됨. 도착 제공자 표와 도착 셀 검사(#197).** `IsPassage`·`ProvidesArrival`·
+`ArrivalValid`가 0번 슬롯 상수 대신 `FactionData.arrivals`를 읽는다. 통로와 깊은 통로가
+`Passage`이고, 반경은 굴절 기둥 6칸, 경계 운반자 6칸, 위상 닻 3칸, 떠도는 섬 4칸, 틈새 포대
+0칸이다. 표가 진영으로 나뉘어 있어 표를 묻는 것이 곧 진영 검사다. 앵커마다 자기 반경으로
+잰다(`ArrivalRadiusOf`). 도착 반경 연구는 반경 6인 두 행만 8칸으로, 위상 닻 반경 연구는 위상
+닻만 4칸으로 넓힌다. `ArrivalRadiusFor(peer)`는 뷰가 그리는 6칸 고리를 위해 남았다.
+
+`ArrivalValid`는 몸이 나는지도 받는다. 걷는 몸은 도착 셀이 지상으로 갈 수 있어야 한다.
+지형이나 잔해로 막혔거나 그 셀에 건물이나 자원 노드가 서 있으면 무효이고, 몸은 통로 자리 +
+`RallyOffset`에 선다. 나는 몸은 이 검사를 받지 않는다. 명령 시점(`AimArrival`)과 도착
+시점(`ArrivalOf`)이 같은 메서드를 부르고, 대기열의 항목으로 나는지를 정한다. 인자 둘인
+`ArrivalValid(peer, point)`는 걷는 몸의 판정이다.
 
 **구현됨. 경계 운반자의 도주도.** 위 표가 경계 운반자에게 비전투와 도주를 같이
 주는데, 무장만 해제된 몸은 가만히 서서 죽으므로 그건 도주의 반대다. 규칙 전체가
@@ -457,7 +496,7 @@ Unity 건설 메뉴의 라벨(`Client/Assets/Scripts/CommandCard.cs`)이었으�
 
 기술 건물(`Role.Tech`)은 T3를 여는 것 말고도 연구를 한다. 여섯 진영 모두 연구 표의 앞
 네 줄은 같은 모양이다. 0번 `공격력`, 1번 `방어력`, 2번과 3번은 진영 고유 연구다. 4번부터는
-`docs/TECH-TREE.md` 묶음 3(#180)이 더한 수치 연구 행이고, 진영마다 행 수가 다르다. 표는
+`docs/TECH-TREE.md` 묶음 3(#180)과 묶음 4(#197)가 더한 연구 행이고, 진영마다 행 수가 다르다. 표는
 `FactionData.upgrades`에 있고 `UpgradeCount(faction)`·`Upgrade(faction, index)`로
 읽는다. 표 밖의 index는 `MaxLevel` 0인 행을 돌려줘서 연구할 수 없다.
 
@@ -487,13 +526,17 @@ Unity 건설 메뉴의 라벨(`Client/Assets/Scripts/CommandCard.cs`)이었으�
 `Tech` 1번이나 2번(바람 토템, 재 분화구, 물결 수련장, 이끼 정원, 외피 연마장, 마도 학당,
 결속대 등)에서 연구한다.
 
+**묶음 4 연구 행(#197).** 씨앗 요람 반경(뿌리 회당, T3, 씨앗 요람 선행, 8 → 12칸), 산란
+상한(재 분화구, T2, 잿불 새끼 3 → 4기), 위상 닻 반경(외피 연마장, T2, 3 → 4칸). 셋 다 100자원
+160틱이고, 항목 표가 아니라 메커니즘 표(`freeQueues`, `spawners`, `arrivals`)의 행이 읽는다.
+
 | 진영 | 연구 행 수 | 4번 이후 |
 |---|---|---|
-| 세계수 정령 | 8 | 덩쿨 사거리, 거대 덩쿨 사거리, 번개새 공격 주기, 잎날 속도 |
-| 지옥불 군단 | 7 | 용암 투석 사거리, 재날개 공격 주기, 갑각 경화 |
+| 세계수 정령 | 9 | 덩쿨 사거리, 거대 덩쿨 사거리, 번개새 공격 주기, 잎날 속도, 씨앗 요람 반경 |
+| 지옥불 군단 | 8 | 용암 투석 사거리, 재날개 공격 주기, 갑각 경화, 산란 상한 |
 | 물 슬라임 | 7 | 물결 궁수 사거리, 침 사거리, 물대포 사거리 |
 | 돌 골렘 부족 | 6 | 돌팔매 사거리, 부유석 사거리 |
-| 차원 유랑종 | 8 | 폭풍편 공격 주기, 덩쿨편 사거리, 틈새 포대 사거리, 도주 가속 |
+| 차원 유랑종 | 9 | 폭풍편 공격 주기, 덩쿨편 사거리, 틈새 포대 사거리, 도주 가속, 위상 닻 반경 |
 | 인간 마법 문명 | 8 | 석궁 사거리, 마도 기수 속도, 결속 강화, 결속 갑주 |
 
 **명령.** `CommandType.Research`(값 14)가 `EntityId`로 기술 건물을, `Arg`로 index를
@@ -519,7 +562,7 @@ Unity 건설 메뉴의 라벨(`Client/Assets/Scripts/CommandCard.cs`)이었으�
 
 통과하면 그 가격을 즉시 전액 차감하고 `ResearchIndex`·`ResearchTicksLeft`를 세운다.
 
-**진행과 끝.** `ResearchSystem`은 `ProductionSystem` 바로 뒤, `WarlordSpawnSystem`과
+**진행과 끝.** `ResearchSystem`은 `ProductionSystem` 바로 뒤, `SpawnerSystem`과
 `CombatSystem` 앞에서 엔티티 id 오름차순으로 돈다. 시계가 0이 되는 틱에
 `upgradeLevels[peer, index]`가 1 오르고 건물의 연구 필드가 지워진다. 전투보다 먼저
 돌아서, 이번 틱에 끝난 `공격력`은 이번 틱의 공격에 들어간다.
@@ -561,9 +604,10 @@ Unity 건설 메뉴의 라벨(`Client/Assets/Scripts/CommandCard.cs`)이었으�
 2단계 대신 50짜리 방어력 1단계를 산다. 한 번 생각할 때 명령은 하나다.
 
 **해시.** 새로 해시되는 필드는 셋뿐이다. 엔티티별 `ResearchIndex`(-1이 없음)와
-`ResearchTicksLeft`, 피어별 `upgradeLevels[peer, index]`(피어 0..7, index 0..7,
-`FactionData.MaxUpgrades`가 8). 규칙이 바뀌었으므로 `ContentVersion`이 30이 됐다. 묶음 3이
+`ResearchTicksLeft`, 피어별 `upgradeLevels[peer, index]`(피어 0..7, index 0..8,
+`FactionData.MaxUpgrades`가 9). 규칙이 바뀌었으므로 `ContentVersion`이 30이 됐다. 묶음 3이
 `MaxUpgrades`를 4에서 8로 올려 해시하는 칸이 피어마다 4개 늘었다(`ContentVersion` 33).
+묶음 4가 8에서 9로 올려 피어마다 1개 더 늘었다(`ContentVersion` 35).
 
 ## 테크트리
 

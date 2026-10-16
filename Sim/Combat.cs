@@ -229,6 +229,10 @@ namespace WordCraft.Sim
         /// Units fight, and so do finished defense buildings. A site still under
         /// construction does not, for the same reason it takes no deliveries.
         ///
+        /// Nor does a body mid-growth: 성장 중에는 공격하지 않는다. A growing worker
+        /// was kept out by its kind alone; since docs/TECH-TREE.md M6 a unit grows
+        /// too (잎날 정령 → 폭풍 기수), and it is a Unit for the whole growth.
+        ///
         /// A body whose roster row carries no weapon fights under no circumstances,
         /// whatever its kind. This is the one gate every path goes through —
         /// acquisition, the chase, and the Attack and AttackMove orders all ask it
@@ -237,7 +241,7 @@ namespace WordCraft.Sim
         /// a target, close on it, and stand in weapon range firing nothing.
         /// </summary>
         private bool CanAttack(Entity e) =>
-            Armed(e) &&
+            Armed(e) && !IsGrowing(e) &&
             (e.Kind == EntityKind.Unit ||
              (e.Kind == EntityKind.Building && e.Role == Role.Defense && e.BuildTicksLeft == 0));
 

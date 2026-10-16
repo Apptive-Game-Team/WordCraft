@@ -46,22 +46,23 @@ namespace WordCraft.Sim
     /// worker is a Worker and then a Unit, so neither ever sees it. PopulationCap
     /// and TierOf read Role off buildings only, for the same reason.
     ///
-    /// WarlordSpawnSystem reads Kind and Role through IsWarlord, which also asks
-    /// the faction. 세계수 정령 is not 지옥불, so this answers false before and
-    /// after. The order matters anyway: growth runs before it, so a body that
+    /// SpawnerSystem reads Kind, Role and Slot through the spawner table, which is
+    /// keyed by faction. 세계수 정령 has no row there, so this answers false before
+    /// and after. The order matters anyway: growth runs before it, so a body that
     /// became a Signature this tick would be armed for this tick's spawn pass, and
     /// the faction test is what makes that a fact about 지옥불 rather than luck.
     ///
-    /// CombatSystem is where the swap is visible, and 공격 불가 rests on exactly
-    /// one clause of it: CanAttack admits Kind == Unit and a finished Defense
-    /// building, and a growing body is a Worker until the tick it lands. That is
-    /// the whole enforcement. Armed would also answer no, because the worker row
-    /// carries no weapon, but it is not what is holding the rule — arming that row
-    /// changes nothing about a growing body, which was checked rather than assumed.
-    /// The consequence is worth stating: there is no growth-specific line here to
-    /// delete, so the harness cannot make 공격 불가 fail on its own. What it can do
-    /// is refuse to let the assertion be vacuous, by standing the same enemy at the
-    /// same distance and requiring it to bleed one reload after the growth lands.
+    /// CombatSystem is where the swap is visible, and 공격 불가 rests on one
+    /// clause of it: CanAttack refuses a body for which IsGrowing answers true.
+    /// For a growing worker that clause is belt on top of braces, because
+    /// CanAttack also admits only Kind == Unit and a finished Defense building,
+    /// and a growing worker is a Worker until the tick it lands; Armed answers no
+    /// as well, the worker row carrying no weapon. For a unit that grows
+    /// (docs/TECH-TREE.md M6, 잎날 정령 → 폭풍 기수) the clause is the whole
+    /// enforcement: the body is a Unit on an armed row for the entire growth.
+    /// Deleting it is what MechanicsChecks.AGrowingUnitHoldsItsFire catches, and
+    /// that check also refuses to be vacuous by requiring the same enemy to bleed
+    /// one reload after the growth lands.
     /// On the completion tick the body is a Unit on its new row, and it fights that
     /// tick, exactly as a 자손 emitted this tick fights this tick and a 징발 that
     /// lands this tick shoots this tick. VolleyBonus reads Kind, Role and Slot
@@ -154,16 +155,20 @@ namespace WordCraft.Sim
         private void TryGrow(int peer, int id, Role role, int slot)
         {
             Entity w = entities[id];
-            // A worker, not an army. 일꾼이 자란다 is the mechanic, and refusing
-            // rather than reinterpreting keeps a 고목 수호자 from being ordered to
-            // grow into a second one.
-            if (w.Kind != EntityKind.Worker) return;
 
             // The table is the faction test, the roster test and the price in one
             // question. Five factions out of six have no row here at all, and the
             // entry a 세계수 정령 player can name is the entry the table lists.
             GrowthCost cost = FactionData.Growth(factions[peer], role, slot);
             if (!cost.Grown) return;
+            // And the body has to be the entry the row grows from, docs/TECH-TREE.md
+            // M6: a 풀씨 정령 for the five worker rows, 잎날 정령 for 폭풍 기수,
+            // 번개 정령 for 번개새 무리, 덩쿨 정령 for 거대 덩쿨. Refusing rather than
+            // reinterpreting keeps a 고목 수호자 from being ordered to grow into a
+            // second one, and a worker from skipping a stage. The kind goes with the
+            // entry: a worker row is a Worker, every other row a Unit.
+            EntityKind from = cost.FromRole == Role.Worker ? EntityKind.Worker : EntityKind.Unit;
+            if (w.Kind != from || w.Role != cost.FromRole || w.Slot != cost.FromSlot) return;
             // After the table, so a Grow naming something nobody grows into is
             // refused for that and not for the tier it happens to sit at.
             if (!MeetsTierAndPrerequisite(peer, role, slot)) return;
@@ -327,6 +332,88 @@ namespace WordCraft.Sim
 
             ClearGrowth(ref e);
         }
+
+        /// <summary>
+        /// 씨앗 귀환: a 세계수 정령 unit that dies within reach of its owner's 씨앗
+        /// 요람 comes back as a 풀씨 정령 on that 요람's queue, free. docs/TECH-TREE.md
+        /// 씨앗 귀환 row and M10; FactionData.freeQueues is the table.
+        ///
+        /// Called from Kill, after the dead body's population has been given back,
+        /// so the population cap is asked of the peer as it stands without that
+        /// body. The rules, in the order they are asked:
+        ///
+        /// - Units only. A worker is the body the 요람 gives back, and a building
+        ///   is not a 전투 유닛.
+        /// - The nearest finished, living free-queue building of the dead body's
+        ///   owner whose radius reaches the body, measured with WithinRange from the
+        ///   building's position. Nearest is the least squared distance, a tie going
+        ///   to the lower id: the scan is by ascending id and only a strictly
+        ///   nearer building replaces the one held, as AcquireTarget does.
+        /// - That one building or none. A full nearest 요람 drops the body rather
+        ///   than passing it to the next one, so a death has one place it can go.
+        /// - Dropped when that queue holds MaxQueue already or the peer is at its
+        ///   population cap, the two refusals a Produce has that are not about money.
+        ///
+        /// Writing straight into the building is safe for the reason
+        /// ReleaseOffspringSlot's write into the parent is: the only Kill is in
+        /// CombatSystem, a 씨앗 요람 is no Defense building so it is never the
+        /// attacker that loop writes back, and it is not the body that died.
+        /// </summary>
+        private void ReturnSeed(Entity dead)
+        {
+            if (dead.Kind != EntityKind.Unit) return;
+            int peer = dead.Owner;
+            if (peer < 0 || peer >= MaxPeers) return;
+
+            int best = -1;
+            Fix bestSqr = Fix.Zero;
+            FreeQueueRow give = default;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity b = entities[i];
+                if (!b.Alive || b.Kind != EntityKind.Building || b.Owner != peer || b.BuildTicksLeft > 0) continue;
+                FreeQueueRow row = FactionData.FreeQueue(factions[peer], b.Role, b.Slot);
+                if (!row.Free) continue;
+                if (!WithinRange(dead.Position, b.Position, FreeQueueRadiusFor(peer, row))) continue;
+                Fix d = (b.Position - dead.Position).SqrMagnitude;
+                if (best < 0 || d < bestSqr)
+                {
+                    best = i;
+                    bestSqr = d;
+                    give = row;
+                }
+            }
+            if (best < 0) return;
+
+            Entity cradle = entities[best];
+            if (cradle.QueueCount >= MaxQueue) return;
+            if (population[peer] >= PopulationCap(peer)) return;
+            // Nothing else can be on this queue: FactionData refuses at type load
+            // a free-queue building that any entry is produced at, so the entry on
+            // it is always the one the row gives.
+
+            cradle.QueueCount++;
+            cradle.ProduceRole = give.GiveRole;
+            cradle.ProduceSlot = give.GiveSlot;
+            entities[best] = cradle;
+        }
+
+        /// <summary>
+        /// 씨앗 요람 반경: how far a free-queue building reaches for this peer, the
+        /// row's radius or its researched radius.
+        /// </summary>
+        public Fix FreeQueueRadiusFor(int peer, FreeQueueRow row) =>
+            Fix.FromInt(row.RadiusEffect != UpgradeEffect.None && UpgradeLevelOf(peer, row.RadiusEffect) > 0
+                ? row.RadiusResearched
+                : row.Radius);
+
+        /// <summary>
+        /// True for a building whose queue is free: a 씨앗 요람. The queue was never
+        /// paid for, so CancelProduction on it is refused rather than refunded.
+        /// </summary>
+        public bool HasFreeQueue(Entity b) =>
+            b.Kind == EntityKind.Building && b.Owner >= 0 && b.Owner < MaxPeers &&
+            FactionData.FreeQueue(factions[b.Owner], b.Role, b.Slot).Free;
 
         /// <summary>
         /// Puts a body back in the not-growing state. Static and by ref for the
