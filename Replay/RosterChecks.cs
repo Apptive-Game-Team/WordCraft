@@ -508,11 +508,20 @@ namespace WordCraft.Replay
             Research(Faction.Driftworlds, "소환 수명", 150, 200, 3, UpgradeEffect.SummonLifetime, Role.Tech, 0, Role.None, 0),
             Research(Faction.Driftworlds, "층위 고정 반경", 100, 160, 3, UpgradeEffect.StrataHoldRadius, Role.Tech, 0, Role.None, 0),
             Research(Faction.Driftworlds, "화염 분출 강화", 75, 120, 2, UpgradeEffect.FireBurstDamage, Role.Tech, 1, Role.None, 0),
+            // 묶음 7 (#203): autocasts and the water field.
+            Research(Faction.TreeSpirits, "질풍", 100, 160, 2, UpgradeEffect.Gale, Role.Tech, 2, Role.None, 0),
+            Research(Faction.WaterSlimes, "물 지대 방어", 150, 200, 3, UpgradeEffect.WaterFieldArmor, Role.Tech, 0, Role.None, 0),
+            Research(Faction.WaterSlimes, "급류", 100, 160, 2, UpgradeEffect.Rapids, Role.Tech, 1, Role.None, 0),
+            Research(Faction.RockGolems, "굴러 들이받기", 125, 200, 3, UpgradeEffect.RollCharge, Role.Tech, 0, Role.None, 0),
+            Research(Faction.RockGolems, "잔해 수리", 100, 160, 2, UpgradeEffect.RemnantRepair, Role.Tech, 1, Role.None, 0),
+            Research(Faction.RockGolems, "잔해 투척 강화", 100, 160, 2, UpgradeEffect.RemnantThrowDamage, Role.Tech, 1, Role.None, 0),
+            Research(Faction.Driftworlds, "정조준", 125, 200, 3, UpgradeEffect.SteadyAim, Role.Tech, 0, Role.None, 0),
+            Research(Faction.Humans, "수리 강화", 100, 160, 3, UpgradeEffect.RepairAmount, Role.Tech, 0, Role.None, 0),
         };
 
         private static void TheResearchRowsAreTheDocumentedOnes()
         {
-            int[] counts = { 12, 12, 9, 7, 12, 11 };
+            int[] counts = { 13, 12, 11, 10, 13, 12 };
             for (int f = 0; f < FactionData.FactionCount; f++)
             {
                 var faction = (Faction)f;

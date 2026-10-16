@@ -336,6 +336,9 @@ namespace WordCraft.Sim
             // rather than leaving a third of it implied by arithmetic above.
             e.MaxHp = s.Hp;
             e.Speed = s.Speed;
+            // The ability clocks belong to the row grown out of, so the new row starts with none.
+            e.AbilityCooldown = 0;
+            e.AbilityTicksLeft = 0;
             // Hp arrives through the ramp rather than being handed over here, which
             // is what makes the ramp mean anything: a body shot while it grew comes
             // up short, and one nobody touched comes up full. The clamp is for a

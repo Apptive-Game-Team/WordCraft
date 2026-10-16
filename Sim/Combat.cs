@@ -78,12 +78,17 @@ namespace WordCraft.Sim
                         // 피 냄새, 집결 and 증폭 are read here, when the cooldown
                         // is set, against the target's hp before this shot.
                         a.AttackCooldown = AttackTicksAgainst(a, t);
+                        // 잔해 투척: debris near the shooter makes this one shot
+                        // harder and splash, per docs/TECH-TREE.md 피해 계산.
+                        int thrown = ThrowRemnant(a);
+                        int throwBonus = thrown >= 0 ? AbilityAmount(a.Owner, FactionData.AbilityRowAt(thrown)) : 0;
                         // 공격력 belongs to the shooter's owner and 방어력 to the
                         // target's. A neutral target has no owner, so no level.
                         // 표식 joins the attack side, and 물막이, 거품 벽 and 굳은 몸
-                        // the armor side, per docs/TECH-TREE.md 피해 계산.
-                        int dealt = DamageAfterArmor(s.Damage + VolleyBonus(a) + MarkBonus(a, t), AttackBonus(a.Owner),
-                            ArmorFor(t) + AuraArmor(t), ArmorBonus(t.Owner));
+                        // the armor side, per docs/TECH-TREE.md 피해 계산, and
+                        // so does 물 지대 for a 물 슬라임 body standing on one.
+                        int dealt = DamageAfterArmor(s.Damage + VolleyBonus(a) + MarkBonus(a, t) + throwBonus, AttackBonus(a.Owner),
+                            ArmorFor(t) + AuraArmor(t) + FieldArmor(t), ArmorBonus(t.Owner));
                         // Where the hit landed, kept before Kill so a chain
                         // starts from the body even when the body is gone.
                         FixVec2 hitAt = t.Position;
@@ -92,6 +97,11 @@ namespace WordCraft.Sim
                         else ApplyHitStatus(a, ref t);
                         entities[t.Id] = t;
                         ChainFrom(a, t.Id, hitAt, dealt);
+                        SplashFrom(a, t.Id, hitAt, dealt, ActiveAbility(a, AbilityKind.SplashOnHit));
+                        SplashFrom(a, t.Id, hitAt, dealt, thrown);
+                        // 질풍: every attack sets the clock back to its full length.
+                        int gale = ActiveAbility(a, AbilityKind.GaleAfterAttack);
+                        if (gale >= 0) a.AbilityTicksLeft = AbilityTicks(a.Owner, FactionData.AbilityRowAt(gale));
                     }
                 }
                 else if (a.Kind != EntityKind.Building && a.Mode != OrderMode.Hold && a.Speed.Raw != 0 &&
@@ -178,6 +188,23 @@ namespace WordCraft.Sim
                 entities[best] = v;
                 hit[count++] = best;
             }
+        }
+
+        /// <summary>
+        /// 용암 폭발, 폭격 and the splash of 잔해 투척, docs/TECH-TREE.md 피해 계산
+        /// 광역: every other hostile body of the row's targets within its radius
+        /// of where the struck body stood when it was hit, and that this weapon
+        /// can reach, takes half the shot's final damage, floor, at least 1, by
+        /// ascending id. Fixed off the shot like a chain hop: the bodies it lands
+        /// on are not asked for armor again. No friendly damage. Nothing when
+        /// row is -1.
+        /// </summary>
+        private void SplashFrom(Entity a, int struckId, FixVec2 hitAt, int dealt, int row)
+        {
+            if (row < 0) return;
+            AbilityRow r = FactionData.AbilityRowAt(row);
+            int half = dealt / 2 < 1 ? 1 : dealt / 2;
+            DamageHostileBodies(a.Owner, r.Targets, hitAt, Fix.FromInt(AbilityRadius(a.Owner, r)), half, a.Id, struckId);
         }
 
         /// <summary>
@@ -291,7 +318,9 @@ namespace WordCraft.Sim
             {
                 return range + RangeUpgrade;
             }
-            return range;
+            // 정조준, docs/TECH-TREE.md 묶음 7: 40 ticks still and the reach is 2 longer.
+            // 물기둥 분수 on a water field reaches 1 further.
+            return range + SteadyAimBonus(e) + FieldRangeBonus(e);
         }
 
         /// <summary>

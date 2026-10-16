@@ -21,6 +21,7 @@ namespace WordCraft.Replay
         public static void Check()
         {
             TheAbilityTableIsTheDocumentedOne();
+            TheDeviceTableIsTheDocumentedOne();
             EntangleSlowsGroundBodiesOnly();
             EntangleRefreshesAndNeverStacks();
             ASlowedBodyWalksAtHalfSpeed();
@@ -60,22 +61,23 @@ namespace WordCraft.Replay
             public int Slot;
             public AbilityKind Kind;
             public UpgradeEffect Unlock;
-            public int Radius, Amount, Ticks, Period, Limit;
+            public int Radius, Amount, Ticks, Period, Limit, Cooldown;
             public UpgradeEffect Boost;
             public int BoostedRadius, BoostedAmount, BoostedTicks;
         }
 
         private static Want Row(Faction faction, string name, Role role, int slot, AbilityKind kind, UpgradeEffect unlock,
             int radius = 0, int amount = 0, int ticks = 0, int period = 0, int limit = 0,
-            UpgradeEffect boost = UpgradeEffect.None, int boostedRadius = 0, int boostedAmount = 0, int boostedTicks = 0) =>
+            UpgradeEffect boost = UpgradeEffect.None, int boostedRadius = 0, int boostedAmount = 0, int boostedTicks = 0,
+            int cooldown = 0) =>
             new Want
             {
                 Faction = faction, Name = name, Role = role, Slot = slot, Kind = kind, Unlock = unlock,
-                Radius = radius, Amount = amount, Ticks = ticks, Period = period, Limit = limit,
+                Radius = radius, Amount = amount, Ticks = ticks, Period = period, Limit = limit, Cooldown = cooldown,
                 Boost = boost, BoostedRadius = boostedRadius, BoostedAmount = boostedAmount, BoostedTicks = boostedTicks,
             };
 
-        /// <summary>docs/TECH-TREE.md 진영별 능력 표, the rows 묶음 5 and 6 bring in, with the holder's roster name.</summary>
+        /// <summary>docs/TECH-TREE.md 진영별 능력 표, the rows 묶음 5, 6 and 7 bring in, with the holder's roster name.</summary>
         private static readonly (Want Row, string Holder)[] Documented =
         {
             (Row(Faction.TreeSpirits, "휘감기", Role.Ranged, 1, AbilityKind.SlowOnHit, UpgradeEffect.None,
@@ -91,6 +93,9 @@ namespace WordCraft.Replay
             // 묶음 6 (#202), behind the faction's 묶음 5 rows.
             (Row(Faction.TreeSpirits, "전격 과부하", Role.Melee, 2, AbilityKind.DeathBurst, UpgradeEffect.None,
                 radius: 2, amount: 12, boost: UpgradeEffect.OverloadDamage, boostedAmount: 18), "찌릿쥐"),
+            // 묶음 7 (#203). Replay/AbilityChecks.cs and WaterFieldChecks.cs run them.
+            (Row(Faction.TreeSpirits, "질풍", Role.Melee, 3, AbilityKind.GaleAfterAttack, UpgradeEffect.Gale,
+                amount: 2, ticks: 10), "폭풍 기수"),
             (Row(Faction.Hellfire, "화상 오라", Role.Melee, 0, AbilityKind.BurnAura, UpgradeEffect.None,
                 radius: 2, amount: 2, period: 20, boost: UpgradeEffect.BurnAuraDamage, boostedAmount: 3), "용암 갑각 악마"),
             (Row(Faction.Hellfire, "화염탄", Role.Ranged, 1, AbilityKind.BurnOnHit, UpgradeEffect.FireShot,
@@ -99,14 +104,31 @@ namespace WordCraft.Replay
                 amount: 8), "균열 사냥개"),
             (Row(Faction.Hellfire, "집결", Role.Defense, 1, AbilityKind.RateAura, UpgradeEffect.None,
                 radius: 5, amount: 3, limit: 5, boost: UpgradeEffect.RallyRadius, boostedRadius: 7), "집결의 횃불"),
+            (Row(Faction.Hellfire, "용암 폭발", Role.Ranged, 2, AbilityKind.SplashOnHit, UpgradeEffect.None,
+                radius: 2), "용암 투석 악마"),
             (Row(Faction.WaterSlimes, "물막이", Role.Melee, 1, AbilityKind.ArmorAura, UpgradeEffect.None,
                 radius: 2, amount: 1), "물막이 슬라임"),
             (Row(Faction.WaterSlimes, "거품 벽", Role.Melee, 0, AbilityKind.ArmorPerAlly, UpgradeEffect.BubbleWall,
                 radius: 2, amount: 1, limit: 2), "거품 정령"),
             (Row(Faction.WaterSlimes, "회복의 비", Role.Signature, 1, AbilityKind.HealAura, UpgradeEffect.None,
                 radius: 3, amount: 2, period: 20, boost: UpgradeEffect.HealingRainAmount, boostedAmount: 3), "비구름"),
+            (Row(Faction.WaterSlimes, "급류", Role.Melee, 2, AbilityKind.FieldSpeed, UpgradeEffect.Rapids), "급류 슬라임"),
+            (Row(Faction.WaterSlimes, "물 지대 사거리", Role.Defense, 0, AbilityKind.FieldRange, UpgradeEffect.None,
+                amount: 1), "물기둥 분수"),
+            (Row(Faction.WaterSlimes, "이동식 물 지대", Role.Signature, 3, AbilityKind.FieldEmitter, UpgradeEffect.None,
+                radius: 1, ticks: 200, period: 20), "샘물 운반자"),
+            (Row(Faction.WaterSlimes, "고정 물 지대", Role.Defense, 1, AbilityKind.FieldEmitter, UpgradeEffect.None,
+                radius: 2, ticks: 80, period: 40), "솟는 샘"),
             (Row(Faction.RockGolems, "이끼 재생", Role.Signature, 2, AbilityKind.HealAura, UpgradeEffect.None,
                 radius: 3, amount: 3, period: 20, boost: UpgradeEffect.MossRegrowthAmount, boostedAmount: 5), "이끼 포자 무리"),
+            (Row(Faction.RockGolems, "잔해 투척", Role.Ranged, 0, AbilityKind.RemnantThrow, UpgradeEffect.None,
+                radius: 1, amount: 8, boost: UpgradeEffect.RemnantThrowDamage, boostedAmount: 12), "바위 술사"),
+            (Row(Faction.RockGolems, "잔해 수리", Role.Ranged, 0, AbilityKind.RemnantRepair, UpgradeEffect.RemnantRepair,
+                radius: 4, amount: 60, limit: 30, cooldown: 100), "바위 술사"),
+            (Row(Faction.RockGolems, "굴러 들이받기", Role.Melee, 1, AbilityKind.RollCharge, UpgradeEffect.RollCharge,
+                radius: 1, amount: 15, ticks: 12, cooldown: 240), "구르는 바위"),
+            (Row(Faction.RockGolems, "잔해 만료 연장", Role.Defense, 2, AbilityKind.RemnantHold, UpgradeEffect.None,
+                radius: 4, ticks: 40, period: 20), "잠듦의 고리"),
             (Row(Faction.Driftworlds, "굳은 몸", Role.Melee, 2, AbilityKind.ArmorWhileStill, UpgradeEffect.None,
                 amount: 3), "멸종한 바위 슬라임"),
             (Row(Faction.Driftworlds, "생명 기록", Role.Signature, 3, AbilityKind.HealAura, UpgradeEffect.None,
@@ -119,12 +141,18 @@ namespace WordCraft.Replay
                 radius: 2, amount: 12, boost: UpgradeEffect.FireBurstDamage, boostedAmount: 18), "멸종한 화염 슬라임"),
             (Row(Faction.Driftworlds, "도착 방전", Role.Ranged, 1, AbilityKind.ArrivalBurst, UpgradeEffect.None,
                 radius: 2, amount: 10), "멸종한 번개 슬라임"),
+            (Row(Faction.Driftworlds, "정조준", Role.Ranged, 0, AbilityKind.SteadyAim, UpgradeEffect.SteadyAim,
+                amount: 2, ticks: 40), "틈새 사수"),
             (Row(Faction.Humans, "표식", Role.Signature, 1, AbilityKind.MarkAura, UpgradeEffect.None,
                 radius: 5, amount: 1, boost: UpgradeEffect.MarkAmount, boostedAmount: 2), "마도 정찰기"),
             (Row(Faction.Humans, "증폭", Role.Signature, 3, AbilityKind.RateAura, UpgradeEffect.None,
                 radius: 4, amount: 5, limit: 8, boost: UpgradeEffect.AmplifyRadius, boostedRadius: 6), "마나 증폭기"),
             (Row(Faction.Humans, "연쇄 방전", Role.Defense, 1, AbilityKind.ChainOnHit, UpgradeEffect.ChainDischarge,
                 radius: 2, limit: 1), "전기 타워"),
+            (Row(Faction.Humans, "수리", Role.Signature, 2, AbilityKind.Repair, UpgradeEffect.None,
+                radius: 3, amount: 4, period: 10, boost: UpgradeEffect.RepairAmount, boostedAmount: 6), "공방 기술자"),
+            (Row(Faction.Humans, "폭격", Role.Ranged, 5, AbilityKind.SplashOnHit, UpgradeEffect.None,
+                radius: 2), "마도 폭격선"),
         };
 
         /// <summary>
@@ -157,7 +185,7 @@ namespace WordCraft.Replay
                         where + " has numbers " + row.Radius + "/" + row.Amount + "/" + row.Ticks + "/" + row.Period + "/" + row.Limit);
                     Check(row.BoostedRadius == want.BoostedRadius && row.BoostedAmount == want.BoostedAmount &&
                           row.BoostedTicks == want.BoostedTicks, where + " has boosted numbers off the document");
-                    Check(row.Cooldown == 0, where + " has a cooldown");
+                    Check(row.Cooldown == want.Cooldown, where + " has a cooldown of " + row.Cooldown);
                     index++;
                     total++;
                 }
@@ -167,6 +195,39 @@ namespace WordCraft.Replay
                 Check(FactionData.Ability(faction, -1).Kind == AbilityKind.None, faction + ": ability -1 does something");
             }
             Check(FactionData.AbilityRowCount == total, "the table holds " + FactionData.AbilityRowCount + " rows, not " + total);
+        }
+
+        /// <summary>docs/TECH-TREE.md 인간 능력 표 수리: the 장치 유닛, in table order, by roster name.</summary>
+        private static readonly string[] Devices =
+        {
+            "Towerback", "석조 보행 포대", "견인 대포", "마도 폭격선", "마도 정찰기", "마나 증폭기",
+        };
+
+        /// <summary>
+        /// The six 장치 유닛 수리 mends are the six the document names, all 인간
+        /// units, and no other fielded entry of any faction is one.
+        /// </summary>
+        private static void TheDeviceTableIsTheDocumentedOne()
+        {
+            Check(FactionData.DeviceCount == Devices.Length, "the device table holds " + FactionData.DeviceCount + " entries, not 6");
+            for (int i = 0; i < Devices.Length; i++)
+            {
+                var (faction, role, slot) = FactionData.Device(i);
+                Check(faction == Faction.Humans, "device " + i + " is a " + faction + " entry");
+                Check(FactionData.Name(faction, role, slot) == Devices[i],
+                    "device " + i + " is " + FactionData.Name(faction, role, slot) + ", not " + Devices[i]);
+                Check(FactionData.IsDevice(faction, role, slot), Devices[i] + " is not asked as a device");
+            }
+            int devices = 0;
+            for (int f = 0; f < FactionData.FactionCount; f++)
+            {
+                for (int r = 1; r < FactionData.RoleCount; r++)
+                {
+                    for (int slot = 0; slot < FactionData.SlotCount((Faction)f, (Role)r); slot++)
+                        if (FactionData.Has((Faction)f, (Role)r, slot) && FactionData.IsDevice((Faction)f, (Role)r, slot)) devices++;
+                }
+            }
+            Check(devices == Devices.Length, devices + " fielded entries are devices, not 6");
         }
 
         private static UpgradeEffect Effect(Faction faction, int index) =>
