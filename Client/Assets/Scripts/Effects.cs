@@ -92,6 +92,23 @@ namespace WordCraft.View
         private const int TracerWarm = 24;
         private const int BurstWarm = 16;
         private const int CrumbleWarm = 4;
+        private const int MoteWarm = 12;
+
+        // A building's dust ring (issue #186): out from just inside its
+        // footprint to past it, a thicker band than a shot's, slower.
+        private const float DustFrom = 0.55f;
+        private const float DustTo = 1.25f;
+        private const float DustBand = 0.16f;
+        private const float DustSeconds = 0.55f;
+
+        // A working building's motes: how long one rises, how far, and its size
+        // as a share of the building's footprint, floored and capped so a small
+        // building's still shows and a base's is not a boulder.
+        private const float MoteSeconds = 1.0f;
+        private const float MoteRise = 1.3f;
+        private const float MoteShare = 0.13f;
+        private const float MoteMin = 0.3f;
+        private const float MoteMax = 0.5f;
 
         private static readonly int TintId = Shader.PropertyToID("_Tint");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
@@ -126,6 +143,17 @@ namespace WordCraft.View
             public float Started;
             /// <summary>Turns the shard fan about the vertical, so two bursts never throw the same pattern.</summary>
             public float Spin;
+            /// <summary>False for a building's dust: the ring alone.</summary>
+            public bool Shards;
+            /// <summary>The ring's radius from start to end and its band, in cells, and how long it runs.</summary>
+            public float From, To, Band, Seconds;
+        }
+
+        private struct Floater
+        {
+            public bool Live;
+            public Vector3 From;
+            public float Started, Size, Spin;
         }
 
         private readonly Transform parent;
@@ -141,6 +169,8 @@ namespace WordCraft.View
         private readonly List<Chunk> chunks = new List<Chunk>(CrumbleWarm * ChunksPerCrumble);
         private readonly List<MeshRenderer> chunkRenderers = new List<MeshRenderer>(CrumbleWarm * ChunksPerCrumble);
         private readonly List<Color> ringColours = new List<Color>(BurstWarm);
+        private readonly List<Floater> motes = new List<Floater>(MoteWarm);
+        private readonly List<MeshRenderer> moteRenderers = new List<MeshRenderer>(MoteWarm);
 
         private int burstCounter;
 
@@ -159,6 +189,7 @@ namespace WordCraft.View
             for (int i = 0; i < TracerWarm; i++) AddTracer();
             for (int i = 0; i < BurstWarm; i++) AddBurst();
             for (int i = 0; i < CrumbleWarm * ChunksPerCrumble; i++) AddChunk();
+            for (int i = 0; i < MoteWarm; i++) AddMote();
         }
 
         /// <summary>
@@ -187,17 +218,18 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// A 돌 골렘 body breaking into chunks of rubble where it stands on
-        /// <paramref name="foot"/>: three lumps thrown a little out of the body
-        /// that fall, bounce once, lie for a moment and shrink away, leaving the
-        /// rubble pile MatchView draws on the cell.
+        /// A body breaking into chunks where it stands on <paramref name="foot"/>:
+        /// lumps thrown a little out of the body that fall, bounce once, lie for
+        /// a moment and shrink away. Three for a 돌 골렘 body, leaving the rubble
+        /// pile MatchView draws on the cell; two to four of a razed building in
+        /// its own colour (issue #186), <paramref name="count"/> by its size.
         /// </summary>
-        public void Crumble(Vector3 foot, float size, Color colour, float yaw, float delay = 0f)
+        public void Crumble(Vector3 foot, float size, Color colour, float yaw, float delay = 0f, int count = ChunksPerCrumble)
         {
-            for (int k = 0; k < ChunksPerCrumble; k++)
+            for (int k = 0; k < count; k++)
             {
                 int i = FreeChunk();
-                float around = yaw + 40f + k * (360f / ChunksPerCrumble);
+                float around = yaw + 40f + k * (360f / count);
                 Vector3 outward = Quaternion.Euler(0f, around, 0f) * Vector3.forward;
                 float radius = size * (0.17f - 0.03f * k);
                 chunks[i] = new Chunk
@@ -210,7 +242,7 @@ namespace WordCraft.View
                     Radius = radius,
                     Spin = (k % 2 == 0 ? 1f : -1f) * (300f + 120f * k),
                 };
-                Colour(chunkRenderers[i], BodyPalette.Darker(colour, k == 1 ? 0.82f : k == 2 ? 0.92f : 1f));
+                Colour(chunkRenderers[i], BodyPalette.Darker(colour, k % 3 == 1 ? 0.82f : k % 3 == 2 ? 0.92f : 1f));
                 chunkRenderers[i].enabled = false;
             }
         }
@@ -226,6 +258,7 @@ namespace WordCraft.View
             bursts[i] = new Burst
             {
                 Live = true, At = at, Started = ViewClock.Now + delay, Spin = burstCounter * 47f,
+                Shards = true, From = RingFrom, To = RingTo, Band = RingBand, Seconds = BurstSeconds,
             };
 
             Color light = Color.Lerp(colour, BodyPalette.HitFlash, ShardLight);
@@ -239,6 +272,43 @@ namespace WordCraft.View
             Color ring = BodyPalette.Lighter(colour, 0.25f);
             ringColours[i] = ring;
             rings[i].Visible = false;
+        }
+
+        /// <summary>
+        /// A ring of dust running out over the ground round <paramref name="foot"/>,
+        /// sized to a building of <paramref name="radius"/>: the one a finished
+        /// building raises as it settles, and a razed one as it lands (issue
+        /// #186). The impact ring, without the shards.
+        /// </summary>
+        public void Dust(Vector3 foot, float radius, Color colour, float delay = 0f)
+        {
+            int i = FreeBurst();
+            bursts[i] = new Burst
+            {
+                Live = true, At = foot, Started = ViewClock.Now + delay, Shards = false,
+                From = radius * DustFrom, To = radius * DustTo, Band = Mathf.Max(RingBand, radius * DustBand),
+                Seconds = DustSeconds,
+            };
+            ringColours[i] = colour;
+            rings[i].Visible = false;
+        }
+
+        /// <summary>
+        /// One mote rising off a working building from <paramref name="at"/>:
+        /// a chip of its faction's colour that drifts up, turning, and shrinks
+        /// away over a second (issue #186). Sized to the building's
+        /// <paramref name="footprint"/>.
+        /// </summary>
+        public void Mote(Vector3 at, Color colour, float footprint)
+        {
+            int i = FreeMote();
+            motes[i] = new Floater
+            {
+                Live = true, From = at, Started = ViewClock.Now,
+                Size = Mathf.Clamp(footprint * MoteShare, MoteMin, MoteMax), Spin = (i * 83f) % 360f,
+            };
+            Colour(moteRenderers[i], Color.Lerp(colour, BodyPalette.HitFlash, 0.3f));
+            moteRenderers[i].enabled = false;
         }
 
         /// <summary>One frame at <see cref="ViewClock.Now"/>: tracers fly and land, shards spread and shrink.</summary>
@@ -282,7 +352,7 @@ namespace WordCraft.View
                 Burst b = bursts[i];
                 if (!b.Live) continue;
 
-                float p = (now - b.Started) / BurstSeconds;
+                float p = (now - b.Started) / b.Seconds;
                 if (p < 0f) continue;
                 bool over = p >= 1f;
                 if (over)
@@ -302,7 +372,7 @@ namespace WordCraft.View
                 ring.Visible = !over && low;
                 if (ring.Visible)
                 {
-                    ring.Set(new Vector2(b.At.x, b.At.z), Mathf.Lerp(RingFrom, RingTo, spread), RingBand);
+                    ring.Set(new Vector2(b.At.x, b.At.z), Mathf.Lerp(b.From, b.To, spread), b.Band);
                     Color c = ringColours[i];
                     c.a = RingAlpha * (1f - p);
                     ring.Colour = c;
@@ -310,7 +380,7 @@ namespace WordCraft.View
                 for (int s = 0; s < ShardsPerBurst; s++)
                 {
                     MeshRenderer r = shardRenderers[i * ShardsPerBurst + s];
-                    if (over)
+                    if (over || !b.Shards)
                     {
                         r.enabled = false;
                         continue;
@@ -349,6 +419,31 @@ namespace WordCraft.View
                 chunk.position = at;
                 if (!resting) chunk.rotation = Quaternion.Euler(c.Spin * t * 0.6f, c.Spin * 0.3f, c.Spin * t);
                 chunk.localScale = Vector3.one * Mathf.Max(c.Radius * shrink, 0.001f);
+                r.enabled = true;
+            }
+
+            for (int i = 0; i < motes.Count; i++)
+            {
+                Floater m = motes[i];
+                if (!m.Live) continue;
+
+                float p = (now - m.Started) / MoteSeconds;
+                MeshRenderer r = moteRenderers[i];
+                if (p >= 1f)
+                {
+                    m.Live = false;
+                    motes[i] = m;
+                    r.enabled = false;
+                    continue;
+                }
+
+                // Up, easing off, swaying a little; full size by a tenth of the
+                // way and shrunk to nothing over the last half.
+                float grow = Mathf.Clamp01(p / 0.1f) * (p < 0.5f ? 1f : 1f - (p - 0.5f) / 0.5f);
+                Transform mote = r.transform;
+                mote.position = m.From + new Vector3(Mathf.Sin(p * 5f + m.Spin) * 0.12f, MoteRise * BodyRig.EaseOut(p), 0f);
+                mote.rotation = Quaternion.Euler(20f, m.Spin + p * 240f, 10f);
+                mote.localScale = Vector3.one * Mathf.Max(m.Size * grow, 0.001f);
                 r.enabled = true;
             }
         }
@@ -424,6 +519,11 @@ namespace WordCraft.View
                 chunks[i] = default;
                 chunkRenderers[i].enabled = false;
             }
+            for (int i = 0; i < motes.Count; i++)
+            {
+                motes[i] = default;
+                moteRenderers[i].enabled = false;
+            }
             landed.Clear();
         }
 
@@ -459,6 +559,22 @@ namespace WordCraft.View
             }
             AddChunk();
             return chunks.Count - 1;
+        }
+
+        private int FreeMote()
+        {
+            for (int i = 0; i < motes.Count; i++)
+            {
+                if (!motes[i].Live) return i;
+            }
+            AddMote();
+            return motes.Count - 1;
+        }
+
+        private void AddMote()
+        {
+            motes.Add(default);
+            moteRenderers.Add(Renderer("Mote", ShardMesh));
         }
 
         private void AddTracer()

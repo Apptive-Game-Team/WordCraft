@@ -41,6 +41,26 @@ namespace WordCraft.View
     }
 
     /// <summary>
+    /// How a building's parts come together while it is built (issue #186):
+    /// one way per faction, each the faction's own idea of making something.
+    /// </summary>
+    internal enum Assembly
+    {
+        /// <summary>세계수 정령: each part grows up out of a thin shoot.</summary>
+        Grow,
+        /// <summary>지옥불 군단: each part tears up out of the ground, shaking.</summary>
+        Tear,
+        /// <summary>물 슬라임: each part swells up and wobbles to rest.</summary>
+        Inflate,
+        /// <summary>돌 골렘 부족: each part drops from above and lands on the pile.</summary>
+        Stack,
+        /// <summary>차원 유랑종: each plate swings shut from open.</summary>
+        Close,
+        /// <summary>인간 마법 문명: each part is laid up floor by floor, square and without overshoot.</summary>
+        Floors,
+    }
+
+    /// <summary>
     /// Everything that is the same about every body of one roster entry and one
     /// owner: the baked meshes, where the moving parts hinge, and how it moves.
     /// Built once by Models and shared by every body it describes, so a hundred
@@ -70,6 +90,32 @@ namespace WordCraft.View
         /// <summary>Degrees the crown pitches when it fires: negative kicks a barrel up, positive lurches forward.</summary>
         public float CrownKick;
         public Color Tint = Color.white;
+
+        /// <summary>
+        /// A building's hull after the first part, split so a site can be put
+        /// together part by part (issue #186). Each hangs from the hull at its
+        /// pivot; <see cref="TierHeights"/> is how tall each one stands over it.
+        /// Null for a body with one hull mesh.
+        /// </summary>
+        public Mesh[] Tiers;
+        public Vector3[] TierPivots;
+        public float[] TierHeights;
+        /// <summary>World height of the first hull part over its foot.</summary>
+        public float HullHeight;
+
+        /// <summary>
+        /// A building a player builds: put together part by part, at work,
+        /// razed. Everything else that stands still — a resource node, a
+        /// rubble pile — is false, keeps one hull and sinks the old way.
+        /// </summary>
+        public bool Assembled;
+        public Assembly Assembly;
+        /// <summary>A razed building's chunks, and the dust a finished or razed building raises.</summary>
+        public Color Debris;
+        /// <summary>What a working building gives off: the small motes that rise from its roof.</summary>
+        public Color Mote;
+        /// <summary>The light inside that flashes once and goes out when it is razed; alpha zero for none.</summary>
+        public Color Glow;
     }
 
     /// <summary>
@@ -124,6 +170,48 @@ namespace WordCraft.View
         /// <summary>The ghost alpha of a site under construction, as UiStyle.SiteAlpha was for the sprite view.</summary>
         private const float SiteAlpha = 0.75f;
 
+        // Buildings (issue #186).
+
+        /// <summary>How long a razed building takes to come down: longer than a body's death, it has further to fall.</summary>
+        private const float DestroySeconds = 0.8f;
+
+        /// <summary>The share of construction the crown takes to seat itself, at the very end.</summary>
+        private const float CrownShare = 0.1f;
+
+        /// <summary>
+        /// How long one part takes to go up, in the steps that separate two
+        /// parts' starts: longer than one, so the next part starts while the
+        /// last is still settling and the site never stands still.
+        /// </summary>
+        private const float PartSteps = 1.4f;
+
+        /// <summary>How far along its own rise the first part is at a site's first tick, so a new site is never nothing.</summary>
+        private const float SiteFloor = 0.2f;
+
+        /// <summary>The squash and spring back of a building the moment it is finished.</summary>
+        private const float SettleSeconds = 0.35f;
+
+        /// <summary>A finish seen this long after the last progress reading is not news: it finished out of sight.</summary>
+        private const float RecentProgress = 0.5f;
+
+        /// <summary>How long a working building takes to come up to speed and to wind down.</summary>
+        private const float WorkRamp = 0.4f;
+
+        /// <summary>How many times its idle rate a self-turning crown turns while the building works.</summary>
+        private const float WorkSpin = 3.5f;
+
+        /// <summary>The issue's 1.5 percent: how far a working building without a turning crown swells and shrinks.</summary>
+        private const float WorkPulse = 0.015f;
+        private const float WorkPulseRate = 7f;
+
+        /// <summary>Seconds between two motes rising off a working building. A mote lives a second, so three are up at once.</summary>
+        private const float MoteInterval = 0.33f;
+
+        /// <summary>The swell and lean of a building as a unit it made comes out.</summary>
+        private const float DeliverSeconds = 0.45f;
+        private const float DeliverSwell = 0.1f;
+        private const float DeliverLean = 10f;
+
         /// <summary>A jump this long between two frames is a body being placed somewhere, not walking there.</summary>
         private const float TeleportDistance = 4f;
 
@@ -159,6 +247,42 @@ namespace WordCraft.View
 
         private Design design;
         private Transform hull, arm, limbLeft, limbRight, crown;
+
+        /// <summary>Where impacts, dust, motes and chunks are drawn from. Null for a body that makes none.</summary>
+        private Effects effects;
+
+        // A building's parts: its first hull mesh and then each tier, all
+        // hanging from the hull in the order a site puts them up. The hull of a
+        // building is a bare transform over them, so a flinch or a swell moves
+        // every part together while construction moves them one by one.
+        private Transform[] parts;
+        private Vector3[] partRest;
+        private float[] partHeight;
+        // Where each part was when the building fell, for the fall to start from.
+        private Vector3[] partFrom;
+        private Quaternion[] partFromTurn;
+        private Vector3[] partFromScale;
+        private float crownHeight;
+        // The crown's own construction pose, on top of whatever aim, spin or kick it has.
+        private Vector3 crownLift;
+        private Quaternion crownTwist = Quaternion.identity;
+        private Vector3 crownSize = Vector3.one;
+        private Vector3 crownFrom;
+        private Quaternion crownFromTurn = Quaternion.identity;
+        private Vector3 crownFromScale = Vector3.one;
+
+        private float lastProgressAt = float.NegativeInfinity;
+        private float settledAt = float.NegativeInfinity;
+        private bool working;
+        /// <summary>0 idle to 1 at work, eased over <see cref="WorkRamp"/>.</summary>
+        private float work;
+        /// <summary>A self-turning crown's angle, summed rather than read off the clock so a change of speed does not jump it.</summary>
+        private float spin;
+        private float nextMote;
+        private int motes;
+        private float deliverAt = float.NegativeInfinity;
+        private Vector3 deliverToward = Vector3.forward;
+        private bool crumbled, dusted;
         private MeshRenderer[] renderers;
         private Vector3 hullRest, armRest, limbLeftRest, limbRightRest, crownRest;
 
@@ -196,7 +320,6 @@ namespace WordCraft.View
         private bool spent;
 
         private float progress = 1f;
-        private float siteHeight = 1f;
         private float alpha = 1f;
         private float fade = 1f;
         private Color wash;
@@ -274,8 +397,33 @@ namespace WordCraft.View
             lastYaw = targetYaw;
             aimYaw = targetYaw;
 
-            var made = new System.Collections.Generic.List<MeshRenderer>(5);
-            hull = Part("Hull", design.Hull, transform, Vector3.zero, made);
+            var made = new System.Collections.Generic.List<MeshRenderer>(8);
+            if (design.Assembled)
+            {
+                // A bare hull over the parts, so construction can move each
+                // part while a flinch still moves the whole.
+                hull = new GameObject("Hull").transform;
+                hull.SetParent(transform, false);
+                int count = 1 + (design.Tiers != null ? design.Tiers.Length : 0);
+                parts = new Transform[count];
+                partRest = new Vector3[count];
+                partHeight = new float[count];
+                partFrom = new Vector3[count];
+                partFromTurn = new Quaternion[count];
+                partFromScale = new Vector3[count];
+                parts[0] = Part("Base", design.Hull, hull, Vector3.zero, made);
+                partHeight[0] = design.HullHeight;
+                for (int k = 1; k < count; k++)
+                {
+                    parts[k] = Part("Tier", design.Tiers[k - 1], hull, design.TierPivots[k - 1], made);
+                    partRest[k] = design.TierPivots[k - 1];
+                    partHeight[k] = design.TierHeights[k - 1];
+                }
+            }
+            else
+            {
+                hull = Part("Hull", design.Hull, transform, Vector3.zero, made);
+            }
             arm = Part("Arm", design.Arm, hull, design.ArmPivot, made);
             Transform limbParent = design.LimbsRideHull ? hull : transform;
             limbLeft = Part("LimbLeft", design.LimbLeft, limbParent, design.LimbLeftPivot, made);
@@ -288,6 +436,7 @@ namespace WordCraft.View
             limbLeftRest = design.LimbLeftPivot;
             limbRightRest = design.LimbRightPivot;
             crownRest = design.CrownPivot;
+            crownHeight = Mathf.Max(design.Top - 0.25f - crownRest.y, 0.4f);
 
             tint = design.Tint;
             ApplyLook();
@@ -437,19 +586,61 @@ namespace WordCraft.View
         }
 
         /// <summary>
-        /// Construction from 0 to 1. The body grows out of the ground — scaled up
-        /// from its feet, which is the same thing as rising — and stays a ghost
+        /// Construction from 0 to 1 (issue #186). A building is put together
+        /// part by part: the first nine tenths are shared out among its hull's
+        /// parts in order, and the last tenth seats the crown. How each part
+        /// comes up is the faction's <see cref="Assembly"/>. It stays a ghost
         /// until it is finished, as a site did in the sprite view.
+        ///
+        /// The moment it finishes, it squashes once and springs back and a ring
+        /// of dust runs out from its foot, but only when the last reading was a
+        /// moment ago: a site that finished in the fog and is seen again
+        /// finished, it does not finish again in front of the player.
         /// </summary>
         public void Progress(float t)
         {
             t = Mathf.Clamp01(t);
+            float now = ViewClock.Now;
+            bool recent = now - lastProgressAt <= RecentProgress;
+            lastProgressAt = now;
             if (Mathf.Approximately(t, progress)) return;
+
+            bool finished = progress < 1f && t >= 1f;
             progress = t;
-            siteHeight = t >= 1f ? 1f : Mathf.Lerp(0.15f, 1f, t);
-            transform.localScale = new Vector3(1f, siteHeight, 1f);
+            if (parts != null) PoseAssembly(now);
+            if (finished && recent && shown && !remembered && parts != null)
+            {
+                settledAt = now;
+                if (effects != null) effects.Dust(transform.position, design.Footprint * 0.5f, Dust);
+            }
             ApplyLook();
         }
+
+        /// <summary>Where this body's dust, chunks and motes come from. MatchView hands it its pool.</summary>
+        public void Use(Effects pool) => effects = pool;
+
+        /// <summary>
+        /// Whether the building is producing or researching. A crown that turns
+        /// by itself turns faster; anything else swells and shrinks a little.
+        /// Either way it gives off motes of its faction's colour. Eased in and
+        /// out, so a queue that empties and fills again on the same tick does
+        /// not stutter.
+        /// </summary>
+        public void Work(bool on) => working = on;
+
+        /// <summary>
+        /// A unit just came out of this building toward <paramref name="yawDegrees"/>:
+        /// the hull swells once and leans that way, as if it had pushed it out.
+        /// </summary>
+        public void Deliver(float yawDegrees)
+        {
+            deliverAt = ViewClock.Now;
+            float radians = yawDegrees * Mathf.Deg2Rad;
+            deliverToward = new Vector3(Mathf.Sin(radians), 0f, Mathf.Cos(radians));
+        }
+
+        /// <summary>The dust a building raises when it is finished or comes down: its rubble's colour, lightened.</summary>
+        private Color Dust => BodyPalette.Lighter(design.Debris, 0.55f);
 
         public void Tint(Color multiply)
         {
@@ -572,6 +763,7 @@ namespace WordCraft.View
                     falling = true;
                     fellAt = transform.position;
                     fellFacing = transform.rotation;
+                    if (parts != null) Capture();
                 }
                 Fall(now);
                 return;
@@ -583,8 +775,7 @@ namespace WordCraft.View
             }
             if (remembered) return;
 
-            Vector3 pop = Pop(now);
-            transform.localScale = new Vector3(pop.x, pop.y * siteHeight, pop.z);
+            transform.localScale = Pop(now);
 
             if (design.Building) Stand(now, deltaTime);
             else Move(now, deltaTime);
@@ -816,10 +1007,14 @@ namespace WordCraft.View
 
         /// <summary>
         /// A building never walks. It flinches when hit, swells or kicks its
-        /// crown when it fires, and turns its crown if the crown is a turret.
+        /// crown when it fires, turns its crown if the crown is a turret, and
+        /// while it is a site its parts go up one by one. Finished, it settles;
+        /// at work, it turns or pulses; delivering a unit, it swells and leans.
         /// </summary>
         private void Stand(float now, float deltaTime)
         {
+            if (parts != null && progress < 1f) PoseAssembly(now);
+
             Vector3 scale = Vector3.one;
 
             float washToward = 0f;
@@ -837,7 +1032,38 @@ namespace WordCraft.View
             float attack = Phase(attackStarted, AttackSeconds, now);
             float fire = attack >= 0f ? (1f - attack) * (1f - attack) : 0f;
             if (crown == null && attack >= 0f) scale *= 1f + 0.05f * Bump(attack, 0f, 1f);
+
+            // Finished: down onto its foundations and back up past rest, once.
+            float settle = Phase(settledAt, SettleSeconds, now);
+            if (settle >= 0f)
+            {
+                float press = Bump(settle, 0f, 0.55f) - 0.4f * Bump(settle, 0.55f, 1f);
+                scale = Vector3.Scale(scale, new Vector3(1f + 0.06f * press, 1f - 0.12f * press, 1f + 0.06f * press));
+            }
+
+            bool spins = crown != null && design.CrownSpin != 0f && !design.CrownAims;
+            float rate = deltaTime > 0f ? deltaTime / WorkRamp : 0f;
+            work = Mathf.MoveTowards(work, working && progress >= 1f ? 1f : 0f, rate);
+            if (!spins && work > 0f) scale *= 1f + WorkPulse * work * Mathf.Sin(now * WorkPulseRate * tempo + seed);
+            // Motes whether or not the crown turns: a crown turning three times
+            // faster is plain in motion and invisible in a still, and a still at
+            // 64 px is what the strips judge by.
+            if (working && progress >= 1f && parts != null) Motes(now);
+
+            Quaternion lean = Quaternion.identity;
+            float deliver = Phase(deliverAt, DeliverSeconds, now);
+            if (deliver >= 0f)
+            {
+                // Swollen fast and let go slowly, leaning out toward the door
+                // the unit used and back.
+                float swell = Bump(deliver, 0f, 0.6f);
+                scale *= 1f + DeliverSwell * swell;
+                Vector3 toward = Quaternion.Inverse(transform.rotation) * deliverToward;
+                float tip = Mathf.Tan(DeliverLean * Bump(deliver, 0f, 1f) * Mathf.Deg2Rad);
+                lean = Quaternion.FromToRotation(Vector3.up, (Vector3.up + toward * tip).normalized);
+            }
             hull.localScale = scale;
+            hull.localRotation = lean;
 
             if (crown == null) return;
 
@@ -848,27 +1074,195 @@ namespace WordCraft.View
                 // less whatever the root is turned by.
                 float local = aimYaw - transform.eulerAngles.y;
                 Quaternion yaw = Quaternion.Euler(0f, local, 0f);
-                Quaternion current = Quaternion.Euler(0f, CurrentYaw(crown.localRotation), 0f);
+                Quaternion current = Quaternion.Euler(0f, CurrentYaw(Quaternion.Inverse(crownTwist) * crown.localRotation), 0f);
                 turn = Quaternion.RotateTowards(current, yaw, TurnDegreesPerSecond * 0.5f * deltaTime);
             }
             else if (design.CrownSpin != 0f)
             {
-                turn = Quaternion.Euler(0f, now * design.CrownSpin + seed * 100f, 0f);
+                spin += design.CrownSpin * (1f + (WorkSpin - 1f) * work) * deltaTime;
+                turn = Quaternion.Euler(0f, spin + seed * 100f, 0f);
             }
             else
             {
-                turn = Quaternion.Euler(0f, CurrentYaw(crown.localRotation), 0f);
+                turn = Quaternion.Euler(0f, CurrentYaw(Quaternion.Inverse(crownTwist) * crown.localRotation), 0f);
             }
 
-            crown.localRotation = turn * Quaternion.Euler(design.CrownKick * fire, 0f, 0f);
-            crown.localPosition = crownRest + turn * new Vector3(0f, 0f, -0.18f * fire);
+            crown.localRotation = crownTwist * turn * Quaternion.Euler(design.CrownKick * fire, 0f, 0f);
+            crown.localPosition = crownRest + crownLift + turn * new Vector3(0f, 0f, -0.18f * fire);
+            crown.localScale = crownSize;
+        }
+
+        /// <summary>
+        /// A mote every <see cref="MoteInterval"/> off a working building's roof,
+        /// each from a different side of it. Only while it is seen: a building
+        /// at work in the fog gives nothing away.
+        /// </summary>
+        private void Motes(float now)
+        {
+            if (effects == null || !shown || remembered) return;
+            if (now < nextMote) return;
+            // A building that has just started, or just come into sight, starts now
+            // rather than paying out every mote it missed.
+            if (now - nextMote > MoteInterval) nextMote = now;
+            nextMote += MoteInterval;
+            motes++;
+            float around = seed * 2.3f + motes * 2.4f;
+            float roof = (design.Top - 0.25f) * 0.85f;
+            Vector3 at = transform.position + Vector3.up * roof +
+                         new Vector3(Mathf.Sin(around), 0f, Mathf.Cos(around)) * (design.Footprint * 0.2f);
+            effects.Mote(at, design.Mote, design.Footprint);
+        }
+
+        // ------------------------------------------------------------------
+        // Construction
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// Every part at its pose for the current progress. Part k of n starts
+        /// at k steps of the hull's share and takes <see cref="PartSteps"/>
+        /// steps; the crown takes the last tenth. Finished, everything is at rest.
+        /// </summary>
+        private void PoseAssembly(float now)
+        {
+            bool done = progress >= 1f;
+            int count = parts.Length;
+            float span = crown != null ? 1f - CrownShare : 1f;
+            float step = span / (count - 1 + PartSteps);
+            for (int k = 0; k < count; k++)
+            {
+                float u = done ? 1f : Mathf.Clamp01((progress - k * step) / (step * PartSteps));
+                if (k == 0) u = Mathf.Max(u, SiteFloor);
+                Put(k, u, now, partRest[k], partHeight[k], out Vector3 position, out Quaternion turn, out Vector3 scale);
+                Transform part = parts[k];
+                part.localPosition = position;
+                part.localRotation = turn;
+                part.localScale = scale;
+            }
+
+            if (crown == null) return;
+            float c = done ? 1f : Mathf.Clamp01((progress - span) / CrownShare);
+            Put(count, c, now, crownRest, crownHeight, out Vector3 at, out crownTwist, out crownSize);
+            crownLift = at - crownRest;
+            if (done) crownTwist = Quaternion.identity;
+        }
+
+        /// <summary>
+        /// Part <paramref name="k"/>, resting at <paramref name="rest"/> and
+        /// <paramref name="height"/> tall, <paramref name="u"/> of the way through
+        /// going up, in the faction's way. Nothing before it starts.
+        /// </summary>
+        private void Put(int k, float u, float now, Vector3 rest, float height,
+                         out Vector3 position, out Quaternion turn, out Vector3 scale)
+        {
+            position = rest;
+            turn = Quaternion.identity;
+            scale = Vector3.one;
+            if (u >= 1f) return;
+            if (u <= 0f)
+            {
+                scale = Vector3.one * 0.001f;
+                return;
+            }
+
+            float side = k % 2 == 0 ? 1f : -1f;
+            switch (design.Assembly)
+            {
+                case Assembly.Grow:
+                {
+                    // Up out of a thin shoot, filling out as it rises, a little
+                    // past full at the end.
+                    float over = 1f + 0.08f * Bump(u, 0.55f, 1f);
+                    float wide = Mathf.Lerp(0.3f, 1f, EaseOut(u)) * over;
+                    scale = new Vector3(wide, Mathf.Max(Smooth(u), 0.001f) * over, wide);
+                    break;
+                }
+                case Assembly.Tear:
+                {
+                    // Up out of the ground from its own height below, fast at
+                    // first, shaking all the way and slowing as it clears.
+                    float up = EaseOut(u);
+                    float shake = (1f - u) * 0.06f * Mathf.Max(height, 0.5f);
+                    position = rest + new Vector3(Mathf.Sin(now * 61f + k * 1.7f) * shake,
+                                                  -height * 1.05f * (1f - up),
+                                                  Mathf.Sin(now * 47f + k) * shake * 0.6f);
+                    turn = Quaternion.Euler(0f, 0f, side * 9f * (1f - up) * Mathf.Sin(now * 23f + k));
+                    break;
+                }
+                case Assembly.Inflate:
+                {
+                    // Swelled past full, sagged under it, settled: a bubble
+                    // finding its size.
+                    float s = u < 0.55f ? 1.16f * Smooth(u / 0.55f)
+                        : u < 0.8f ? Mathf.Lerp(1.16f, 0.94f, Smooth((u - 0.55f) / 0.25f))
+                        : Mathf.Lerp(0.94f, 1f, Smooth((u - 0.8f) / 0.2f));
+                    s = Mathf.Max(s, 0.001f);
+                    float wobble = Mathf.Sin(u * Mathf.PI * 3f) * 0.07f * (1f - u);
+                    scale = new Vector3(s * (1f + wobble), s * (1f - wobble), s * (1f + wobble));
+                    break;
+                }
+                case Assembly.Stack:
+                case Assembly.Close when k == 0:
+                {
+                    if (k == 0)
+                    {
+                        // The footing is heaped up where it lies, not dropped
+                        // from above or swung in: a site marks its ground first.
+                        scale = new Vector3(1f, Mathf.Max(Smooth(u), 0.001f), 1f);
+                        break;
+                    }
+                    // Dropped from above, tumbling a little, onto the pile; a
+                    // squash where it lands.
+                    const float land = 0.7f;
+                    if (u < land)
+                    {
+                        float f = u / land;
+                        float left = 1f - f;
+                        position.y += (1.2f + height * 0.4f) * (1f - f * f);
+                        turn = Quaternion.Euler(side * 16f * left, 35f * left, side * 12f * left);
+                        scale = Vector3.one * Mathf.Min(1f, u / 0.1f);
+                    }
+                    else
+                    {
+                        float press = Bump(u, land, 1f);
+                        scale = new Vector3(1f + 0.1f * press, 1f - 0.18f * press, 1f + 0.1f * press);
+                    }
+                    break;
+                }
+                case Assembly.Close:
+                {
+                    // Open, then shut a little too far, then true. A plate
+                    // standing off to one side swings in on its foot; a ring of
+                    // plates round the middle closes in and twists shut.
+                    float shut = u < 0.8f ? 1.06f * Smooth(u / 0.8f) : Mathf.Lerp(1.06f, 1f, (u - 0.8f) / 0.2f);
+                    float open = 1f - shut;
+                    float appear = Smooth(Mathf.Clamp01(u / 0.15f));
+                    if (Mathf.Abs(rest.x) > 0.05f)
+                    {
+                        turn = Quaternion.Euler(0f, 0f, -Mathf.Sign(rest.x) * 80f * open);
+                        scale = Vector3.one * Mathf.Max(appear, 0.001f);
+                    }
+                    else
+                    {
+                        turn = Quaternion.Euler(0f, side * 70f * open, 0f);
+                        float spread = (1f + 0.7f * open) * appear;
+                        scale = new Vector3(Mathf.Max(spread, 0.001f), Mathf.Max(Mathf.Lerp(0.35f, 1f, Mathf.Clamp01(shut)) * appear, 0.001f),
+                                            Mathf.Max(spread, 0.001f));
+                    }
+                    break;
+                }
+                default:
+                    // Laid up from its foot, square, with no overshoot: a course
+                    // of stone goes on and stays where it is put.
+                    scale = new Vector3(1f, Mathf.Max(EaseOut(u), 0.001f), 1f);
+                    break;
+            }
         }
 
         /// <summary>
         /// The death, from <see cref="Die"/> to switched off. Four ways down,
         /// each the body's own: a walker tips over and collapses with its legs
         /// splayed, a flyer drops out of the air and bounces once, a building
-        /// shudders and settles into the ground, and a golem breaks into the
+        /// comes apart (<see cref="Raze"/>), and a golem breaks into the
         /// rubble it leaves (the chunks are Effects.Crumble; the body itself only
         /// shrinks away under them).
         ///
@@ -883,6 +1277,12 @@ namespace WordCraft.View
         /// </summary>
         private void Fall(float now)
         {
+            if (parts != null)
+            {
+                Raze(now);
+                return;
+            }
+
             float t = (now - diedAt) / DeathSeconds;
             if (t >= 1f)
             {
@@ -891,7 +1291,7 @@ namespace WordCraft.View
             }
             t = Mathf.Clamp01(t);
 
-            float size = design.Building ? Mathf.Max(design.Top - 0.25f, 0.5f) : design.Size;
+            float size = design.Size;
             Vector3 offset = Vector3.zero;
             Vector3 squash = Vector3.one;
             float sag = 0f;
@@ -915,10 +1315,12 @@ namespace WordCraft.View
             }
             else if (design.Building)
             {
+                // A resource node run dry: it shudders and settles into the
+                // ground, with nothing to break off and nothing inside.
                 float shake = (1f - t) * 0.06f * design.Footprint;
                 offset.x = Mathf.Sin(now * 57f + seed) * shake;
                 offset.z = Mathf.Sin(now * 43f + seed * 3f) * shake * 0.6f;
-                offset.y = -t * t * size * 0.6f;
+                offset.y = -t * t * Mathf.Max(design.Top - 0.25f, 0.5f) * 0.6f;
                 squash.y = 1f - 0.3f * t;
                 roll = Mathf.Sin(now * 31f + seed) * 2.5f * (1f - t);
             }
@@ -959,13 +1361,121 @@ namespace WordCraft.View
 
             transform.position = fellAt + offset;
             transform.rotation = fellFacing * Quaternion.Euler(pitch, 0f, roll);
-            transform.localScale = new Vector3(1f, siteHeight, 1f);
+            transform.localScale = Vector3.one;
             hull.localPosition = hullRest + new Vector3(0f, sag, 0f);
             hull.localRotation = Quaternion.identity;
             hull.localScale = squash;
             if (arm != null) arm.localRotation = Quaternion.identity;
             Splay(splay);
             Look(toward, washed, opacity);
+        }
+
+        /// <summary>Every part's pose the moment the building starts to fall: a site falls from where it had got to.</summary>
+        private void Capture()
+        {
+            for (int k = 0; k < parts.Length; k++)
+            {
+                partFrom[k] = parts[k].localPosition;
+                partFromTurn[k] = parts[k].localRotation;
+                partFromScale[k] = parts[k].localScale;
+            }
+            if (crown == null) return;
+            crownFrom = crown.localPosition;
+            crownFromTurn = crown.localRotation;
+            crownFromScale = crown.localScale;
+        }
+
+        /// <summary>
+        /// A building coming down, over <see cref="DestroySeconds"/> (issue
+        /// #186): it shudders; its upper parts and its crown break off one after
+        /// another and topple out and down, each its own way, while chunks of
+        /// it are thrown (Effects.Crumble); a ring of dust runs out as they land;
+        /// what is left sinks into the ground and fades in the last thirty
+        /// percent. A building with a light inside (지옥불's ember, 유랑종's other
+        /// world) flashes it once as it breaks and goes dark.
+        /// </summary>
+        private void Raze(float now)
+        {
+            float t = (now - diedAt) / DestroySeconds;
+            if (t >= 1f)
+            {
+                Spend();
+                return;
+            }
+            t = Mathf.Clamp01(t);
+
+            // What is left after the parts break off is the foundations, so the
+            // sink goes as deep as they are tall: a low slab is not driven a
+            // whole tower's height into the ground in the first frame of it.
+            float footprint = design.Footprint;
+            float shudder = 1f - Smooth(Mathf.Clamp01(t / 0.3f));
+            float shake = shudder * 0.07f * footprint;
+            float sink = Smooth(Mathf.Clamp01((t - 0.45f) / 0.55f));
+            var offset = new Vector3(Mathf.Sin(now * 57f + seed) * shake, -sink * Mathf.Min(partHeight[0], 1.5f) * 0.9f,
+                                     Mathf.Sin(now * 43f + seed * 3f) * shake * 0.6f);
+            transform.position = fellAt + offset;
+            transform.rotation = fellFacing * Quaternion.Euler(0f, 0f, Mathf.Sin(now * 31f + seed) * 3f * shudder);
+            transform.localScale = Vector3.one;
+            hull.localPosition = hullRest;
+            hull.localRotation = Quaternion.identity;
+            hull.localScale = new Vector3(1f + 0.1f * sink, 1f - 0.4f * sink, 1f + 0.1f * sink);
+
+            // The foundations stay; everything above them breaks away, the top
+            // first, so the building comes apart from the top down.
+            for (int k = 1; k < parts.Length; k++)
+            {
+                Break(parts[k], parts.Length - k, t, partFrom[k], partFromTurn[k], partFromScale[k], partHeight[k], k);
+            }
+            if (crown != null) Break(crown, 0, t, crownFrom, crownFromTurn, crownFromScale, crownHeight, parts.Length);
+
+            if (!crumbled && t >= 0.15f)
+            {
+                crumbled = true;
+                if (effects != null)
+                {
+                    int pieces = Mathf.Clamp(Mathf.RoundToInt(footprint), 2, 4);
+                    effects.Crumble(fellAt, footprint * 0.85f, design.Debris, fellFacing.eulerAngles.y + seed * 40f, 0f, pieces);
+                }
+            }
+            if (!dusted && t >= 0.32f)
+            {
+                dusted = true;
+                if (effects != null) effects.Dust(fellAt, footprint * 0.45f, Dust);
+            }
+
+            float opacity = 1f - Mathf.Clamp01((t - 0.7f) / 0.3f);
+            Color toward;
+            float washed;
+            if (design.Glow.a > 0f && t < 0.27f)
+            {
+                toward = design.Glow;
+                washed = 0.8f * Spike(t, 0.15f, 0.12f);
+            }
+            else
+            {
+                // Dark and dusty: the light is out, or there never was one.
+                toward = BodyPalette.Darker(design.Debris, 0.4f);
+                float dark = design.Glow.a > 0f ? 0.55f : 0.3f;
+                washed = dark * Smooth(Mathf.Clamp01((t - 0.27f) / 0.25f));
+            }
+            Look(toward, washed, opacity);
+        }
+
+        /// <summary>
+        /// One part breaking off: after a wait set by its <paramref name="order"/>
+        /// (0 goes first), it slides out from the building, tips over the way it
+        /// slides, drops, and shrinks a little as it goes into the ground.
+        /// </summary>
+        private void Break(Transform part, int order, float t, Vector3 from, Quaternion fromTurn, Vector3 fromScale,
+                           float height, int index)
+        {
+            float b = Mathf.Clamp01((t - 0.1f - 0.05f * order) / 0.45f);
+            float yaw = seed * 57f + index * 137.5f;
+            var away = new Vector3(Mathf.Sin(yaw * Mathf.Deg2Rad), 0f, Mathf.Cos(yaw * Mathf.Deg2Rad));
+            part.localPosition = from + away * ((0.45f * height + 0.3f) * EaseOut(b)) +
+                                 Vector3.down * ((height * 1.1f + 0.4f) * b * b);
+            part.localRotation = Quaternion.AngleAxis(75f * b * b, Vector3.Cross(Vector3.up, away)) * fromTurn;
+            part.localScale = fromScale * (1f - 0.35f * b);
         }
 
         /// <summary>
@@ -1001,7 +1511,7 @@ namespace WordCraft.View
             }
             t = Mathf.Clamp01(t);
             float grow = 1f + 0.25f * Mathf.Sin(t * Mathf.PI * 0.5f);
-            transform.localScale = new Vector3(grow, grow * siteHeight, grow);
+            transform.localScale = new Vector3(grow, grow, grow);
             Look(BodyPalette.HitFlash, 0.5f * t, 1f);
         }
 
@@ -1031,8 +1541,8 @@ namespace WordCraft.View
             if (arm != null) arm.localRotation = Quaternion.identity;
             if (limbLeft != null) { limbLeft.localPosition = limbLeftRest; limbLeft.localRotation = Quaternion.identity; }
             if (limbRight != null) { limbRight.localPosition = limbRightRest; limbRight.localRotation = Quaternion.identity; }
-            if (crown != null) crown.localPosition = crownRest;
-            transform.localScale = new Vector3(1f, siteHeight, 1f);
+            if (crown != null) crown.localPosition = crownRest + crownLift;
+            transform.localScale = Vector3.one;
             washAmount = 0f;
             fade = 1f;
         }

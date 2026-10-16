@@ -53,17 +53,24 @@ namespace WordCraft.View
             string output = Arg("-shotsOutput");
             if (string.IsNullOrEmpty(output)) output = "shots";
             int ticks = int.TryParse(Arg("-shotsTicks"), out int parsed) ? parsed : 900;
+            only = Arg("-shotsOnly");
 
             try
             {
                 Directory.CreateDirectory(output);
-                World world = Advance(ticks);
-                Shoot(world, output);
-                int lineups = Lineups(output);
+                Known();
+                int fields = 0;
+                if (Wanted("field"))
+                {
+                    World world = Advance(ticks);
+                    Shoot(world, output);
+                    fields = Shots.Length;
+                }
+                int lineups = Wanted("lineup") ? Lineups(output) : 0;
                 int strips = Strips(output);
-                int matches = MatchStrips(output);
-                Debug.Log("OK: " + (Shots.Length + lineups + strips + matches) + " shots written to " + Path.GetFullPath(output) +
-                          " (" + Shots.Length + " field, " + lineups + " lineup, " + strips + " strip, " + matches + " match strip)");
+                int matches = Wanted("match") ? MatchStrips(output) : 0;
+                Debug.Log("OK: " + (fields + lineups + strips + matches) + " shots written to " + Path.GetFullPath(output) +
+                          " (" + fields + " field, " + lineups + " lineup, " + strips + " strip, " + matches + " match strip)");
                 EditorApplication.Exit(0);
             }
             catch (Exception e)
@@ -75,6 +82,43 @@ namespace WordCraft.View
             {
                 ViewClock.Release();
             }
+        }
+
+        /// <summary>
+        /// -shotsOnly: a comma-separated list of the kinds to write — field,
+        /// lineup, match, or a strip motion such as build — so one motion can be
+        /// looked at again without rendering all of them. Everything when absent.
+        /// </summary>
+        private static string only;
+
+        /// <summary>
+        /// Refuses a -shotsOnly kind that names nothing, so a typo fails the run
+        /// rather than writing no shots and printing OK.
+        /// </summary>
+        private static void Known()
+        {
+            if (string.IsNullOrEmpty(only)) return;
+            foreach (string part in only.Split(','))
+            {
+                string kind = part.Trim();
+                bool known = kind == "field" || kind == "lineup" || kind == "match" || kind == "growth" ||
+                             Array.IndexOf(Motions, kind) >= 0 || Array.IndexOf(BuildingMotions, kind) >= 0;
+                if (!known)
+                {
+                    throw new ArgumentException("-shotsOnly names '" + kind + "', which is no kind of shot. Kinds: field, lineup, match, growth, " +
+                                                string.Join(", ", Motions) + ", " + string.Join(", ", BuildingMotions));
+                }
+            }
+        }
+
+        private static bool Wanted(string kind)
+        {
+            if (string.IsNullOrEmpty(only)) return true;
+            foreach (string part in only.Split(','))
+            {
+                if (part.Trim() == kind) return true;
+            }
+            return false;
         }
 
         /// <summary>The scripted match, some way in, so there is something on the field to look at.</summary>
@@ -236,6 +280,44 @@ namespace WordCraft.View
         /// </summary>
         private static readonly string[] Motions = { "walk", "attack", "hit", "death", "idle", "spawn", "tower" };
 
+        /// <summary>
+        /// The building motions of issue #186, each over three buildings of one
+        /// faction: a site assembling, a building at work, a building razed.
+        /// </summary>
+        private static readonly string[] BuildingMotions = { "build", "work", "destroy", "sitedestroy" };
+
+        /// <summary>
+        /// How far built a sitedestroy strip's sites are: halfway, so the fall
+        /// starts from a pose with parts still missing and parts still rising.
+        /// </summary>
+        private const float SiteDestroyProgress = 0.5f;
+
+        /// <summary>
+        /// How long a sitedestroy strip's sites stand after Die before they
+        /// fall: the hold a tracer still in the air puts on a death in MatchView.
+        /// </summary>
+        private const float HeldDeath = 0.25f;
+
+        /// <summary>
+        /// How long a build strip takes to go from nothing to finished: six of the
+        /// seven frame gaps, so the last frame shows the settle and the dust ring
+        /// rather than the instant of completion.
+        /// </summary>
+        private const float BuildSeconds = StripSeconds * 6f / 7f;
+
+        /// <summary>Cells between two buildings' footprints in a building strip.</summary>
+        private const float BuildingGap = 1.6f;
+
+        /// <summary>
+        /// When a work strip's base and production building deliver a unit:
+        /// just before frame 3, so frames 4 and 5 hold the swell, the lean and
+        /// the unit coming up.
+        /// </summary>
+        private const float DeliverAt = 0.36f;
+
+        /// <summary>Where a delivered unit stands up: toward the camera and to the right of its building, at its door.</summary>
+        private const float DoorYaw = 135f;
+
         private static int Strips(string output)
         {
             int written = 0;
@@ -248,15 +330,23 @@ namespace WordCraft.View
                 foreach (string motion in Motions)
                 {
                     List<(Role Role, int Slot)> cast = motion == "tower" ? towers : walkers;
-                    if (cast.Count == 0) continue;
+                    if (cast.Count == 0 || !Wanted(motion)) continue;
                     Strip(output, faction, motion, cast);
                     written++;
                 }
 
                 List<(Role Role, int Slot)> growth = Growths(faction);
-                if (growth.Count > 0)
+                if (growth.Count > 0 && Wanted("growth"))
                 {
                     Strip(output, faction, "growth", growth);
+                    written++;
+                }
+
+                foreach (string motion in BuildingMotions)
+                {
+                    List<(Role Role, int Slot)> cast = Buildings(faction, motion);
+                    if (cast.Count == 0 || !Wanted(motion)) continue;
+                    Strip(output, faction, motion, cast);
                     written++;
                 }
             }
@@ -308,6 +398,27 @@ namespace WordCraft.View
             return list;
         }
 
+        /// <summary>
+        /// Entry 0 of the base, the production building, and a third: the
+        /// defense building for build and destroy, the tech building for work,
+        /// because a defense building never queues or researches anything.
+        /// </summary>
+        private static List<(Role Role, int Slot)> Buildings(Faction faction, string motion)
+        {
+            var list = new List<(Role Role, int Slot)>();
+            Role[] roles = { Role.Base, Role.Production, motion == "work" ? Role.Tech : Role.Defense };
+            foreach (Role role in roles)
+            {
+                if (FactionData.Has(faction, role, 0)) list.Add((role, 0));
+            }
+            return list;
+        }
+
+        private static bool IsBuildingMotion(string motion) => Array.IndexOf(BuildingMotions, motion) >= 0;
+
+        /// <summary>Construction progress a build strip shows <paramref name="since"/> seconds after it starts.</summary>
+        private static float BuildAt(float since) => Mathf.Clamp01(since / BuildSeconds);
+
         /// <summary>Every defense entry: the buildings that turn, fire and kick.</summary>
         private static List<(Role Role, int Slot)> Towers(Faction faction)
         {
@@ -327,15 +438,35 @@ namespace WordCraft.View
             // A growth strip's cast is worker and grown body in pairs, and each
             // pair stands on one spot: the grown body replaces the worker there.
             bool growth = motion == "growth";
+            bool buildings = IsBuildingMotion(motion);
             int places = growth ? cast.Count / 2 : cast.Count;
             float spacing = towers ? 4.5f : growth ? StripSpacing * 1.4f : StripSpacing;
             float left = World.GridSize * 0.5f - (places - 1) * spacing * 0.5f;
             var homes = new List<Vector2>(cast.Count);
-            for (int i = 0; i < cast.Count; i++)
+            if (buildings)
             {
-                var home = new Vector2(left + (growth ? i / 2 : i) * spacing, Row);
-                Spawn(world, cast[i].Role, cast[i].Slot, home);
-                homes.Add(home);
+                // Footprint by footprint, as a lineup stands, since a base is
+                // half again as wide as the defense beside it.
+                float span = -BuildingGap;
+                foreach (var entry in cast) span += MatchView.Cells(entry.Role) + BuildingGap;
+                float x = World.GridSize * 0.5f - span * 0.5f;
+                for (int i = 0; i < cast.Count; i++)
+                {
+                    float width = MatchView.Cells(cast[i].Role);
+                    var home = new Vector2(x + width * 0.5f, Row);
+                    Spawn(world, cast[i].Role, cast[i].Slot, home);
+                    homes.Add(home);
+                    x += width + BuildingGap;
+                }
+            }
+            else
+            {
+                for (int i = 0; i < cast.Count; i++)
+                {
+                    var home = new Vector2(left + (growth ? i / 2 : i) * spacing, Row);
+                    Spawn(world, cast[i].Role, cast[i].Slot, home);
+                    homes.Add(home);
+                }
             }
 
             using (var studio = new Studio(world, FrameWidth * Frames, FrameHeight, FrameWidth, FrameHeight))
@@ -345,14 +476,23 @@ namespace WordCraft.View
                 var speeds = new float[rigs.Count];
                 for (int i = 0; i < rigs.Count; i++)
                 {
-                    if (!towers) Turn(rigs[i], FacingYaw);
+                    rigs[i].Use(effects);
+                    if (!towers && !buildings) Turn(rigs[i], FacingYaw);
                     if (growth && i % 2 == 1) rigs[i].Spawn(1e6f); // not there until the worker has swelled
+                    if (motion == "build") rigs[i].Progress(0f); // a bare site through the preroll
+                    if (motion == "sitedestroy") rigs[i].Progress(SiteDestroyProgress);
+                    if (motion == "work") rigs[i].Work(true);   // at work through the preroll, so motes are already up
                     // Fix is cells a tick; a strip walks at the roster's own pace.
                     speeds[i] = FactionData.Stats(faction, cast[i].Role, cast[i].Slot).Speed.Raw / (float)Fix.One * World.TicksPerSecond;
                 }
 
                 float now = StartSeconds - PrerollSeconds;
                 var shot = new Shooting { World = world, Faction = faction, Cast = cast, Effects = effects };
+                if (motion == "work")
+                {
+                    Deliveries(studio.Root.transform, faction, cast, rigs, homes, shot);
+                    Array.Resize(ref speeds, rigs.Count);
+                }
                 // An attack starts a moment before frame 0, so frame 0 holds its
                 // wind-up rather than the rest pose the wind-up starts from.
                 float lead = motion == "attack" ? AttackLead : 0f;
@@ -407,6 +547,12 @@ namespace WordCraft.View
                     case "spawn":
                         rigs[i].Spawn();
                         break;
+                    case "destroy":
+                        rigs[i].Die(false);
+                        break;
+                    case "sitedestroy":
+                        rigs[i].Die(false, HeldDeath);
+                        break;
                 }
             }
         }
@@ -419,6 +565,42 @@ namespace WordCraft.View
             public Faction Faction;
             public List<(Role Role, int Slot)> Cast;
             public Effects Effects;
+            /// <summary>Per rig in a work strip: the rig of the unit it delivers, or -1.</summary>
+            public readonly List<int> Delivers = new List<int>();
+        }
+
+        /// <summary>
+        /// The units a work strip's base and production building put out: a
+        /// worker from the base, the first melee entry (or a worker) from the
+        /// production building, standing at the door and not yet there. Added
+        /// after the buildings, so rig i is still entity i for every building.
+        /// </summary>
+        private static void Deliveries(Transform parent, Faction faction, List<(Role Role, int Slot)> cast,
+                                       List<BodyRig> rigs, List<Vector2> homes, Shooting shot)
+        {
+            int buildings = rigs.Count;
+            for (int i = 0; i < buildings; i++) shot.Delivers.Add(-1);
+            for (int i = 0; i < buildings; i++)
+            {
+                Role made = cast[i].Role == Role.Production && FactionData.Has(faction, Role.Melee, 0) ? Role.Melee
+                          : cast[i].Role == Role.Base || cast[i].Role == Role.Production ? Role.Worker
+                          : Role.None;
+                if (made == Role.None) continue;
+
+                EntityKind kind = made == Role.Worker ? EntityKind.Worker : EntityKind.Unit;
+                BodyRig unit = Models.Build(parent, faction, made, 0, kind, 0, neutral: false);
+                float radians = DoorYaw * Mathf.Deg2Rad;
+                float reach = MatchView.Cells(cast[i].Role) * 0.5f + 0.7f;
+                Vector2 door = homes[i] + new Vector2(Mathf.Sin(radians), Mathf.Cos(radians)) * reach;
+                unit.Show(true);
+                unit.Place(Field.At(door));
+                Turn(unit, DoorYaw);
+                unit.Spawn(1e6f); // not there until it is delivered
+                shot.Delivers[i] = rigs.Count;
+                shot.Delivers.Add(-1);
+                rigs.Add(unit);
+                homes.Add(door);
+            }
         }
 
         /// <summary>
@@ -469,6 +651,12 @@ namespace WordCraft.View
                     Vector2 at = homes[i];
                     if (motion == "walk" && since > 0f) at += Walk(since, speeds[i]);
                     rigs[i].Place(Field.At(at));
+                    if (motion == "build") rigs[i].Progress(BuildAt(since));
+                    if (motion == "work" && since >= DeliverAt && since - step < DeliverAt && shot.Delivers[i] >= 0)
+                    {
+                        rigs[i].Deliver(DoorYaw);
+                        rigs[shot.Delivers[i]].Spawn();
+                    }
 
                     if (motion == "tower")
                     {
@@ -517,11 +705,12 @@ namespace WordCraft.View
                 Include(ref min, ref max, homes[i]);
                 if (motion == "walk") Include(ref min, ref max, homes[i] + Walk(WalkSeconds, speeds[i]));
             }
-            float margin = motion == "tower" ? 3f : 2.2f;
+            bool buildings = IsBuildingMotion(motion);
+            float margin = motion == "tower" ? 3f : buildings ? 3.4f : 2.2f;
             width = max.x - min.x + margin * 2f;
             // Pushed away from the camera by about a body's height, so the frame
             // centres on the bodies rather than on the ground at their feet.
-            return new Vector2((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f + 1.8f);
+            return new Vector2((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f + (buildings ? 1.4f : 1.8f));
         }
 
         private static void Include(ref Vector2 min, ref Vector2 max, Vector2 p)
@@ -562,15 +751,83 @@ namespace WordCraft.View
         {
             List<Command>[] log = ScriptedLog.Build();
             Moments(log, out int shotTick, out Vector2 shotAt, out int killTick, out Vector2 killAt,
-                    out int spawnTick, out Vector2 spawnAt);
+                    out int spawnTick, out Vector2 spawnAt, out int finishTick, out Vector2 finishAt);
+            int razeTick = Razed(out Vector2 razeAt);
             Debug.Log("match strips: first ranged shot at tick " + shotTick + ", first unit death at tick " + killTick +
-                      ", first produced unit at tick " + spawnTick);
+                      ", first produced unit at tick " + spawnTick + ", first site finished at tick " + finishTick +
+                      ", siege razes the building at tick " + razeTick);
 
             int written = 0;
             if (shotTick >= 0) { MatchStrip(output, "fight", log, shotTick, shotAt); written++; }
             if (killTick >= 0) { MatchStrip(output, "kill", log, killTick, killAt); written++; }
             if (spawnTick >= 0) { MatchStrip(output, "spawn", log, spawnTick, spawnAt); written++; }
+            if (finishTick >= 0) { MatchStrip(output, "build", log, finishTick, finishAt); written++; }
+            if (razeTick >= 0) { MatchStrip(output, "raze", NoLog, razeTick, razeAt, Siege, SiegeCells, SiegeTicksPerFrame); written++; }
             return written;
+        }
+
+        private static readonly List<Command>[] NoLog = new List<Command>[0];
+
+        /// <summary>Where the siege's building is put, mid map. The world may stand it a little elsewhere; the strip reads where.</summary>
+        private static readonly Vector2 SiegeAt = new Vector2(32f, 32f);
+
+        /// <summary>Cells across a siege strip's frame: closer than a fight's, so the building is the subject.</summary>
+        private const float SiegeCells = 9f;
+
+        /// <summary>How many 지옥불 ranged units besiege it.</summary>
+        private const int SiegeShooters = 4;
+
+        /// <summary>
+        /// Ticks between two frames of a siege strip: eight frames cover 1.4 s,
+        /// the tracer's flight that holds the fall back and the 0.8 s fall.
+        /// </summary>
+        private const int SiegeTicksPerFrame = 4;
+
+        /// <summary>
+        /// The scripted log never razes a building, so the raze is seen through
+        /// MatchView in a siege of its own (issue #186): a fresh map, peer 1's
+        /// finished 풀씨 둥지 (세계수 정령 production), and four of peer 0's
+        /// 지옥불 ranged standing either side of it with nothing to do but find
+        /// it. Peer 0 is the local peer, so the fog is the attackers'.
+        ///
+        /// Finished, not a site: ConstructionSystem sets a site's hp from its
+        /// progress every tick, so damage short of the whole ramp in one tick is
+        /// undone, and a site only falls to a burst in its first few percent. A
+        /// half-built site falling is the sitedestroy strip, driven directly.
+        /// </summary>
+        private static World Siege()
+        {
+            var world = new World(new WordCraft.Net.MatchConfig().Seed);
+            world.SetPeerFaction(0, Faction.Hellfire);
+            world.SetPeerFaction(1, Faction.TreeSpirits);
+            world.SpawnBuilding(1, Role.Production, 0, MatchRunner.ToSim(SiegeAt), complete: true);
+            // Shooters, either side of it as the camera looks and out of reach
+            // of a swing: melee crowd onto the building and hide it, a shooter
+            // behind it hovers over it on screen, and a shot is what the real
+            // path delays a death for.
+            Vector2 home = MatchRunner.ToView(world.GetEntity(0).Position);
+            for (int k = 0; k < SiegeShooters; k++)
+            {
+                float side = k % 2 == 0 ? 1f : -1f;
+                float around = side * (80f + (k / 2) * 20f) * Mathf.Deg2Rad;
+                Vector2 at = home + new Vector2(Mathf.Sin(around), Mathf.Cos(around)) * 4.5f;
+                world.SpawnUnit(0, Role.Ranged, 0, MatchRunner.ToSim(at));
+            }
+            return world;
+        }
+
+        /// <summary>The tick the siege's building dies, or -1 if it stands for a minute.</summary>
+        private static int Razed(out Vector2 at)
+        {
+            World world = Siege();
+            at = MatchRunner.ToView(world.GetEntity(0).Position);
+            var idle = new List<Command>();
+            for (int t = 0; t < 60 * World.TicksPerSecond; t++)
+            {
+                world.Step(idle);
+                if (!world.GetEntity(0).Alive) return world.Tick;
+            }
+            return -1;
         }
 
         private static World Scripted() =>
@@ -583,17 +840,20 @@ namespace WordCraft.View
         /// an id appearing.
         /// </summary>
         private static void Moments(List<Command>[] log, out int shotTick, out Vector2 shotAt,
-                                    out int killTick, out Vector2 killAt, out int spawnTick, out Vector2 spawnAt)
+                                    out int killTick, out Vector2 killAt, out int spawnTick, out Vector2 spawnAt,
+                                    out int finishTick, out Vector2 finishAt)
         {
-            shotTick = killTick = spawnTick = -1;
-            shotAt = killAt = spawnAt = Vector2.zero;
+            shotTick = killTick = spawnTick = finishTick = -1;
+            shotAt = killAt = spawnAt = finishAt = Vector2.zero;
             World world = Scripted();
             var cooldowns = new List<int>();
             var alive = new List<bool>();
+            var sites = new List<int>();
             for (int i = 0; i < world.EntityCount; i++)
             {
                 cooldowns.Add(world.GetEntity(i).AttackCooldown);
                 alive.Add(world.GetEntity(i).Alive);
+                sites.Add(world.GetEntity(i).BuildTicksLeft);
             }
 
             for (int t = 0; t < log.Length; t++)
@@ -606,6 +866,7 @@ namespace WordCraft.View
                     {
                         cooldowns.Add(e.AttackCooldown);
                         alive.Add(e.Alive);
+                        sites.Add(e.BuildTicksLeft);
                         if (spawnTick < 0 && e.Kind == EntityKind.Unit)
                         {
                             spawnTick = world.Tick;
@@ -626,16 +887,25 @@ namespace WordCraft.View
                         killAt = MatchRunner.ToView(e.Position);
                         Debug.Log("match strips: entity " + i + " (" + e.Role + ", peer " + e.Owner + ") dies at tick " + killTick);
                     }
+                    // A site finishing (issue #186), read the way MatchView reads
+                    // it: BuildTicksLeft reaching zero.
+                    if (finishTick < 0 && e.Kind == EntityKind.Building && e.Alive && sites[i] > 0 && e.BuildTicksLeft == 0)
+                    {
+                        finishTick = world.Tick;
+                        finishAt = MatchRunner.ToView(e.Position);
+                    }
                     cooldowns[i] = e.AttackCooldown;
                     alive[i] = e.Alive;
+                    sites[i] = e.BuildTicksLeft;
                 }
             }
         }
 
-        private static void MatchStrip(string output, string name, List<Command>[] log, int moment, Vector2 focus)
+        private static void MatchStrip(string output, string name, List<Command>[] log, int moment, Vector2 focus,
+                                       Func<World> make = null, float cells = MatchStripCells, int ticksPerFrame = TicksPerFrame)
         {
-            World world = Scripted();
-            int first = moment - TicksPerFrame;
+            World world = make != null ? make() : Scripted();
+            int first = moment - ticksPerFrame;
             int from = Mathf.Max(first - MatchPreroll, 0);
             var idle = new List<Command>();
             while (world.Tick < from) world.Step(world.Tick < log.Length ? log[world.Tick] : idle);
@@ -667,13 +937,13 @@ namespace WordCraft.View
                 cam.targetTexture = target;
                 cam.ResetAspect();
                 float halfAcross = Mathf.Tan(CameraRig.FieldOfView * 0.5f * Mathf.Deg2Rad) * (FrameWidth / (float)FrameHeight);
-                CameraRig.Aim(cam, focus + new Vector2(0f, 0.6f), MatchStripCells / (2f * halfAcross), 0f, hud: false);
+                CameraRig.Aim(cam, focus + new Vector2(0f, 0.6f), cells / (2f * halfAcross), 0f, hud: false);
 
                 for (int frame = 0; frame < Frames; frame++)
                 {
                     if (frame > 0)
                     {
-                        for (int k = 0; k < TicksPerFrame; k++)
+                        for (int k = 0; k < ticksPerFrame; k++)
                         {
                             world.Step(world.Tick < log.Length ? log[world.Tick] : idle);
                             seam.Snapshot();
